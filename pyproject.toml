@@ -10,6 +10,7 @@ dependencies = [
     "vaderSentiment",
     "jupyter",
     "python-dotenv",
+    "anthropic>=0.75.0",
 ]
 
 [tool.uv]

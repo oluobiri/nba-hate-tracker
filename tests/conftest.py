@@ -1,0 +1,225 @@
+"""
+Pytest fixtures for NBA Hate Tracker tests.
+
+Fixtures provide reusable test data and utilities. They're injected
+into test functions by name — pytest handles the wiring automatically.
+"""
+
+import json
+import pytest
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Sample comment data
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def valid_nba_comment() -> dict:
+    """
+    A well-formed comment from a target subreddit.
+    
+    This represents the 'happy path' — exactly what we expect
+    to extract and keep.
+    """
+    return {
+        "id": "abc123",
+        "body": "LeBron is washed, can't believe we traded for him",
+        "author": "hoopsfan42",
+        "author_flair_text": "Lakers",
+        "author_flair_css_class": "lakers",
+        "subreddit": "nba",
+        "created_utc": 1709251200,
+        "score": 42,
+        "controversiality": 0,
+        "parent_id": "t1_xyz789",
+        "link_id": "t3_post123"
+    }
+
+
+@pytest.fixture
+def valid_team_subreddit_comment() -> dict:
+    """Comment from a team-specific subreddit (not r/nba)."""
+    return {
+        "id": "def456",
+        "body": "Tatum is carrying this team",
+        "author": "celticspride",
+        "author_flair_text": "Banner 18",
+        "author_flair_css_class": "celtics",
+        "subreddit": "bostonceltics",
+        "created_utc": 1709337600,
+        "score": 156,
+        "controversiality": 0,
+        "parent_id": "t1_aaa111",
+        "link_id": "t3_post456"
+    }
+
+
+@pytest.fixture
+def wrong_subreddit_comment() -> dict:
+    """
+    Comment from a subreddit we don't care about.
+    
+    This should be filtered OUT by our extraction logic.
+    """
+    return {
+        "id": "xyz789",
+        "body": "Great goal by Messi!",
+        "author": "soccerfan",
+        "author_flair_text": "Barcelona",
+        "author_flair_css_class": "barca",
+        "subreddit": "soccer",
+        "created_utc": 1709251200,
+        "score": 1024,
+        "controversiality": 0,
+        "parent_id": "t1_bbb222",
+        "link_id": "t3_post789"
+    }
+
+
+@pytest.fixture
+def uppercase_subreddit_comment() -> dict:
+    """
+    Comment with inconsistent subreddit casing.
+    
+    Reddit data is messy — subreddit names appear as 'nba', 'NBA', 'Nba'.
+    Our filter must handle all variants.
+    """
+    return {
+        "id": "case123",
+        "body": "This is a test comment",
+        "author": "testuser",
+        "author_flair_text": None,
+        "author_flair_css_class": None,
+        "subreddit": "NBA",  # Uppercase!
+        "created_utc": 1709251200,
+        "score": 1,
+        "controversiality": 0,
+        "parent_id": "t1_ccc333",
+        "link_id": "t3_post000"
+    }
+
+
+@pytest.fixture
+def missing_body_comment() -> dict:
+    """
+    Comment where body field is missing entirely.
+    
+    Useless for sentiment analysis — should be rejected but logged.
+    """
+    return {
+        "id": "nobody123",
+        "author": "deleteduser",
+        "author_flair_text": None,
+        "author_flair_css_class": None,
+        "subreddit": "nba",
+        "created_utc": 1709251200,
+        "score": 0,
+        "controversiality": 0,
+        "parent_id": "t1_ddd444",
+        "link_id": "t3_post111"
+        # Note: no "body" key at all
+    }
+
+
+@pytest.fixture
+def deleted_body_comment() -> dict:
+    """
+    Comment where body is [deleted] or [removed].
+    
+    Reddit replaces content with these placeholders. Also useless.
+    """
+    return {
+        "id": "deleted123",
+        "body": "[deleted]",
+        "author": "[deleted]",
+        "author_flair_text": None,
+        "author_flair_css_class": None,
+        "subreddit": "lakers",
+        "created_utc": 1709251200,
+        "score": 5,
+        "controversiality": 0,
+        "parent_id": "t1_eee555",
+        "link_id": "t3_post222"
+    }
+
+
+@pytest.fixture
+def empty_body_comment() -> dict:
+    """Comment with empty string body."""
+    return {
+        "id": "empty123",
+        "body": "",
+        "author": "quietuser",
+        "author_flair_text": "Heat",
+        "author_flair_css_class": "heat",
+        "subreddit": "heat",
+        "created_utc": 1709251200,
+        "score": 1,
+        "controversiality": 0,
+        "parent_id": "t1_fff666",
+        "link_id": "t3_post333"
+    }
+
+
+# ---------------------------------------------------------------------------
+# Batch fixtures — for testing multiple records at once
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mixed_comments_batch(
+    valid_nba_comment,
+    valid_team_subreddit_comment,
+    wrong_subreddit_comment,
+    missing_body_comment
+) -> list[dict]:
+    """
+    A batch with a mix of valid and invalid comments.
+    
+    Useful for testing filter logic processes batches correctly.
+    Expected: 2 accepted (nba + bostonceltics), 2 rejected.
+    """
+    return [
+        valid_nba_comment,
+        valid_team_subreddit_comment,
+        wrong_subreddit_comment,
+        missing_body_comment
+    ]
+
+
+# ---------------------------------------------------------------------------
+# File-based fixtures — for integration-style tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_jsonl_file(tmp_path, mixed_comments_batch) -> Path:
+    """
+    Creates a temporary .jsonl file with test data.
+    
+    tmp_path is a built-in pytest fixture that provides a unique
+    temporary directory for each test. Automatically cleaned up.
+    """
+    filepath = tmp_path / "test_comments.jsonl"
+    with open(filepath, "w") as f:
+        for comment in mixed_comments_batch:
+            f.write(json.dumps(comment) + "\n")
+    return filepath
+
+
+@pytest.fixture
+def malformed_jsonl_file(tmp_path) -> Path:
+    """
+    JSONL file with some corrupted lines.
+    
+    Tests that our parser handles bad data gracefully
+    instead of crashing the whole pipeline.
+    """
+    filepath = tmp_path / "malformed_comments.jsonl"
+    lines = [
+        '{"id": "good1", "body": "valid json", "subreddit": "nba"}',
+        'this is not json at all',
+        '{"id": "good2", "body": "also valid", "subreddit": "nba"}',
+        '{"incomplete": "json',
+        '{"id": "good3", "body": "still going", "subreddit": "nba"}',
+    ]
+    filepath.write_text("\n".join(lines))
+    return filepath

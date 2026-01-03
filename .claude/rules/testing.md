@@ -72,9 +72,7 @@ Use Arrange-Act-Assert:
 
 ```python
 def test_format_duration_handles_hours():
-    """
-    Verify hours are formatted correctly.
-    """
+    """ Verify hours are formatted correctly."""
     # Arrange
     seconds = 3661  # 1 hour, 1 minute, 1 second
     
@@ -99,9 +97,7 @@ import pytest
     (3661, "1h 1m 1s"),
 ])
 def test_format_duration(seconds: int, expected: str):
-    """
-    Verify duration formatting across various inputs.
-    """
+    """Verify duration formatting across various inputs."""
     assert format_duration(seconds) == expected
 ```
 
@@ -117,9 +113,7 @@ import pytest
 
 @pytest.fixture
 def sample_comment() -> dict:
-    """
-    Standard comment for testing processors.
-    """
+    """Standard comment for testing processors."""
     return {
         "id": "abc123",
         "body": "LeBron is the GOAT",
@@ -132,9 +126,7 @@ def sample_comment() -> dict:
 
 @pytest.fixture
 def sample_comments(sample_comment) -> list[dict]:
-    """
-    List of comments for batch testing.
-    """
+    """List of comments for batch testing."""
     return [sample_comment] * 10
 ```
 
@@ -146,9 +138,7 @@ Mock external dependencies (API calls, file I/O):
 from unittest.mock import Mock, patch
 
 def test_fetch_comments_handles_api_error():
-    """
-    Verify graceful handling of API failures.
-    """
+    """Verify graceful handling of API failures."""
     client = ArcticShiftClient()
     
     with patch.object(client.session, "get") as mock_get:
@@ -158,9 +148,7 @@ def test_fetch_comments_handles_api_error():
             client.fetch_comments("nba", after=0, before=100)
 
 def test_fetch_comments_paginates():
-    """
-    Verify pagination through multiple API pages.
-    """
+    """Verify pagination through multiple API pages."""
     client = ArcticShiftClient()
     
     mock_responses = [
@@ -215,9 +203,7 @@ Use for end-to-end validation that unit tests can't cover:
 ```python
 # tests/integration/test_pipeline.py
 def test_full_comment_processing(tmp_path):
-    """
-    Verify complete pipeline from raw input to filtered output.
-    """
+    """Verify complete pipeline from raw input to filtered output."""
     # Arrange
     input_file = tmp_path / "input.jsonl"
     input_file.write_text('{"id": "1", "body": "LeBron is great"}\n')

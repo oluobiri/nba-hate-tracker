@@ -175,9 +175,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ProcessingStats:
-    """
-    Track processing statistics.
-    """
+    """Track processing statistics."""
     
     total_processed: int = 0
     accepted: int = 0

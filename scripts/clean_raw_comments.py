@@ -35,6 +35,7 @@ from scripts.extract_filter import (
     has_valid_body,
     extract_fields,
 )
+from utils.formatting import format_duration, format_size
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -74,30 +75,6 @@ def count_lines(filepath: Path) -> int:
         for _ in f:
             count += 1
     return count
-
-
-def format_size(size_bytes: int) -> str:
-    """Format bytes as human-readable string (KB, MB, GB)."""
-    for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
-
-
-def format_duration(seconds: float) -> str:
-    """Format seconds as human-readable duration."""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    elif seconds < 3600:
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{minutes}m {secs}s"
-    else:
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        return f"{hours}h {minutes}m {secs}s"
 
 
 def process_line(line: str, stats: ProcessingStats) -> dict | None:

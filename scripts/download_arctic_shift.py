@@ -60,6 +60,7 @@ from utils.constants import (
     SEASON_START_DATE,
     TARGET_SUBREDDITS,
 )
+from utils.formatting import format_duration
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -130,27 +131,6 @@ def save_progress(progress_path: Path, progress: dict[str, Any]) -> None:
     with open(progress_path, "w") as f:
         json.dump(progress, f, indent=2)
     logger.debug(f"Progress saved to {progress_path}")
-
-def _format_duration(seconds: float) -> str:
-    """
-    Format a duration in seconds to human-readable string.
-    
-    Examples:
-        45.2 -> "45s"
-        125.7 -> "2m 6s"
-        3725.3 -> "1h 2m 5s"
-    """
-    if seconds < 60:
-        return f"{seconds:.0f}s"
-    elif seconds < 3600:
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{minutes}m {secs}s"
-    else:
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        return f"{hours}h {minutes}m {secs}s"
 
 # -----------------------------------------------------------------------------
 # API interaction
@@ -429,7 +409,7 @@ def main() -> None:
             throughput = count / sub_elapsed if sub_elapsed > 0 else 0
             logger.info(
                 f"Completed {subreddit}: {count:,} comments "
-                f"in {_format_duration(sub_elapsed)} ({throughput:.1f} comments/sec)"
+                f"in {format_duration(sub_elapsed)} ({throughput:.1f} comments/sec)"
             )
             
         except KeyboardInterrupt:
@@ -462,7 +442,7 @@ def main() -> None:
     overall_throughput = total_comments / total_duration if total_duration > 0 else 0
     
     logger.info(f"This session: {len(session_stats)} subreddits, {total_comments:,} comments")
-    logger.info(f"Total time: {_format_duration(session_elapsed)} (avg {overall_throughput:.1f} comments/sec)")
+    logger.info(f"Total time: {format_duration(session_elapsed)} (avg {overall_throughput:.1f} comments/sec)")
     logger.info("")
     
     # Per-subreddit breakdown (sorted by count descending)
@@ -470,7 +450,7 @@ def main() -> None:
         throughput = stats["count"] / stats["duration"] if stats["duration"] > 0 else 0
         logger.info(
             f"  {sub}: {stats['count']:,} comments "
-            f"in {_format_duration(stats['duration'])} ({throughput:.1f}/sec)"
+            f"in {format_duration(stats['duration'])} ({throughput:.1f}/sec)"
         )
 
 if __name__ == "__main__":

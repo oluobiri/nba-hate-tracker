@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 **Project:** Sentiment analysis pipeline to answer "Who is r/NBA's most hated player?"  
 **Budget:** $300 ceiling, $200 target  
 **Phase:** 2 (Posts download + filtering pipeline)

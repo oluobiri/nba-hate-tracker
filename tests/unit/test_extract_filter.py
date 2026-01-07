@@ -1,6 +1,5 @@
 """Unit tests for extract_filter module."""
 
-import pytest
 
 from scripts.extract_filter import (
     ProcessingStats,
@@ -227,6 +226,8 @@ class TestProcessComment:
         stats = ProcessingStats()
 
         results = [process_comment(c, stats) for c in mixed_comments_batch]
+
+        assert results is not None
 
         # From fixture: 2 valid (nba, bostonceltics), 1 wrong sub, 1 missing body
         assert stats.total_processed == 4 

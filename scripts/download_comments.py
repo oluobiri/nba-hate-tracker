@@ -6,16 +6,16 @@ It handles pagination, rate limiting, and can resume from interruptions.
 
 Usage:
     # Download all subreddits
-    uv run python -m scripts.download_arctic_shift
+    uv run python -m scripts.download_comments
 
     # Download single subreddit (for testing)
-    uv run python -m scripts.download_arctic_shift --subreddit orlandomagic
+    uv run python -m scripts.download_comments --subreddit orlandomagic
 
     # Force restart (ignore progress file)
-    uv run python -m scripts.download_arctic_shift --force
+    uv run python -m scripts.download_comments --force
 
     # Combine options
-    uv run python -m scripts.download_arctic_shift --subreddit nba --force
+    uv run python -m scripts.download_comments --subreddit nba --force
 
 Design decisions:
     - Sequential downloads (one subreddit at a time) to respect the free API

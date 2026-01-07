@@ -6,6 +6,9 @@ into test functions by name — pytest handles the wiring automatically.
 """
 
 import json
+from typing import Callable
+from unittest.mock import Mock
+
 import pytest
 from pathlib import Path
 
@@ -13,11 +16,12 @@ from pathlib import Path
 # Sample comment data
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def valid_nba_comment() -> dict:
     """
     A well-formed comment from a target subreddit.
-    
+
     This represents the 'happy path' — exactly what we expect
     to extract and keep.
     """
@@ -32,7 +36,7 @@ def valid_nba_comment() -> dict:
         "score": 42,
         "controversiality": 0,
         "parent_id": "t1_xyz789",
-        "link_id": "t3_post123"
+        "link_id": "t3_post123",
     }
 
 
@@ -50,7 +54,7 @@ def valid_team_subreddit_comment() -> dict:
         "score": 156,
         "controversiality": 0,
         "parent_id": "t1_aaa111",
-        "link_id": "t3_post456"
+        "link_id": "t3_post456",
     }
 
 
@@ -58,7 +62,7 @@ def valid_team_subreddit_comment() -> dict:
 def wrong_subreddit_comment() -> dict:
     """
     Comment from a subreddit we don't care about.
-    
+
     This should be filtered OUT by our extraction logic.
     """
     return {
@@ -72,7 +76,7 @@ def wrong_subreddit_comment() -> dict:
         "score": 1024,
         "controversiality": 0,
         "parent_id": "t1_bbb222",
-        "link_id": "t3_post789"
+        "link_id": "t3_post789",
     }
 
 
@@ -80,7 +84,7 @@ def wrong_subreddit_comment() -> dict:
 def uppercase_subreddit_comment() -> dict:
     """
     Comment with inconsistent subreddit casing.
-    
+
     Reddit data is messy — subreddit names appear as 'nba', 'NBA', 'Nba'.
     Our filter must handle all variants.
     """
@@ -95,7 +99,7 @@ def uppercase_subreddit_comment() -> dict:
         "score": 1,
         "controversiality": 0,
         "parent_id": "t1_ccc333",
-        "link_id": "t3_post000"
+        "link_id": "t3_post000",
     }
 
 
@@ -103,7 +107,7 @@ def uppercase_subreddit_comment() -> dict:
 def missing_body_comment() -> dict:
     """
     Comment where body field is missing entirely.
-    
+
     Useless for sentiment analysis — should be rejected but logged.
     """
     return {
@@ -116,7 +120,7 @@ def missing_body_comment() -> dict:
         "score": 0,
         "controversiality": 0,
         "parent_id": "t1_ddd444",
-        "link_id": "t3_post111"
+        "link_id": "t3_post111",
         # Note: no "body" key at all
     }
 
@@ -125,7 +129,7 @@ def missing_body_comment() -> dict:
 def deleted_body_comment() -> dict:
     """
     Comment where body is [deleted] or [removed].
-    
+
     Reddit replaces content with these placeholders. Also useless.
     """
     return {
@@ -139,7 +143,7 @@ def deleted_body_comment() -> dict:
         "score": 5,
         "controversiality": 0,
         "parent_id": "t1_eee555",
-        "link_id": "t3_post222"
+        "link_id": "t3_post222",
     }
 
 
@@ -157,7 +161,7 @@ def empty_body_comment() -> dict:
         "score": 1,
         "controversiality": 0,
         "parent_id": "t1_fff666",
-        "link_id": "t3_post333"
+        "link_id": "t3_post333",
     }
 
 
@@ -165,16 +169,17 @@ def empty_body_comment() -> dict:
 # Batch fixtures — for testing multiple records at once
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mixed_comments_batch(
     valid_nba_comment,
     valid_team_subreddit_comment,
     wrong_subreddit_comment,
-    missing_body_comment
+    missing_body_comment,
 ) -> list[dict]:
     """
     A batch with a mix of valid and invalid comments.
-    
+
     Useful for testing filter logic processes batches correctly.
     Expected: 2 accepted (nba + bostonceltics), 2 rejected.
     """
@@ -182,7 +187,7 @@ def mixed_comments_batch(
         valid_nba_comment,
         valid_team_subreddit_comment,
         wrong_subreddit_comment,
-        missing_body_comment
+        missing_body_comment,
     ]
 
 
@@ -190,11 +195,12 @@ def mixed_comments_batch(
 # File-based fixtures — for integration-style tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def sample_jsonl_file(tmp_path, mixed_comments_batch) -> Path:
     """
     Creates a temporary .jsonl file with test data.
-    
+
     tmp_path is a built-in pytest fixture that provides a unique
     temporary directory for each test. Automatically cleaned up.
     """
@@ -209,17 +215,121 @@ def sample_jsonl_file(tmp_path, mixed_comments_batch) -> Path:
 def malformed_jsonl_file(tmp_path) -> Path:
     """
     JSONL file with some corrupted lines.
-    
+
     Tests that our parser handles bad data gracefully
     instead of crashing the whole pipeline.
     """
     filepath = tmp_path / "malformed_comments.jsonl"
     lines = [
         '{"id": "good1", "body": "valid json", "subreddit": "nba"}',
-        'this is not json at all',
+        "this is not json at all",
         '{"id": "good2", "body": "also valid", "subreddit": "nba"}',
         '{"incomplete": "json',
         '{"id": "good3", "body": "still going", "subreddit": "nba"}',
     ]
     filepath.write_text("\n".join(lines))
     return filepath
+
+
+# ---------------------------------------------------------------------------
+# API mock fixtures — for Arctic Shift client tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_api_response() -> Callable[[list[dict], dict[str, str] | None], Mock]:
+    """
+    Factory fixture for creating mock API responses.
+
+    Returns a function that creates a Mock with the specified data and headers.
+
+    Usage:
+        response = mock_api_response([{"id": "1"}], {"X-RateLimit-Remaining": "100"})
+    """
+
+    def _create_response(
+        data: list[dict],
+        headers: dict[str, str] | None = None,
+    ) -> Mock:
+        mock = Mock()
+        mock.json.return_value = {"data": data}
+        mock.headers = headers or {}
+        mock.raise_for_status = Mock()
+        return mock
+
+    return _create_response
+
+
+@pytest.fixture
+def mock_empty_response(mock_api_response) -> Mock:
+    """Empty API response — signals end of pagination."""
+    return mock_api_response(data=[], headers={})
+
+
+@pytest.fixture
+def mock_comments_page(mock_api_response) -> Callable[[int, int], Mock]:
+    """
+    Factory for creating mock comment page responses.
+
+    Creates comments with sequential IDs and timestamps.
+
+    Usage:
+        page = mock_comments_page(start_id=1, count=2)
+        # Creates comments with id="1", id="2"
+    """
+
+    def _create_page(start_id: int = 1, count: int = 2) -> Mock:
+        comments = [
+            {"id": str(i), "body": f"comment {i}", "created_utc": 100 + i}
+            for i in range(start_id, start_id + count)
+        ]
+        return mock_api_response(data=comments, headers={})
+
+    return _create_page
+
+
+@pytest.fixture
+def mock_posts_page(mock_api_response) -> Callable[[int, int], Mock]:
+    """
+    Factory for creating mock post page responses.
+
+    Creates posts with sequential IDs and timestamps.
+    """
+
+    def _create_page(start_id: int = 1, count: int = 2) -> Mock:
+        posts = [
+            {"id": f"post{i}", "title": f"Post {i}", "created_utc": 100 + i}
+            for i in range(start_id, start_id + count)
+        ]
+        return mock_api_response(data=posts, headers={})
+
+    return _create_page
+
+
+@pytest.fixture
+def mock_rate_limited_response(mock_api_response) -> Callable[[int, int, int], Mock]:
+    """
+    Factory for creating responses with rate limit headers.
+
+    Args:
+        remaining: X-RateLimit-Remaining value
+        reset_timestamp: X-RateLimit-Reset Unix timestamp
+        count: Number of items in response
+    """
+
+    def _create_response(
+        remaining: int,
+        reset_timestamp: int,
+        count: int = 1,
+    ) -> Mock:
+        data = [
+            {"id": str(i), "body": f"comment {i}", "created_utc": 100 + i}
+            for i in range(1, count + 1)
+        ]
+        headers = {
+            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset": str(reset_timestamp),
+        }
+        return mock_api_response(data=data, headers=headers)
+
+    return _create_response

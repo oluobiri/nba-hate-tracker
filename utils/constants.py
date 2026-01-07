@@ -97,6 +97,9 @@ ARCTIC_SHIFT_BASE_URL = "https://arctic-shift.photon-reddit.com"
 # Comments search endpoint
 ARCTIC_SHIFT_COMMENTS_ENDPOINT = "/api/comments/search"
 
+# Posts search endpoint
+ARCTIC_SHIFT_POSTS_ENDPOINT = "/api/posts/search"
+
 # Maximum items per API request (API limit is higher, but we stay conservative)
 ARCTIC_SHIFT_PAGE_SIZE = 100
 

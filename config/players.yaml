@@ -1,0 +1,844 @@
+# NBA Player Aliases for Hate Detection
+# Includes negative/mocking nicknames as high-signal identifiers
+
+version: "1.0"
+season: "2024-25"
+
+# Short aliases that require word boundary matching (\b) to avoid false positives
+# These match common English words without proper boundaries
+short_aliases:
+  - ad
+  - ant
+  - ja
+  - fox
+  - og
+  - pg
+  - cp
+  - bam
+  - dame
+  - book
+  - zo
+  - kat
+  - kd
+  - ai
+  - tt
+
+players:
+  # Alphabetical by last name
+
+  Bam Adebayo:
+    - bam adebayo
+    - adebayo
+    - bam  # requires word boundary
+
+  Giannis Antetokounmpo:
+    - giannis antetokounmpo
+    - giannis
+    - antetokounmpo
+    - greek freak
+    - the greek freak
+    - gianni
+    # Negative
+    - giannis cant shoot
+    - freethrow merchant
+
+  Carmelo Anthony:
+    - carmelo anthony
+    - carmelo
+    - melo
+    - me7o
+    - hoodie melo
+    # Negative
+    - stay me7o
+    - olympic melo
+
+  OG Anunoby:
+    - og anunoby
+    - anunoby
+    - og  # requires word boundary
+    - prince ogugua
+
+  Marvin Bagley III:
+    - marvin bagley
+    - bagley
+    # Negative
+    - bust bagley
+
+  Lonzo Ball:
+    - lonzo ball
+    - lonzo
+    - zo  # requires word boundary
+    - ball brothers
+    # Negative
+    - lavar's son
+    - injury prone zo
+
+  LaMelo Ball:
+    - lamelo ball
+    - lamelo
+    - melo ball
+    # Negative
+    - lavar's other son
+
+  Paolo Banchero:
+    - paolo banchero
+    - banchero
+    - paolo
+    - pb
+
+  Desmond Bane:
+    - desmond bane
+    - bane
+    - des
+
+  Patrick Beverley:
+    - patrick beverley
+    - pat bev
+    - patbev
+    - beverley
+    # Negative
+    - dirty pat bev
+    - pest beverley
+    - bum beverley
+
+  Devin Booker:
+    - devin booker
+    - booker
+    - dbook
+    - d book
+    - book  # requires word boundary
+    # Negative
+    - empty stats booker
+    - bubble booker
+
+  Mikal Bridges:
+    - mikal bridges
+    - bridges
+    - mikal
+    - the warden
+
+  Dillon Brooks:
+    - dillon brooks
+    - brooks
+    - dillon
+    # Negative
+    - dirty brooks
+    - villain brooks
+    - big mouth brooks
+
+  Jaylen Brown:
+    - jaylen brown
+    - jaylen
+    - jb
+    # Negative
+    - robin to tatum
+
+  Jalen Brunson:
+    - jalen brunson
+    - brunson
+    - jalen
+    - jb
+    # Negative
+    - villain brunson
+    - short brunson
+
+  Jimmy Butler:
+    - jimmy butler
+    - butler
+    - jimmy
+    - jimmy buckets
+    - jimmy g buckets
+    - buckets
+    - himmy butler
+    # Negative
+    - playoff jimmy
+    - bubble jimmy
+    - toxic jimmy
+    - jimmy diva
+
+  Clint Capela:
+    - clint capela
+    - capela
+    - clint
+
+  Alex Caruso:
+    - alex caruso
+    - caruso
+    - the accountant
+    - bald mamba
+    - carushow
+
+  Stephen Curry:
+    - stephen curry
+    - steph curry
+    - curry
+    - steph
+    - wardell
+    - chef curry
+    - baby faced assassin
+    - skyfucker
+    # Negative
+    - stephew
+    - gravity merchant
+    - no fmvp curry
+
+  Anthony Davis:
+    - anthony davis
+    - ad  # requires word boundary
+    - the brow
+    - unibrow
+    # Negative
+    - adisney
+    - street clothes
+    - day to davis
+    - day-to-davis
+    - glass davis
+    - bubble champion
+
+  DeMar DeRozan:
+    - demar derozan
+    - derozan
+    - demar
+    - debo
+    - compton's finest
+
+  Luka Doncic:
+    - luka doncic
+    - luka
+    - doncic
+    - luka magic
+    - the don
+    - wonderboy
+    # Negative
+    - luka special
+    - fat luka
+    - chubby luka
+    - flopping luka
+    - whiny luka
+
+  Kevin Durant:
+    - kevin durant
+    - durant
+    - kd  # requires word boundary
+    - durantula
+    - slim reaper
+    - easy money sniper
+    - the servant
+    # Negative
+    - cupcake
+    - snake
+    - mr burner
+    - burner kd
+    - kd burner
+    - bus rider
+    - easy mode
+    - cant win with these cats
+
+  Anthony Edwards:
+    - anthony edwards
+    - ant  # requires word boundary
+    - ant man
+    - antman
+    - edwards
+    - a1 from day 1
+    # Negative
+    - chucker edwards
+
+  Joel Embiid:
+    - joel embiid
+    - embiid
+    - joel
+    - the process
+    - jojo
+    - do a 180
+    - troel embiid
+    # Negative
+    - jobiid
+    - emflop
+    - injury embiid
+    - load management joel
+    - no second round embiid
+    - choker embiid
+    - the processor
+
+  De'Aaron Fox:
+    - de'aaron fox
+    - deaaron fox
+    - fox  # requires word boundary
+    - swipa
+    - de'aaron
+    # Negative
+    - stat padder fox
+
+  Evan Fournier:
+    - evan fournier
+    - fournier
+    - evan
+    - dont google
+
+  Darius Garland:
+    - darius garland
+    - garland
+    - dg
+
+  Paul George:
+    - paul george
+    - pg  # requires word boundary
+    - pg13
+    - pg 13
+    # Negative
+    - playoff p
+    - pandemic p
+    - wayoff p
+    - way off p
+    - pushoff p
+    - no ot tonight
+    - 0 ot tonight
+
+  Shai Gilgeous-Alexander:
+    - shai gilgeous-alexander
+    - shai gilgeous alexander
+    - shai
+    - sga
+    - gilgeous-alexander
+    # Negative
+    - foul baiter shai
+    - free throw merchant
+
+  Rudy Gobert:
+    - rudy gobert
+    - gobert
+    - rudy
+    - the stifle tower
+    - gobzilla
+    # Negative
+    - rudymentary
+    - covid rudy
+    - microphone rudy
+    - minus rudy
+    - playoff gobert
+    - fraud gobert
+    - overpaid gobert
+
+  Aaron Gordon:
+    - aaron gordon
+    - gordon
+    - ag
+    - air gordon
+
+  Draymond Green:
+    - draymond green
+    - draymond
+    - green
+    - dray
+    - bdd
+    - day day
+    # Negative
+    - donkey
+    - dirty dray
+    - suspension green
+    - podcast draymond
+    - kicking green
+    - nut puncher
+
+  Tyrese Haliburton:
+    - tyrese haliburton
+    - haliburton
+    - tyrese
+    - hali
+
+  James Harden:
+    - james harden
+    - harden
+    - the beard
+    - fear the beard
+    - chef harden
+    # Negative
+    - flopper
+    - james floppen
+    - james soften
+    - strip club harden
+    - playoff choker
+    - foul merchant
+    - free throw merchant
+
+  Josh Hart:
+    - josh hart
+    - hart
+    - hartenstein
+
+  Tyler Herro:
+    - tyler herro
+    - herro
+    - boy wonder
+    - bucket
+
+  Chet Holmgren:
+    - chet holmgren
+    - chet
+    - holmgren
+    - chet the threat
+    - unicorn
+    # Negative
+    - injury chet
+    - skinny chet
+    - glass chet
+
+  Dwight Howard:
+    - dwight howard
+    - dwight
+    - howard
+    - superman
+    - d12
+    # Negative
+    - soft dwight
+    - drama dwight
+    - snake dwight
+
+  Brandon Ingram:
+    - brandon ingram
+    - ingram
+    - bi
+    - slim reefer
+    - sleepy b
+
+  Kyrie Irving:
+    - kyrie irving
+    - kyrie
+    - irving
+    - kai
+    - uncle drew
+    - world b flat
+    # Negative
+    - flat earther
+    - mr sage
+    - third eye
+    - antisemite
+    - part time kyrie
+    - mr enlightened
+
+  LeBron James:
+    - lebron james
+    - lebron
+    - bron
+    - lbj
+    - king james
+    - the king
+    - chosen one
+    - legoat
+    - le goat
+    - akron hammer
+    # Negative
+    - lemickey
+    - le mickey
+    - lebrick
+    - le brick
+    - lechoke
+    - le choke
+    - leflop
+    - le flop
+    - lefraud
+    - le fraud
+    - lequit
+    - le quit
+    - lestatpad
+    - le statpad
+    - lecoast
+    - le coast
+    - legm
+    - le gm
+    - lediva
+    - washed king
+    - lefirethiscoach
+    - china bron
+    - taco tuesday
+
+  Nikola Jokic:
+    - nikola jokic
+    - jokic
+    - nikola
+    - joker
+    - the joker
+    - big honey
+    - sombor shuffle
+    # Negative
+    - fat jokic
+    - unathletic jokic
+    - slow jokic
+
+  Tre Jones:
+    - tre jones
+    - tre
+
+  Caris LeVert:
+    - caris levert
+    - levert
+    - caris
+
+  Kawhi Leonard:
+    - kawhi leonard
+    - kawhi
+    - leonard
+    - the klaw
+    - the claw
+    - board man
+    - fun guy
+    - board man gets paid
+    # Negative
+    - load management
+    - mr load management
+    - sit out kawhi
+    - injury kawhi
+    - robot kawhi
+    - quitter kawhi
+
+  Damian Lillard:
+    - damian lillard
+    - lillard
+    - dame  # requires word boundary
+    - dame time
+    - dame dolla
+    - big game dame
+    - logo lillard
+    # Negative
+    - dame quit
+    - 0 rings dame
+    - padded stats
+
+  Zach LaVine:
+    - zach lavine
+    - lavine
+    - zach
+
+  Kevon Looney:
+    - kevon looney
+    - looney
+    - loon
+
+  Brook Lopez:
+    - brook lopez
+    - lopez
+    - splash mountain
+
+  Tyrese Maxey:
+    - tyrese maxey
+    - maxey
+    - tyrese
+
+  De'Anthony Melton:
+    - deanthony melton
+    - melton
+
+  Khris Middleton:
+    - khris middleton
+    - middleton
+    - khris
+    - khash money
+
+  Donovan Mitchell:
+    - donovan mitchell
+    - mitchell
+    - donovan
+    - spida
+    - spidaman
+    # Negative
+    - ball hog mitchell
+    - chucker mitchell
+
+  Ja Morant:
+    - ja morant
+    - morant
+    - ja  # requires word boundary
+    - temetrius
+    - point god ja
+    # Negative
+    - gun ja
+    - glock morant
+    - gangster ja
+    - suspended ja
+    - immature ja
+
+  Dejounte Murray:
+    - dejounte murray
+    - dejounte
+    - murray
+    - dj murray
+
+  Jamal Murray:
+    - jamal murray
+    - jamal
+    - blue arrow
+
+  Chris Paul:
+    - chris paul
+    - cp3
+    - cp  # requires word boundary
+    - point god
+    - the point god
+    - floor general
+    # Negative
+    - dirty cp3
+    - flopper paul
+    - first round paul
+    - playoff choker cp3
+    - cone paul
+    - cooked cp3
+
+  Jordan Poole:
+    - jordan poole
+    - poole
+    - jp
+    - poole party
+    # Negative
+    - party poole
+    - selfish poole
+    - chucker poole
+    - contract poole
+
+  Bobby Portis:
+    - bobby portis
+    - portis
+    - crazy eyes
+
+  Julius Randle:
+    - julius randle
+    - randle
+    - julius
+    - beyblade
+    # Negative
+    - spin randle
+    - turnover randle
+
+  Austin Reaves:
+    - austin reaves
+    - reaves
+    - ar15
+    - ar 15
+    - hillbilly kobe
+    # Negative
+    - overhyped reaves
+    - white boy hype
+
+  Rajon Rondo:
+    - rajon rondo
+    - rondo
+    - playoff rondo
+    - connect four rondo
+    # Negative
+    - regular season rondo
+    - quit rondo
+
+  Derrick Rose:
+    - derrick rose
+    - drose
+    - d rose
+    - rose
+    # Negative
+    - injury rose
+
+  D'Angelo Russell:
+    - d'angelo russell
+    - dangelo russell
+    - dlo
+    - d lo
+    - russell
+    - ice in my veins
+    # Negative
+    - snitch russell
+    - frozen russell
+    - ice in his veins (ironic)
+    - inconsistent dlo
+
+  Domantas Sabonis:
+    - domantas sabonis
+    - sabonis
+    - domas
+
+  Pascal Siakam:
+    - pascal siakam
+    - siakam
+    - pascal
+    - spicy p
+    - spinakam
+    # Negative
+    - mid siakam
+    - inconsistent p
+
+  Ben Simmons:
+    - ben simmons
+    - simmons
+    - ben
+    - young socialite
+    # Negative
+    - bum simmons
+    - scared simmons
+    - cant shoot
+    - back simmons
+    - socialite
+    - fresh prince (ironic)
+    - phantom injury
+    - mental health excuse
+    - pass up dunk
+
+  Marcus Smart:
+    - marcus smart
+    - smart
+    - marcus
+    # Negative
+    - flopper smart
+    - dirty smart
+
+  Jalen Smith:
+    - jalen smith
+    - stix
+
+  Jayson Tatum:
+    - jayson tatum
+    - tatum
+    - jt
+    - jayson
+    - the problem
+    # Negative
+    - kobe stan tatum
+    - hero ball tatum
+    - inconsistent tatum
+    - too long tatum
+
+  Klay Thompson:
+    - klay thompson
+    - klay
+    - thompson
+    - splash brother
+    - game 6 klay
+    - china klay
+    # Negative
+    - washed klay
+    - ig klay
+    - boat klay
+    - contract year klay
+
+  Karl-Anthony Towns:
+    - karl-anthony towns
+    - karl anthony towns
+    - towns
+    - kat  # requires word boundary
+    - big kat
+    # Negative
+    - soft kat
+    - charmin
+    - cant defend
+    - offensive only kat
+
+  Evan Turner:
+    - evan turner
+    - turner
+
+  Myles Turner:
+    - myles turner
+    - turner
+    - myles
+    # Negative
+    - trade turner
+    - always available turner
+
+  Fred VanVleet:
+    - fred vanvleet
+    - vanvleet
+    - fvv
+    - steady freddy
+    - freddy
+    # Negative
+    - bet on yourself
+    - overpaid fred
+
+  Nikola Vucevic:
+    - nikola vucevic
+    - vucevic
+    - vooch
+
+  Kemba Walker:
+    - kemba walker
+    - kemba
+    - cardiac kemba
+
+  John Wall:
+    - john wall
+    - wall
+    - j wall
+    # Negative
+    - contract wall
+    - cooked wall
+
+  Victor Wembanyama:
+    - victor wembanyama
+    - wembanyama
+    - wemby
+    - victor
+    - alien
+    - the alien
+    # Negative
+    - bust wemby
+    - overhyped
+    - skinny wemby
+
+  Russell Westbrook:
+    - russell westbrook
+    - westbrook
+    - russ
+    - brodie
+    - mr triple double
+    - why not
+    # Negative
+    - westbrick
+    - worstbrook
+    - westbroke
+    - westbrook statpad
+    - brick
+    - chucker
+    - reckless russ
+    - no bbiq
+
+  Andrew Wiggins:
+    - andrew wiggins
+    - wiggins
+    - wiggs
+    - two way wiggs
+    # Negative
+    - lazy wiggins
+    - potential wiggins
+    - maple jordan (ironic)
+
+  Zion Williamson:
+    - zion williamson
+    - zion
+    - williamson
+    - zanos
+    - air gumbo
+    # Negative
+    - wide zion
+    - big zion
+    - fat zion
+    - out of shape
+    - always injured
+    - load management zion
+    - big chungas
+
+  Trae Young:
+    - trae young
+    - trae
+    - young
+    - ice trae
+    # Negative
+    - ice trae (ironic)
+    - foul merchant
+    - foul baiter
+    - flopper trae
+    - villain trae
+    - bald spot
+    - hair plugs
+    - brick young
+
+  Ivica Zubac:
+    - ivica zubac
+    - zubac
+    - zu

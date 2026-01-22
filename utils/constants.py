@@ -55,7 +55,7 @@ TEAM_SUBREDDITS = [
     "nbaspurs",
 ]
 
-# Combined list for iteration (nba first, then teams alphabetically isn't 
+# Combined list for iteration (nba first, then teams alphabetically isn't
 # necessary but we put the big one first so we see progress early)
 TARGET_SUBREDDITS = [PRIMARY_SUBREDDIT] + TEAM_SUBREDDITS
 
@@ -80,11 +80,13 @@ REQUIRED_FIELDS = [
 ]
 
 # Body values that indicate deleted/removed content (skip these)
-INVALID_BODY_VALUES = frozenset([
-    "[deleted]",
-    "[removed]",
-    "",
-])
+INVALID_BODY_VALUES = frozenset(
+    [
+        "[deleted]",
+        "[removed]",
+        "",
+    ]
+)
 
 
 # =============================================================================

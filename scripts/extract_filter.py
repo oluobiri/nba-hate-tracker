@@ -12,16 +12,13 @@ import argparse
 import json
 import logging
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 import zstandard
 from tqdm import tqdm
 
-from utils.constants import (
-    TARGET_SUBREDDITS,
-    INVALID_BODY_VALUES
-)
+from pipeline.processors import CommentPipeline, has_valid_body, extract_fields
+from utils.constants import TARGET_SUBREDDITS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,42 +29,40 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Statistics tracking
+# Statistics logging
 # ---------------------------------------------------------------------------
 
-@dataclass
-class ProcessingStats:
-    """Track processing statistics for logging."""
 
-    total_processed: int = 0
-    accepted: int = 0
-    rejected_subreddit: int = 0
-    rejected_body: int = 0
-    rejected_malformed: int = 0
+def log_stats_summary(stats: dict[str, int]) -> None:
+    """
+    Log final processing statistics.
 
-    @property
-    def total_rejected(self) -> int:
-        return self.rejected_subreddit + self.rejected_body + self.rejected_malformed
+    Args:
+        stats: Dictionary with 'total', 'accepted', and 'rejected_*' keys.
+    """
+    logger.info("=" * 50)
+    logger.info("Processing Complete")
+    logger.info("=" * 50)
+    logger.info(f"Total processed:      {stats['total']:,}")
+    logger.info(f"Accepted:             {stats['accepted']:,}")
 
-    def log_summary(self) -> None:
-        """Log final processing statistics."""
-        logger.info("=" * 50)
-        logger.info("Processing Complete")
-        logger.info("=" * 50)
-        logger.info(f"Total processed:      {self.total_processed:,}")
-        logger.info(f"Accepted:             {self.accepted:,}")
-        logger.info(f"Rejected (subreddit): {self.rejected_subreddit:,}")
-        logger.info(f"Rejected (body):      {self.rejected_body:,}")
-        logger.info(f"Rejected (malformed): {self.rejected_malformed:,}")
-        if self.total_processed > 0:
-            acceptance_rate = (self.accepted / self.total_processed) * 100
-            logger.info(f"Acceptance rate:      {acceptance_rate:.2f}%")
+    # Log rejection counts
+    for key, value in stats.items():
+        if key.startswith("rejected_"):
+            step_name = key.replace("rejected_", "")
+            logger.info(f"Rejected ({step_name}): {value:,}")
+
+    if stats["total"] > 0:
+        acceptance_rate = (stats["accepted"] / stats["total"]) * 100
+        logger.info(f"Acceptance rate:      {acceptance_rate:.2f}%")
+
 
 # ---------------------------------------------------------------------------
 # Core filtering functions
 # ---------------------------------------------------------------------------
 
-def is_target_subreddit(comment: dict) -> bool:
+
+def is_target_subreddit(comment: dict) -> dict | None:
     """
     Check if comment is from a subreddit we're tracking.
 
@@ -75,53 +70,18 @@ def is_target_subreddit(comment: dict) -> bool:
         comment: Raw comment dictionary from Reddit dump.
 
     Returns:
-        True if subreddit is in our target list (case-insensitive).
+        Original comment if subreddit is in our target list, None otherwise.
     """
     subreddit = comment.get("subreddit", "")
-    return subreddit.lower() in TARGET_SUBREDDITS
+    if subreddit.lower() in TARGET_SUBREDDITS:
+        return comment
+    return None
 
-def has_valid_body(comment: dict) -> bool:
-    """
-    Check if comment has a valid, non-empty body.
-
-    Args:
-        comment: Raw comment dictionary from Reddit dump.
-
-    Returns:
-        True if body exists and is not deleted/removed/empty.
-    """
-    body = comment.get("body")
-    if not body:
-        return False
-    return body not in INVALID_BODY_VALUES
-
-def extract_fields(comment: dict) -> dict:
-    """
-    Extract only the fields we need from a raw comment.
-
-    Args:
-        comment: Raw comment dictionary (may have many fields).
-
-    Returns:
-        Dictionary with only the fields needed for analysis.
-    """
-    return {
-        "id": comment.get("id"),
-        "body": comment.get("body"),
-        "author": comment.get("author"),
-        "author_flair_text": comment.get("author_flair_text"),
-        "author_flair_css_class": comment.get("author_flair_css_class"),
-        "subreddit": comment.get("subreddit"),
-        "created_utc": comment.get("created_utc"),
-        "score": comment.get("score"),
-        "controversiality": comment.get("controversiality"),
-        "parent_id": comment.get("parent_id"),
-        "link_id": comment.get("link_id"),
-    }
 
 # ---------------------------------------------------------------------------
 # Streaming processing
 # ---------------------------------------------------------------------------
+
 
 def stream_zst_lines(filepath: Path, chunk_size: int = 1024 * 1024 * 16):
     """
@@ -137,25 +97,26 @@ def stream_zst_lines(filepath: Path, chunk_size: int = 1024 * 1024 * 16):
         Individual lines (strings) from the decompressed content.
     """
     decompressor = zstandard.ZstdDecompressor(max_window_size=2**31)
-    
+
     with open(filepath, "rb") as fh:
         reader = decompressor.stream_reader(fh)
         buffer = ""
-        
+
         while True:
             chunk = reader.read(chunk_size)
             if not chunk:
                 break
-            
+
             buffer += chunk.decode("utf-8", errors="replace")
             lines = buffer.split("\n")
-            
+
             # Last element might be incomplete — keep in buffer
             buffer = lines[-1]
-            
+
             for line in lines[:-1]:
                 if line.strip():
                     yield line
+
 
 def parse_json_line(line: str) -> dict | None:
     """
@@ -171,35 +132,14 @@ def parse_json_line(line: str) -> dict | None:
         return json.loads(line)
     except json.JSONDecodeError:
         return None
-    
-def process_comment(comment: dict, stats: ProcessingStats) -> dict | None:
-    """Process a single comment through the filter pipeline.
 
-    Args:
-        comment: Raw comment dictionary.
-        stats: Statistics tracker (mutated in place).
-
-    Returns:
-        Extracted fields if comment passes filters, None otherwise.
-    """
-    stats.total_processed += 1
-
-    if not is_target_subreddit(comment):
-        stats.rejected_subreddit += 1
-        return None
-
-    if not has_valid_body(comment):
-        stats.rejected_body += 1
-        return None
-
-    stats.accepted += 1
-    return extract_fields(comment)
 
 # ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
 
-def process_file(input_path: Path, output_path: Path) -> ProcessingStats:
+
+def process_file(input_path: Path, output_path: Path) -> dict[str, int]:
     """
     Process a ZST archive file and write filtered JSONL output.
 
@@ -208,9 +148,15 @@ def process_file(input_path: Path, output_path: Path) -> ProcessingStats:
         output_path: Path to output .jsonl file.
 
     Returns:
-        ProcessingStats with final counts.
+        Stats dict with processing counts.
     """
-    stats = ProcessingStats()
+    # Build pipeline
+    pipeline = CommentPipeline()
+    pipeline.add_step(is_target_subreddit)
+    pipeline.add_step(has_valid_body)
+    pipeline.add_step(extract_fields)
+
+    malformed_count = 0
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -257,14 +203,18 @@ def process_file(input_path: Path, output_path: Path) -> ProcessingStats:
 
                         comment = parse_json_line(line)
                         if comment is None:
-                            stats.rejected_malformed += 1
+                            malformed_count += 1
                             continue
 
-                        result = process_comment(comment, stats)
+                        result = pipeline.process(comment)
                         if result is not None:
                             out_file.write(json.dumps(result) + "\n")
 
-    stats.log_summary()
+    # Combine stats
+    stats = pipeline.stats
+    stats["rejected_malformed"] = malformed_count
+
+    log_stats_summary(stats)
     return stats
 
 

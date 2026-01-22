@@ -65,7 +65,7 @@ DEFAULT_OUTPUT = Path("data/filtered/r_nba_cleaned.jsonl")
 def count_lines(filepath: Path) -> int:
     """
     Count lines in a file for progress bar total.
-    
+
     For very large files, this adds startup time but makes the progress
     bar much more useful. On a 13GB file, expect ~30-60 seconds.
     """
@@ -80,28 +80,28 @@ def count_lines(filepath: Path) -> int:
 def process_line(line: str, stats: ProcessingStats) -> dict | None:
     """
     Process a single JSON line from raw input.
-    
+
     Args:
         line: Raw JSON string (one comment)
         stats: ProcessingStats object to update
-        
+
     Returns:
         Extracted comment dict if valid, None if rejected
     """
     stats.total_processed += 1
-    
+
     # Parse JSON
     try:
         comment = json.loads(line)
     except json.JSONDecodeError:
         stats.rejected_malformed += 1
         return None
-    
+
     # Validate body
     if not has_valid_body(comment):
         stats.rejected_body += 1
         return None
-    
+
     # Extract fields and accept
     stats.accepted += 1
     return extract_fields(comment)
@@ -115,18 +115,18 @@ def process_file(
 ) -> tuple[ProcessingStats, float]:
     """
     Stream process a raw JSONL file into cleaned output.
-    
+
     Args:
         input_path: Path to raw JSONL file
         output_path: Path to write cleaned JSONL
         limit: Optional max lines to process (for testing)
         skip_line_count: Skip counting lines (faster start, no progress %)
-        
+
     Returns:
         Tuple of (ProcessingStats, elapsed_seconds)
     """
     stats = ProcessingStats()
-    
+
     # Get total for progress bar (unless skipped or limited)
     if limit:
         total = limit
@@ -134,36 +134,35 @@ def process_file(
         total = None
     else:
         total = count_lines(input_path)
-    
+
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     logger.info(f"Processing {input_path.name}...")
-    
+
     start_time = time.time()
-    
+
     with open(input_path, "r") as f_in, open(output_path, "w") as f_out:
-        
         # tqdm wraps the file iterator for progress tracking
         lines = tqdm(f_in, total=total, desc="Processing", unit=" lines")
-        
+
         for i, line in enumerate(lines):
             # Check limit
             if limit and i >= limit:
                 break
-            
+
             # Skip empty lines
             line = line.strip()
             if not line:
                 continue
-            
+
             # Process and write if valid
             result = process_line(line, stats)
             if result:
                 f_out.write(json.dumps(result) + "\n")
-    
+
     elapsed = time.time() - start_time
-    
+
     return stats, elapsed
 
 
@@ -203,12 +202,12 @@ def main() -> None:
         help="Skip counting lines (faster start, but no progress percentage)",
     )
     args = parser.parse_args()
-    
+
     # Validate input exists
     if not args.input.exists():
         logger.error(f"Input file not found: {args.input}")
         sys.exit(1)
-    
+
     # Log configuration
     logger.info("=" * 60)
     logger.info("Clean Raw Comments")
@@ -218,10 +217,10 @@ def main() -> None:
     if args.limit:
         logger.info(f"Limit:  {args.limit:,} lines")
     logger.info("=" * 60)
-    
+
     # Get input size before processing
     input_size = args.input.stat().st_size
-    
+
     # Process
     stats, elapsed = process_file(
         input_path=args.input,
@@ -229,12 +228,12 @@ def main() -> None:
         limit=args.limit,
         skip_line_count=args.skip_line_count,
     )
-    
+
     # Get output size
     output_size = args.output.stat().st_size if args.output.exists() else 0
     size_reduction = (1 - output_size / input_size) * 100 if input_size > 0 else 0
     throughput = stats.total_processed / elapsed if elapsed > 0 else 0
-    
+
     # Report results
     logger.info("=" * 60)
     logger.info("Processing Complete")
@@ -243,11 +242,11 @@ def main() -> None:
     logger.info(f"Accepted:             {stats.accepted:,}")
     logger.info(f"Rejected (body):      {stats.rejected_body:,}")
     logger.info(f"Rejected (malformed): {stats.rejected_malformed:,}")
-    
+
     if stats.total_processed > 0:
         acceptance_rate = (stats.accepted / stats.total_processed) * 100
         logger.info(f"Acceptance rate:      {acceptance_rate:.2f}%")
-    
+
     logger.info("")
     logger.info(f"Input size:           {format_size(input_size)}")
     logger.info(f"Output size:          {format_size(output_size)}")

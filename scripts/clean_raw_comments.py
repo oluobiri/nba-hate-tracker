@@ -36,6 +36,7 @@ from scripts.extract_filter import (
     extract_fields,
 )
 from utils.formatting import format_duration, format_size
+from utils.paths import get_filtered_dir, get_raw_dir
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -50,11 +51,11 @@ logger = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
-# Default paths
+# Default filenames (directories come from utils/paths)
 # -----------------------------------------------------------------------------
 
-DEFAULT_INPUT = Path("data/raw/r_nba_comments.jsonl")
-DEFAULT_OUTPUT = Path("data/filtered/r_nba_cleaned.jsonl")
+DEFAULT_INPUT_FILENAME = "r_nba_comments.jsonl"
+DEFAULT_OUTPUT_FILENAME = "r_nba_cleaned.jsonl"
 
 
 # -----------------------------------------------------------------------------
@@ -173,6 +174,10 @@ def process_file(
 
 def main() -> None:
     """Main entry point with CLI argument handling."""
+    # Resolve default paths at runtime
+    default_input = get_raw_dir() / DEFAULT_INPUT_FILENAME
+    default_output = get_filtered_dir() / DEFAULT_OUTPUT_FILENAME
+
     parser = argparse.ArgumentParser(
         description="Clean raw Reddit comments: validate bodies, extract fields"
     )
@@ -180,15 +185,15 @@ def main() -> None:
         "input",
         type=Path,
         nargs="?",
-        default=DEFAULT_INPUT,
-        help=f"Path to raw JSONL file (default: {DEFAULT_INPUT})",
+        default=None,
+        help=f"Path to raw JSONL file (default: {default_input})",
     )
     parser.add_argument(
         "output",
         type=Path,
         nargs="?",
-        default=DEFAULT_OUTPUT,
-        help=f"Path to write cleaned JSONL output (default: {DEFAULT_OUTPUT})",
+        default=None,
+        help=f"Path to write cleaned JSONL output (default: {default_output})",
     )
     parser.add_argument(
         "--limit",
@@ -202,6 +207,12 @@ def main() -> None:
         help="Skip counting lines (faster start, but no progress percentage)",
     )
     args = parser.parse_args()
+
+    # Apply defaults after parsing (so DATA_DIR is respected)
+    if args.input is None:
+        args.input = default_input
+    if args.output is None:
+        args.output = default_output
 
     # Validate input exists
     if not args.input.exists():

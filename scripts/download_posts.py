@@ -16,21 +16,18 @@ Usage:
 import argparse
 import json
 import logging
-import os
 import time
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from pipeline.arctic_shift import ArcticShiftClient
 from utils.constants import (
     PRIMARY_SUBREDDIT,
-    RAW_DATA_SUBDIR,
     SEASON_END_DATE,
     SEASON_START_DATE,
 )
 from utils.formatting import format_duration
+from utils.paths import get_raw_dir
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -47,18 +44,6 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
-def get_data_dir() -> Path:
-    """
-    Get the data directory from environment or use default.
-
-    Returns:
-        Path to data directory.
-    """
-    load_dotenv()
-    data_dir = os.getenv("DATA_DIR", "./data")
-    return Path(data_dir)
-
-
 def date_to_epoch(date_str: str) -> int:
     """
     Convert ISO date string to Unix timestamp.
@@ -142,8 +127,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Setup paths
-    data_dir = get_data_dir()
-    raw_dir = data_dir / RAW_DATA_SUBDIR
+    raw_dir = get_raw_dir()
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     output_path = raw_dir / f"r_{PRIMARY_SUBREDDIT}_posts.jsonl"

@@ -35,25 +35,22 @@ Known limitations:
 import argparse
 import json
 import logging
-import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
 from pipeline.arctic_shift import ArcticShiftClient
 from utils.constants import (
     ARCTIC_SHIFT_PAGE_SIZE,
     PROGRESS_FILENAME,
-    RAW_DATA_SUBDIR,
     SEASON_END_DATE,
     SEASON_START_DATE,
     TARGET_SUBREDDITS,
 )
 from utils.formatting import format_duration
+from utils.paths import get_raw_dir
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -70,20 +67,6 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
-def get_data_dir() -> Path:
-    """
-    Get the data directory from environment or use default.
-
-    Why environment variable?
-    - Your laptop might use ./data
-    - A server might use /mnt/efs/data
-    - Keeps infrastructure config separate from code
-    """
-    load_dotenv()
-    data_dir = os.getenv("DATA_DIR", "./data")
-    return Path(data_dir)
-
-
 def date_to_epoch(date_str: str) -> int:
     """
     Convert ISO date string to Unix timestamp.
@@ -221,8 +204,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Setup paths
-    data_dir = get_data_dir()
-    raw_dir = data_dir / RAW_DATA_SUBDIR
+    raw_dir = get_raw_dir()
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     progress_path = raw_dir / PROGRESS_FILENAME

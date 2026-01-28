@@ -6,9 +6,11 @@ for processing Reddit comments through multiple validation stages.
 """
 
 import logging
+import re
 from collections.abc import Callable
 
 from utils.constants import INVALID_BODY_VALUES, REQUIRED_FIELDS
+from utils.player_config import load_player_config
 
 logger = logging.getLogger(__name__)
 
@@ -136,3 +138,90 @@ class CommentPipeline:
         """Reset all statistics to zero."""
         for key in self._stats:
             self._stats[key] = 0
+
+
+# -----------------------------------------------------------------------------
+# Player mention matching
+# -----------------------------------------------------------------------------
+
+# Module-level lazy initialization (cached)
+_player_patterns: tuple[dict, frozenset, dict] | None = None
+
+
+def _get_player_patterns() -> tuple[dict, frozenset, dict]:
+    """
+    Load config and compile patterns once.
+
+    Returns:
+        Tuple of (players dict, short_aliases frozenset, compiled patterns dict).
+    """
+    global _player_patterns
+    if _player_patterns is None:
+        players, short_aliases = load_player_config()
+        boundary_patterns = {
+            alias: re.compile(r"\b" + re.escape(alias) + r"\b", re.IGNORECASE)
+            for alias in short_aliases
+        }
+        _player_patterns = (players, short_aliases, boundary_patterns)
+    return _player_patterns
+
+
+def find_player_mentions(text: str) -> list[str]:
+    """
+    Find all player mentions in text.
+
+    Uses simple substring matching for most aliases, and word boundary
+    matching for short aliases (like 'AD', 'Curry') to avoid false positives.
+
+    Args:
+        text: Text to search for player mentions.
+
+    Returns:
+        List of player names found (deduplicated).
+    """
+    if not text:
+        return []
+
+    players, short_aliases, patterns = _get_player_patterns()
+    text_lower = text.lower()
+    found = []
+
+    for player, aliases in players.items():
+        for alias in aliases:
+            alias_lower = alias.lower()
+            if alias_lower in short_aliases:
+                # Use word boundary matching for short aliases
+                if patterns[alias_lower].search(text):
+                    found.append(player)
+                    break
+            else:
+                # Simple substring match for longer aliases
+                if alias_lower in text_lower:
+                    found.append(player)
+                    break
+
+    return found
+
+
+def filter_player_mentions(comment: dict) -> dict | None:
+    """
+    Filter to comments mentioning tracked players.
+
+    StepFn-compatible: returns None if no mentions, otherwise
+    returns comment with 'mentioned_players' field added.
+
+    Args:
+        comment: Comment dict with 'body' field.
+
+    Returns:
+        Comment with mentioned_players field, or None if no mentions.
+    """
+    body = comment.get("body", "")
+    players = find_player_mentions(body)
+
+    if not players:
+        return None
+
+    result = comment.copy()
+    result["mentioned_players"] = players
+    return result

@@ -333,3 +333,66 @@ def mock_rate_limited_response(mock_api_response) -> Callable[[int, int, int], M
         return mock_api_response(data=data, headers=headers)
 
     return _create_response
+
+
+# ---------------------------------------------------------------------------
+# Player mention fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def player_mention_comment() -> dict:
+    """Comment that mentions a tracked player (LeBron)."""
+    return {
+        "id": "player123",
+        "body": "LeBron is washed, can't believe we traded for him",
+        "author": "hoopsfan42",
+        "author_flair_text": "Lakers",
+        "author_flair_css_class": "lakers",
+        "subreddit": "nba",
+        "created_utc": 1709251200,
+        "score": 42,
+        "controversiality": 0,
+        "parent_id": "t1_xyz789",
+        "link_id": "t3_post123",
+    }
+
+
+@pytest.fixture
+def no_player_mention_comment() -> dict:
+    """Comment with no tracked player mentions."""
+    return {
+        "id": "noplayer456",
+        "body": "Great game last night, really exciting finish",
+        "author": "casualfan",
+        "author_flair_text": None,
+        "author_flair_css_class": None,
+        "subreddit": "nba",
+        "created_utc": 1709251200,
+        "score": 10,
+        "controversiality": 0,
+        "parent_id": "t1_aaa111",
+        "link_id": "t3_post456",
+    }
+
+
+@pytest.fixture
+def short_alias_false_positive_comment() -> dict:
+    """
+    Comment with words containing short aliases as substrings.
+
+    Tests word boundary matching - 'AD' should not match 'advertisement'.
+    """
+    return {
+        "id": "falsepos789",
+        "body": "This advertisement for java programming is bad",
+        "author": "techfan",
+        "author_flair_text": None,
+        "author_flair_css_class": None,
+        "subreddit": "nba",
+        "created_utc": 1709251200,
+        "score": 5,
+        "controversiality": 0,
+        "parent_id": "t1_bbb222",
+        "link_id": "t3_post789",
+    }

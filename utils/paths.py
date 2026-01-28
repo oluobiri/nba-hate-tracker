@@ -13,7 +13,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from utils.constants import FILTERED_DATA_SUBDIR, RAW_DATA_SUBDIR
+from utils.constants import (
+    RAW_DATA_SUBDIR,
+    FILTERED_DATA_SUBDIR,
+    BATCHES_DATA_SUBDIR,
+    PROCESSED_DATA_SUBDIR,
+    DASHBOARD_DATA_SUBDIR,
+)
 
 
 def get_data_dir() -> Path:
@@ -49,3 +55,33 @@ def get_filtered_dir() -> Path:
         Path to filtered data directory (e.g., data/filtered/).
     """
     return get_data_dir() / FILTERED_DATA_SUBDIR
+
+
+def get_batches_dir() -> Path:
+    """
+    Get batches directory for Anthropic API requests/responses.
+    
+    Returns:
+        Path to batches directory (e.g, data/batches/)
+    """
+    return get_data_dir() / BATCHES_DATA_SUBDIR
+
+
+def get_processed_dir() -> Path:
+    """
+    Get processed directory for parsed sentiment results.
+    
+    Returns:
+        Path to processed sentiment data directory (e.g, data/processed/)
+    """
+    return get_data_dir() / PROCESSED_DATA_SUBDIR
+
+
+def get_dashboard_dir() -> Path:
+    """
+    Get dashboard directory for precomputed aggregates.
+    
+    Returns:
+        Path to dashboard directory (e.g, data/dashboard/)
+    """
+    return get_data_dir() / DASHBOARD_DATA_SUBDIR

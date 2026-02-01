@@ -396,3 +396,65 @@ def short_alias_false_positive_comment() -> dict:
         "parent_id": "t1_bbb222",
         "link_id": "t3_post789",
     }
+
+
+# ---------------------------------------------------------------------------
+# Batch API / Sentiment response fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def valid_sentiment_responses() -> list[tuple[str, dict]]:
+    """
+    Valid JSON responses from sentiment classification.
+
+    Returns list of (raw_response, expected_parsed) tuples.
+    """
+    return [
+        (
+            '{"s": "pos", "c": 0.95, "p": "LeBron James"}',
+            {"s": "pos", "c": 0.95, "p": "LeBron James"},
+        ),
+        (
+            '{"s": "neg", "c": 0.8, "p": "Russell Westbrook"}',
+            {"s": "neg", "c": 0.8, "p": "Russell Westbrook"},
+        ),
+        (
+            '{"s": "neu", "c": 0.6, "p": null}',
+            {"s": "neu", "c": 0.6, "p": None},
+        ),
+        (
+            '{"s": "pos", "c": 0.9, "p": null}',
+            {"s": "pos", "c": 0.9, "p": None},
+        ),
+    ]
+
+
+@pytest.fixture
+def markdown_wrapped_responses() -> list[tuple[str, str, str | None]]:
+    """
+    Responses wrapped in markdown code blocks.
+
+    Returns list of (raw_response, expected_sentiment, expected_player) tuples.
+    """
+    return [
+        ('```json\n{"s": "pos", "c": 0.9, "p": "LeBron James"}\n```', "pos", "LeBron James"),
+        ('```\n{"s": "neg", "c": 0.75, "p": null}\n```', "neg", None),
+        ('```json{"s": "neu", "c": 0.5, "p": "Curry"}```', "neu", "Curry"),
+    ]
+
+
+@pytest.fixture
+def malformed_responses() -> list[str]:
+    """
+    Malformed responses that should return error dicts.
+
+    Includes: non-JSON, wrong field names, invalid values, etc.
+    """
+    return [
+        "not json at all",
+        '{"sentiment": "positive"}',  # Wrong field names
+        '{"s": "invalid", "c": 0.5}',  # Invalid sentiment value
+        "{malformed json",
+        "[]",  # Array instead of object
+    ]

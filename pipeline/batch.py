@@ -292,3 +292,59 @@ def get_batch_status(batch_id: str) -> dict:
         "ended_at": batch.ended_at.isoformat() if batch.ended_at else None,
         "results_url": batch.results_url,
     }
+
+
+def download_results(batch_id: str) -> list[dict]:
+    """
+    Download results for a completed batch.
+
+    Iterates through batch results and extracts relevant fields based on
+    result type (succeeded, errored, canceled, expired).
+
+    Args:
+        batch_id: The Anthropic batch ID (e.g., "msgbatch_...").
+
+    Returns:
+        List of result dicts, each containing:
+        - custom_id: str - The custom ID from the original request
+        - result_type: str - "succeeded", "errored", "canceled", or "expired"
+        - content: str - Model response text (if succeeded)
+        - input_tokens: int - Input token count (if succeeded)
+        - output_tokens: int - Output token count (if succeeded)
+        - error: str - Error message (if errored)
+
+    Raises:
+        RuntimeError: If API call fails.
+    """
+    client = anthropic.Anthropic()
+
+    results = []
+    try:
+        for entry in client.messages.batches.results(batch_id):
+            result = {"custom_id": entry.custom_id, "result_type": entry.result.type}
+
+            if entry.result.type == "succeeded":
+                message = entry.result.message
+                if not message.content:
+                    result["result_type"] = "errored"
+                    result["error"] = "Empty content array from API"
+                else:
+                    result["content"] = message.content[0].text
+                    result["input_tokens"] = message.usage.input_tokens
+                    result["output_tokens"] = message.usage.output_tokens
+            elif entry.result.type == "errored":
+                error = entry.result.error
+                result["error"] = f"{error.type}: {error.message}"
+            elif entry.result.type == "canceled":
+                result["error"] = "Request was canceled"
+            elif entry.result.type == "expired":
+                result["error"] = "Request expired before processing"
+
+            results.append(result)
+
+    except anthropic.APIError as e:
+        raise RuntimeError(
+            f"Anthropic API error downloading results for {batch_id}: {e}"
+        ) from e
+
+    return results

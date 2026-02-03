@@ -4,6 +4,7 @@ from .arctic_shift import ArcticShiftClient
 from .batch import (
     build_prompt,
     calculate_cost,
+    download_results,
     format_batch_request,
     get_batch_status,
     init_state,
@@ -19,6 +20,7 @@ __all__ = [
     "CommentPipeline",
     "build_prompt",
     "calculate_cost",
+    "download_results",
     "extract_fields",
     "format_batch_request",
     "get_batch_status",

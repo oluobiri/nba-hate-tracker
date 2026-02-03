@@ -102,3 +102,24 @@ def calculate_cost(input_tokens: int, output_tokens: int) -> float:
     input_cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MTOK
     output_cost = (output_tokens / 1_000_000) * OUTPUT_COST_PER_MTOK
     return input_cost + output_cost
+
+
+def format_batch_request(comment: dict) -> dict:
+    """
+    Format a comment into an Anthropic Batch API request.
+
+    Args:
+        comment: Comment dict with 'id' and 'body' fields.
+
+    Returns:
+        Batch request dict with custom_id and params.
+    """
+    return {
+        "custom_id": comment["id"],
+        "params": {
+            "model": MODEL,
+            "max_tokens": MAX_TOKENS,
+            "temperature": TEMPERATURE,
+            "messages": [{"role": "user", "content": build_prompt(comment["body"])}],
+        },
+    }

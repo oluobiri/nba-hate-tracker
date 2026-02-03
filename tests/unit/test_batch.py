@@ -2,7 +2,15 @@
 
 import pytest
 
-from pipeline.batch import build_prompt, calculate_cost, parse_response
+from pipeline.batch import (
+    MAX_TOKENS,
+    MODEL,
+    TEMPERATURE,
+    build_prompt,
+    calculate_cost,
+    format_batch_request,
+    parse_response,
+)
 
 
 class TestBuildPrompt:
@@ -115,3 +123,34 @@ class TestCalculateCost:
         """Verify cost with only output tokens."""
         cost = calculate_cost(input_tokens=0, output_tokens=1_000_000)
         assert cost == pytest.approx(2.50)
+
+
+class TestFormatBatchRequest:
+    """Tests for format_batch_request function."""
+
+    def test_returns_correct_structure(self, valid_nba_comment: dict):
+        """Verify output has custom_id and params keys."""
+        result = format_batch_request(valid_nba_comment)
+
+        assert "custom_id" in result
+        assert "params" in result
+        assert result["custom_id"] == valid_nba_comment["id"]
+
+    def test_params_has_required_fields(self, valid_nba_comment: dict):
+        """Verify params contains model, max_tokens, temperature, messages."""
+        result = format_batch_request(valid_nba_comment)
+        params = result["params"]
+
+        assert params["model"] == MODEL
+        assert params["max_tokens"] == MAX_TOKENS
+        assert params["temperature"] == TEMPERATURE
+        assert "messages" in params
+
+    def test_messages_contains_prompt(self, valid_nba_comment: dict):
+        """Verify messages array has user role with prompt."""
+        result = format_batch_request(valid_nba_comment)
+        messages = result["params"]["messages"]
+
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert valid_nba_comment["body"] in messages[0]["content"]

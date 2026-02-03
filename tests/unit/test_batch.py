@@ -1,5 +1,7 @@
 """Tests for pipeline.batch module."""
 
+import json
+
 import pytest
 
 from pipeline.batch import (
@@ -9,7 +11,10 @@ from pipeline.batch import (
     build_prompt,
     calculate_cost,
     format_batch_request,
+    init_state,
+    load_state,
     parse_response,
+    save_state,
 )
 
 
@@ -154,3 +159,160 @@ class TestFormatBatchRequest:
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
         assert valid_nba_comment["body"] in messages[0]["content"]
+
+
+class TestInitState:
+    """Tests for init_state function."""
+
+    def test_returns_correct_structure(self):
+        """Verify init_state returns dict with required keys."""
+        state = init_state()
+
+        assert "total_input_tokens" in state
+        assert "total_output_tokens" in state
+        assert "estimated_cost_usd" in state
+        assert "batches" in state
+
+        assert state["total_input_tokens"] == 0
+        assert state["total_output_tokens"] == 0
+        assert state["estimated_cost_usd"] == 0.0
+        assert state["batches"] == []
+
+    def test_returns_new_dict_each_call(self):
+        """Verify each call returns a new dict instance."""
+        state1 = init_state()
+        state2 = init_state()
+
+        assert state1 is not state2
+        assert state1["batches"] is not state2["batches"]
+
+        # Modifying one should not affect the other
+        state1["batches"].append({"test": "data"})
+        assert state2["batches"] == []
+
+
+class TestLoadState:
+    """Tests for load_state function."""
+
+    def test_returns_empty_state_when_file_missing(self, tmp_path):
+        """Verify load_state returns empty state when file doesn't exist."""
+        state_path = tmp_path / "nonexistent" / "state.json"
+
+        state = load_state(state_path)
+
+        assert state == init_state()
+
+    def test_loads_existing_state(self, tmp_path):
+        """Verify load_state correctly loads existing JSON file."""
+        state_path = tmp_path / "state.json"
+        expected_state = {
+            "total_input_tokens": 1000,
+            "total_output_tokens": 500,
+            "estimated_cost_usd": 1.25,
+            "batches": [
+                {
+                    "batch_num": 1,
+                    "batch_id": "msgbatch_123",
+                    "request_file": "batch_001.jsonl",
+                    "status": "ended",
+                }
+            ],
+        }
+
+        with open(state_path, "w") as f:
+            json.dump(expected_state, f)
+
+        state = load_state(state_path)
+
+        assert state == expected_state
+
+    def test_adds_missing_keys_to_corrupted_state(self, tmp_path):
+        """Verify load_state adds default values for missing keys."""
+        state_path = tmp_path / "state.json"
+        # Simulate corrupted state file with missing keys
+        corrupted_state = {
+            "batches": [{"batch_id": "msgbatch_123"}],
+            # Missing: total_input_tokens, total_output_tokens, estimated_cost_usd
+        }
+
+        with open(state_path, "w") as f:
+            json.dump(corrupted_state, f)
+
+        state = load_state(state_path)
+
+        # Should have all required keys with defaults for missing ones
+        assert state["batches"] == [{"batch_id": "msgbatch_123"}]
+        assert state["total_input_tokens"] == 0
+        assert state["total_output_tokens"] == 0
+        assert state["estimated_cost_usd"] == 0.0
+
+
+class TestSaveState:
+    """Tests for save_state function."""
+
+    def test_creates_file(self, tmp_path):
+        """Verify save_state creates the state file."""
+        state_path = tmp_path / "state.json"
+        state = init_state()
+
+        save_state(state, state_path)
+
+        assert state_path.exists()
+
+    def test_creates_parent_directories(self, tmp_path):
+        """Verify save_state creates parent directories if missing."""
+        state_path = tmp_path / "nested" / "deep" / "state.json"
+        state = init_state()
+
+        save_state(state, state_path)
+
+        assert state_path.exists()
+
+    def test_writes_valid_json(self, tmp_path):
+        """Verify save_state writes valid, readable JSON."""
+        state_path = tmp_path / "state.json"
+        state = {
+            "total_input_tokens": 5000,
+            "total_output_tokens": 2500,
+            "estimated_cost_usd": 3.75,
+            "batches": [
+                {"batch_id": "msgbatch_abc", "status": "in_progress"}
+            ],
+        }
+
+        save_state(state, state_path)
+
+        with open(state_path) as f:
+            loaded = json.load(f)
+
+        assert loaded == state
+
+    def test_atomic_write_no_partial_file(self, tmp_path):
+        """Verify atomic write doesn't leave partial files on success."""
+        state_path = tmp_path / "state.json"
+        state = init_state()
+
+        save_state(state, state_path)
+
+        # No .tmp files should remain
+        tmp_files = list(tmp_path.glob("*.tmp"))
+        assert tmp_files == []
+
+    def test_overwrites_existing_file(self, tmp_path):
+        """Verify save_state overwrites existing state file."""
+        state_path = tmp_path / "state.json"
+
+        # Write initial state
+        initial_state = init_state()
+        initial_state["total_input_tokens"] = 100
+        save_state(initial_state, state_path)
+
+        # Write updated state
+        updated_state = init_state()
+        updated_state["total_input_tokens"] = 9999
+        save_state(updated_state, state_path)
+
+        with open(state_path) as f:
+            loaded = json.load(f)
+
+        assert loaded["total_input_tokens"] == 9999

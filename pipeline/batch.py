@@ -14,7 +14,7 @@ import anthropic
 # Model configuration
 MODEL = "claude-haiku-4-5-20251001"
 TEMPERATURE = 0.0
-MAX_TOKENS = 50
+MAX_TOKENS = 75
 REQUESTS_PER_BATCH = 100_000
 
 # Batch API pricing (50% discount applied)
@@ -77,6 +77,12 @@ def parse_response(text: str) -> dict:
 
     try:
         result = json.loads(cleaned)
+
+        #  Handle array responses (multi-player comments) - take first element
+        if isinstance(result, list):
+            if len(result) == 0:
+                return {"s": "error", "c": 0.0, "p": None, "raw": text}
+            result = result[0]
 
         # Validate required fields
         if "s" not in result:
@@ -333,8 +339,8 @@ def download_results(batch_id: str) -> list[dict]:
                     result["input_tokens"] = message.usage.input_tokens
                     result["output_tokens"] = message.usage.output_tokens
             elif entry.result.type == "errored":
-                error = entry.result.error
-                result["error"] = f"{error.type}: {error.message}"
+                error_response = entry.result.error
+                result["error"] = f"{error_response.error.type}: {error_response.error.message}"
             elif entry.result.type == "canceled":
                 result["error"] = "Request was canceled"
             elif entry.result.type == "expired":

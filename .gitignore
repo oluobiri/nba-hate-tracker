@@ -28,8 +28,7 @@ build/
 Thumbs.db
 
 # Project specific
-data/raw/
-data/filtered/
+data/
 *.jsonl
 *.json
 *.csv

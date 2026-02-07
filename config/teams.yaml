@@ -1,0 +1,216 @@
+# NBA Team Configuration for Flair Normalization
+#
+# Legacy codes (NJN, MKE, etc.) appear in Reddit flair prefixes like :njn-1:
+# and are included as aliases for their current franchise.
+#
+# Excluded from mapping:
+#   - Country flairs (:AUS: Australia, :CAN: Canada, etc.)
+#   - Conference flairs (West, East, WC, EC)
+#   - League flairs (NBA, r/NBA)
+#   - Jersey numbers (23, 24, 15)
+#   - Seattle SuperSonics (distinct fanbase from OKC)
+#   - Disney bubble hotel flairs (GD, YC, SP8, GFL)
+#   - Multi-team flairs (Mavs & Magic)
+
+version: "1.0"
+season: "2024-25"
+
+teams:
+  Atlanta Hawks:
+    abbreviation: ATL
+    aliases:
+      - atl
+      - hawks
+
+  Boston Celtics:
+    abbreviation: BOS
+    aliases:
+      - bos
+      - celtics
+
+  Brooklyn Nets:
+    abbreviation: BKN
+    aliases:
+      - bkn
+      - brk
+      - njn
+      - nets
+      - new jersey nets
+
+  Charlotte Hornets:
+    abbreviation: CHA
+    aliases:
+      - cha
+      - cho
+      - hornets
+
+  Chicago Bulls:
+    abbreviation: CHI
+    aliases:
+      - chi
+      - bulls
+
+  Cleveland Cavaliers:
+    abbreviation: CLE
+    aliases:
+      - cle
+      - cavaliers
+      - cavs
+
+  Dallas Mavericks:
+    abbreviation: DAL
+    aliases:
+      - dal
+      - mavericks
+      - mavs
+
+  Denver Nuggets:
+    abbreviation: DEN
+    aliases:
+      - den
+      - nuggets
+
+  Detroit Pistons:
+    abbreviation: DET
+    aliases:
+      - det
+      - pistons
+
+  Golden State Warriors:
+    abbreviation: GSW
+    aliases:
+      - gsw
+      - warriors
+      - san francisco warriors
+
+  Houston Rockets:
+    abbreviation: HOU
+    aliases:
+      - hou
+      - rockets
+
+  Indiana Pacers:
+    abbreviation: IND
+    aliases:
+      - ind
+      - pacers
+
+  Los Angeles Clippers:
+    abbreviation: LAC
+    aliases:
+      - lac
+      - clippers
+      - san diego clippers
+
+  Los Angeles Lakers:
+    abbreviation: LAL
+    aliases:
+      - lal
+      - lakers
+
+  Memphis Grizzlies:
+    abbreviation: MEM
+    aliases:
+      - mem
+      - grizzlies
+      - vancouver grizzlies
+
+  Miami Heat:
+    abbreviation: MIA
+    aliases:
+      - mia
+      - heat
+
+  Milwaukee Bucks:
+    abbreviation: MIL
+    aliases:
+      - mil
+      - mke
+      - bucks
+
+  Minnesota Timberwolves:
+    abbreviation: MIN
+    aliases:
+      - min
+      - timberwolves
+      - wolves
+
+  New Orleans Pelicans:
+    abbreviation: NOP
+    aliases:
+      - nop
+      - nol
+      - pelicans
+
+  New York Knicks:
+    abbreviation: NYK
+    aliases:
+      - nyk
+      - knicks
+
+  Oklahoma City Thunder:
+    abbreviation: OKC
+    aliases:
+      - okc
+      - thunder
+
+  Orlando Magic:
+    abbreviation: ORL
+    aliases:
+      - orl
+      - magic
+
+  Philadelphia 76ers:
+    abbreviation: PHI
+    aliases:
+      - phi
+      - 76ers
+      - sixers
+
+  Phoenix Suns:
+    abbreviation: PHX
+    aliases:
+      - phx
+      - pho
+      - suns
+
+  Portland Trail Blazers:
+    abbreviation: POR
+    aliases:
+      - por
+      - pdx
+      - trail blazers
+      - blazers
+
+  Sacramento Kings:
+    abbreviation: SAC
+    aliases:
+      - sac
+      - kings
+
+  San Antonio Spurs:
+    abbreviation: SAS
+    aliases:
+      - sas
+      - spurs
+
+  Toronto Raptors:
+    abbreviation: TOR
+    aliases:
+      - tor
+      - tbr
+      - raptors
+      - tampa bay raptors
+
+  Utah Jazz:
+    abbreviation: UTA
+    aliases:
+      - uta
+      - jazz
+
+  Washington Wizards:
+    abbreviation: WAS
+    aliases:
+      - was
+      - wizards
+      - bullets

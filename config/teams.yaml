@@ -124,7 +124,7 @@ teams:
 
   Memphis Grizzlies:
     abbreviation: MEM
-    conference: East
+    conference: West
     aliases:
       - mem
       - grizzlies
@@ -132,7 +132,7 @@ teams:
 
   Miami Heat:
     abbreviation: MIA
-    conference: West
+    conference: East
     aliases:
       - mia
       - heat

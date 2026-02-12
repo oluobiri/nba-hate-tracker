@@ -1,5 +1,6 @@
 """Pipeline module for data processing."""
 
+from .aggregation import aggregate_sentiment
 from .arctic_shift import ArcticShiftClient
 from .batch import (
     build_prompt,
@@ -17,6 +18,7 @@ from .processors import CommentPipeline, extract_fields, has_valid_body
 
 __all__ = [
     "ArcticShiftClient",
+    "aggregate_sentiment",
     "CommentPipeline",
     "build_prompt",
     "calculate_cost",

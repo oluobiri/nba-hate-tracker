@@ -1,7 +1,7 @@
 # NBA Player Aliases for Hate Detection
 # Optimized: shortest unique fragments + non-overlapping nicknames only
 
-version: "1.1"
+version: "1.2"
 season: "2024-25"
 
 # Aliases requiring word boundary matching (\b) to avoid false positives
@@ -14,31 +14,43 @@ short_aliases:
   - dg
   - ja
   - jp
+  - jt
   - kd
   - og
+  - pb
   - pg
-  # Short words/names
-  - ant
-  - bam
-  - book
-  - dame
-  - fox
-  - kat
-  - sga
   - zo
   - zu
   - tt
+  # Three-letter
+  - ant
+  - alp
+  - abe
+  - bam
+  - ben
+  - jjj
+  - mpj
+  - naz
+  - rui
+  - sga
+  # Short words/names
+  - amen
+  - book
+  - bron
+  - dame
+  - dort
+  - fox
+  - kat
   - the greek
+  - russ
   # Common words (need boundaries)
   - curry
   - smart
   - green
   - brown
-  - wall
   - hart
   # Common names (need boundaries)
   - davis
-  - james
   - george
   - paul
   - mitchell
@@ -47,10 +59,8 @@ short_aliases:
   - gordon
   - turner
   - holiday
-  - howard
   - leonard
   - jordan
-  - rose
 
 players:
   # Alphabetical by last name
@@ -64,16 +74,15 @@ players:
     - greek freak
     - alphabet
     - the greek
-    # Negative (no giannis substring)
-    - freethrow merchant
-
-  Carmelo Anthony:
-    - melo
-    - me7o
+    - antetokounmpo
 
   OG Anunoby:
     - anunoby
     - og
+
+  Deandre Ayton:
+    - deandre ayton
+    - ayton
 
   Marvin Bagley III:
     - bagley
@@ -95,10 +104,18 @@ players:
 
   Desmond Bane:
     - bane
+    - desmond
+
+  Harrison Barnes:
+    - harrison barnes
 
   Scottie Barnes:
     - barnes
     - scottie
+
+  Bradley Beal:
+    - bradley beal
+    - beal
 
   Patrick Beverley:
     - beverley
@@ -125,19 +142,17 @@ players:
   Jaylen Brown:
     - jaylen brown
     - jaylen
-    - jb
     # Negative
     - robin to tatum
 
   Jalen Brunson:
     - brunson
-    - jb
 
   Jimmy Butler:
     - jimmy butler
     - butler
     - jimmy buckets
-    - buckets
+    - jimmy g
     - himmy
     # Negative
     - toxic jimmy
@@ -152,12 +167,19 @@ players:
     - bald mamba
     - carushow
 
+  Mike Conley:
+    - mike conley
+    - conley
+    - bite bite
+
   Stephen Curry:
     - steph
+    - steph curry
     - curry
     - wardell
     - chef curry
     - skyfucker
+    - baby faced assassin
     # Negative
     - stephew
     - gravity merchant
@@ -165,6 +187,7 @@ players:
   Cade Cunningham:
     - cunningham
     - cade
+    - motorcade
 
   Anthony Davis:
     - ad
@@ -176,13 +199,17 @@ players:
     - street clothes
     - day to davis
     - day-to-davis
-    - bubble champion
 
   DeMar DeRozan:
     - derozan
     - demar
     - debo
     - compton's finest
+
+  Donte DiVincenzo:
+    - donte divincenzo
+    - divincenzo
+    - donte
 
   Luka Doncic:
     - luka
@@ -194,6 +221,11 @@ players:
     - chubby luka
     - whiny luka
 
+  Lu Dort:
+    - lu dort
+    - dort
+    - luguentz
+
   Kevin Durant:
     - kd
     - durant
@@ -203,19 +235,24 @@ players:
     # Negative
     - cupcake
     - snake
-    - bus rider
+
+  Zach Edey:
+    - zach edey
+    - edey
 
   Anthony Edwards:
     - ant
     - edwards
     - antman
+    - ant edwards
+    - ant-man
     - a1 from day 1
 
   Joel Embiid:
     - embiid
+    - joel
     - the process
     - jojo
-    - do a 180
     - troel
     # Negative
     - jobiid
@@ -229,7 +266,6 @@ players:
 
   Evan Fournier:
     - fournier
-    - dont google
 
   Darius Garland:
     - garland
@@ -246,6 +282,12 @@ players:
     - wayoff p
     - pushoff p
 
+  Josh Giddey:
+    - josh giddey
+    - giddey
+    - slob wizard
+    - himothee chalamet
+
   Shai Gilgeous-Alexander:
     - sga
     - shai
@@ -256,18 +298,17 @@ players:
     - rudy
     - stifle tower
     - gobzilla
-    # Negative
     - rudymentary
-    - covid rudy
-    - microphone rudy
 
   Aaron Gordon:
     - aaron gordon
     - gordon
 
+  Jalen Green:
+    - jalen green
+
   Draymond Green:
     - draymond
-    - green
     - dray
     - bdd
     - day day
@@ -275,6 +316,11 @@ players:
     - donkey
     - nut puncher
     - triple single
+
+  Rui Hachimura:
+    - rui hachimura
+    - rui
+    - hachimura
 
   Tyrese Haliburton:
     - haliburton
@@ -290,6 +336,10 @@ players:
     - james soften
     - literally hitler
 
+  Tobias Harris:
+    - tobias harris
+    - tobias
+
   Josh Hart:
     - hart
 
@@ -301,20 +351,26 @@ players:
     - herro
     - boy wonder
 
+  Buddy Hield:
+    - buddy hield
+    - hield
+    - buddy love
+    - buddy buckets
+
   Chet Holmgren:
     - chet
     - holmgren
-    - unicorn
+    - abe
+    - abraham
+    - lincoln
 
   Jrue Holiday:
     - jrue
     - holiday
 
-  Dwight Howard:
-    - dwight
-    - howard
-    - superman
-    - d12
+  Al Horford:
+    - al horford
+    - horford
 
   Brandon Ingram:
     - ingram
@@ -333,14 +389,21 @@ players:
     - mr sage
     - third eye
     - antisemite
-    - antivaxxer
-    - anti vax
+
+  Jaren Jackson Jr:
+    - jaren jackson
+    - jjj
+    - triple j
+
+  Bronny James:
+    - bronny james
+    - bronny
+    - lenepo
 
   LeBron James:
     - lebron
     - bron
     - lbj
-    - james
     - the king
     - chosen one
     # Negative (le- prefix variants don't contain "lebron")
@@ -358,7 +421,7 @@ players:
     - leturnover
     - legoat
     - washed king
-    - china bron
+    - king james
 
   Nikola Jokic:
     - jokic
@@ -370,6 +433,11 @@ players:
   Tre Jones:
     - tre jones
 
+  Jonathan Kuminga:
+    - kuminga
+    - jonathan kuminga
+    - kum bucket
+
   Caris LeVert:
     - levert
     - caris
@@ -380,9 +448,6 @@ players:
     - the klaw
     - board man
     - fun guy
-    # Negative
-    - load management
-    - robot kawhi
 
   Damian Lillard:
     - lillard
@@ -404,6 +469,11 @@ players:
     - lopez
     - splash mountain
 
+  Lauri Markkanen:
+    - lauri markkanen
+    - markkanen
+    - lauri
+
   Tyrese Maxey:
     - maxey
 
@@ -420,6 +490,10 @@ players:
     - mitchell
     - spida
 
+  Evan Mobley:
+    - evan mobley
+    - mobley
+
   Ja Morant:
     - morant
     - ja
@@ -429,19 +503,23 @@ players:
     - ja moron
     - moron-t
 
+  Keegan Murray:
+    - keegan murray
+    - keegan
+
   Dejounte Murray:
     - dejounte
-    - murray
 
   Jamal Murray:
     - jamal murray
     - jamal
     - blue arrow
+    - maple curry
 
   Chris Paul:
     - cp3
     - cp
-    - paul
+    - chris paul
     - point god
     # Negative
     - dirty cp3
@@ -453,11 +531,16 @@ players:
     - jp
     - poole party
 
+  Michael Porter Jr:
+    - michael porter
+    - mpj
+    - porter jr
+    - never swing the rock
+
   Kristaps Porzingis:
     - porzingis
     - kristaps
     - kp
-    - unicorn
     - tingus pingus
 
   Bobby Portis:
@@ -473,21 +556,18 @@ players:
     - reaves
     - ar15
     - hillbilly kobe
-    # Negative
-    - white boy hype
 
-  Rajon Rondo:
-    - rondo
-    - playoff rondo
-    - connect four
+  Naz Reid:
+    - naz reid
+    - naz
 
-  Derrick Rose:
-    - drose
-    - rose
+  Mitchell Robinson:
+    - mitchell robinson
+    - mitch rob
 
   D'Angelo Russell:
     - dlo
-    - russell
+    - d'angelo
     - ice in my veins
     # Negative
     - snitch russell
@@ -499,6 +579,7 @@ players:
   Alperen Sengun:
     - sengun
     - alperen
+    - alperen şengün
     - alp
 
   Pascal Siakam:
@@ -509,15 +590,14 @@ players:
 
   Ben Simmons:
     - simmons
-    - young socialite
+    - ben
+    - fresh prince
     # Negative
     - socialite
-    - pass up dunk
-    - phantom injury
 
   Marcus Smart:
-    - smart
-    - marcus
+    - marcus smart
+    - marcus dumb
 
   Jalen Smith:
     - jalen smith
@@ -526,13 +606,18 @@ players:
   Jayson Tatum:
     - tatum
     - jt
-    - the problem
-    # Negative
-    - hero ball tatum
+    - jayson
+
+  Amen Thompson:
+    - amen thompson
+    - amen
+
+  Ausar Thompson:
+    - ausar thompson
+    - ausar
 
   Klay Thompson:
     - klay
-    - thompson
     - splash brother
     - game 6 klay
     - china klay
@@ -542,15 +627,10 @@ players:
   Karl-Anthony Towns:
     - towns
     - kat
-    # Negative
-    - charmin
-
-  Evan Turner:
-    - evan turner
-    - turner
+    - karl-anthony
 
   Myles Turner:
-    - myles turner
+    - turner
     - myles
 
   Fred VanVleet:
@@ -566,19 +646,12 @@ players:
     - vucevic
     - vooch
 
-  Kemba Walker:
-    - kemba
-    - cardiac kemba
-
-  John Wall:
-    - john wall
-    - wall
-    - j wall
-
   Victor Wembanyama:
     - wembanyama
+    - victor
     - wemby
-    - alien
+    - the alien
+    - the frenchise
 
   Russell Westbrook:
     - westbrook
@@ -590,14 +663,25 @@ players:
     - westbroke
     - no bbiq
 
+  Derrick White:
+    - derrick white
+
+  Aaron Wiggins:
+    - aaron wiggins
+
   Andrew Wiggins:
     - wiggins
     - wiggs
     # Negative
     - maple jordan
 
+  Jalen Williams:
+    - jalen williams
+    - j-dub
+
   Zion Williamson:
     - zion
+    - williamson
     - zanos
     - air gumbo
     # Negative

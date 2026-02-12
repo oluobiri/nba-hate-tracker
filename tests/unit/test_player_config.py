@@ -1,10 +1,10 @@
 """
 Tests for player configuration loading.
 
-Tests cover loading from YAML, caching behavior, and data structure validation.
+Tests cover loading from YAML, alias map building, and caching behavior.
 """
 
-from utils.player_config import load_player_config
+from utils.player_config import build_alias_to_player_map, load_player_config
 
 
 class TestLoadPlayerConfig:
@@ -67,3 +67,34 @@ class TestLoadPlayerConfig:
 
         # Should have dozens of players, but not thousands
         assert 30 < len(players) < 200
+
+
+class TestBuildAliasToPlayerMap:
+    """Tests for build_alias_to_player_map function."""
+
+    def test_returns_dict(self):
+        """Alias map is a dict."""
+        alias_map = build_alias_to_player_map()
+        assert isinstance(alias_map, dict)
+
+    def test_known_alias_resolves_to_canonical(self):
+        """A known alias maps to its canonical player name."""
+        alias_map = build_alias_to_player_map()
+        assert alias_map["jokic"] == "Nikola Jokic"
+
+    def test_canonical_name_lowercased_resolves(self):
+        """Canonical name itself (lowercased) resolves correctly."""
+        alias_map = build_alias_to_player_map()
+        assert alias_map["nikola jokic"] == "Nikola Jokic"
+
+    def test_lebron_alias_resolves(self):
+        """LeBron alias resolves to canonical name."""
+        alias_map = build_alias_to_player_map()
+        assert alias_map["lebron"] == "LeBron James"
+        assert alias_map["lbj"] == "LeBron James"
+
+    def test_caching_returns_same_object(self):
+        """Multiple calls return the same cached object."""
+        result1 = build_alias_to_player_map()
+        result2 = build_alias_to_player_map()
+        assert result1 is result2

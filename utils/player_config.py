@@ -37,3 +37,21 @@ def load_player_config() -> tuple[dict[str, list[str]], frozenset[str]]:
     )
 
     return players, short_aliases
+
+
+@lru_cache(maxsize=1)
+def build_alias_to_player_map() -> dict[str, str]:
+    """
+    Invert player aliases to map each alias to its canonical player name.
+
+    Returns:
+        Dict mapping lowercase alias to canonical player name.
+        Includes canonical names themselves as keys.
+    """
+    players, _ = load_player_config()
+    alias_map: dict[str, str] = {}
+    for player_name, aliases in players.items():
+        alias_map[player_name.lower()] = player_name
+        for alias in aliases:
+            alias_map[alias.lower()] = player_name
+    return alias_map

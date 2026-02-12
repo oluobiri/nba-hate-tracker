@@ -458,3 +458,52 @@ def malformed_responses() -> list[str]:
         "{malformed json",
         "[]",  # Array instead of object
     ]
+
+
+# ---------------------------------------------------------------------------
+# Alias map fixtures — for aggregation tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def player_alias_map() -> dict[str, str]:
+    """
+    Sample player alias map for testing attribution logic.
+
+    Maps lowercase aliases to canonical player names.
+    """
+    return {
+        "lebron james": "LeBron James",
+        "lebron": "LeBron James",
+        "lbj": "LeBron James",
+        "nikola jokic": "Nikola Jokic",
+        "jokic": "Nikola Jokic",
+        "ad": "Anthony Davis",
+        "ant": "Anthony Edwards",
+        "steph": "Stephen Curry",
+    }
+
+
+@pytest.fixture
+def team_alias_map() -> dict[str, str]:
+    """
+    Sample team alias map for testing flair extraction.
+
+    Maps lowercase aliases to canonical team names.
+    Includes a substring collision pair (nets/hornets) for regression testing.
+    """
+    return {
+        "los angeles lakers": "Los Angeles Lakers",
+        "lal": "Los Angeles Lakers",
+        "lakers": "Los Angeles Lakers",
+        "boston celtics": "Boston Celtics",
+        "bos": "Boston Celtics",
+        "celtics": "Boston Celtics",
+        "brooklyn nets": "Brooklyn Nets",
+        "bkn": "Brooklyn Nets",
+        "njn": "Brooklyn Nets",
+        "nets": "Brooklyn Nets",
+        "charlotte hornets": "Charlotte Hornets",
+        "cha": "Charlotte Hornets",
+        "hornets": "Charlotte Hornets",
+    }

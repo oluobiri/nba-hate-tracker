@@ -1,8 +1,9 @@
 # CLAUDE.md - NBA Hate Tracker
 
 **Project:** Sentiment analysis pipeline to answer "Who is r/NBA's most hated player?"  
+**Answer:** Draymond Green (51.0% negative rate, 23/30 fanbases agree)  
 **Budget:** $254.20 spent of $300 ceiling  
-**Phase:** 5 (Analytics & Aggregation)
+**Phase:** 6 (Visualization & Deployment)
 
 ---
 
@@ -10,18 +11,18 @@
 
 ```
 scripts/          → CLI entry points (download, filter, batch, aggregate)
-pipeline/         → Data processing (ArcticShiftClient, CommentPipeline, batch)
-utils/            → Stateless helpers (constants, formatting, paths, player_config)
-config/           → YAML configs (players.yaml, teams.yaml)
+pipeline/         → Data processing (ArcticShiftClient, CommentPipeline, batch, aggregation)
+utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
+config/           → YAML configs (players.yaml v1.2, teams.yaml)
 app/              → Streamlit dashboard
 tests/            → pytest (unit/, conftest.py)
-notebooks/        → EDA and exploration
+notebooks/        → EDA and exploration (01-06)
 data/             → Not committed
   ├── raw/        → Arctic Shift downloads
   ├── filtered/   → Cleaned + player-mention filtered
   ├── batches/    → Batch API requests/responses
-  ├── processed/  → sentiment.parquet (final output)
-  └── dashboard/  → Precomputed aggregates for Streamlit
+  ├── processed/  → sentiment.parquet (1.93M rows)
+  └── dashboard/  → aggregates.json (precomputed views)
 ```
 
 ## Commands
@@ -41,6 +42,9 @@ uv run pytest -x                     # Stop on first failure
 uv run ruff check .                  # Check
 uv run ruff check . --fix            # Auto-fix
 uv run ruff format .                 # Format
+
+# Streamlit
+uv run streamlit run app/streamlit_app.py  # Local dev
 ```
 
 ## Code Patterns
@@ -56,22 +60,23 @@ uv run ruff format .                 # Format
 **Never read directly (large files):**
 - `data/raw/*.jsonl` (12+ GB)
 - `data/filtered/*.jsonl` (2+ GB)
-- `data/processed/sentiment.parquet` (1.9M rows)
+- `data/processed/sentiment.parquet` (1.93M rows)
 - `data/batches/requests/*.jsonl`
 - `data/batches/responses/*.jsonl`
 
-**For schema inspection:** Use `head -3 <file> | python -m json.tool` or Polars sampling.
+**Dashboard input:**
+- `data/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load
 
-## Current State (Phase 5)
+## Current State (Phase 6)
 
 **Completed:**
-- 1.94M comments classified via Batch API
-- `data/processed/sentiment.parquet` ready for aggregation
-- 97.25% usable data (1.89M rows)
+- 1.57M comments attributed to 112 players
+- `aggregates.json` ready with 4 views: player_overall, player_temporal, player_team, team_overall
 
-**Next:**
-- `scripts/aggregate_sentiment.py` → player rankings, flair segmentation
-- `data/dashboard/aggregates.json` → precomputed metrics for Streamlit
+**Phase 6 Tracks:**
+1. **Bar Race (Flourish):** Animated neg_rate rankings over 40 weeks — Draymond overtaking Embiid is the hook
+2. **Dashboard (Streamlit):** Leaderboard, Flair View, Player Detail → deploy to Streamlit Cloud
+3. **r/NBA Post:** Bar race + key findings + dashboard link
 
 ## Rules
 

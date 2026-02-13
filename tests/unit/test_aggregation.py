@@ -7,7 +7,12 @@ and compute_metrics from the aggregation pipeline.
 
 import polars as pl
 
-from pipeline.aggregation import compute_metrics, extract_team_from_flair, resolve_player
+from pipeline.aggregation import (
+    aggregate_sentiment,
+    compute_metrics,
+    extract_team_from_flair,
+    resolve_player,
+)
 
 
 class TestResolvePlayer:
@@ -170,3 +175,140 @@ class TestComputeMetrics:
 
         results = compute_metrics(df, ["player", "team"])
         assert len(results) == 3
+
+
+def _make_test_parquet(tmp_path, rows):
+    """Create a minimal sentiment parquet for testing aggregate_sentiment."""
+    df = pl.DataFrame(rows)
+    path = tmp_path / "test_sentiment.parquet"
+    df.write_parquet(path)
+    return path
+
+
+class TestAggregatePlayerMetadata:
+    """Tests for player_metadata key in aggregate output."""
+
+    def test_player_metadata_key_exists(self, tmp_path):
+        """Output contains player_metadata top-level key."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["LeBron is great", "LeBron is washed"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [["LeBron James"], ["LeBron James"]],
+            "sentiment": ["pos", "neg"],
+            "confidence": [0.9, 0.8],
+            "sentiment_player": ["LeBron James", "LeBron James"],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+
+        assert "player_metadata" in result
+        assert isinstance(result["player_metadata"], dict)
+
+    def test_metadata_contains_attributed_players(self, tmp_path):
+        """player_metadata includes metadata for attributed players."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["LeBron is great", "LeBron is washed"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [["LeBron James"], ["LeBron James"]],
+            "sentiment": ["pos", "neg"],
+            "confidence": [0.9, 0.8],
+            "sentiment_player": ["LeBron James", "LeBron James"],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+        meta = result["player_metadata"]
+
+        assert "LeBron James" in meta
+        assert meta["LeBron James"]["team"] == "Los Angeles Lakers"
+        assert meta["LeBron James"]["conference"] == "West"
+        assert meta["LeBron James"]["player_id"] == 2544
+
+    def test_metadata_excludes_non_attributed_players(self, tmp_path):
+        """player_metadata only includes players that appear in player_overall."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1"],
+            "body": ["LeBron is great"],
+            "author": ["u1"],
+            "author_flair_text": [":lal-1: Lakers"],
+            "author_flair_css_class": ["lakers"],
+            "created_utc": [1704067200],
+            "score": [10],
+            "mentioned_players": [["LeBron James"]],
+            "sentiment": ["pos"],
+            "confidence": [0.9],
+            "sentiment_player": ["LeBron James"],
+            "input_tokens": [100],
+            "output_tokens": [20],
+        })
+
+        result = aggregate_sentiment(path)
+        meta = result["player_metadata"]
+
+        # Only LeBron attributed — Giannis should not be in metadata
+        assert "LeBron James" in meta
+        assert "Giannis Antetokounmpo" not in meta
+
+
+class TestAggregateTeamConference:
+    """Tests for conference field in team_overall rows."""
+
+    def test_team_overall_has_conference(self, tmp_path):
+        """Each team_overall row has a conference field."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["Go team", "Nice game"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [[], []],
+            "sentiment": ["pos", "neu"],
+            "confidence": [0.9, 0.7],
+            "sentiment_player": [None, None],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+
+        for row in result["team_overall"]:
+            assert "conference" in row, f"Missing conference for {row['team']}"
+
+    def test_conference_values_correct(self, tmp_path):
+        """Conference values match expected East/West assignments."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["Go team", "Nice game"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [[], []],
+            "sentiment": ["pos", "neu"],
+            "confidence": [0.9, 0.7],
+            "sentiment_player": [None, None],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+        team_by_name = {r["team"]: r for r in result["team_overall"]}
+
+        assert team_by_name["Los Angeles Lakers"]["conference"] == "West"
+        assert team_by_name["Boston Celtics"]["conference"] == "East"

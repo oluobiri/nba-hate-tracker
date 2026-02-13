@@ -445,6 +445,9 @@ def pivot_bar_race_wide(
     week_cols = sorted(
         [c for c in wide.columns if c not in {"attributed_player", "Label", "Category", "Image"}]
     )
+    wide = wide.with_columns(
+        [(pl.col(c) * 100).round(2) for c in week_cols]
+    )
     wide = wide.select(["Label", "Category", "Image"] + week_cols)
 
     return wide

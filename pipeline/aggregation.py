@@ -11,8 +11,8 @@ from pathlib import Path
 
 import polars as pl
 
-from utils.player_config import build_alias_to_player_map
-from utils.team_config import build_alias_to_team_map
+from utils.player_config import build_alias_to_player_map, load_player_metadata
+from utils.team_config import build_alias_to_team_map, load_team_config
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +161,8 @@ def aggregate_sentiment(input_path: Path) -> dict:
     # Build lookup maps
     alias_map = build_alias_to_player_map()
     team_map = build_alias_to_team_map()
+    player_metadata = load_player_metadata()
+    team_config = load_team_config()
 
     # Player attribution
     logger.info("Attributing comments to players...")
@@ -228,6 +230,11 @@ def aggregate_sentiment(input_path: Path) -> dict:
     df_team = df.filter(pl.col("team").is_not_null())
     team_overall = compute_metrics(df_team, ["team"])
 
+    # Add conference field to each team row
+    for row in team_overall:
+        team_info = team_config.get(row["team"], {})
+        row["conference"] = team_info.get("conference")
+
     # Metadata
     unique_players = df_attributed["attributed_player"].n_unique()
     unique_teams = df.filter(pl.col("team").is_not_null())["team"].n_unique()
@@ -245,6 +252,14 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Filter player metadata to only players in player_overall
+    attributed_players = {row["attributed_player"] for row in player_overall}
+    filtered_player_metadata = {
+        player: meta
+        for player, meta in player_metadata.items()
+        if player in attributed_players
+    }
+
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks"
@@ -255,5 +270,6 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "player_temporal": player_temporal,
         "player_team": player_team,
         "team_overall": team_overall,
+        "player_metadata": filtered_player_metadata,
         "metadata": metadata,
     }

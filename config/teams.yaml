@@ -12,24 +12,27 @@
 #   - Disney bubble hotel flairs (GD, YC, SP8, GFL)
 #   - Multi-team flairs (Mavs & Magic)
 
-version: "1.0"
+version: "2.0"
 season: "2024-25"
 
 teams:
   Atlanta Hawks:
     abbreviation: ATL
+    conference: East
     aliases:
       - atl
       - hawks
 
   Boston Celtics:
     abbreviation: BOS
+    conference: East
     aliases:
       - bos
       - celtics
 
   Brooklyn Nets:
     abbreviation: BKN
+    conference: East
     aliases:
       - bkn
       - brk
@@ -39,6 +42,7 @@ teams:
 
   Charlotte Hornets:
     abbreviation: CHA
+    conference: East
     aliases:
       - cha
       - cho
@@ -46,12 +50,14 @@ teams:
 
   Chicago Bulls:
     abbreviation: CHI
+    conference: East
     aliases:
       - chi
       - bulls
 
   Cleveland Cavaliers:
     abbreviation: CLE
+    conference: East
     aliases:
       - cle
       - cavaliers
@@ -59,6 +65,7 @@ teams:
 
   Dallas Mavericks:
     abbreviation: DAL
+    conference: West
     aliases:
       - dal
       - mavericks
@@ -66,18 +73,21 @@ teams:
 
   Denver Nuggets:
     abbreviation: DEN
+    conference: West
     aliases:
       - den
       - nuggets
 
   Detroit Pistons:
     abbreviation: DET
+    conference: East
     aliases:
       - det
       - pistons
 
   Golden State Warriors:
     abbreviation: GSW
+    conference: West
     aliases:
       - gsw
       - warriors
@@ -85,18 +95,21 @@ teams:
 
   Houston Rockets:
     abbreviation: HOU
+    conference: West
     aliases:
       - hou
       - rockets
 
   Indiana Pacers:
     abbreviation: IND
+    conference: East
     aliases:
       - ind
       - pacers
 
   Los Angeles Clippers:
     abbreviation: LAC
+    conference: West
     aliases:
       - lac
       - clippers
@@ -104,12 +117,14 @@ teams:
 
   Los Angeles Lakers:
     abbreviation: LAL
+    conference: West
     aliases:
       - lal
       - lakers
 
   Memphis Grizzlies:
     abbreviation: MEM
+    conference: West
     aliases:
       - mem
       - grizzlies
@@ -117,12 +132,14 @@ teams:
 
   Miami Heat:
     abbreviation: MIA
+    conference: East
     aliases:
       - mia
       - heat
 
   Milwaukee Bucks:
     abbreviation: MIL
+    conference: East
     aliases:
       - mil
       - mke
@@ -130,6 +147,7 @@ teams:
 
   Minnesota Timberwolves:
     abbreviation: MIN
+    conference: West
     aliases:
       - min
       - timberwolves
@@ -137,6 +155,7 @@ teams:
 
   New Orleans Pelicans:
     abbreviation: NOP
+    conference: West
     aliases:
       - nop
       - nol
@@ -144,24 +163,28 @@ teams:
 
   New York Knicks:
     abbreviation: NYK
+    conference: East
     aliases:
       - nyk
       - knicks
 
   Oklahoma City Thunder:
     abbreviation: OKC
+    conference: West
     aliases:
       - okc
       - thunder
 
   Orlando Magic:
     abbreviation: ORL
+    conference: East
     aliases:
       - orl
       - magic
 
   Philadelphia 76ers:
     abbreviation: PHI
+    conference: East
     aliases:
       - phi
       - 76ers
@@ -169,6 +192,7 @@ teams:
 
   Phoenix Suns:
     abbreviation: PHX
+    conference: West
     aliases:
       - phx
       - pho
@@ -176,6 +200,7 @@ teams:
 
   Portland Trail Blazers:
     abbreviation: POR
+    conference: West
     aliases:
       - por
       - pdx
@@ -184,18 +209,21 @@ teams:
 
   Sacramento Kings:
     abbreviation: SAC
+    conference: West
     aliases:
       - sac
       - kings
 
   San Antonio Spurs:
     abbreviation: SAS
+    conference: West
     aliases:
       - sas
       - spurs
 
   Toronto Raptors:
     abbreviation: TOR
+    conference: East
     aliases:
       - tor
       - tbr
@@ -204,12 +232,14 @@ teams:
 
   Utah Jazz:
     abbreviation: UTA
+    conference: West
     aliases:
       - uta
       - jazz
 
   Washington Wizards:
     abbreviation: WAS
+    conference: East
     aliases:
       - was
       - wizards

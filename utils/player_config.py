@@ -31,7 +31,16 @@ def load_player_config() -> tuple[dict[str, list[str]], frozenset[str]]:
     with open(CONFIG_PATH) as f:
         config = yaml.safe_load(f)
 
-    players = config.get("players", {})
+    raw_players = config.get("players", {})
+
+    # Unwrap enriched structure: extract aliases from each player dict
+    players: dict[str, list[str]] = {}
+    for player_name, player_data in raw_players.items():
+        if isinstance(player_data, dict):
+            players[player_name] = player_data.get("aliases", [])
+        else:
+            players[player_name] = player_data
+
     short_aliases = frozenset(
         alias.lower() for alias in config.get("short_aliases", [])
     )
@@ -55,3 +64,37 @@ def build_alias_to_player_map() -> dict[str, str]:
         for alias in aliases:
             alias_map[alias.lower()] = player_name
     return alias_map
+
+
+@lru_cache(maxsize=1)
+def load_player_metadata() -> dict[str, dict]:
+    """
+    Load player metadata from config/players.yaml.
+
+    Returns:
+        Dict mapping player name to metadata dict containing:
+        - team: Team name (str)
+        - conference: Conference name (str, "East" or "West")
+        - player_id: NBA player ID (int)
+        - headshot_url: CDN URL for player headshot (str)
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist.
+        yaml.YAMLError: If config file is invalid YAML.
+    """
+    with open(CONFIG_PATH) as f:
+        config = yaml.safe_load(f)
+
+    raw_players = config.get("players", {})
+    metadata: dict[str, dict] = {}
+
+    for player_name, player_data in raw_players.items():
+        if isinstance(player_data, dict):
+            metadata[player_name] = {
+                "team": player_data.get("team"),
+                "conference": player_data.get("conference"),
+                "player_id": player_data.get("player_id"),
+                "headshot_url": player_data.get("headshot_url"),
+            }
+
+    return metadata

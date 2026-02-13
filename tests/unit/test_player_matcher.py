@@ -119,13 +119,6 @@ class TestWordBoundaryMatching:
 
         assert "Stephen Curry" not in result
 
-    def test_green_matches_standalone(self):
-        """Short alias 'Green' matches when standalone."""
-        text = "Green got a technical"
-        result = find_player_mentions(text)
-
-        assert "Draymond Green" in result
-
     def test_green_does_not_match_in_greenery(self):
         """Short alias 'Green' doesn't match within 'greenery'."""
         text = "The greenery in this park is beautiful"

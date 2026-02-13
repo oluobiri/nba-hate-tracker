@@ -1,7 +1,7 @@
 # NBA Player Aliases for Hate Detection
 # Optimized: shortest unique fragments + non-overlapping nicknames only
 
-version: "1.2"
+version: "2.0"
 season: "2024-25"
 
 # Aliases requiring word boundary matching (\b) to avoid false positives
@@ -50,6 +50,7 @@ short_aliases:
   - brown
   - hart
   # Common names (need boundaries)
+  - james
   - davis
   - george
   - paul
@@ -66,634 +67,1186 @@ players:
   # Alphabetical by last name
 
   Bam Adebayo:
-    - adebayo
-    - bam
+    team: Miami Heat
+    conference: East
+    player_id: 1628389
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628389.png
+    aliases:
+      - adebayo
+      - bam
 
   Giannis Antetokounmpo:
-    - giannis
-    - greek freak
-    - alphabet
-    - the greek
-    - antetokounmpo
+    team: Milwaukee Bucks
+    conference: East
+    player_id: 203507
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203507.png
+    aliases:
+      - giannis
+      - greek freak
+      - alphabet
+      - the greek
+      - antetokounmpo
 
   OG Anunoby:
-    - anunoby
-    - og
+    team: New York Knicks
+    conference: East
+    player_id: 1628384
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628384.png
+    aliases:
+      - anunoby
+      - og
 
   Deandre Ayton:
-    - deandre ayton
-    - ayton
+    team: Portland Trail Blazers
+    conference: West
+    player_id: 1629028
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629028.png
+    aliases:
+      - deandre ayton
+      - ayton
 
   Marvin Bagley III:
-    - bagley
+    team: Memphis Grizzlies
+    conference: West
+    player_id: 1628963
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628963.png
+    aliases:
+      - bagley
 
   Lonzo Ball:
-    - lonzo
-    - zo
-    # Negative
-    - lavar's son
+    team: Chicago Bulls
+    conference: East
+    player_id: 1628366
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628366.png
+    aliases:
+      - lonzo
+      - zo
+      # Negative
+      - lavar's son
 
   LaMelo Ball:
-    - lamelo
-    # Negative
+    team: Charlotte Hornets
+    conference: East
+    player_id: 1630163
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630163.png
+    aliases:
+      - lamelo
+      # Negative
 
   Paolo Banchero:
-    - banchero
-    - paolo
-    - pb
+    team: Orlando Magic
+    conference: East
+    player_id: 1631094
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631094.png
+    aliases:
+      - banchero
+      - paolo
+      - pb
 
   Desmond Bane:
-    - bane
-    - desmond
+    team: Memphis Grizzlies
+    conference: West
+    player_id: 1630217
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630217.png
+    aliases:
+      - bane
+      - desmond
 
   Harrison Barnes:
-    - harrison barnes
+    team: San Antonio Spurs
+    conference: West
+    player_id: 203084
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203084.png
+    aliases:
+      - harrison barnes
 
   Scottie Barnes:
-    - barnes
-    - scottie
+    team: Toronto Raptors
+    conference: East
+    player_id: 1630567
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630567.png
+    aliases:
+      - barnes
+      - scottie
 
   Bradley Beal:
-    - bradley beal
-    - beal
+    team: Phoenix Suns
+    conference: West
+    player_id: 203078
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203078.png
+    aliases:
+      - bradley beal
+      - beal
 
   Patrick Beverley:
-    - beverley
-    - pat bev
-    - patbev
+    team: Milwaukee Bucks
+    conference: East
+    player_id: 201976
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201976.png
+    aliases:
+      - beverley
+      - pat bev
+      - patbev
 
   Devin Booker:
-    - booker
-    - dbook
-    - book
-    # Negative
-    - empty stats
-    - bubble boy
+    team: Phoenix Suns
+    conference: West
+    player_id: 1626164
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626164.png
+    aliases:
+      - booker
+      - dbook
+      - book
+      # Negative
+      - empty stats
+      - bubble boy
 
   Mikal Bridges:
-    - mikal bridges
-    - mikal
-    - the warden
+    team: New York Knicks
+    conference: East
+    player_id: 1628969
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628969.png
+    aliases:
+      - mikal bridges
+      - mikal
+      - the warden
 
   Dillon Brooks:
-    - dillon brooks
-    - dillon
+    team: Houston Rockets
+    conference: West
+    player_id: 1628415
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628415.png
+    aliases:
+      - dillon brooks
+      - dillon
 
   Jaylen Brown:
-    - jaylen brown
-    - jaylen
-    # Negative
-    - robin to tatum
+    team: Boston Celtics
+    conference: East
+    player_id: 1627759
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627759.png
+    aliases:
+      - jaylen brown
+      - jaylen
+      # Negative
+      - robin to tatum
 
   Jalen Brunson:
-    - brunson
+    team: New York Knicks
+    conference: East
+    player_id: 1628973
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628973.png
+    aliases:
+      - brunson
 
   Jimmy Butler:
-    - jimmy butler
-    - butler
-    - jimmy buckets
-    - jimmy g
-    - himmy
-    # Negative
-    - toxic jimmy
-    - jimmy diva
+    team: Golden State Warriors
+    conference: West
+    player_id: 202710
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202710.png
+    aliases:
+      - jimmy butler
+      - butler
+      - jimmy buckets
+      - jimmy g
+      - himmy
+      # Negative
+      - toxic jimmy
+      - jimmy diva
 
   Clint Capela:
-    - capela
+    team: Atlanta Hawks
+    conference: East
+    player_id: 203991
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203991.png
+    aliases:
+      - capela
 
   Alex Caruso:
-    - caruso
-    - the accountant
-    - bald mamba
-    - carushow
+    team: Oklahoma City Thunder
+    conference: West
+    player_id: 1627936
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627936.png
+    aliases:
+      - caruso
+      - the accountant
+      - bald mamba
+      - carushow
 
   Mike Conley:
-    - mike conley
-    - conley
-    - bite bite
+    team: Minnesota Timberwolves
+    conference: West
+    player_id: 201144
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201144.png
+    aliases:
+      - mike conley
+      - conley
+      - bite bite
 
   Stephen Curry:
-    - steph
-    - steph curry
-    - curry
-    - wardell
-    - chef curry
-    - skyfucker
-    - baby faced assassin
-    # Negative
-    - stephew
-    - gravity merchant
+    team: Golden State Warriors
+    conference: West
+    player_id: 201939
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201939.png
+    aliases:
+      - steph
+      - steph curry
+      - curry
+      - wardell
+      - chef curry
+      - skyfucker
+      - baby faced assassin
+      # Negative
+      - stephew
+      - gravity merchant
 
   Cade Cunningham:
-    - cunningham
-    - cade
-    - motorcade
+    team: Detroit Pistons
+    conference: East
+    player_id: 1630595
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630595.png
+    aliases:
+      - cunningham
+      - cade
+      - motorcade
 
   Anthony Davis:
-    - ad
-    - davis
-    - the brow
-    - unibrow
-    # Negative
-    - adisney
-    - street clothes
-    - day to davis
-    - day-to-davis
+    team: Dallas Mavericks
+    conference: West
+    player_id: 203076
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203076.png
+    aliases:
+      - ad
+      - davis
+      - the brow
+      - unibrow
+      # Negative
+      - adisney
+      - street clothes
+      - day to davis
+      - day-to-davis
 
   DeMar DeRozan:
-    - derozan
-    - demar
-    - debo
-    - compton's finest
+    team: Sacramento Kings
+    conference: West
+    player_id: 201942
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201942.png
+    aliases:
+      - derozan
+      - demar
+      - debo
+      - compton's finest
 
   Donte DiVincenzo:
-    - donte divincenzo
-    - divincenzo
-    - donte
+    team: Minnesota Timberwolves
+    conference: West
+    player_id: 1628978
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628978.png
+    aliases:
+      - donte divincenzo
+      - divincenzo
+      - donte
 
   Luka Doncic:
-    - luka
-    - doncic
-    - the don
-    - wonderboy
-    # Negative
-    - fat luka
-    - chubby luka
-    - whiny luka
+    team: Los Angeles Lakers
+    conference: West
+    player_id: 1629029
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629029.png
+    aliases:
+      - luka
+      - doncic
+      - the don
+      - wonderboy
+      # Negative
+      - fat luka
+      - chubby luka
+      - whiny luka
 
   Lu Dort:
-    - lu dort
-    - dort
-    - luguentz
+    team: Oklahoma City Thunder
+    conference: West
+    player_id: 1629652
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629652.png
+    aliases:
+      - lu dort
+      - dort
+      - luguentz
 
   Kevin Durant:
-    - kd
-    - durant
-    - durantula
-    - slim reaper
-    - easy money sniper
-    # Negative
-    - cupcake
-    - snake
+    team: Phoenix Suns
+    conference: West
+    player_id: 201142
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201142.png
+    aliases:
+      - kd
+      - durant
+      - durantula
+      - slim reaper
+      - easy money sniper
+      # Negative
+      - cupcake
+      - snake
 
   Zach Edey:
-    - zach edey
-    - edey
+    team: Memphis Grizzlies
+    conference: West
+    player_id: 1641744
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641744.png
+    aliases:
+      - zach edey
+      - edey
 
   Anthony Edwards:
-    - ant
-    - edwards
-    - antman
-    - ant edwards
-    - ant-man
-    - a1 from day 1
+    team: Minnesota Timberwolves
+    conference: West
+    player_id: 1630162
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630162.png
+    aliases:
+      - ant
+      - edwards
+      - antman
+      - ant edwards
+      - ant-man
+      - a1 from day 1
 
   Joel Embiid:
-    - embiid
-    - joel
-    - the process
-    - jojo
-    - troel
-    # Negative
-    - jobiid
-    - emflop
-    - the processor
+    team: Philadelphia 76ers
+    conference: East
+    player_id: 203954
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203954.png
+    aliases:
+      - embiid
+      - joel
+      - the process
+      - jojo
+      - troel
+      # Negative
+      - jobiid
+      - emflop
+      - the processor
 
   De'Aaron Fox:
-    - de'aaron
-    - fox
-    - swipa
-
-  Evan Fournier:
-    - fournier
+    team: San Antonio Spurs
+    conference: West
+    player_id: 1628368
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628368.png
+    aliases:
+      - de'aaron
+      - fox
+      - swipa
 
   Darius Garland:
-    - garland
-    - dg
+    team: Cleveland Cavaliers
+    conference: East
+    player_id: 1629636
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629636.png
+    aliases:
+      - garland
+      - dg
 
   Paul George:
-    - pg
-    - paul george
-    - george
-    - pg13
-    # Negative
-    - playoff p
-    - pandemic p
-    - wayoff p
-    - pushoff p
+    team: Philadelphia 76ers
+    conference: East
+    player_id: 202331
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202331.png
+    aliases:
+      - pg
+      - paul george
+      - george
+      - pg13
+      # Negative
+      - playoff p
+      - pandemic p
+      - wayoff p
+      - pushoff p
 
   Josh Giddey:
-    - josh giddey
-    - giddey
-    - slob wizard
-    - himothee chalamet
+    team: Chicago Bulls
+    conference: East
+    player_id: 1630581
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630581.png
+    aliases:
+      - josh giddey
+      - giddey
+      - slob wizard
+      - himothee chalamet
 
   Shai Gilgeous-Alexander:
-    - sga
-    - shai
-    - gilgeous-alexander
+    team: Oklahoma City Thunder
+    conference: West
+    player_id: 1628983
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628983.png
+    aliases:
+      - sga
+      - shai
+      - gilgeous-alexander
 
   Rudy Gobert:
-    - gobert
-    - rudy
-    - stifle tower
-    - gobzilla
-    - rudymentary
+    team: Minnesota Timberwolves
+    conference: West
+    player_id: 203497
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203497.png
+    aliases:
+      - gobert
+      - rudy
+      - stifle tower
+      - gobzilla
+      - rudymentary
 
   Aaron Gordon:
-    - aaron gordon
-    - gordon
+    team: Denver Nuggets
+    conference: West
+    player_id: 203932
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203932.png
+    aliases:
+      - aaron gordon
+      - gordon
 
   Jalen Green:
-    - jalen green
+    team: Houston Rockets
+    conference: West
+    player_id: 1630224
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630224.png
+    aliases:
+      - jalen green
 
   Draymond Green:
-    - draymond
-    - dray
-    - bdd
-    - day day
-    # Negative
-    - donkey
-    - nut puncher
-    - triple single
+    team: Golden State Warriors
+    conference: West
+    player_id: 203110
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203110.png
+    aliases:
+      - draymond
+      - dray
+      - bdd
+      - day day
+      # Negative
+      - donkey
+      - nut puncher
+      - triple single
 
   Rui Hachimura:
-    - rui hachimura
-    - rui
-    - hachimura
+    team: Los Angeles Lakers
+    conference: West
+    player_id: 1629060
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629060.png
+    aliases:
+      - rui hachimura
+      - rui
+      - hachimura
 
   Tyrese Haliburton:
-    - haliburton
-    - hali
-    - haliban
-    - halipotter
+    team: Indiana Pacers
+    conference: East
+    player_id: 1630169
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630169.png
+    aliases:
+      - haliburton
+      - hali
+      - haliban
+      - halipotter
 
   James Harden:
-    - harden
-    - the beard
-    # Negative
-    - james floppen
-    - james soften
-    - literally hitler
+    team: Los Angeles Clippers
+    conference: West
+    player_id: 201935
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201935.png
+    aliases:
+      - harden
+      - the beard
+      # Negative
+      - james floppen
+      - james soften
+      - literally hitler
 
   Tobias Harris:
-    - tobias harris
-    - tobias
+    team: Detroit Pistons
+    conference: East
+    player_id: 202699
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202699.png
+    aliases:
+      - tobias harris
+      - tobias
 
   Josh Hart:
-    - hart
+    team: New York Knicks
+    conference: East
+    player_id: 1628404
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628404.png
+    aliases:
+      - hart
 
   Scoot Henderson:
-    - scoot henderson
-    - scoot
+    team: Portland Trail Blazers
+    conference: West
+    player_id: 1630703
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630703.png
+    aliases:
+      - scoot henderson
+      - scoot
 
   Tyler Herro:
-    - herro
-    - boy wonder
+    team: Miami Heat
+    conference: East
+    player_id: 1629639
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629639.png
+    aliases:
+      - herro
+      - boy wonder
 
   Buddy Hield:
-    - buddy hield
-    - hield
-    - buddy love
-    - buddy buckets
+    team: Golden State Warriors
+    conference: West
+    player_id: 1627741
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627741.png
+    aliases:
+      - buddy hield
+      - hield
+      - buddy love
+      - buddy buckets
 
   Chet Holmgren:
-    - chet
-    - holmgren
-    - abe
-    - abraham
-    - lincoln
+    team: Oklahoma City Thunder
+    conference: West
+    player_id: 1631096
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631096.png
+    aliases:
+      - chet
+      - holmgren
+      - abe
+      - abraham
+      - lincoln
 
   Jrue Holiday:
-    - jrue
-    - holiday
+    team: Boston Celtics
+    conference: East
+    player_id: 201950
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201950.png
+    aliases:
+      - jrue
+      - holiday
 
   Al Horford:
-    - al horford
-    - horford
+    team: Boston Celtics
+    conference: East
+    player_id: 201143
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201143.png
+    aliases:
+      - al horford
+      - horford
 
   Brandon Ingram:
-    - ingram
-    - bi
-    - slim reefer
-    - sleepy b
+    team: Toronto Raptors
+    conference: East
+    player_id: 1627742
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627742.png
+    aliases:
+      - ingram
+      - bi
+      - slim reefer
+      - sleepy b
 
   Kyrie Irving:
-    - kyrie
-    - irving
-    - kai
-    - uncle drew
-    - world b flat
-    # Negative
-    - flat earther
-    - mr sage
-    - third eye
-    - antisemite
+    team: Dallas Mavericks
+    conference: West
+    player_id: 202681
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202681.png
+    aliases:
+      - kyrie
+      - irving
+      - kai
+      - uncle drew
+      - world b flat
+      # Negative
+      - flat earther
+      - mr sage
+      - third eye
+      - antisemite
 
   Jaren Jackson Jr:
-    - jaren jackson
-    - jjj
-    - triple j
+    team: Memphis Grizzlies
+    conference: West
+    player_id: 1628991
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628991.png
+    aliases:
+      - jaren jackson
+      - jjj
+      - triple j
 
   Bronny James:
-    - bronny james
-    - bronny
-    - lenepo
+    team: Los Angeles Lakers
+    conference: West
+    player_id: 1642355
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1642355.png
+    aliases:
+      - bronny james
+      - bronny
+      - lenepo
 
   LeBron James:
-    - lebron
-    - bron
-    - lbj
-    - the king
-    - chosen one
-    # Negative (le- prefix variants don't contain "lebron")
-    - lemickey
-    - lebrick
-    - lechoke
-    - leflop
-    - lefraud
-    - lequit
-    - lestatpad
-    - lecoast
-    - legm
-    - lediva
-    - letravel
-    - leturnover
-    - legoat
-    - washed king
-    - king james
+    team: Los Angeles Lakers
+    conference: West
+    player_id: 2544
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png
+    aliases:
+      - lebron
+      - bron
+      - lbj
+      - the king
+      - chosen one
+      # Negative (le- prefix variants don't contain "lebron")
+      - lemickey
+      - lebrick
+      - lechoke
+      - leflop
+      - lefraud
+      - lequit
+      - lestatpad
+      - lecoast
+      - legm
+      - lediva
+      - letravel
+      - leturnover
+      - legoat
+      - washed king
+      - king james
 
   Nikola Jokic:
-    - jokic
-    - joker
-    - chokic
-    - big honey
-    - sombor shuffle
+    team: Denver Nuggets
+    conference: West
+    player_id: 203999
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203999.png
+    aliases:
+      - jokic
+      - joker
+      - chokic
+      - big honey
+      - sombor shuffle
 
   Tre Jones:
-    - tre jones
+    team: Chicago Bulls
+    conference: East
+    player_id: 1630200
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630200.png
+    aliases:
+      - tre jones
 
   Jonathan Kuminga:
-    - kuminga
-    - jonathan kuminga
-    - kum bucket
+    team: Golden State Warriors
+    conference: West
+    player_id: 1630228
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630228.png
+    aliases:
+      - kuminga
+      - jonathan kuminga
+      - kum bucket
 
   Caris LeVert:
-    - levert
-    - caris
+    team: Atlanta Hawks
+    conference: East
+    player_id: 1627747
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627747.png
+    aliases:
+      - levert
+      - caris
 
   Kawhi Leonard:
-    - kawhi
-    - leonard
-    - the klaw
-    - board man
-    - fun guy
+    team: Los Angeles Clippers
+    conference: West
+    player_id: 202695
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202695.png
+    aliases:
+      - kawhi
+      - leonard
+      - the klaw
+      - board man
+      - fun guy
 
   Damian Lillard:
-    - lillard
-    - dame
-    - dame time
-    - dame dolla
-    - logo lillard
+    team: Milwaukee Bucks
+    conference: East
+    player_id: 203081
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203081.png
+    aliases:
+      - lillard
+      - dame
+      - dame time
+      - dame dolla
+      - logo lillard
 
   Zach LaVine:
-    - lavine
-    - zach
+    team: Sacramento Kings
+    conference: West
+    player_id: 203897
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203897.png
+    aliases:
+      - lavine
+      - zach
 
   Kevon Looney:
-    - looney
-    - loon
+    team: Golden State Warriors
+    conference: West
+    player_id: 1626172
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626172.png
+    aliases:
+      - looney
+      - loon
 
   Brook Lopez:
-    - brook lopez
-    - lopez
-    - splash mountain
+    team: Milwaukee Bucks
+    conference: East
+    player_id: 201572
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201572.png
+    aliases:
+      - brook lopez
+      - lopez
+      - splash mountain
 
   Lauri Markkanen:
-    - lauri markkanen
-    - markkanen
-    - lauri
+    team: Utah Jazz
+    conference: West
+    player_id: 1628374
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628374.png
+    aliases:
+      - lauri markkanen
+      - markkanen
+      - lauri
 
   Tyrese Maxey:
-    - maxey
+    team: Philadelphia 76ers
+    conference: East
+    player_id: 1630178
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630178.png
+    aliases:
+      - maxey
 
   De'Anthony Melton:
-    - melton
+    team: Brooklyn Nets
+    conference: East
+    player_id: 1629001
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629001.png
+    aliases:
+      - melton
 
   Khris Middleton:
-    - middleton
-    - khris
-    - khash money
+    team: Washington Wizards
+    conference: East
+    player_id: 203114
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203114.png
+    aliases:
+      - middleton
+      - khris
+      - khash money
 
   Donovan Mitchell:
-    - donovan mitchell
-    - mitchell
-    - spida
+    team: Cleveland Cavaliers
+    conference: East
+    player_id: 1628378
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628378.png
+    aliases:
+      - donovan mitchell
+      - mitchell
+      - spida
 
   Evan Mobley:
-    - evan mobley
-    - mobley
+    team: Cleveland Cavaliers
+    conference: East
+    player_id: 1630596
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630596.png
+    aliases:
+      - evan mobley
+      - mobley
 
   Ja Morant:
-    - morant
-    - ja
-    - temetrius
-    # Negative
-    - glock morant
-    - ja moron
-    - moron-t
+    team: Memphis Grizzlies
+    conference: West
+    player_id: 1629630
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629630.png
+    aliases:
+      - morant
+      - ja
+      - temetrius
+      # Negative
+      - glock morant
+      - ja moron
+      - moron-t
 
   Keegan Murray:
-    - keegan murray
-    - keegan
+    team: Sacramento Kings
+    conference: West
+    player_id: 1631099
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631099.png
+    aliases:
+      - keegan murray
+      - keegan
 
   Dejounte Murray:
-    - dejounte
+    team: New Orleans Pelicans
+    conference: West
+    player_id: 1627749
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627749.png
+    aliases:
+      - dejounte
 
   Jamal Murray:
-    - jamal murray
-    - jamal
-    - blue arrow
-    - maple curry
+    team: Denver Nuggets
+    conference: West
+    player_id: 1627750
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627750.png
+    aliases:
+      - jamal murray
+      - jamal
+      - blue arrow
+      - maple curry
 
   Chris Paul:
-    - cp3
-    - cp
-    - chris paul
-    - point god
-    # Negative
-    - dirty cp3
-    - cone paul
-    - cooked cp3
+    team: San Antonio Spurs
+    conference: West
+    player_id: 101108
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/101108.png
+    aliases:
+      - cp3
+      - cp
+      - chris paul
+      - point god
+      # Negative
+      - dirty cp3
+      - cone paul
+      - cooked cp3
 
   Jordan Poole:
-    - poole
-    - jp
-    - poole party
+    team: Washington Wizards
+    conference: East
+    player_id: 1629673
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629673.png
+    aliases:
+      - poole
+      - jp
+      - poole party
 
   Michael Porter Jr:
-    - michael porter
-    - mpj
-    - porter jr
-    - never swing the rock
+    team: Denver Nuggets
+    conference: West
+    player_id: 1629008
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629008.png
+    aliases:
+      - michael porter
+      - mpj
+      - porter jr
+      - never swing the rock
 
   Kristaps Porzingis:
-    - porzingis
-    - kristaps
-    - kp
-    - tingus pingus
+    team: Boston Celtics
+    conference: East
+    player_id: 204001
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/204001.png
+    aliases:
+      - porzingis
+      - kristaps
+      - kp
+      - tingus pingus
 
   Bobby Portis:
-    - portis
-    - crazy eyes
+    team: Milwaukee Bucks
+    conference: East
+    player_id: 1626171
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626171.png
+    aliases:
+      - portis
+      - crazy eyes
 
   Julius Randle:
-    - randle
-    - julius
-    - beyblade
+    team: Minnesota Timberwolves
+    conference: West
+    player_id: 203944
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203944.png
+    aliases:
+      - randle
+      - julius
+      - beyblade
 
   Austin Reaves:
-    - reaves
-    - ar15
-    - hillbilly kobe
+    team: Los Angeles Lakers
+    conference: West
+    player_id: 1630559
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630559.png
+    aliases:
+      - reaves
+      - ar15
+      - hillbilly kobe
 
   Naz Reid:
-    - naz reid
-    - naz
+    team: Minnesota Timberwolves
+    conference: West
+    player_id: 1629675
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629675.png
+    aliases:
+      - naz reid
+      - naz
 
   Mitchell Robinson:
-    - mitchell robinson
-    - mitch rob
+    team: New York Knicks
+    conference: East
+    player_id: 1629011
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629011.png
+    aliases:
+      - mitchell robinson
+      - mitch rob
 
   D'Angelo Russell:
-    - dlo
-    - d'angelo
-    - ice in my veins
-    # Negative
-    - snitch russell
+    team: Brooklyn Nets
+    conference: East
+    player_id: 1626156
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626156.png
+    aliases:
+      - dlo
+      - d'angelo
+      - ice in my veins
+      # Negative
+      - snitch russell
 
   Domantas Sabonis:
-    - sabonis
-    - domas
+    team: Sacramento Kings
+    conference: West
+    player_id: 1627734
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627734.png
+    aliases:
+      - sabonis
+      - domas
 
   Alperen Sengun:
-    - sengun
-    - alperen
-    - alperen şengün
-    - alp
+    team: Houston Rockets
+    conference: West
+    player_id: 1630578
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630578.png
+    aliases:
+      - sengun
+      - alperen
+      - alperen şengün
+      - alp
 
   Pascal Siakam:
-    - siakam
-    - pascal
-    - spicy p
-    - spinakam
+    team: Indiana Pacers
+    conference: East
+    player_id: 1627783
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627783.png
+    aliases:
+      - siakam
+      - pascal
+      - spicy p
+      - spinakam
 
   Ben Simmons:
-    - simmons
-    - ben
-    - fresh prince
-    # Negative
-    - socialite
+    team: Los Angeles Clippers
+    conference: West
+    player_id: 1627732
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627732.png
+    aliases:
+      - simmons
+      - ben
+      - fresh prince
+      # Negative
+      - socialite
 
   Marcus Smart:
-    - marcus smart
-    - marcus dumb
+    team: Washington Wizards
+    conference: East
+    player_id: 203935
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203935.png
+    aliases:
+      - marcus smart
+      - marcus dumb
 
   Jalen Smith:
-    - jalen smith
-    - stix
+    team: Chicago Bulls
+    conference: East
+    player_id: 1630188
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630188.png
+    aliases:
+      - jalen smith
+      - stix
 
   Jayson Tatum:
-    - tatum
-    - jt
-    - jayson
+    team: Boston Celtics
+    conference: East
+    player_id: 1628369
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628369.png
+    aliases:
+      - tatum
+      - jt
+      - jayson
 
   Amen Thompson:
-    - amen thompson
-    - amen
+    team: Houston Rockets
+    conference: West
+    player_id: 1641708
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641708.png
+    aliases:
+      - amen thompson
+      - amen
 
   Ausar Thompson:
-    - ausar thompson
-    - ausar
+    team: Detroit Pistons
+    conference: East
+    player_id: 1641709
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641709.png
+    aliases:
+      - ausar thompson
+      - ausar
 
   Klay Thompson:
-    - klay
-    - splash brother
-    - game 6 klay
-    - china klay
-    # Negative
-    - boat klay
+    team: Dallas Mavericks
+    conference: West
+    player_id: 202691
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202691.png
+    aliases:
+      - klay
+      - splash brother
+      - game 6 klay
+      - china klay
+      # Negative
+      - boat klay
 
   Karl-Anthony Towns:
-    - towns
-    - kat
-    - karl-anthony
+    team: New York Knicks
+    conference: East
+    player_id: 1626157
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626157.png
+    aliases:
+      - towns
+      - kat
+      - karl-anthony
 
   Myles Turner:
-    - turner
-    - myles
+    team: Indiana Pacers
+    conference: East
+    player_id: 1626167
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626167.png
+    aliases:
+      - turner
+      - myles
 
   Fred VanVleet:
-    - vanvleet
-    - fvv
-    - steady freddy
+    team: Houston Rockets
+    conference: West
+    player_id: 1627832
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627832.png
+    aliases:
+      - vanvleet
+      - fvv
+      - steady freddy
 
   Franz Wagner:
-    - franz wagner
-    - franz
+    team: Orlando Magic
+    conference: East
+    player_id: 1630532
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630532.png
+    aliases:
+      - franz wagner
+      - franz
 
   Nikola Vucevic:
-    - vucevic
-    - vooch
+    team: Chicago Bulls
+    conference: East
+    player_id: 202696
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202696.png
+    aliases:
+      - vucevic
+      - vooch
 
   Victor Wembanyama:
-    - wembanyama
-    - victor
-    - wemby
-    - the alien
-    - the frenchise
+    team: San Antonio Spurs
+    conference: West
+    player_id: 1641705
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641705.png
+    aliases:
+      - wembanyama
+      - victor
+      - wemby
+      - the alien
+      - the frenchise
 
   Russell Westbrook:
-    - westbrook
-    - russ
-    - brodie
-    # Negative
-    - westbrick
-    - worstbrook
-    - westbroke
-    - no bbiq
+    team: Denver Nuggets
+    conference: West
+    player_id: 201566
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201566.png
+    aliases:
+      - westbrook
+      - russ
+      - brodie
+      # Negative
+      - westbrick
+      - worstbrook
+      - westbroke
+      - no bbiq
 
   Derrick White:
-    - derrick white
+    team: Boston Celtics
+    conference: East
+    player_id: 1628401
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628401.png
+    aliases:
+      - derrick white
 
   Aaron Wiggins:
-    - aaron wiggins
+    team: Oklahoma City Thunder
+    conference: West
+    player_id: 1630598
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630598.png
+    aliases:
+      - aaron wiggins
 
   Andrew Wiggins:
-    - wiggins
-    - wiggs
-    # Negative
-    - maple jordan
+    team: Miami Heat
+    conference: East
+    player_id: 203952
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203952.png
+    aliases:
+      - wiggins
+      - wiggs
+      # Negative
+      - maple jordan
 
   Jalen Williams:
-    - jalen williams
-    - j-dub
+    team: Oklahoma City Thunder
+    conference: West
+    player_id: 1631114
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631114.png
+    aliases:
+      - jalen williams
+      - j-dub
 
   Zion Williamson:
-    - zion
-    - williamson
-    - zanos
-    - air gumbo
-    # Negative
-    - big chungas
+    team: New Orleans Pelicans
+    conference: West
+    player_id: 1629627
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629627.png
+    aliases:
+      - zion
+      - williamson
+      - zanos
+      - air gumbo
+      # Negative
+      - big chungas
 
   Trae Young:
-    - trae
-    - ice trae
-    # Negative
-    - bald spot
-    - hair plugs
+    team: Atlanta Hawks
+    conference: East
+    player_id: 1629027
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629027.png
+    aliases:
+      - trae
+      - ice trae
+      # Negative
+      - bald spot
+      - hair plugs
 
   Ivica Zubac:
-    - zubac
-    - zu
+    team: Los Angeles Clippers
+    conference: West
+    player_id: 1627826
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627826.png
+    aliases:
+      - zubac
+      - zu

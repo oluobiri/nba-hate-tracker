@@ -370,13 +370,14 @@ def pivot_bar_race_wide(
     df: pl.DataFrame,
     player_metadata: dict[str, dict],
     top_n: int = 15,
-    min_comments: int = 5000,
+    min_ranking_comments: int = 5000,
+    min_entry_comments: int = 1000,
 ) -> pl.DataFrame:
     """
     Pivot cumulative metrics to Flourish bar-race-compatible wide format.
 
     Ranks players by their final-week cumulative neg_rate (before
-    threshold masking), selects the top N, applies the threshold mask,
+    threshold masking), selects the top N, applies the entry mask,
     joins metadata (team and headshot), and pivots week dates into columns.
 
     Args:
@@ -385,29 +386,33 @@ def pivot_bar_race_wide(
         player_metadata: Dict mapping player name to metadata with
             'team' and 'headshot_url' keys.
         top_n: Number of top players to include in the output.
-        min_comments: Minimum cumulative comment count to show a value.
-            Weeks below this threshold get null (empty in CSV).
+        min_ranking_comments: Minimum cumulative comments in the final week
+            for a player to qualify for top-N ranking. Excludes low-volume
+            statistical outliers.
+        min_entry_comments: Minimum cumulative comments for a player's bar
+            to appear in a given week. Weeks below this get null (empty in
+            CSV), causing Flourish to hide the bar.
 
     Returns:
         Wide-format DataFrame with columns: Label, Category, Image,
         and one column per week (ISO date string headers like '2024-10-07').
     """
     # Rank by final-week cum_neg_rate among players that have reached
-    # the comment threshold — excludes low-volume statistical outliers
+    # the ranking threshold — excludes low-volume statistical outliers
     final_week = df["week"].max()
     final_rates = (
         df.filter(
             (pl.col("week") == final_week)
-            & (pl.col("cum_total") >= min_comments)
+            & (pl.col("cum_total") >= min_ranking_comments)
         )
         .select("attributed_player", "cum_neg_rate")
         .sort("cum_neg_rate", descending=True)
     )
     top_players = final_rates.head(top_n)["attributed_player"].to_list()
 
-    # Filter to top N players, then apply threshold mask
+    # Filter to top N players, then apply entry threshold mask
     df = df.filter(pl.col("attributed_player").is_in(top_players))
-    df = mask_below_threshold(df, min_comments=min_comments)
+    df = mask_below_threshold(df, min_comments=min_entry_comments)
 
     # Format week as ISO date string for column headers
     df = df.with_columns(pl.col("week").cast(pl.Utf8))

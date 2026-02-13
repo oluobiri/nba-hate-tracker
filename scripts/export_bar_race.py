@@ -7,7 +7,7 @@ Flourish's bar chart race template expects.
 
 Usage:
     uv run python -m scripts.export_bar_race
-    uv run python -m scripts.export_bar_race --top-n 20 --min-comments 3000
+    uv run python -m scripts.export_bar_race --top-n 20 --min-ranking-comments 3000 --min-entry-comments 500
     uv run python -m scripts.export_bar_race --input data/dashboard/aggregates.json --output data/dashboard/bar_race.csv
 """
 
@@ -75,10 +75,16 @@ def main() -> None:
         help="Number of top players to include (default: 15)",
     )
     parser.add_argument(
-        "--min-comments",
+        "--min-ranking-comments",
         type=int,
         default=5000,
-        help="Minimum cumulative comments to show a player in a given week (default: 5000)",
+        help="Minimum cumulative comments to qualify for top-N ranking (default: 5000)",
+    )
+    parser.add_argument(
+        "--min-entry-comments",
+        type=int,
+        default=1000,
+        help="Minimum cumulative comments for a player's bar to appear (default: 1000)",
     )
     args = parser.parse_args()
 
@@ -98,7 +104,8 @@ def main() -> None:
     logger.info(f"Input:  {input_path}")
     logger.info(f"Output: {output_path}")
     logger.info(f"Top N:  {args.top_n}")
-    logger.info(f"Min comments: {args.min_comments}")
+    logger.info(f"Min ranking comments: {args.min_ranking_comments}")
+    logger.info(f"Min entry comments:   {args.min_entry_comments}")
     logger.info("=" * 60)
 
     # Load aggregates
@@ -114,7 +121,9 @@ def main() -> None:
 
     wide = pivot_bar_race_wide(
         cumulative, data["player_metadata"],
-        top_n=args.top_n, min_comments=args.min_comments,
+        top_n=args.top_n,
+        min_ranking_comments=args.min_ranking_comments,
+        min_entry_comments=args.min_entry_comments,
     )
 
     # Ensure output directory exists

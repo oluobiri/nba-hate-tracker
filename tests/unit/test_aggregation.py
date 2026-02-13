@@ -539,7 +539,10 @@ class TestPivotBarRaceWide:
         """Output has Label, Category, Image, then date columns."""
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
-        wide = pivot_bar_race_wide(cumulative, metadata, top_n=3, min_comments=0)
+        wide = pivot_bar_race_wide(
+            cumulative, metadata, top_n=3,
+            min_ranking_comments=0, min_entry_comments=0,
+        )
 
         cols = wide.columns
         assert cols[0] == "Label"
@@ -551,7 +554,10 @@ class TestPivotBarRaceWide:
         """Only top_n players appear in output."""
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
-        wide = pivot_bar_race_wide(cumulative, metadata, top_n=2, min_comments=0)
+        wide = pivot_bar_race_wide(
+            cumulative, metadata, top_n=2,
+            min_ranking_comments=0, min_entry_comments=0,
+        )
 
         assert wide.height == 2
         labels = wide["Label"].to_list()
@@ -566,7 +572,10 @@ class TestPivotBarRaceWide:
 
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
-        wide = pivot_bar_race_wide(cumulative, metadata, top_n=2, min_comments=0)
+        wide = pivot_bar_race_wide(
+            cumulative, metadata, top_n=2,
+            min_ranking_comments=0, min_entry_comments=0,
+        )
 
         date_cols = [c for c in wide.columns if c not in {"Label", "Category", "Image"}]
         for col in date_cols:
@@ -576,8 +585,12 @@ class TestPivotBarRaceWide:
         """Cells masked below threshold appear as null in wide format."""
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
-        # Threshold so week 1 (cum_total=1000) is below, week 2 (cum_total=2500) is above
-        wide = pivot_bar_race_wide(cumulative, metadata, top_n=2, min_comments=1500)
+        # Ranking threshold 0 lets all players qualify; entry threshold 1500
+        # means week 1 (cum_total=1000) is below, week 2 (cum_total=2500) is above
+        wide = pivot_bar_race_wide(
+            cumulative, metadata, top_n=2,
+            min_ranking_comments=0, min_entry_comments=1500,
+        )
 
         # First week column should have null values
         first_week_col = wide.columns[3]

@@ -273,3 +273,173 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "player_metadata": filtered_player_metadata,
         "metadata": metadata,
     }
+
+
+# ---------------------------------------------------------------------------
+# Bar race export helpers
+# ---------------------------------------------------------------------------
+
+
+def compute_cumulative_metrics(player_temporal: list[dict]) -> pl.DataFrame:
+    """
+    Compute running cumulative neg_rate for each player across weeks.
+
+    Converts weekly snapshot counts into cumulative totals and rates.
+    Excludes the final stub week (max date). Fills gaps so every player
+    has a row for every week — missing weeks contribute zero new comments,
+    keeping cumulative totals stable.
+
+    Args:
+        player_temporal: List of weekly metric dicts from aggregates.json.
+            Each dict has: attributed_player, week, neg_count, comment_count.
+
+    Returns:
+        DataFrame with columns: attributed_player, week, cum_neg,
+        cum_total, cum_neg_rate. Sorted by player then week.
+    """
+    df = pl.DataFrame(player_temporal)
+
+    # Parse week strings to Date and exclude stub week
+    df = df.with_columns(
+        pl.col("week").str.to_datetime().cast(pl.Date)
+    )
+    stub_week = df["week"].max()
+    df = df.filter(pl.col("week") != stub_week)
+
+    # Build complete player × week grid to fill gaps
+    players = df.select("attributed_player").unique()
+    weeks = df.select("week").unique()
+    grid = players.join(weeks, how="cross")
+
+    df = grid.join(
+        df.select("attributed_player", "week", "neg_count", "comment_count"),
+        on=["attributed_player", "week"],
+        how="left",
+    ).with_columns(
+        pl.col("neg_count").fill_null(0),
+        pl.col("comment_count").fill_null(0),
+    )
+
+    # Cumulative sums per player
+    df = (
+        df.sort("attributed_player", "week")
+        .with_columns(
+            pl.col("neg_count").cum_sum().over("attributed_player").alias("cum_neg"),
+            pl.col("comment_count")
+            .cum_sum()
+            .over("attributed_player")
+            .alias("cum_total"),
+        )
+        .with_columns(
+            (pl.col("cum_neg").cast(pl.Int64) / pl.col("cum_total").cast(pl.Int64))
+            .round(4)
+            .alias("cum_neg_rate"),
+        )
+    )
+
+    return df.select("attributed_player", "week", "cum_neg", "cum_total", "cum_neg_rate")
+
+
+def mask_below_threshold(
+    df: pl.DataFrame,
+    min_comments: int = 1000,
+) -> pl.DataFrame:
+    """
+    Replace cum_neg_rate with null where cumulative comments are below threshold.
+
+    Flourish hides bars with empty cells, so masking low-volume weeks
+    prevents noisy early-season rates from appearing in the animation.
+
+    Args:
+        df: DataFrame from compute_cumulative_metrics with cum_total
+            and cum_neg_rate columns.
+        min_comments: Minimum cumulative comment count to show a value.
+
+    Returns:
+        Same schema with cum_neg_rate set to null below threshold.
+    """
+    return df.with_columns(
+        pl.when(pl.col("cum_total") >= min_comments)
+        .then(pl.col("cum_neg_rate"))
+        .otherwise(None)
+        .alias("cum_neg_rate")
+    )
+
+
+def pivot_bar_race_wide(
+    df: pl.DataFrame,
+    player_metadata: dict[str, dict],
+    top_n: int = 15,
+    min_comments: int = 5000,
+) -> pl.DataFrame:
+    """
+    Pivot cumulative metrics to Flourish bar-race-compatible wide format.
+
+    Ranks players by their final-week cumulative neg_rate (before
+    threshold masking), selects the top N, applies the threshold mask,
+    joins metadata (team and headshot), and pivots week dates into columns.
+
+    Args:
+        df: DataFrame from compute_cumulative_metrics with attributed_player,
+            week, cum_neg, cum_total, and cum_neg_rate columns.
+        player_metadata: Dict mapping player name to metadata with
+            'team' and 'headshot_url' keys.
+        top_n: Number of top players to include in the output.
+        min_comments: Minimum cumulative comment count to show a value.
+            Weeks below this threshold get null (empty in CSV).
+
+    Returns:
+        Wide-format DataFrame with columns: Label, Category, Image,
+        and one column per week (ISO date string headers like '2024-10-07').
+    """
+    # Rank by final-week cum_neg_rate among players that have reached
+    # the comment threshold — excludes low-volume statistical outliers
+    final_week = df["week"].max()
+    final_rates = (
+        df.filter(
+            (pl.col("week") == final_week)
+            & (pl.col("cum_total") >= min_comments)
+        )
+        .select("attributed_player", "cum_neg_rate")
+        .sort("cum_neg_rate", descending=True)
+    )
+    top_players = final_rates.head(top_n)["attributed_player"].to_list()
+
+    # Filter to top N players, then apply threshold mask
+    df = df.filter(pl.col("attributed_player").is_in(top_players))
+    df = mask_below_threshold(df, min_comments=min_comments)
+
+    # Format week as ISO date string for column headers
+    df = df.with_columns(pl.col("week").cast(pl.Utf8))
+
+    # Pivot to wide format
+    wide = df.pivot(
+        on="week",
+        index="attributed_player",
+        values="cum_neg_rate",
+    )
+
+    # Add metadata columns
+    labels = wide["attributed_player"]
+    categories = labels.map_elements(
+        lambda p: player_metadata.get(p, {}).get("team", ""),
+        return_dtype=pl.Utf8,
+    )
+    images = labels.map_elements(
+        lambda p: player_metadata.get(p, {}).get("headshot_url", ""),
+        return_dtype=pl.Utf8,
+    )
+
+    wide = wide.with_columns(
+        labels.alias("Label"),
+        categories.alias("Category"),
+        images.alias("Image"),
+    )
+
+    # Reorder: Label, Category, Image, then week columns sorted chronologically
+    week_cols = sorted(
+        [c for c in wide.columns if c not in {"attributed_player", "Label", "Category", "Image"}]
+    )
+    wide = wide.select(["Label", "Category", "Image"] + week_cols)
+
+    return wide

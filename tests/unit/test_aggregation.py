@@ -239,6 +239,8 @@ class TestAggregatePlayerMetadata:
         assert meta["LeBron James"]["team"] == "Los Angeles Lakers"
         assert meta["LeBron James"]["conference"] == "West"
         assert meta["LeBron James"]["player_id"] == 2544
+        assert "logo_url" in meta["LeBron James"]
+        assert "cdn.nba.com/logos" in meta["LeBron James"]["logo_url"]
 
     def test_metadata_excludes_non_attributed_players(self, tmp_path):
         """player_metadata only includes players that appear in player_overall."""
@@ -315,6 +317,55 @@ class TestAggregateTeamConference:
 
         assert team_by_name["Los Angeles Lakers"]["conference"] == "West"
         assert team_by_name["Boston Celtics"]["conference"] == "East"
+
+    def test_team_overall_has_abbreviation(self, tmp_path):
+        """Each team_overall row has the correct abbreviation."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["Go team", "Nice game"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [[], []],
+            "sentiment": ["pos", "neu"],
+            "confidence": [0.9, 0.7],
+            "sentiment_player": [None, None],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+        team_by_name = {r["team"]: r for r in result["team_overall"]}
+
+        assert team_by_name["Los Angeles Lakers"]["abbreviation"] == "LAL"
+        assert team_by_name["Boston Celtics"]["abbreviation"] == "BOS"
+
+    def test_team_overall_has_logo_url(self, tmp_path):
+        """Each team_overall row has a logo_url field."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["Go team", "Nice game"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [[], []],
+            "sentiment": ["pos", "neu"],
+            "confidence": [0.9, 0.7],
+            "sentiment_player": [None, None],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+
+        for row in result["team_overall"]:
+            assert "logo_url" in row, f"Missing logo_url for {row['team']}"
+            assert row["logo_url"] is not None
+            assert "cdn.nba.com/logos" in row["logo_url"]
 
 
 # ---------------------------------------------------------------------------

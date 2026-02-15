@@ -186,7 +186,6 @@ fig = px.scatter(
         "conference": False,
     },
     log_x=True,
-    custom_data=["attributed_player"],
     labels={
         "comment_count": "Comment Count",
         metric_col: selected_metric_label,
@@ -236,10 +235,13 @@ event = st.plotly_chart(
     key="scatter",
 )
 
-# Handle scatter click → navigate to player detail
+# Handle scatter click → navigate to player detail.
+# Streamlit's on_select doesn't reliably pass customdata, so look up
+# the player by matching the clicked point's x coordinate (comment_count
+# is unique per player in the filtered set).
 if event and event.selection and event.selection.points:
-    clicked = event.selection.points[0]
-    customdata = clicked.get("customdata")
-    if customdata and len(customdata) > 0 and customdata[0]:
-        st.query_params["player"] = customdata[0]
+    pt = event.selection.points[0]
+    match = scatter_df[scatter_df["comment_count"] == pt["x"]]
+    if not match.empty:
+        st.query_params["player"] = match.iloc[0]["attributed_player"]
         st.switch_page("pages/2_🔍_Player_Detail.py")

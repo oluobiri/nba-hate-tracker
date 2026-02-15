@@ -64,8 +64,19 @@ if selected_team == "Select your team...":
 # Filter data for selected team
 # ---------------------------------------------------------------------------
 
-team_flair = player_team[player_team["team"] == selected_team].copy()
+team_flair_all = player_team[player_team["team"] == selected_team].copy()
 team_row = team_overall[team_overall["team"] == selected_team].iloc[0]
+
+# Filter to players at or above median comment count for this fanbase.
+# Eliminates thin cells (e.g. 100% on 1 comment) while scaling naturally
+# per fanbase — large fanbases keep more players than small ones.
+median_cc = int(team_flair_all["comment_count"].median())
+team_flair = team_flair_all[team_flair_all["comment_count"] >= median_cc].copy()
+
+st.caption(
+    f"Showing {len(team_flair)} of {len(team_flair_all)} players "
+    f"(≥{median_cc} comments by this fanbase)"
+)
 
 # ---------------------------------------------------------------------------
 # Most Hated / Most Loved cards

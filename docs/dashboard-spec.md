@@ -4,7 +4,7 @@
 **From:** Senior Data Engineer + PM  
 **To:** Claude Code (Implementation Agent)  
 **Date:** February 14, 2026  
-**Version:** 1.1
+**Version:** 1.2
 
 ---
 
@@ -48,9 +48,9 @@ app/
 
 **Source:** `data/dashboard/aggregates.json`
 
-The JSON contains 5 top-level keys. Load once via `st.cache_data`, convert views to Polars or Pandas DataFrames, filter in memory. For 112 players × 30 teams this is trivially fast.
+The JSON contains 5 top-level keys. Load once via `st.cache_data`, convert views to Polars or Pandas DataFrames, filter in memory. For 111 players × 30 teams this is trivially fast.
 
-### `player_overall` (list of 112 objects)
+### `player_overall` (list of 111 objects)
 ```json
 {
   "attributed_player": "Draymond Green",
@@ -118,7 +118,7 @@ Fanbase-level aggregates — how each team's fans behave across all players.
 }
 ```
 
-### `player_metadata` (dict keyed by player name, 112 entries)
+### `player_metadata` (dict keyed by player name, 111 entries)
 ```json
 {
   "Bam Adebayo": {
@@ -137,8 +137,8 @@ Fanbase-level aggregates — how each team's fans behave across all players.
   "total_comments": 1934297,
   "usable_comments": 1886133,
   "excluded_comments": 48164,
-  "attributed_comments": 1647325,
-  "player_count": 112,
+  "attributed_comments": 1567722,
+  "player_count": 111,
   "team_count": 30,
   "week_count": 40,
   "season": "2024-25",
@@ -159,12 +159,12 @@ Fanbase-level aggregates — how each team's fans behave across all players.
 ```
 ┌─────────────────────────────────────────────────────┐
 │  r/NBA Hate Tracker: 2024-25 Season                 │
-│  1.57M comments analyzed across 112 players         │
+│  1.57M comments analyzed across 111 players         │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
 │  [Metric Selector]          [Threshold Slider]      │
 │   neg_rate ▼                ──●────── 5,000         │
-│                             "59 of 112 players"     │
+│                             "59 of 111 players"     │
 │                                                     │
 │  ┌───────────────────────────────────────────────┐  │
 │  │ # │ 📷 │ Player          │ Metric │ Comments  │  │
@@ -200,7 +200,7 @@ Default: **Most Hated (Negative Rate)**
 - Range: 500 – 50,000
 - Default: 5,000
 - Step: 500
-- Dynamic annotation below: `"{N} of 112 players shown"`
+- Dynamic annotation below: `"{N} of 111 players shown"`
 - **Rationale:** 5,000 is the median split (59 players). Below this, selection bias inflates rates for players only discussed in negative contexts (e.g., Bradley Beal's contract). Above this, diminishing returns — top 6 are identical at 5K and 10K.
 
 **Show Top N** (`st.slider` or fixed):
@@ -212,7 +212,7 @@ Default: **Most Hated (Negative Rate)**
 Each row displays:
 - **Rank** (1-indexed)
 - **Headshot** — Small thumbnail from `player_metadata[player].headshot_url`. Use `st.image` with ~40px width or render as HTML `<img>` in an `st.dataframe` custom column. If hotlink fails, degrade gracefully (show team logo or placeholder).
-- **Player Name** — Clickable link to Player Detail page via `st.query_params` (e.g., `?player=Draymond+Green`). Implement as `st.page_link` or markdown link.
+- **Player Name** — Plain text (st.dataframe does not support embedded links or widgets). Navigation to Player Detail is handled via the scatter plot click and a "Jump to player" selectbox below the table.
 - **Team** — Short abbreviation from `player_metadata[player].team` or the team's abbreviation
 - **Primary Metric** — The selected metric, formatted per table above
 - **Comment Count** — Formatted with comma separator
@@ -225,7 +225,7 @@ Below the leaderboard table. Plotly Express scatter:
 - **Hover:** Player name, team, neg_rate, pos_rate, net_sentiment, comment_count
 - **Color:** Optional — by conference (East/West) from `player_metadata`
 - **Annotations:** Label outliers (Draymond, Luka, Jokic, Wembanyama) directly on chart
-- **Click behavior:** On click, navigate to Player Detail with query param. Use Plotly's `clickData` callback → `st.query_params`.
+- **Click behavior:** On click, navigate to Player Detail with query param. Use `on_select="rerun"` with `custom_data=["attributed_player"]` to capture the player name from the clicked point.
 - **Key insight this visualizes:** Luka generates the most raw negative comments (49.6K) but ranks middling in neg_rate (37.2%). Volume ≠ hate.
 
 Only show players above the current threshold.
@@ -301,7 +301,7 @@ The flair cross-tab at 200-comment minimum already filters to meaningful pairs. 
 
 #### Navigation
 
-Player names in the mini-leaderboards should link to the Player Detail page via query params.
+Player names in the mini-leaderboards are plain text (same st.dataframe limitation). Add a "Jump to player" selectbox below each mini-leaderboard for navigation via query params.
 
 ---
 
@@ -351,7 +351,7 @@ Player names in the mini-leaderboards should link to the Player Detail page via 
 #### Controls
 
 **Player Selector** (`st.selectbox` with search):
-- All 112 players, searchable
+- All 111 players, searchable
 - If `?player=` query param is set (from leaderboard/flair click), pre-populate the selector
 - Default: Draymond Green (the headline finding)
 
@@ -410,7 +410,7 @@ From the flair view mini-leaderboard:
 **Pipeline Summary** (always visible):
 - "We collected 7M comments from r/NBA (Oct 2024 – Jun 2025) via Arctic Shift"
 - "1.94M mentioned a tracked player → classified by Claude Haiku 4.5"  
-- "1.57M attributed to 112 specific players for analysis"
+- "1.57M attributed to 111 specific players for analysis"
 - Simple funnel visual (could be a Mermaid diagram or styled metrics)
 
 **What the metrics mean** (always visible):
@@ -469,7 +469,7 @@ def get_player_rank(player: str, df: DataFrame, metric: str, threshold: int) -> 
     """Compute a player's rank in the filtered+sorted leaderboard."""
 ```
 
-**DataFrame choice:** Pandas is the pragmatic choice here. Streamlit's native `st.dataframe` and Plotly both integrate seamlessly with Pandas. Polars would require `.to_pandas()` conversions at every display boundary. For a 112-row dataset, there's zero performance argument for Polars. Use Pandas for the dashboard even though the pipeline uses Polars.
+**DataFrame choice:** Pandas is the pragmatic choice here. Streamlit's native `st.dataframe` and Plotly both integrate seamlessly with Pandas. Polars would require `.to_pandas()` conversions at every display boundary. For a 111-row dataset, there's zero performance argument for Polars. Use Pandas for the dashboard even though the pipeline uses Polars.
 
 ---
 
@@ -517,15 +517,15 @@ Plotly charts inherit Streamlit's theme automatically via `st.plotly_chart`, so 
 
 ## Technical Notes
 
-**Dependencies to add** (if not already in `pyproject.toml`):
-- `plotly` — for scatter plot and any interactive charts
-- `streamlit` already present (>=1.52.1)
-- `pandas` — for dashboard DataFrames (streamlit-native integration)
+**Dependencies** (already in `pyproject.toml`):
+- `plotly` (>=6.5.2) — scatter plot and interactive charts
+- `streamlit` (>=1.52.1) — framework
+- `pandas` (>=2.3.3) — dashboard DataFrames (Streamlit-native integration)
 
 **Streamlit Cloud deployment:**
 - Entry point: `app/streamlit_app.py`
 - `aggregates.json` committed to repo under `data/dashboard/`
-- Path resolution: use `pathlib.Path(__file__).parent.parent / "data" / "dashboard" / "aggregates.json"` or equivalent
+- Path resolution: `load_data()` lives in `app/utils/data.py`, so use `pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "dashboard" / "aggregates.json"` (3 parents: utils/ → app/ → repo root). Add a `.exists()` guard with `st.error()` for Streamlit Cloud debugging.
 - No secrets needed (no API calls, no auth)
 
 **Performance:**
@@ -545,9 +545,6 @@ Plotly charts inherit Streamlit's theme automatically via `st.plotly_chart`, so 
 ### Local Development
 
 ```bash
-# Install dependencies (if plotly/pandas not already present)
-uv add plotly pandas
-
 # Run locally — hot-reloads on file save
 uv run streamlit run app/streamlit_app.py
 # Opens localhost:8501 in browser
@@ -610,15 +607,16 @@ Option B is recommended — the pipeline dependencies (anthropic, polars, boto3,
 
 ### Path Resolution
 
-The app runs from `app/` but needs to load `data/dashboard/aggregates.json` at the repo root. Use relative path resolution from the app file:
+The app loads data from `app/utils/data.py`, which needs to reach `data/dashboard/aggregates.json` at the repo root. From `app/utils/data.py`, that's 3 `.parent` calls:
 
 ```python
 from pathlib import Path
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "dashboard" / "aggregates.json"
+# app/utils/data.py → app/utils/ → app/ → repo root
+DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "dashboard" / "aggregates.json"
 ```
 
-This works both locally (`uv run streamlit run app/streamlit_app.py`) and on Streamlit Cloud.
+Add a `.exists()` guard so path misconfiguration surfaces immediately on Streamlit Cloud rather than failing silently.
 
 ---
 

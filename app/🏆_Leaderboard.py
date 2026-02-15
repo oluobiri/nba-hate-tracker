@@ -218,6 +218,15 @@ fig.update_layout(
     plot_bgcolor="rgba(0,0,0,0)",
     height=500,
     legend=dict(title="Conference"),
+    xaxis=dict(
+        fixedrange=True,
+        tickvals=[500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000],
+        ticktext=["500", "1K", "2.5K", "5K", "10K", "25K", "50K", "100K"],
+    ),
+    yaxis=dict(
+        fixedrange=True,
+        tickformat=".0%",
+    ),
 )
 
 event = st.plotly_chart(

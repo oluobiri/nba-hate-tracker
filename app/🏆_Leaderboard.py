@@ -13,6 +13,8 @@ from utils.data import (
     METRIC_CONFIG,
     enrich_with_metadata,
     filter_by_threshold,
+    format_rate,
+    format_sentiment,
     load_data,
 )
 
@@ -88,6 +90,32 @@ with col_topn:
     )
 
 # ---------------------------------------------------------------------------
+# Podium — top 3 visual hook
+# ---------------------------------------------------------------------------
+
+_fmt = format_rate if metric_fmt == "rate" else format_sentiment
+top3 = (
+    enriched.sort_values(metric_col, ascending=metric_ascending)
+    .head(3)
+    .reset_index(drop=True)
+)
+
+# Display order: #2 (left), #1 (center), #3 (right)
+_podium_order = [(1, "🥈", 80), (0, "🥇", 120), (2, "🥉", 80)]
+podium_cols = st.columns(3)
+for col, (rank_idx, medal, img_width) in zip(podium_cols, _podium_order):
+    if rank_idx >= len(top3):
+        continue
+    row = top3.iloc[rank_idx]
+    with col:
+        with st.container(border=True):
+            headshot = row.get("headshot_url")
+            if headshot:
+                st.image(headshot, width=img_width)
+            st.markdown(f"**{medal} {row['attributed_player']}**")
+            st.markdown(f"### {_fmt(row[metric_col])}")
+
+# ---------------------------------------------------------------------------
 # Leaderboard table
 # ---------------------------------------------------------------------------
 
@@ -133,21 +161,6 @@ st.dataframe(
     use_container_width=True,
     height=min(35 * top_n + 38, 800),
 )
-
-# ---------------------------------------------------------------------------
-# Jump to player
-# ---------------------------------------------------------------------------
-
-st.markdown("---")
-jump_player = st.selectbox(
-    "Jump to player detail",
-    options=[""] + sorted(player_overall["attributed_player"].tolist()),
-    index=0,
-    key="jump_leaderboard",
-)
-if jump_player:
-    st.query_params["player"] = jump_player
-    st.switch_page("pages/2_🔍_Player_Detail.py")
 
 # ---------------------------------------------------------------------------
 # Scatter plot

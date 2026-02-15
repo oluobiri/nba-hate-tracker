@@ -258,16 +258,6 @@ _mini_leaderboard(
     "Neg Rate",
 )
 
-jump_hated = st.selectbox(
-    "Jump to player detail",
-    options=[""] + sorted(team_flair["attributed_player"].tolist()),
-    index=0,
-    key="jump_hated",
-)
-if jump_hated:
-    st.query_params["player"] = jump_hated
-    st.switch_page("pages/2_🔍_Player_Detail.py")
-
 st.markdown("---")
 
 _mini_leaderboard(
@@ -276,13 +266,3 @@ _mini_leaderboard(
     "pos_rate",
     "Pos Rate",
 )
-
-jump_loved = st.selectbox(
-    "Jump to player detail",
-    options=[""] + sorted(team_flair["attributed_player"].tolist()),
-    index=0,
-    key="jump_loved",
-)
-if jump_loved:
-    st.query_params["player"] = jump_loved
-    st.switch_page("pages/2_🔍_Player_Detail.py")

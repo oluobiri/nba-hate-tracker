@@ -7,6 +7,7 @@ leaderboards for the selected team's flair.
 from __future__ import annotations
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from utils.data import (
@@ -155,6 +156,44 @@ b2.metric("Positive Rate", format_rate(team_row["pos_rate"]))
 b3.metric("Total Comments", f"{int(team_row['comment_count']):,}")
 if neg_rank is not None:
     b4.metric("Negativity Rank", f"#{neg_rank} of 30")
+
+# ---------------------------------------------------------------------------
+# Most discussed bar chart
+# ---------------------------------------------------------------------------
+
+st.markdown("---")
+st.subheader(f"Most Discussed Players by {selected_team} Fans")
+
+top_discussed = (
+    team_flair.sort_values("comment_count", ascending=False)
+    .head(10)
+    .sort_values("comment_count", ascending=True)  # ascending for horizontal bar
+)
+
+fig_discussed = px.bar(
+    top_discussed,
+    x="comment_count",
+    y="attributed_player",
+    orientation="h",
+    labels={"comment_count": "Comments", "attributed_player": ""},
+    text="comment_count",
+)
+fig_discussed.update_traces(
+    marker_color="#3498DB",
+    texttemplate="%{text:,}",
+    textposition="outside",
+)
+fig_discussed.update_layout(
+    template="plotly_dark",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    height=400,
+    margin=dict(l=0, r=40, t=0, b=0),
+    xaxis=dict(visible=False),
+    yaxis=dict(tickfont=dict(size=13)),
+)
+
+st.plotly_chart(fig_discussed, use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Mini leaderboards

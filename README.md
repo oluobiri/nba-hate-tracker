@@ -26,7 +26,7 @@ But he didn't start the season on top. Westbrook and Harden opened as the most h
 
 ## Architecture
 
-The pipeline processes Reddit comments through four stages: ingestion from Arctic Shift archives, filtering to player-mention comments, sentiment classification via the Anthropic Batch API, and aggregation into dashboard-ready views.
+The pipeline processes Reddit comments through five stages: ingestion from Arctic Shift archives, cleaning and filtering to player-mention comments, sentiment classification via the Anthropic Batch API, aggregation into dashboard-ready views, and delivery via a Streamlit dashboard and Flourish bar race animation.
 
 ![Pipeline Architecture](docs/assets/architecture.svg)
 

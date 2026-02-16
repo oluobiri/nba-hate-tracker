@@ -1,9 +1,7 @@
 # CLAUDE.md - NBA Hate Tracker
 
 **Project:** Sentiment analysis pipeline to answer "Who is r/NBA's most hated player?"  
-**Answer:** Draymond Green (51.0% negative rate, 23/30 fanbases agree)  
-**Budget:** $254.20 spent of $300 ceiling  
-**Phase:** 6 (Visualization & Deployment)
+**Answer:** Draymond Green (51.0% negative rate, 22/30 fanbases agree)  
 
 ---
 
@@ -66,17 +64,6 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 
 **Dashboard input:**
 - `data/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load
-
-## Current State (Phase 6)
-
-**Completed:**
-- 1.57M comments attributed to 112 players
-- `aggregates.json` ready with 4 views: player_overall, player_temporal, player_team, team_overall
-
-**Phase 6 Tracks:**
-1. **Bar Race (Flourish):** Animated neg_rate rankings over 40 weeks — Draymond overtaking Embiid is the hook
-2. **Dashboard (Streamlit):** Leaderboard, Flair View, Player Detail → deploy to Streamlit Cloud
-3. **r/NBA Post:** Bar race + key findings + dashboard link
 
 ## Rules
 

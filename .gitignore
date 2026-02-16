@@ -33,5 +33,9 @@ data/
 *.json
 *.csv
 
+# Dashboard data (committed for Streamlit Cloud)
+!data/dashboard/
+!data/dashboard/aggregates.json
+
 # uv
 .python-version

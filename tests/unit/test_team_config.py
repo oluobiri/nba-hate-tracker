@@ -25,6 +25,9 @@ class TestLoadTeamConfig:
         teams = load_team_config()
         for team_name, info in teams.items():
             assert isinstance(info["abbreviation"], str), f"{team_name} missing abbreviation"
+            assert isinstance(info["conference"], str), f"{team_name} missing conference"
+            assert isinstance(info["team_id"], int), f"{team_name} missing team_id"
+            assert isinstance(info["logo_url"], str), f"{team_name} missing logo_url"
             assert isinstance(info["aliases"], list), f"{team_name} missing aliases"
 
     def test_lakers_exists_with_abbreviation(self):

@@ -230,10 +230,12 @@ def aggregate_sentiment(input_path: Path) -> dict:
     df_team = df.filter(pl.col("team").is_not_null())
     team_overall = compute_metrics(df_team, ["team"])
 
-    # Add conference field to each team row
+    # Add abbreviation, conference and logo_url to each team row
     for row in team_overall:
         team_info = team_config.get(row["team"], {})
+        row["abbreviation"] = team_info.get("abbreviation")
         row["conference"] = team_info.get("conference")
+        row["logo_url"] = team_info.get("logo_url")
 
     # Metadata
     unique_players = df_attributed["attributed_player"].n_unique()
@@ -253,12 +255,15 @@ def aggregate_sentiment(input_path: Path) -> dict:
     }
 
     # Filter player metadata to only players in player_overall
+    # and enrich with team logo_url
     attributed_players = {row["attributed_player"] for row in player_overall}
-    filtered_player_metadata = {
-        player: meta
-        for player, meta in player_metadata.items()
-        if player in attributed_players
-    }
+    filtered_player_metadata = {}
+    for player, meta in player_metadata.items():
+        if player in attributed_players:
+            enriched = dict(meta)
+            team_info = team_config.get(enriched.get("team", ""), {})
+            enriched["logo_url"] = team_info.get("logo_url")
+            filtered_player_metadata[player] = enriched
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "

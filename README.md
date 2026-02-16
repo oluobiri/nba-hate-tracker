@@ -4,6 +4,7 @@
 ![Anthropic](https://img.shields.io/badge/Claude_Haiku_4.5-Anthropic-d4a574?logo=anthropic&logoColor=white)
 ![Polars](https://img.shields.io/badge/Polars-CD792C?logo=polars&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Flourish](https://img.shields.io/badge/Flourish-3B5998)
 ![Comments](https://img.shields.io/badge/Comments_Analyzed-1.57M-blue)
 ![Players](https://img.shields.io/badge/Players_Tracked-111-orange)
 
@@ -86,6 +87,7 @@ Each comment is classified as **negative**, **neutral**, or **positive** with a 
 | Classifier | Claude Haiku 4.5 (Anthropic Batch API) |
 | Data Source | Arctic Shift API (Reddit archives) |
 | Dashboard | Streamlit |
+| Bar Race Animation | Flourish |
 | Package Manager | uv |
 | Player Config | YAML (384 aliases → 111 players) |
 

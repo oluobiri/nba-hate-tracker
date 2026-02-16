@@ -1,7 +1,7 @@
 # CLAUDE.md - NBA Hate Tracker
 
 **Project:** Sentiment analysis pipeline to answer "Who is r/NBA's most hated player?"  
-**Answer:** Draymond Green (51.0% negative rate, 23/30 fanbases agree)  
+**Answer:** Draymond Green (51.0% negative rate, 22/30 fanbases agree)  
 **Budget:** $254.20 spent of $300 ceiling  
 **Phase:** 6 (Visualization & Deployment)
 

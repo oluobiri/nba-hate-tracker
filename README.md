@@ -20,7 +20,7 @@ A sentiment analysis pipeline that analyzed **1.57 million Reddit comments** fro
 
 Draymond Green holds a **51.0% negative comment rate** across 53,454 comments — no other player combines that level of negativity with that volume of discussion. He's the most hated player according to **22 of 30 NBA fanbases**. Utah Jazz fans lead the charge at 63.6% negativity.
 
-But he didn't start the season on top. Westbrook and Harden opened as the most hated, with Bronny James briefly spiking to #2 during his early-season scrutiny. By late October, Ben Simmons surged into the top 2 and the mid-season settled into a three-way rotation between Simmons, Jamal Murray, and Embiid trading the top spots. Draymond entered the top 5 in early December and climbed steadily, first reaching #1 in February — but he and Embiid traded places through mid-March before Draymond finally locked down the top spot from late April through the end of the season.
+But he didn't start the season on top. Westbrook opened at #1 with Bronny James at #2 during his early-season scrutiny. By late October, Ben Simmons surged into the top 2 and the mid-season settled into a three-way rotation between Simmons, Jamal Murray, and Embiid trading the top spots. Draymond entered the top 5 in early December and climbed steadily, first reaching #1 in February — but he and Embiid traded places through mid-March before Draymond finally locked down the top spot from late April through the end of the season.
 
 ![Bar Race Preview](docs/assets/bar-race-preview.gif)
 

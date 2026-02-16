@@ -6,6 +6,8 @@ and external links.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from utils.data import load_data
@@ -38,6 +40,11 @@ st.title("How It Works")
 # ---------------------------------------------------------------------------
 
 st.subheader("Data Pipeline")
+
+# Architecture diagram — app/pages/ → app/ → repo root → docs/assets/
+arch_path = Path(__file__).resolve().parent.parent.parent / "docs" / "assets" / "architecture.svg"
+if arch_path.exists():
+    st.image(str(arch_path), use_container_width=True)
 
 f1, f2, f3, f4 = st.columns(4)
 f1.metric("Total Comments", f"{metadata['total_comments']:,}")

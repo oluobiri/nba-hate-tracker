@@ -45,10 +45,10 @@ Each comment is classified as **negative**, **neutral**, or **positive** with a 
 
 **Batch processing at scale:**
 
-- 20 batches of 100K requests each
-- ~18 hours total processing time
+- 20 batches of up to 100K requests (~20 hours wall clock)
+- 248.5M input tokens + 52.0M output tokens (300.5M total)
 - 97.25% usable classification rate
-- ~$254 total cost (300M tokens)
+- $254 total cost — output tokens are 17% of volume but 51% of cost (5× per-token price)
 - Validated against 500 human-labeled comments at ~96% accuracy
 
 ## Key Findings
@@ -136,7 +136,7 @@ nba-hate-tracker/
 | Dashboard hosting (Streamlit Cloud) | $0 |
 | **Total** | **$254.20** |
 
-Initial naive cost estimate was $1,156. Player-mention filtering reduced the comment volume by 72%, and the Batch API's 50% discount brought the final cost to $254 — a 78% reduction from the naive estimate.
+Initial naive cost estimate was $1,156 (2.8M comments, verbose prompt). Three optimizations brought it down 78%: player-mention filtering cut comments from 2.8M to 1.9M (-31%), a minimal prompt halved input tokens (261 → 128 per comment), and dropping the unused `reasoning` field slashed output tokens (112 → 23 per comment).
 
 ---
 

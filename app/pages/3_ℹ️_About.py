@@ -31,11 +31,7 @@ metadata = data["metadata"]
 # Header
 # ---------------------------------------------------------------------------
 
-st.title("About / Methodology")
-st.caption(
-    "How we measured which NBA player r/NBA hates the most "
-    f"({metadata['season']} season)"
-)
+st.title("How It Works")
 
 # ---------------------------------------------------------------------------
 # Pipeline funnel

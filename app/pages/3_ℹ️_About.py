@@ -194,7 +194,7 @@ Mentions: LeBron James, Stephen Curry · Sentiment targets: **Stephen Curry**
 st.markdown("---")
 st.subheader("The Prompt")
 
-with st.expander("Production prompt sent to Claude Haiku 4.5"):
+with st.expander("Prompt sent to Claude Haiku 4.5"):
     st.code(
         'Classify sentiment toward NBA players.\n'
         "Slang: nasty/sick/filthy=positive, "

@@ -1,7 +1,5 @@
 # Git Conventions
 
-**Full reference:** `docs/git-strategy.md`
-
 ## Commit Format
 
 ```
@@ -32,7 +30,6 @@
 | `data` | Data processing, schemas, Polars transforms |
 | `sentiment` | Classification logic, prompts |
 | `api` | Anthropic Batch API integration |
-| `infra` | AWS resources, S3, Athena, DynamoDB |
 | `app` | Streamlit dashboard |
 | `config` | Environment, pyproject.toml, settings |
 | `tests` | Test files, fixtures |

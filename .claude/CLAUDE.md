@@ -9,18 +9,20 @@
 
 ```
 scripts/          → CLI entry points (download, filter, batch, aggregate)
-pipeline/         → Data processing (ArcticShiftClient, CommentPipeline, batch, aggregation)
+pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
-config/           → YAML configs (players.yaml v1.2, teams.yaml)
+config/           → YAML configs (season.yaml, 2024-25/players.yaml, teams.yaml)
 app/              → Streamlit dashboard
 tests/            → pytest (unit/, conftest.py)
 notebooks/        → EDA and exploration (01-06)
 data/             → Not committed
-  ├── raw/        → Arctic Shift downloads
-  ├── filtered/   → Cleaned + player-mention filtered
-  ├── batches/    → Batch API requests/responses
-  ├── processed/  → sentiment.parquet (1.93M rows)
-  └── dashboard/  → aggregates.json (precomputed views)
+  ├── 2024-25/    → V1 season data
+  │   ├── raw/        → Arctic Shift downloads
+  │   ├── filtered/   → Player-mention filtered JSONL
+  │   ├── batches/    → Batch API requests/responses
+  │   ├── processed/  → sentiment.parquet
+  │   └── dashboard/  → aggregates.json + per-table Parquet files
+  └── 2025-26/    → V2 season data (same structure)
 ```
 
 ## Commands
@@ -47,7 +49,7 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 
 ## Code Patterns
 
-- **Imports:** Relative within packages, absolute cross-package
+- **Imports:** Absolute throughout
 - **Scripts:** Thin wrappers that call pipeline/ modules. Use `if __name__ == "__main__":`
 - **Error handling:** Specific exceptions with context, preserve chains with `from e`
 - **Type hints:** Required on all function signatures
@@ -56,14 +58,26 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 ## Data Files
 
 **Never read directly (large files):**
-- `data/raw/*.jsonl` (12+ GB)
-- `data/filtered/*.jsonl` (2+ GB)
-- `data/processed/sentiment.parquet` (1.93M rows)
-- `data/batches/requests/*.jsonl`
-- `data/batches/responses/*.jsonl`
+- `data/2024-25/raw/*.jsonl` (12+ GB)
+- `data/2024-25/filtered/*.jsonl` (2+ GB)
+- `data/2024-25/processed/sentiment.parquet` (1.93M rows)
+- `data/2024-25/batches/requests/*.jsonl`
+- `data/2024-25/batches/responses/*.jsonl`
 
 **Dashboard input:**
-- `data/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load
+- `data/2024-25/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load
+
+## DuckDB CLI
+
+For ad-hoc queries on Parquet files. Read-only — never use to query `data/*/raw/` or `data/*/processed/sentiment.parquet`.
+
+```bash
+duckdb                                                                   # Interactive shell
+SET access_mode = 'read_only';                                           # Enforce read-only (set globally via .duckdbrc)
+SELECT * FROM 'data/2024-25/dashboard/player_overall.parquet' LIMIT 10;
+```
+
+A `.duckdbrc` at project root sets read-only mode globally.
 
 ## Rules
 

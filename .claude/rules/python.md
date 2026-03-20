@@ -10,14 +10,11 @@ paths:
 
 **Order:** Standard library → Third-party → Local (ruff enforces this)
 
-**Relative vs absolute:**
-- Within a package: use relative (`from .arctic_shift import ArcticShiftClient`)
-- Cross-package: use absolute (`from utils.formatting import format_duration`)
+Always use absolute imports.
 
 ```python
-# In pipeline/processors.py
-from .arctic_shift import ArcticShiftClient  # Same package: relative
-from utils.constants import FIELDS_TO_KEEP   # Different package: absolute
+from pipeline.arctic_shift import ArcticShiftClient
+from utils.constants import REQUIRED_FIELDS
 ```
 
 ## Type Hints
@@ -136,7 +133,7 @@ if __name__ == "__main__":
     main()
 ```
 
-**Pipeline classes own their domain:**
+**Classes for stateful components (API clients), functions for stateless transforms:**
 ```python
 # pipeline/arctic_shift.py
 class ArcticShiftClient:
@@ -192,11 +189,11 @@ Prefer `@dataclass` over plain classes when the primary purpose is holding data.
 
 ## Constants
 
-Centralize in `utils/constants.py`. No magic strings in code.
+System constants (field schemas, API config) live in `utils/constants.py`. Domain config (dates, thresholds, player lists) lives in YAML under `config/`. No magic strings in code.
 
 ```python
 # Good
-from utils.constants import FIELDS_TO_KEEP, ARCTIC_SHIFT_URL
+from utils.constants import REQUIRED_FIELDS, ARCTIC_SHIFT_URL
 
 # Avoid
 fields = ["id", "body", "author", "subreddit"]  # Magic list in random file

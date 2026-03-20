@@ -42,7 +42,7 @@ tests/
 │   ├── test_formatting.py
 │   └── test_arctic_shift.py
 └── integration/         # End-to-end, may touch files/network
-    └── test_pipeline.py
+    └── test_pipeline.py  # TODO: v2 integration tests (currently empty)
 ```
 
 Mirror the source structure:
@@ -169,7 +169,7 @@ def test_fetch_comments_paginates():
 |-----------|------------|
 | `pipeline/` | Core logic, edge cases, error handling |
 | `utils/` | Pure functions with various inputs |
-| `scripts/` | Skip (thin wrappers, tested via integration) |
+| `scripts/` | Skip (thin CLI wrappers) |
 
 ## When Tests Are Optional
 
@@ -181,8 +181,8 @@ Not everything needs unit tests. Skip tests for:
 
 Focus testing effort on:
 
-- **Reusable pipeline components** — `ArcticShiftClient`, `CommentPipeline`
-- **Pure utility functions** — `format_duration`, `filter_by_length`
+- **Reusable pipeline components** — `ArcticShiftClient`, processors
+- **Pure utility functions** — `format_duration`, `extract_fields`
 - **Complex logic** — Anything with branching, edge cases, or error handling
 
 ## Running Tests

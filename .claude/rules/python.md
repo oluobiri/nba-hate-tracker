@@ -139,7 +139,7 @@ if __name__ == "__main__":
 class ArcticShiftClient:
     """Handles all Arctic Shift API interactions."""
     
-    def __init__(self, base_url: str = ARCTIC_SHIFT_URL, delay: float = 0.5):
+    def __init__(self, base_url: str = ARCTIC_SHIFT_BASE_URL, delay: float = 0.5):
         self.base_url = base_url
         self.delay = delay
         self.session = requests.Session()
@@ -193,7 +193,7 @@ System constants (field schemas, API config) live in `utils/constants.py`. Domai
 
 ```python
 # Good
-from utils.constants import REQUIRED_FIELDS, ARCTIC_SHIFT_URL
+from utils.constants import REQUIRED_FIELDS, ARCTIC_SHIFT_BASE_URL
 
 # Avoid
 fields = ["id", "body", "author", "subreddit"]  # Magic list in random file
@@ -201,14 +201,15 @@ fields = ["id", "body", "author", "subreddit"]  # Magic list in random file
 
 ## Paths
 
-Use `pathlib.Path`, not string concatenation.
+Use `utils/paths.py` functions — never construct data paths with hardcoded strings.
 
 ```python
-from pathlib import Path
+from utils.paths import get_filtered_dir
 
 # Good
-output_path = Path("data/filtered") / "cleaned.jsonl"
+output_path = get_filtered_dir() / "cleaned.jsonl"
 
 # Avoid
+output_path = Path("data/filtered") / "cleaned.jsonl"  # Bypasses DATA_DIR env var
 output_path = "data/filtered/" + "cleaned.jsonl"
 ```

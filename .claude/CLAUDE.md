@@ -11,7 +11,7 @@
 scripts/          → CLI entry points (download, filter, batch, aggregate)
 pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
-config/           → YAML configs (season.yaml, 2024-25/players.yaml, teams.yaml)
+config/           → YAML configs (2024-25/players.yaml, teams.yaml; season.yaml planned)
 app/              → Streamlit dashboard
 tests/            → pytest (unit/, conftest.py)
 notebooks/        → EDA and exploration (01-06)
@@ -75,9 +75,8 @@ For ad-hoc queries on Parquet files. Read-only — never use to query `data/*/ra
 # Non-interactive (preferred in Claude Code)
 duckdb -c "SELECT player, neg_rate FROM 'data/2024-25/dashboard/player_overall.parquet' ORDER BY neg_rate DESC LIMIT 10"
 
-# Interactive shell
+# Interactive shell (.duckdbrc sets read-only automatically)
 duckdb
-SET access_mode = 'read_only';
 SELECT * FROM 'data/2024-25/dashboard/player_overall.parquet' LIMIT 10;
 ```
 

@@ -72,12 +72,16 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 For ad-hoc queries on Parquet files. Read-only — never use to query `data/*/raw/` or `data/*/processed/sentiment.parquet`.
 
 ```bash
-duckdb                                                                   # Interactive shell
-SET access_mode = 'read_only';                                           # Enforce read-only (set globally via .duckdbrc)
+# Non-interactive (preferred in Claude Code)
+duckdb -c "SELECT player, neg_rate FROM 'data/2024-25/dashboard/player_overall.parquet' ORDER BY neg_rate DESC LIMIT 10"
+
+# Interactive shell
+duckdb
+SET access_mode = 'read_only';
 SELECT * FROM 'data/2024-25/dashboard/player_overall.parquet' LIMIT 10;
 ```
 
-A `.duckdbrc` at project root sets read-only mode globally.
+A `.duckdbrc` at project root sets read-only mode globally. Always use aggregations or filters — never `SELECT *` without `LIMIT` (the `body` column on raw data will flood output).
 
 ## Rules
 

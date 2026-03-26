@@ -26,7 +26,7 @@
 
 | Scope | Use For |
 |-------|---------|
-| `pipeline` | ArcticShiftClient, processors, batch jobs |
+| `pipeline` | data processing, batch jobs |
 | `data` | Data processing, schemas, Polars transforms |
 | `sentiment` | Classification logic, prompts |
 | `api` | Anthropic Batch API integration |
@@ -44,7 +44,7 @@
 
 Prefixes: `feature/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`
 
-Examples: `feature/arctic-shift-client`, `fix/rate-limit-handling`, `refactor/comment-pipeline`
+Examples: `feature/arctic-shift-client`, `fix/rate-limit-handling`, `refactor/season-config`
 
 ## PR Titles
 

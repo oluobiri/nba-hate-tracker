@@ -42,7 +42,7 @@ tests/
 │   ├── test_formatting.py
 │   └── test_arctic_shift.py
 └── integration/         # End-to-end, may touch files/network
-    └── test_pipeline.py
+    └── test_pipeline.py  # TODO: v2 integration tests (currently empty)
 ```
 
 Mirror the source structure:
@@ -51,20 +51,22 @@ Mirror the source structure:
 
 ## Naming
 
+Group tests by subject using classes:
+
 ```python
-# Test files
-test_<module>.py
+class TestFilterByLength:
+    def test_rejects_short_comments(self):
+        ...
 
-# Test functions: test_<function>_<scenario>
-def test_filter_by_length_rejects_short_comments():
-    ...
+    def test_accepts_long_comments(self):
+        ...
 
-def test_filter_by_length_accepts_long_comments():
-    ...
-
-def test_fetch_comments_handles_rate_limit():
-    ...
+class TestFetchComments:
+    def test_handles_rate_limit(self):
+        ...
 ```
+
+File names: `test_<module>.py`. Method names: `test_<scenario>` (no need to repeat the class subject).
 
 ## Test Structure
 
@@ -113,14 +115,18 @@ import pytest
 
 @pytest.fixture
 def sample_comment() -> dict:
-    """Standard comment for testing processors."""
+    """Standard comment for testing processors. Fields match REQUIRED_FIELDS."""
     return {
         "id": "abc123",
         "body": "LeBron is the GOAT",
         "author": "user123",
         "author_flair_text": "Lakers",
+        "author_flair_css_class": "lakers",
         "subreddit": "nba",
         "created_utc": 1709251200,
+        "score": 10,
+        "controversiality": 0,
+        "parent_id": "t3_post123",
         "link_id": "t3_post123",
     }
 
@@ -169,7 +175,7 @@ def test_fetch_comments_paginates():
 |-----------|------------|
 | `pipeline/` | Core logic, edge cases, error handling |
 | `utils/` | Pure functions with various inputs |
-| `scripts/` | Skip (thin wrappers, tested via integration) |
+| `scripts/` | Skip (thin CLI wrappers) |
 
 ## When Tests Are Optional
 
@@ -181,8 +187,8 @@ Not everything needs unit tests. Skip tests for:
 
 Focus testing effort on:
 
-- **Reusable pipeline components** — `ArcticShiftClient`, `CommentPipeline`
-- **Pure utility functions** — `format_duration`, `filter_by_length`
+- **Reusable pipeline components** — `ArcticShiftClient`, processors
+- **Pure utility functions** — `format_duration`, `extract_fields`
 - **Complex logic** — Anything with branching, edge cases, or error handling
 
 ## Running Tests

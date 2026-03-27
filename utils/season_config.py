@@ -40,6 +40,12 @@ def load_season_config() -> dict:
     if missing:
         raise ValueError(f"season.yaml missing required keys: {missing}")
 
+    if not config["subreddits"]:
+        raise ValueError("season.yaml 'subreddits' must not be empty")
+
+    # Freeze mutable values so callers can't corrupt the cache
+    config["subreddits"] = tuple(config["subreddits"])
+
     return config
 
 

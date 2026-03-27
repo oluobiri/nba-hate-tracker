@@ -37,11 +37,11 @@ class TestLoadSeasonConfig:
             assert len(parts) == 3, f"{key} should be YYYY-MM-DD"
             assert len(parts[0]) == 4, f"{key} year should be 4 digits"
 
-    def test_subreddits_is_nonempty_list(self):
-        """Subreddits is a non-empty list of strings."""
+    def test_subreddits_is_nonempty_tuple(self):
+        """Subreddits is a non-empty tuple of strings (frozen for cache safety)."""
         config = load_season_config()
         subreddits = config["subreddits"]
-        assert isinstance(subreddits, list)
+        assert isinstance(subreddits, tuple)
         assert len(subreddits) > 0
         for sub in subreddits:
             assert isinstance(sub, str)

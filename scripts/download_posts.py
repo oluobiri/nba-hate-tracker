@@ -59,18 +59,20 @@ def date_to_epoch(date_str: str) -> int:
 # -----------------------------------------------------------------------------
 def download_posts(
     client: ArcticShiftClient,
+    subreddit: str,
     output_path: Path,
     start_timestamp: int,
     end_timestamp: int,
 ) -> int:
     """
-    Download all posts for r/nba within the date range.
+    Download all posts for a subreddit within the date range.
 
     Uses ArcticShiftClient's generator-based API for memory-efficient
     streaming to disk.
 
     Args:
         client: ArcticShiftClient instance.
+        subreddit: Subreddit name to download from.
         output_path: Path to write JSONL file.
         start_timestamp: Start of date range (Unix timestamp).
         end_timestamp: End of date range (Unix timestamp).
@@ -80,9 +82,6 @@ def download_posts(
     """
     total_count = 0
     last_timestamp = start_timestamp
-
-    season_cfg = load_season_config()
-    subreddit = season_cfg["subreddits"][0]
 
     with open(output_path, "w") as f:
         for post in client.fetch_posts(
@@ -164,6 +163,7 @@ def main() -> None:
     with ArcticShiftClient() as client:
         count = download_posts(
             client=client,
+            subreddit=subreddit,
             output_path=output_path,
             start_timestamp=start_ts,
             end_timestamp=end_ts,

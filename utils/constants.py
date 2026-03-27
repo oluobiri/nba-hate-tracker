@@ -113,7 +113,6 @@ ARCTIC_SHIFT_RATE_LIMIT_BUFFER = 10
 
 
 
-
 # =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)
 # =============================================================================

@@ -2,6 +2,7 @@
 
 This module is self-contained — no imports from the project-level utils/.
 All pages import from here for data access, filtering, and formatting.
+Season is resolved by reading config/season.yaml directly.
 """
 
 from __future__ import annotations
@@ -12,18 +13,20 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+import yaml
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 # app/utils/data.py → app/utils/ → app/ → repo root
-DATA_PATH: Path = (
-    Path(__file__).resolve().parent.parent.parent
-    / "data"
-    / "dashboard"
-    / "aggregates.json"
-)
+_REPO_ROOT: Path = Path(__file__).resolve().parent.parent.parent
+_SEASON_CONFIG_PATH: Path = _REPO_ROOT / "config" / "season.yaml"
+
+with open(_SEASON_CONFIG_PATH) as _f:
+    _SEASON: str = yaml.safe_load(_f)["season"]
+
+DATA_PATH: Path = _REPO_ROOT / "data" / _SEASON / "dashboard" / "aggregates.json"
 
 SENTIMENT_COLORS: dict[str, str] = {
     "negative": "#E74C3C",

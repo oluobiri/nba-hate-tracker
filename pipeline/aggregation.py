@@ -12,6 +12,7 @@ from pathlib import Path
 import polars as pl
 
 from utils.player_config import build_alias_to_player_map, load_player_metadata
+from utils.season_config import get_active_season
 from utils.team_config import build_alias_to_team_map, load_team_config
 
 logger = logging.getLogger(__name__)
@@ -250,7 +251,7 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "player_count": unique_players,
         "team_count": unique_teams,
         "week_count": unique_weeks,
-        "season": "2024-25",
+        "season": get_active_season(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -1,7 +1,7 @@
 """
 Download Reddit posts from Arctic Shift API.
 
-This script downloads posts from r/nba for the 2024-25 NBA season.
+This script downloads posts from r/nba for the active NBA season.
 Unlike download_comments.py, this script does not support resume - if interrupted,
 delete the output file and restart.
 
@@ -21,13 +21,9 @@ from datetime import datetime
 from pathlib import Path
 
 from pipeline.arctic_shift import ArcticShiftClient
-from utils.constants import (
-    PRIMARY_SUBREDDIT,
-    SEASON_END_DATE,
-    SEASON_START_DATE,
-)
 from utils.formatting import format_duration
 from utils.paths import get_raw_dir
+from utils.season_config import load_season_config
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -63,18 +59,20 @@ def date_to_epoch(date_str: str) -> int:
 # -----------------------------------------------------------------------------
 def download_posts(
     client: ArcticShiftClient,
+    subreddit: str,
     output_path: Path,
     start_timestamp: int,
     end_timestamp: int,
 ) -> int:
     """
-    Download all posts for r/nba within the date range.
+    Download all posts for a subreddit within the date range.
 
     Uses ArcticShiftClient's generator-based API for memory-efficient
     streaming to disk.
 
     Args:
         client: ArcticShiftClient instance.
+        subreddit: Subreddit name to download from.
         output_path: Path to write JSONL file.
         start_timestamp: Start of date range (Unix timestamp).
         end_timestamp: End of date range (Unix timestamp).
@@ -87,7 +85,7 @@ def download_posts(
 
     with open(output_path, "w") as f:
         for post in client.fetch_posts(
-            subreddit=PRIMARY_SUBREDDIT,
+            subreddit=subreddit,
             after=start_timestamp,
             before=end_timestamp,
         ):
@@ -130,7 +128,11 @@ def main() -> None:
     raw_dir = get_raw_dir()
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    output_path = raw_dir / f"r_{PRIMARY_SUBREDDIT}_posts.jsonl"
+    # Load season config
+    season_cfg = load_season_config()
+    subreddit = season_cfg["subreddits"][0]
+
+    output_path = raw_dir / f"r_{subreddit}_posts.jsonl"
 
     # Handle existing file
     if output_path.exists():
@@ -145,14 +147,14 @@ def main() -> None:
             return
 
     # Convert season dates to timestamps
-    start_ts = date_to_epoch(SEASON_START_DATE)
-    end_ts = date_to_epoch(SEASON_END_DATE)
+    start_ts = date_to_epoch(season_cfg["start_date"])
+    end_ts = date_to_epoch(season_cfg["end_date"])
 
     logger.info("=" * 60)
-    logger.info("NBA Hate Tracker - Posts Download")
+    logger.info(f"NBA Hate Tracker - Posts Download ({season_cfg['season']})")
     logger.info("=" * 60)
-    logger.info(f"Date range: {SEASON_START_DATE} to {SEASON_END_DATE}")
-    logger.info(f"Subreddit: r/{PRIMARY_SUBREDDIT}")
+    logger.info(f"Date range: {season_cfg['start_date']} to {season_cfg['end_date']}")
+    logger.info(f"Subreddit: r/{subreddit}")
     logger.info(f"Output: {output_path}")
     logger.info("=" * 60)
 
@@ -161,6 +163,7 @@ def main() -> None:
     with ArcticShiftClient() as client:
         count = download_posts(
             client=client,
+            subreddit=subreddit,
             output_path=output_path,
             start_timestamp=start_ts,
             end_timestamp=end_ts,

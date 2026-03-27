@@ -112,18 +112,6 @@ ARCTIC_SHIFT_REQUEST_DELAY = 0.5
 ARCTIC_SHIFT_RATE_LIMIT_BUFFER = 10
 
 
-# =============================================================================
-# SEASON BOUNDARIES
-# =============================================================================
-
-# 2024-25 NBA Season data collection window
-# Regular season: Oct 22, 2024 - Apr 13, 2025
-# Playoffs: Apr 19, 2025 - ~June 2025
-# We start Oct 1 to capture preseason discussion
-
-SEASON_START_DATE = "2024-10-01"
-SEASON_END_DATE = "2025-06-30"
-
 
 # =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)

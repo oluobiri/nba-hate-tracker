@@ -1,7 +1,7 @@
 """
 Download Reddit comments from Arctic Shift API.
 
-This script downloads comments from all target subreddits for the 2024-25 NBA season.
+This script downloads comments from target subreddits for the active NBA season.
 It handles pagination, rate limiting, and can resume from interruptions.
 
 Usage:
@@ -42,15 +42,10 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.arctic_shift import ArcticShiftClient
-from utils.constants import (
-    ARCTIC_SHIFT_PAGE_SIZE,
-    PROGRESS_FILENAME,
-    SEASON_END_DATE,
-    SEASON_START_DATE,
-    TARGET_SUBREDDITS,
-)
+from utils.constants import ARCTIC_SHIFT_PAGE_SIZE, PROGRESS_FILENAME
 from utils.formatting import format_duration
 from utils.paths import get_raw_dir
+from utils.season_config import load_season_config
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -216,26 +211,30 @@ def main() -> None:
     else:
         progress = load_progress(progress_path)
 
+    # Load season config
+    season_cfg = load_season_config()
+    configured_subs = season_cfg["subreddits"]
+
     # Determine which subreddits to download
     if args.subreddit:
         # Single subreddit mode (for testing)
-        if args.subreddit.lower() not in [s.lower() for s in TARGET_SUBREDDITS]:
+        if args.subreddit.lower() not in [s.lower() for s in configured_subs]:
             logger.warning(
-                f"'{args.subreddit}' is not in TARGET_SUBREDDITS. "
+                f"'{args.subreddit}' is not in configured subreddits. "
                 "Proceeding anyway (might be intentional for testing)."
             )
         targets = [args.subreddit.lower()]
     else:
-        targets = TARGET_SUBREDDITS
+        targets = configured_subs
 
     # Convert season dates to timestamps
-    start_ts = date_to_epoch(SEASON_START_DATE)
-    end_ts = date_to_epoch(SEASON_END_DATE)
+    start_ts = date_to_epoch(season_cfg["start_date"])
+    end_ts = date_to_epoch(season_cfg["end_date"])
 
     logger.info("=" * 60)
-    logger.info("NBA Hate Tracker - Arctic Shift Download")
+    logger.info(f"NBA Hate Tracker - Arctic Shift Download ({season_cfg['season']})")
     logger.info("=" * 60)
-    logger.info(f"Date range: {SEASON_START_DATE} to {SEASON_END_DATE}")
+    logger.info(f"Date range: {season_cfg['start_date']} to {season_cfg['end_date']}")
     logger.info(f"Subreddits to process: {len(targets)}")
     logger.info(f"Output dir: {raw_dir}")
     if not args.force:

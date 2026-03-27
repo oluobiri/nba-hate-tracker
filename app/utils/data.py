@@ -2,6 +2,7 @@
 
 This module is self-contained — no imports from the project-level utils/.
 All pages import from here for data access, filtering, and formatting.
+Season is resolved by reading config/season.yaml directly.
 """
 
 from __future__ import annotations
@@ -12,18 +13,15 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+import yaml
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 # app/utils/data.py → app/utils/ → app/ → repo root
-DATA_PATH: Path = (
-    Path(__file__).resolve().parent.parent.parent
-    / "data"
-    / "dashboard"
-    / "aggregates.json"
-)
+_REPO_ROOT: Path = Path(__file__).resolve().parent.parent.parent
+_SEASON_CONFIG_PATH: Path = _REPO_ROOT / "config" / "season.yaml"
 
 SENTIMENT_COLORS: dict[str, str] = {
     "negative": "#E74C3C",
@@ -60,6 +58,21 @@ METRIC_CONFIG: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 
+def _get_data_path() -> Path:
+    """Resolve the aggregates.json path for the active season."""
+    if not _SEASON_CONFIG_PATH.exists():
+        st.error(
+            f"Season config not found: {_SEASON_CONFIG_PATH}. "
+            "Ensure config/season.yaml exists."
+        )
+        st.stop()
+
+    with open(_SEASON_CONFIG_PATH) as f:
+        season = yaml.safe_load(f)["season"]
+
+    return _REPO_ROOT / "data" / season / "dashboard" / "aggregates.json"
+
+
 @st.cache_data
 def load_data() -> dict[str, Any]:
     """Load aggregates.json once per session, returning DataFrames and dicts.
@@ -72,14 +85,16 @@ def load_data() -> dict[str, Any]:
             - player_metadata: dict keyed by player name
             - metadata: dict of global stats
     """
-    if not DATA_PATH.exists():
+    data_path = _get_data_path()
+
+    if not data_path.exists():
         st.error(
-            f"Data file not found: {DATA_PATH}. "
-            "Ensure aggregates.json is committed under data/dashboard/."
+            f"Data file not found: {data_path}. "
+            f"Ensure aggregates.json exists under data/<season>/dashboard/."
         )
         st.stop()
 
-    with open(DATA_PATH) as f:
+    with open(data_path) as f:
         raw = json.load(f)
 
     return {

@@ -2,7 +2,10 @@
 Player configuration loading from YAML.
 
 This module provides cached access to player aliases and short alias lists
-from config/players.yaml for player mention detection.
+from config/{season}/players.yaml for player mention detection.
+
+Note: Config is cached per process invocation via @lru_cache. One season
+per process — call cache_clear() if switching seasons within a single run.
 """
 
 from functools import lru_cache
@@ -10,14 +13,19 @@ from pathlib import Path
 
 import yaml
 
+from utils.season_config import get_active_season
 
-CONFIG_PATH = Path(__file__).parent.parent / "config" / "players.yaml"
+
+def _get_players_path() -> Path:
+    """Resolve the players.yaml path for the active season."""
+    season = get_active_season()
+    return Path(__file__).parent.parent / "config" / season / "players.yaml"
 
 
 @lru_cache(maxsize=1)
 def load_player_config() -> tuple[dict[str, list[str]], frozenset[str]]:
     """
-    Load players and short_aliases from config/players.yaml.
+    Load players and short_aliases from config/{season}/players.yaml.
 
     Returns:
         Tuple of (players dict, short_aliases frozenset).
@@ -28,7 +36,7 @@ def load_player_config() -> tuple[dict[str, list[str]], frozenset[str]]:
         FileNotFoundError: If config file doesn't exist.
         yaml.YAMLError: If config file is invalid YAML.
     """
-    with open(CONFIG_PATH) as f:
+    with open(_get_players_path()) as f:
         config = yaml.safe_load(f)
 
     raw_players = config.get("players", {})
@@ -69,7 +77,7 @@ def build_alias_to_player_map() -> dict[str, str]:
 @lru_cache(maxsize=1)
 def load_player_metadata() -> dict[str, dict]:
     """
-    Load player metadata from config/players.yaml.
+    Load player metadata from config/{season}/players.yaml.
 
     Returns:
         Dict mapping player name to metadata dict containing:
@@ -82,7 +90,7 @@ def load_player_metadata() -> dict[str, dict]:
         FileNotFoundError: If config file doesn't exist.
         yaml.YAMLError: If config file is invalid YAML.
     """
-    with open(CONFIG_PATH) as f:
+    with open(_get_players_path()) as f:
         config = yaml.safe_load(f)
 
     raw_players = config.get("players", {})

@@ -34,8 +34,11 @@ data/
 *.csv
 
 # Dashboard data (committed for Streamlit Cloud)
-!data/dashboard/
-!data/dashboard/aggregates.json
+# Each season needs an explicit block to avoid exposing raw/processed data
+!data/2024-25/
+data/2024-25/*
+!data/2024-25/dashboard/
+!data/2024-25/dashboard/aggregates.json
 
 # uv
 .python-version

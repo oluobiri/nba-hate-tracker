@@ -1,10 +1,16 @@
+---
+description: "Use at the beginning of a session to orient, fetch last session context from Notion, and show project state. Trigger when the user starts a new conversation, says they're picking up work, or asks what to do next."
+user-invocable: true
+allowed-tools: Read Grep Bash mcp__claude_ai_Notion__notion-fetch mcp__claude_ai_Notion__notion-search
+---
+
 # Session Start
 
 Orient yourself at the beginning of a new work session.
 
 ## Steps
 
-1. Read `.claude/notion.md` to get the workspace page IDs
+1. Read `docs/notion.md` to get the workspace page IDs
 2. Use `notion-fetch` to get the **Session Log** page, then fetch the most recent entry (the first child page)
 3. Summarize for me:
    - What was done last session
@@ -13,4 +19,4 @@ Orient yourself at the beginning of a new work session.
 4. Use `notion-fetch` on the **Task Board** database and show me the current board state (group by Status)
 5. Run `git status` and `git log --oneline -5` to show where the repo stands
 
-If `.claude/notion.md` doesn't exist, skip Notion steps and just show git state.
+If `docs/notion.md` doesn't exist, skip Notion steps and just show git state.

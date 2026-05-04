@@ -40,5 +40,9 @@ data/2024-25/*
 !data/2024-25/dashboard/
 !data/2024-25/dashboard/aggregates.json
 
+# Claude Code (local, not committed)
+.claude/notion-guide.md
+.claude/settings.local.json
+
 # uv
 .python-version

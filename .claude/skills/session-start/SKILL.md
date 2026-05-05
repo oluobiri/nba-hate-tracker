@@ -1,7 +1,7 @@
 ---
 description: "Use at the beginning of a session to orient, fetch last session context from Notion, and show project state. Trigger when the user starts a new conversation, says they're picking up work, or asks what to do next."
 user-invocable: true
-allowed-tools: Read Grep Bash mcp__claude_ai_Notion__notion-fetch mcp__claude_ai_Notion__notion-search
+allowed-tools: Read Bash mcp__claude_ai_Notion__notion-fetch
 ---
 
 # Session Start
@@ -16,7 +16,9 @@ Orient yourself at the beginning of a new work session.
    - What was done last session
    - What's next (the handoff items)
    - Any open questions
-4. Use `notion-fetch` on the **Task Board** database and show me the current board state (group by Status)
-5. Run `git status` and `git log --oneline -5` to show where the repo stands
+4. Run `git status` and `git log --oneline -5` to show where the repo stands
+5. Run `gh issue list --assignee @me --state open` to show active engineering work
 
-If `docs/notion.md` doesn't exist, skip Notion steps and just show git state.
+Do NOT fetch the Task Board — that's PM-level context, not relevant during code sessions. The Session Log is the bridge between strategic planning and engineering execution.
+
+If `docs/notion.md` doesn't exist, skip Notion steps and just show git state + issues.

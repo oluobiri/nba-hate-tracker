@@ -39,16 +39,15 @@ def fetch_comments(self, subreddit, after, before):  # Missing hints
 Google style. Required for all functions and classes.
 
 ```python
-def filter_by_length(comment: dict, min_length: int = 20) -> dict | None:
+def has_valid_body(comment: dict) -> dict | None:
     """
-    Filter comments below minimum character length.
+    Check if comment has a valid, non-empty body.
 
     Args:
-        comment: Comment dict with 'body' field.
-        min_length: Minimum character count. Defaults to 20.
+        comment: Comment dictionary with optional 'body' field.
 
     Returns:
-        Original comment if passes filter, None otherwise.
+        Original comment if body is valid, None otherwise.
     """
 ```
 

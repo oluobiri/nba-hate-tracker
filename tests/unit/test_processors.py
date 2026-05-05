@@ -266,7 +266,7 @@ class TestCommentPipelineIntegration:
         results = [pipeline.process(c) for c in mixed_comments_batch]
         accepted = [r for r in results if r is not None]
 
-        # From fixture: 2 valid (nba, bostonceltics), 1 wrong sub, 1 missing body
+        # 2 accepted (nba, bostonceltics), 1 wrong sub (soccer), 1 rejected body (nba)
         assert pipeline.stats["total"] == 4
         assert pipeline.stats["accepted"] == 2
         assert len(accepted) == 2

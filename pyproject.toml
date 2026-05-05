@@ -23,6 +23,9 @@ dependencies = [
     "pandas>=2.3.3",
 ]
 
+[tool.ruff]
+exclude = ["notebooks/"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-x --tb=short"

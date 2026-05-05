@@ -6,8 +6,7 @@ labels: feature
 ---
 
 **Effort:** _[30 min / 1-2 hrs / 2-3 hrs / 3-4 hrs]_  
-**Risk:** _[Low / Medium / High]_  
-**Phase:** _[1 / 2 / 3 / 4 / 5 / 6]_
+**Risk:** _[Low / Medium / High]_
 
 ---
 

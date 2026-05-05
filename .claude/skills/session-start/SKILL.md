@@ -17,7 +17,7 @@ Orient yourself at the beginning of a new work session.
    - What's next (the handoff items)
    - Any open questions
 4. Run `git status` and `git log --oneline -5` to show where the repo stands
-5. Run `gh issue list --assignee @me --state open` to show active engineering work
+5. Run `gh issue list --state open` to show active engineering work
 
 Do NOT fetch the Task Board — that's PM-level context, not relevant during code sessions. The Session Log is the bridge between strategic planning and engineering execution.
 

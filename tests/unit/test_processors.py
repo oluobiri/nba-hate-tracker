@@ -250,11 +250,11 @@ class TestCommentPipelineIntegration:
 
     def test_full_pipeline_matches_original_behavior(self, mixed_comments_batch):
         """Pipeline should produce same results as original process_comment."""
-        from utils.constants import TARGET_SUBREDDITS
+        target_subreddits = ("nba", "bostonceltics")
 
         def is_target_subreddit(comment: dict) -> dict | None:
             subreddit = comment.get("subreddit", "")
-            if subreddit.lower() in TARGET_SUBREDDITS:
+            if subreddit.lower() in target_subreddits:
                 return comment
             return None
 

@@ -18,7 +18,7 @@ import zstandard
 from tqdm import tqdm
 
 from pipeline.processors import CommentPipeline, has_valid_body, extract_fields
-from utils.constants import TARGET_SUBREDDITS
+from utils.season_config import load_season_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,7 +73,7 @@ def is_target_subreddit(comment: dict) -> dict | None:
         Original comment if subreddit is in our target list, None otherwise.
     """
     subreddit = comment.get("subreddit", "")
-    if subreddit.lower() in TARGET_SUBREDDITS:
+    if subreddit.lower() in load_season_config()["subreddits"]:
         return comment
     return None
 

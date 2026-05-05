@@ -2,63 +2,10 @@
 Constants for the NBA Hate Tracker project.
 
 This module contains:
-- Target subreddits for data collection
 - Data validation constants
 - Arctic Shift API configuration
 - Season date boundaries
 """
-
-# =============================================================================
-# TARGET SUBREDDITS
-# =============================================================================
-
-# Primary subreddit
-PRIMARY_SUBREDDIT = "nba"
-
-# Team subreddits (30 total)
-TEAM_SUBREDDITS = [
-    # Atlantic Division
-    "bostonceltics",
-    "gonets",
-    "nyknicks",
-    "sixers",
-    "torontoraptors",
-    # Central Division
-    "chicagobulls",
-    "clevelandcavs",
-    "detroitpistons",
-    "pacers",
-    "mkebucks",
-    # Southeast Division
-    "atlantahawks",
-    "charlottehornets",
-    "heat",
-    "orlandomagic",
-    "washingtonwizards",
-    # Northwest Division
-    "denvernuggets",
-    "timberwolves",
-    "thunder",
-    "ripcity",
-    "utahjazz",
-    # Pacific Division
-    "warriors",
-    "laclippers",
-    "lakers",
-    "suns",
-    "kings",
-    # Southwest Division
-    "mavericks",
-    "rockets",
-    "memphisgrizzlies",
-    "nolapelicans",
-    "nbaspurs",
-]
-
-# Combined list for iteration (nba first, then teams alphabetically isn't
-# necessary but we put the big one first so we see progress early)
-TARGET_SUBREDDITS = [PRIMARY_SUBREDDIT] + TEAM_SUBREDDITS
-
 
 # =============================================================================
 # DATA VALIDATION

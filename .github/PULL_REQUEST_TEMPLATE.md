@@ -18,7 +18,7 @@
 ## Checklist
 
 - [ ] PR title follows format: `type(scope): subject`
-- [ ] Commits follow [git-strategy.md](docs/git-strategy.md)
+- [ ] Commits follow [.claude/rules/git.md](.claude/rules/git.md)
 - [ ] No large data files included
 - [ ] Documentation updated (if applicable)
 

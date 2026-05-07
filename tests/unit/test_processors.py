@@ -250,11 +250,11 @@ class TestCommentPipelineIntegration:
 
     def test_full_pipeline_matches_original_behavior(self, mixed_comments_batch):
         """Pipeline should produce same results as original process_comment."""
-        from utils.constants import TARGET_SUBREDDITS
+        target_subreddits = ("nba", "bostonceltics")
 
         def is_target_subreddit(comment: dict) -> dict | None:
             subreddit = comment.get("subreddit", "")
-            if subreddit.lower() in TARGET_SUBREDDITS:
+            if subreddit.lower() in target_subreddits:
                 return comment
             return None
 
@@ -266,7 +266,7 @@ class TestCommentPipelineIntegration:
         results = [pipeline.process(c) for c in mixed_comments_batch]
         accepted = [r for r in results if r is not None]
 
-        # From fixture: 2 valid (nba, bostonceltics), 1 wrong sub, 1 missing body
+        # 2 accepted (nba, bostonceltics), 1 wrong sub (soccer), 1 rejected body (nba)
         assert pipeline.stats["total"] == 4
         assert pipeline.stats["accepted"] == 2
         assert len(accepted) == 2

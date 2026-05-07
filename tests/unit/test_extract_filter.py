@@ -17,10 +17,10 @@ class TestIsTargetSubreddit:
         assert result is not None
         assert result == valid_nba_comment
 
-    def test_team_subreddit_is_valid(self, valid_team_subreddit_comment):
-        """Team-specific subreddits should be accepted."""
+    def test_team_subreddit_not_in_season_config(self, valid_team_subreddit_comment):
+        """Team subreddits not listed in season.yaml should be rejected."""
         result = is_target_subreddit(valid_team_subreddit_comment)
-        assert result is not None
+        assert result is None
 
     def test_wrong_subreddit_rejected(self, wrong_subreddit_comment):
         """Non-NBA subreddits should be rejected."""
@@ -165,8 +165,8 @@ class TestPipelineIntegration:
 
         assert results is not None
 
-        # From fixture: 2 valid (nba, bostonceltics), 1 wrong sub, 1 missing body
+        # From fixture: 1 valid (nba), 2 wrong sub (bostonceltics + soccer), 1 missing body
         assert pipeline.stats["total"] == 4
-        assert pipeline.stats["accepted"] == 2
-        assert pipeline.stats["rejected_is_target_subreddit"] == 1
+        assert pipeline.stats["accepted"] == 1
+        assert pipeline.stats["rejected_is_target_subreddit"] == 2
         assert pipeline.stats["rejected_has_valid_body"] == 1

@@ -1,6 +1,6 @@
 # NBA Hate Tracker - Development Commands
 
-.PHONY: test test-verbose test-fail-fast lint clean
+.PHONY: test test-verbose lint clean
 
 # Run all tests
 test:
@@ -9,10 +9,6 @@ test:
 # Verbose output — see print statements and full tracebacks
 test-verbose:
 	uv run pytest -v -s
-
-# Stop on first failure — useful during development
-test-fail-fast:
-	uv run pytest -x
 
 # Run a specific test file: make test-file FILE=tests/unit/test_extract.py
 test-file:

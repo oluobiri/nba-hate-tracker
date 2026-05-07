@@ -75,12 +75,12 @@ For ad-hoc queries on Parquet files. Read-only — never use to query `data/*/ra
 # Non-interactive (preferred in Claude Code)
 duckdb -c "SELECT player, neg_rate FROM 'data/2024-25/dashboard/player_overall.parquet' ORDER BY neg_rate DESC LIMIT 10"
 
-# Interactive shell (.duckdbrc sets read-only automatically)
+# Interactive shell
 duckdb
 SELECT * FROM 'data/2024-25/dashboard/player_overall.parquet' LIMIT 10;
 ```
 
-A `.duckdbrc` at project root sets read-only mode globally. Always use aggregations or filters — never `SELECT *` without `LIMIT` (the `body` column on raw data will flood output).
+Always use aggregations or filters — never `SELECT *` without `LIMIT` (the `body` column on raw data will flood output).
 
 ## Rules
 

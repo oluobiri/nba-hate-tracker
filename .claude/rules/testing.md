@@ -54,11 +54,11 @@ Mirror the source structure:
 Group tests by subject using classes:
 
 ```python
-class TestFilterByLength:
-    def test_rejects_short_comments(self):
+class TestHasValidBody:
+    def test_rejects_deleted_comments(self):
         ...
 
-    def test_accepts_long_comments(self):
+    def test_accepts_valid_comments(self):
         ...
 
 class TestFetchComments:

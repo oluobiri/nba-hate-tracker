@@ -181,7 +181,7 @@ def mixed_comments_batch(
     A batch with a mix of valid and invalid comments.
 
     Useful for testing filter logic processes batches correctly.
-    Expected: 2 accepted (nba + bostonceltics), 2 rejected.
+    Contains: nba, bostonceltics, soccer, missing-body — acceptance depends on subreddit config.
     """
     return [
         valid_nba_comment,

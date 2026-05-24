@@ -1,0 +1,17 @@
+fail_fast: true
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: pytest
+        name: pytest
+        entry: uv run pytest tests/unit/ -x --tb=short -q
+        language: system
+        pass_filenames: false
+        always_run: true

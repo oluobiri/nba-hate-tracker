@@ -32,6 +32,7 @@ addopts = "-x --tb=short"
 
 [tool.uv]
 dev-dependencies = [
+    "pre-commit>=4.6.0",
     "pytest",
     "pytest-cov",
     "pytest-xdist",

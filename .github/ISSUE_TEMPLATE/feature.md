@@ -2,7 +2,7 @@
 name: Feature
 about: New functionality or capability
 title: 'feat(scope): '
-labels: feature
+labels: enhancement
 ---
 
 **Effort:** _[30 min / 1-2 hrs / 2-3 hrs / 3-4 hrs]_  

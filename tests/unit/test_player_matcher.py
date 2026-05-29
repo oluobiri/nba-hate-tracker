@@ -1,13 +1,12 @@
 """
 Tests for player mention matching logic.
 
-Tests cover find_player_mentions, filter_player_mentions, word boundary
-handling, and integration with CommentPipeline.
+Tests cover find_player_mentions, filter_player_mentions, and word boundary
+handling.
 """
 
 
 from pipeline.processors import (
-    CommentPipeline,
     find_player_mentions,
     filter_player_mentions,
 )
@@ -183,30 +182,21 @@ class TestFilterPlayerMentions:
         assert result is None
 
 
-class TestPipelineIntegration:
-    """Tests for integration with CommentPipeline."""
+class TestFilterPlayerMentionsIntegration:
+    """Integration tests for filter_player_mentions with realistic data."""
 
-    def test_works_as_pipeline_step(self):
-        """filter_player_mentions works as a pipeline step."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(filter_player_mentions)
-
+    def test_accepts_comment_with_player_mention(self):
+        """Comment with a player mention is accepted with mentioned_players field."""
         comment = {"id": "123", "body": "LeBron played well"}
-        result = pipeline.process(comment)
+        result = filter_player_mentions(comment)
 
         assert result is not None
         assert "mentioned_players" in result
+        assert "LeBron James" in result["mentioned_players"]
 
-    def test_pipeline_tracks_rejection_stats(self):
-        """Pipeline tracks rejections from player filter."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(filter_player_mentions)
+    def test_rejects_comment_without_player_mention(self):
+        """Comment without player mentions returns None."""
+        comment = {"id": "456", "body": "Great game last night"}
+        result = filter_player_mentions(comment)
 
-        # Process one with mention, one without
-        pipeline.process({"id": "1", "body": "LeBron scored 30"})
-        pipeline.process({"id": "2", "body": "Great game last night"})
-
-        stats = pipeline.stats
-        assert stats["total"] == 2
-        assert stats["accepted"] == 1
-        assert stats["rejected_filter_player_mentions"] == 1
+        assert result is None

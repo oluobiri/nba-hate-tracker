@@ -144,8 +144,8 @@ def filter_player_mentions(comment: dict) -> dict | None:
     """
     Filter to comments mentioning tracked players.
 
-    StepFn-compatible: returns None if no mentions, otherwise
-    returns comment with 'mentioned_players' field added.
+    Returns None if no mentions, otherwise returns comment with
+    'mentioned_players' field added.
 
     Args:
         comment: Comment dict with 'body' field.

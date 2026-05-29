@@ -120,7 +120,7 @@ def process_file(
     """
     stats = ProcessingStats()
 
-    if limit:
+    if limit is not None:
         total = limit
     elif skip_line_count:
         total = None
@@ -137,7 +137,7 @@ def process_file(
         lines = tqdm(f_in, total=total, desc="Processing", unit=" lines")
 
         for i, line in enumerate(lines):
-            if limit and i >= limit:
+            if limit is not None and i >= limit:
                 break
 
             line = line.strip()
@@ -145,7 +145,7 @@ def process_file(
                 continue
 
             result = process_line(line, stats)
-            if result:
+            if result is not None:
                 f_out.write(json.dumps(result) + "\n")
 
     elapsed = time.time() - start_time
@@ -201,7 +201,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Input:  %s", args.input)
     logger.info("Output: %s", args.output)
-    if args.limit:
+    if args.limit is not None:
         logger.info("Limit:  %s lines", f"{args.limit:,}")
     logger.info("=" * 60)
 

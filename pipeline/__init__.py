@@ -14,11 +14,10 @@ from .batch import (
     save_state,
     submit_batch,
 )
-from .processors import CommentPipeline, ProcessingStats, extract_fields, has_valid_body
+from .processors import ProcessingStats, extract_fields, has_valid_body
 
 __all__ = [
     "ArcticShiftClient",
-    "CommentPipeline",
     "ProcessingStats",
     "aggregate_sentiment",
     "build_prompt",

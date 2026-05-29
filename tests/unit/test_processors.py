@@ -1,9 +1,12 @@
 """Unit tests for pipeline.processors module."""
 
+import logging
+
 from pipeline.processors import (
-    has_valid_body,
-    extract_fields,
     CommentPipeline,
+    ProcessingStats,
+    extract_fields,
+    has_valid_body,
 )
 from utils.constants import REQUIRED_FIELDS
 
@@ -270,3 +273,56 @@ class TestCommentPipelineIntegration:
         assert pipeline.stats["total"] == 4
         assert pipeline.stats["accepted"] == 2
         assert len(accepted) == 2
+
+
+class TestProcessingStats:
+    """Tests for ProcessingStats dataclass."""
+
+    def test_defaults_to_zero(self):
+        """All fields default to 0."""
+        stats = ProcessingStats()
+
+        assert stats.total_comments == 0
+        assert stats.accepted_comments == 0
+        assert stats.rejected_body == 0
+        assert stats.rejected_malformed == 0
+        assert stats.rejected_no_player_mention == 0
+
+    def test_rejected_comments_sums_all_rejections(self):
+        """rejected_comments property sums the three rejection fields."""
+        stats = ProcessingStats(
+            rejected_body=10,
+            rejected_malformed=5,
+            rejected_no_player_mention=20,
+        )
+
+        assert stats.rejected_comments == 35
+
+    def test_acceptance_rate_with_data(self):
+        """acceptance_rate computes accepted/total."""
+        stats = ProcessingStats(total_comments=100, accepted_comments=25)
+
+        assert stats.acceptance_rate == 0.25
+
+    def test_acceptance_rate_zero_total(self):
+        """acceptance_rate returns 0.0 when no comments processed."""
+        stats = ProcessingStats()
+
+        assert stats.acceptance_rate == 0.0
+
+    def test_log_summary_does_not_raise(self, caplog):
+        """log_summary logs without errors."""
+        stats = ProcessingStats(
+            total_comments=100,
+            accepted_comments=25,
+            rejected_body=30,
+            rejected_malformed=5,
+            rejected_no_player_mention=40,
+        )
+        test_logger = logging.getLogger("test")
+
+        with caplog.at_level(logging.INFO):
+            stats.log_summary(test_logger)
+
+        assert "Total processed:" in caplog.text
+        assert "Acceptance rate:" in caplog.text

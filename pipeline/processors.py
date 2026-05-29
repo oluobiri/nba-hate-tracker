@@ -8,6 +8,7 @@ for processing Reddit comments through multiple validation stages.
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from utils.constants import INVALID_BODY_VALUES, REQUIRED_FIELDS
 from utils.player_config import load_player_config
@@ -16,6 +17,44 @@ logger = logging.getLogger(__name__)
 
 # Type alias for step functions
 StepFn = Callable[[dict], dict | None]
+
+
+@dataclass
+class ProcessingStats:
+    """Track processing statistics across validate/extract/match stages."""
+
+    total_comments: int = 0
+    accepted_comments: int = 0
+    rejected_body: int = 0
+    rejected_malformed: int = 0
+    rejected_no_player_mention: int = 0
+
+    @property
+    def rejected_comments(self) -> int:
+        """Total rejected comments (sum of all rejection reasons)."""
+        return self.rejected_body + self.rejected_malformed + self.rejected_no_player_mention
+
+    @property
+    def acceptance_rate(self) -> float:
+        """Fraction of total comments that were accepted."""
+        if self.total_comments == 0:
+            return 0.0
+        return self.accepted_comments / self.total_comments
+
+    def log_summary(self, logger: logging.Logger) -> None:
+        """
+        Log a formatted summary of processing statistics.
+
+        Args:
+            logger: Logger instance to write to.
+        """
+        logger.info("Total processed:              %s", f"{self.total_comments:,}")
+        logger.info("Accepted:                     %s", f"{self.accepted_comments:,}")
+        logger.info("Rejected (invalid body):      %s", f"{self.rejected_body:,}")
+        logger.info("Rejected (malformed JSON):    %s", f"{self.rejected_malformed:,}")
+        logger.info("Rejected (no player mention): %s", f"{self.rejected_no_player_mention:,}")
+        if self.total_comments > 0:
+            logger.info("Acceptance rate:              %s", f"{self.acceptance_rate:.2%}")
 
 
 def has_valid_body(comment: dict) -> dict | None:

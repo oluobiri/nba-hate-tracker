@@ -2,6 +2,7 @@
 Comment processing functions for validation, field extraction, and player matching.
 """
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -161,4 +162,38 @@ def filter_player_mentions(comment: dict) -> dict | None:
 
     result = comment.copy()
     result["mentioned_players"] = players
+    return result
+
+
+def process_line(line: str, stats: ProcessingStats) -> dict | None:
+    """
+    Process a single JSON line through validate/extract/match pipeline.
+
+    Args:
+        line: Raw JSON string (one comment).
+        stats: ProcessingStats object to update in place.
+
+    Returns:
+        Comment dict with mentioned_players if valid, None if rejected.
+    """
+    stats.total_comments += 1
+
+    try:
+        comment = json.loads(line)
+    except json.JSONDecodeError:
+        stats.rejected_malformed += 1
+        return None
+
+    if not has_valid_body(comment):
+        stats.rejected_body += 1
+        return None
+
+    extracted = extract_fields(comment)
+
+    result = filter_player_mentions(extracted)
+    if result is None:
+        stats.rejected_no_player_mention += 1
+        return None
+
+    stats.accepted_comments += 1
     return result

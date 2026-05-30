@@ -14,7 +14,7 @@ from .batch import (
     save_state,
     submit_batch,
 )
-from .processors import ProcessingStats, extract_fields, has_valid_body
+from .processors import ProcessingStats, extract_fields, has_valid_body, process_line
 
 __all__ = [
     "ArcticShiftClient",
@@ -30,6 +30,7 @@ __all__ = [
     "init_state",
     "load_state",
     "parse_response",
+    "process_line",
     "save_state",
     "submit_batch",
 ]

@@ -28,12 +28,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from pipeline.processors import (
-    ProcessingStats,
-    extract_fields,
-    filter_player_mentions,
-    has_valid_body,
-)
+from pipeline.processors import ProcessingStats, process_line
 from utils.formatting import format_duration, format_size
 from utils.paths import get_filtered_dir, get_raw_dir
 
@@ -64,40 +59,6 @@ def _count_lines(filepath: Path) -> int:
         for _ in f:
             count += 1
     return count
-
-
-def process_line(line: str, stats: ProcessingStats) -> dict | None:
-    """
-    Process a single JSON line through validate/extract/match pipeline.
-
-    Args:
-        line: Raw JSON string (one comment).
-        stats: ProcessingStats object to update in place.
-
-    Returns:
-        Comment dict with mentioned_players if valid, None if rejected.
-    """
-    stats.total_comments += 1
-
-    try:
-        comment = json.loads(line)
-    except json.JSONDecodeError:
-        stats.rejected_malformed += 1
-        return None
-
-    if not has_valid_body(comment):
-        stats.rejected_body += 1
-        return None
-
-    extracted = extract_fields(comment)
-
-    result = filter_player_mentions(extracted)
-    if result is None:
-        stats.rejected_no_player_mention += 1
-        return None
-
-    stats.accepted_comments += 1
-    return result
 
 
 def process_file(

@@ -42,7 +42,7 @@ tests/
 │   ├── test_formatting.py
 │   └── test_arctic_shift.py
 └── integration/         # End-to-end, may touch files/network
-    └── test_pipeline.py  # TODO: v2 integration tests (currently empty)
+    └── test_process_comments.py  # End-to-end comment processing tests
 ```
 
 Mirror the source structure:

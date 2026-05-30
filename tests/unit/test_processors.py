@@ -1,9 +1,11 @@
 """Unit tests for pipeline.processors module."""
 
+import logging
+
 from pipeline.processors import (
-    has_valid_body,
+    ProcessingStats,
     extract_fields,
-    CommentPipeline,
+    has_valid_body,
 )
 from utils.constants import REQUIRED_FIELDS
 
@@ -73,200 +75,54 @@ class TestExtractFields:
         assert "gilded" not in result
 
 
-class TestCommentPipelineInit:
-    """Tests for CommentPipeline initialization."""
+class TestProcessingStats:
+    """Tests for ProcessingStats dataclass."""
 
-    def test_empty_pipeline_has_zero_stats(self):
-        """New pipeline should have zeroed stats."""
-        pipeline = CommentPipeline()
+    def test_defaults_to_zero(self):
+        """All fields default to 0."""
+        stats = ProcessingStats()
 
-        assert pipeline.stats["total"] == 0
-        assert pipeline.stats["accepted"] == 0
+        assert stats.total_comments == 0
+        assert stats.accepted_comments == 0
+        assert stats.rejected_body == 0
+        assert stats.rejected_malformed == 0
+        assert stats.rejected_no_player_mention == 0
 
-    def test_stats_returns_copy(self):
-        """Stats property should return a copy, not internal dict."""
-        pipeline = CommentPipeline()
-        stats1 = pipeline.stats
+    def test_rejected_comments_sums_all_rejections(self):
+        """rejected_comments property sums the three rejection fields."""
+        stats = ProcessingStats(
+            rejected_body=10,
+            rejected_malformed=5,
+            rejected_no_player_mention=20,
+        )
 
-        stats1["total"] = 999
-        assert pipeline.stats["total"] == 0  # Internal not mutated
+        assert stats.rejected_comments == 35
 
+    def test_acceptance_rate_with_data(self):
+        """acceptance_rate computes accepted/total."""
+        stats = ProcessingStats(total_comments=100, accepted_comments=25)
 
-class TestCommentPipelineAddStep:
-    """Tests for CommentPipeline.add_step method."""
+        assert stats.acceptance_rate == 0.25
 
-    def test_add_step_returns_self(self):
-        """add_step should return self for chaining."""
-        pipeline = CommentPipeline()
-        result = pipeline.add_step(has_valid_body)
+    def test_acceptance_rate_zero_total(self):
+        """acceptance_rate returns 0.0 when no comments processed."""
+        stats = ProcessingStats()
 
-        assert result is pipeline
+        assert stats.acceptance_rate == 0.0
 
-    def test_chaining_multiple_steps(self):
-        """Multiple steps can be chained fluently."""
-        pipeline = CommentPipeline().add_step(has_valid_body).add_step(extract_fields)
+    def test_log_summary_does_not_raise(self, caplog):
+        """log_summary logs without errors."""
+        stats = ProcessingStats(
+            total_comments=100,
+            accepted_comments=25,
+            rejected_body=30,
+            rejected_malformed=5,
+            rejected_no_player_mention=40,
+        )
+        test_logger = logging.getLogger("test")
 
-        # Verify both steps were added
-        assert len(pipeline._steps) == 2
+        with caplog.at_level(logging.INFO):
+            stats.log_summary(test_logger)
 
-    def test_step_name_defaults_to_function_name(self):
-        """Step name should default to fn.__name__."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body)
-
-        assert "rejected_has_valid_body" in pipeline.stats
-
-    def test_custom_step_name_used(self):
-        """Custom name should override function name."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body, name="body_validation")
-
-        assert "rejected_body_validation" in pipeline.stats
-        assert "rejected_has_valid_body" not in pipeline.stats
-
-
-class TestCommentPipelineProcess:
-    """Tests for CommentPipeline.process method."""
-
-    def test_empty_pipeline_accepts_all(self, valid_nba_comment):
-        """Pipeline with no steps should accept everything."""
-        pipeline = CommentPipeline()
-        result = pipeline.process(valid_nba_comment)
-
-        assert result == valid_nba_comment
-        assert pipeline.stats["total"] == 1
-        assert pipeline.stats["accepted"] == 1
-
-    def test_passing_comment_increments_accepted(self, valid_nba_comment):
-        """Comment passing all steps should increment accepted."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body)
-
-        result = pipeline.process(valid_nba_comment)
-
-        assert result is not None
-        assert pipeline.stats["accepted"] == 1
-
-    def test_failing_step_returns_none(self, deleted_body_comment):
-        """Comment failing a step should return None."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body)
-
-        result = pipeline.process(deleted_body_comment)
-
-        assert result is None
-
-    def test_failing_step_increments_rejection_counter(self, deleted_body_comment):
-        """Failed step should increment its rejection counter."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body)
-
-        pipeline.process(deleted_body_comment)
-
-        assert pipeline.stats["rejected_has_valid_body"] == 1
-        assert pipeline.stats["accepted"] == 0
-
-    def test_first_failing_step_gets_credit(self):
-        """When multiple steps would fail, first one gets the rejection count."""
-
-        def always_reject(comment: dict) -> dict | None:
-            return None
-
-        pipeline = CommentPipeline()
-        pipeline.add_step(always_reject, name="step1")
-        pipeline.add_step(always_reject, name="step2")
-
-        pipeline.process({"body": "test"})
-
-        assert pipeline.stats["rejected_step1"] == 1
-        assert pipeline.stats["rejected_step2"] == 0  # Never reached
-
-    def test_transform_step_modifies_comment(self, valid_nba_comment):
-        """Transform steps should pass modified comment to next step."""
-        valid_nba_comment["extra_field"] = "should be removed"
-
-        pipeline = CommentPipeline()
-        pipeline.add_step(extract_fields)
-
-        result = pipeline.process(valid_nba_comment)
-
-        assert "extra_field" not in result
-        assert result["id"] == valid_nba_comment["id"]
-
-    def test_steps_execute_in_order(self):
-        """Steps should execute in add order."""
-        execution_order = []
-
-        def step_a(c: dict) -> dict:
-            execution_order.append("a")
-            return c
-
-        def step_b(c: dict) -> dict:
-            execution_order.append("b")
-            return c
-
-        pipeline = CommentPipeline()
-        pipeline.add_step(step_a)
-        pipeline.add_step(step_b)
-
-        pipeline.process({"body": "test"})
-
-        assert execution_order == ["a", "b"]
-
-
-class TestCommentPipelineStatsTracking:
-    """Tests for stats accumulation across multiple process calls."""
-
-    def test_stats_accumulate_across_calls(
-        self, valid_nba_comment, deleted_body_comment
-    ):
-        """Stats should accumulate across multiple process() calls."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body)
-
-        pipeline.process(valid_nba_comment)
-        pipeline.process(deleted_body_comment)
-        pipeline.process(valid_nba_comment)
-
-        assert pipeline.stats["total"] == 3
-        assert pipeline.stats["accepted"] == 2
-        assert pipeline.stats["rejected_has_valid_body"] == 1
-
-    def test_reset_stats_zeroes_all(self, valid_nba_comment):
-        """reset_stats should zero all counters."""
-        pipeline = CommentPipeline()
-        pipeline.add_step(has_valid_body)
-        pipeline.process(valid_nba_comment)
-
-        pipeline.reset_stats()
-
-        assert pipeline.stats["total"] == 0
-        assert pipeline.stats["accepted"] == 0
-        assert pipeline.stats["rejected_has_valid_body"] == 0
-
-
-class TestCommentPipelineIntegration:
-    """Integration tests for realistic pipeline configurations."""
-
-    def test_full_pipeline_matches_original_behavior(self, mixed_comments_batch):
-        """Pipeline should produce same results as original process_comment."""
-        target_subreddits = ("nba", "bostonceltics")
-
-        def is_target_subreddit(comment: dict) -> dict | None:
-            subreddit = comment.get("subreddit", "")
-            if subreddit.lower() in target_subreddits:
-                return comment
-            return None
-
-        pipeline = CommentPipeline()
-        pipeline.add_step(is_target_subreddit)
-        pipeline.add_step(has_valid_body)
-        pipeline.add_step(extract_fields)
-
-        results = [pipeline.process(c) for c in mixed_comments_batch]
-        accepted = [r for r in results if r is not None]
-
-        # 2 accepted (nba, bostonceltics), 1 wrong sub (soccer), 1 rejected body (nba)
-        assert pipeline.stats["total"] == 4
-        assert pipeline.stats["accepted"] == 2
-        assert len(accepted) == 2
+        assert "Total processed:" in caplog.text
+        assert "Acceptance rate:" in caplog.text

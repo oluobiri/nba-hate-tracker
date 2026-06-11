@@ -11,6 +11,7 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.schemas import SCHEMA_VERSION
 from utils.player_config import build_alias_to_player_map, load_player_metadata
 from utils.season_config import get_active_season
 from utils.team_config import build_alias_to_team_map, load_team_config
@@ -244,6 +245,7 @@ def aggregate_sentiment(input_path: Path) -> dict:
     unique_weeks = df["week"].n_unique()
 
     metadata = {
+        "schema_version": SCHEMA_VERSION,
         "total_comments": total_rows,
         "usable_comments": usable_rows,
         "excluded_comments": excluded_rows,

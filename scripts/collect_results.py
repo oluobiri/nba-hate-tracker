@@ -28,18 +28,16 @@ import sys
 import time
 from pathlib import Path
 
-import polars as pl
 from dotenv import load_dotenv
 
 from pipeline.batch import (
     STATE_FILENAME,
-    calculate_cost,
     download_results,
     get_batch_status,
     load_state,
-    parse_response,
     save_state,
 )
+from pipeline.results import build_sentiment_dataframe
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
 
 # -----------------------------------------------------------------------------
@@ -61,24 +59,6 @@ RESPONSES_SUBDIR = "responses"
 FILTERED_FILENAME = "r_nba_player_mentions.jsonl"
 OUTPUT_FILENAME = "sentiment.parquet"
 FAILED_FILENAME = "failed_requests.jsonl"
-
-# Output columns for sentiment.parquet
-OUTPUT_COLUMNS = [
-    "comment_id",
-    "body",
-    "author",
-    "author_flair_text",
-    "author_flair_css_class",
-    "created_utc",
-    "score",
-    "mentioned_players",
-    "sentiment",
-    "confidence",
-    "sentiment_player",
-    "input_tokens",
-    "output_tokens",
-]
-
 
 # -----------------------------------------------------------------------------
 # Helper functions
@@ -250,109 +230,6 @@ def poll_until_complete(
             f"({len(pending)} batches pending, {remaining:.0f}s remaining)"
         )
         time.sleep(wait_time)
-
-
-def build_sentiment_dataframe(
-    responses_dir: Path, filtered_path: Path, state: dict
-) -> tuple[pl.DataFrame, list[dict]]:
-    """
-    Build sentiment DataFrame by joining results with comment metadata.
-
-    Args:
-        responses_dir: Directory containing batch_NNN_results.jsonl files.
-        filtered_path: Path to filtered comments JSONL file.
-        state: State dict to update with token totals.
-
-    Returns:
-        Tuple of (sentiment DataFrame, list of failed requests).
-    """
-    # Load all results
-    results_files = sorted(responses_dir.glob("batch_*_results.jsonl"))
-    if not results_files:
-        raise FileNotFoundError(f"No results files found in {responses_dir}")
-
-    logger.info(f"Loading results from {len(results_files)} files...")
-
-    all_results = []
-    failed_requests = []
-    total_input_tokens = 0
-    total_output_tokens = 0
-
-    for results_file in results_files:
-        with open(results_file) as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                result = json.loads(line)
-
-                if result["result_type"] == "succeeded":
-                    parsed = parse_response(result["content"])
-                    all_results.append(
-                        {
-                            "id": result["custom_id"],
-                            "sentiment": parsed["s"],
-                            "confidence": parsed["c"],
-                            "sentiment_player": parsed.get("p"),
-                            "input_tokens": result["input_tokens"],
-                            "output_tokens": result["output_tokens"],
-                        }
-                    )
-                    total_input_tokens += result["input_tokens"]
-                    total_output_tokens += result["output_tokens"]
-                else:
-                    failed_requests.append(result)
-
-    logger.info(f"Loaded {len(all_results)} successful results")
-    if failed_requests:
-        logger.warning(f"Found {len(failed_requests)} failed requests")
-
-    # Update state with token totals
-    state["total_input_tokens"] = total_input_tokens
-    state["total_output_tokens"] = total_output_tokens
-    state["estimated_cost_usd"] = calculate_cost(
-        total_input_tokens, total_output_tokens
-    )
-
-    # Create results DataFrame
-    results_df = pl.DataFrame(all_results)
-
-    # Load comments with lazy evaluation
-    logger.info(f"Loading comments from {filtered_path}...")
-    comments_df = pl.scan_ndjson(filtered_path).select(
-        [
-            pl.col("id"),
-            pl.col("body"),
-            pl.col("author"),
-            pl.col("author_flair_text"),
-            pl.col("author_flair_css_class"),
-            pl.col("created_utc"),
-            pl.col("score"),
-            pl.col("mentioned_players"),
-        ]
-    )
-
-    # Join results with comments
-    logger.info("Joining results with comments...")
-    results_count = len(all_results)
-    joined_df = (
-        comments_df.join(results_df.lazy(), on="id", how="inner")
-        .rename({"id": "comment_id"})
-        .select(OUTPUT_COLUMNS)
-        .collect()
-    )
-
-    # Validate join didn't drop rows
-    joined_count = len(joined_df)
-    if joined_count < results_count:
-        dropped = results_count - joined_count
-        logger.warning(
-            f"Join dropped {dropped} results "
-            f"({dropped / results_count * 100:.1f}% - comments may be missing from filtered file)"
-        )
-
-    logger.info(f"Final DataFrame: {joined_count} rows")
-
-    return joined_df, failed_requests
 
 
 # -----------------------------------------------------------------------------

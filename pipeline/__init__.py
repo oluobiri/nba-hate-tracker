@@ -15,6 +15,7 @@ from .batch import (
     submit_batch,
 )
 from .processors import ProcessingStats, extract_fields, has_valid_body, process_line
+from .results import build_sentiment_dataframe
 from .schemas import (
     PLAYER_OVERALL_SCHEMA,
     PLAYER_TEAM_SCHEMA,
@@ -36,6 +37,7 @@ __all__ = [
     "ProcessingStats",
     "aggregate_sentiment",
     "build_prompt",
+    "build_sentiment_dataframe",
     "calculate_cost",
     "download_results",
     "extract_fields",

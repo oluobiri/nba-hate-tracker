@@ -103,11 +103,18 @@ def test_format_duration(seconds: int, expected: str):
     assert format_duration(seconds) == expected
 ```
 
-Prefer this over multiple similar test functions.
+Prefer this over multiple similar test functions — but only **within a single behavior** (same act-and-assert shape, different data). Distinct behaviors with distinct assertions (e.g., missing column vs. dtype mismatch) get separate named tests. If the test body needs `if`/`else` keyed on a parameter, you've parametrized across behaviors — split it.
 
 ## Fixtures
 
-Define in `conftest.py` for shared fixtures:
+**Reuse before defining.** Check `tests/conftest.py` for an existing fixture before writing a new one — compose existing fixtures (e.g., build a batch from `valid_nba_comment`) rather than redefining near-duplicates in test modules.
+
+Placement:
+- Used by multiple test files → `conftest.py`
+- Used by one test file → define locally in that module
+- Promote to `conftest.py` on the second consumer, not in anticipation of one
+
+Shared fixtures live in `conftest.py`:
 
 ```python
 # tests/conftest.py

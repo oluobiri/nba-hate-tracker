@@ -16,6 +16,7 @@ from pipeline.aggregation import (
     pivot_bar_race_wide,
     resolve_player,
 )
+from pipeline.schemas import SCHEMA_VERSION
 
 
 class TestResolvePlayer:
@@ -647,3 +648,29 @@ class TestPivotBarRaceWide:
         first_week_col = wide.columns[3]
         vals = wide[first_week_col].to_list()
         assert all(v is None for v in vals)
+
+
+class TestAggregateMetadata:
+    """Tests for the metadata key in aggregate output."""
+
+    def test_metadata_includes_schema_version(self, tmp_path):
+        """metadata carries the SCHEMA_VERSION from pipeline/schemas.py."""
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["LeBron is great", "LeBron is washed"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "mentioned_players": [["LeBron James"], ["LeBron James"]],
+            "sentiment": ["pos", "neg"],
+            "confidence": [0.9, 0.8],
+            "sentiment_player": ["LeBron James", "LeBron James"],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+
+        assert result["metadata"]["schema_version"] == SCHEMA_VERSION

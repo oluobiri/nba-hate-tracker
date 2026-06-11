@@ -67,6 +67,9 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 **Dashboard input:**
 - `data/2024-25/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load
 
+**Schema contracts:**
+- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views); `SCHEMA_VERSION` is stamped into `aggregates.json` metadata. Don't duplicate column lists elsewhere.
+
 ## DuckDB CLI
 
 For ad-hoc queries on Parquet files. Read-only — never use to query `data/*/raw/` or `data/*/processed/sentiment.parquet`.

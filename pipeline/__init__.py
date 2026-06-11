@@ -15,8 +15,23 @@ from .batch import (
     submit_batch,
 )
 from .processors import ProcessingStats, extract_fields, has_valid_body, process_line
+from .schemas import (
+    PLAYER_OVERALL_SCHEMA,
+    PLAYER_TEAM_SCHEMA,
+    PLAYER_TEMPORAL_SCHEMA,
+    SCHEMA_VERSION,
+    SENTIMENT_SCHEMA,
+    TEAM_OVERALL_SCHEMA,
+    validate_schema,
+)
 
 __all__ = [
+    "PLAYER_OVERALL_SCHEMA",
+    "PLAYER_TEAM_SCHEMA",
+    "PLAYER_TEMPORAL_SCHEMA",
+    "SCHEMA_VERSION",
+    "SENTIMENT_SCHEMA",
+    "TEAM_OVERALL_SCHEMA",
     "ArcticShiftClient",
     "ProcessingStats",
     "aggregate_sentiment",
@@ -33,4 +48,5 @@ __all__ = [
     "process_line",
     "save_state",
     "submit_batch",
+    "validate_schema",
 ]

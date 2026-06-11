@@ -64,8 +64,9 @@ _RESULTS_SIDE_COLUMNS = [
     "output_tokens",
 ]
 
-# Filtered-comments NDJSON: comment-side columns, id column named "id"
-# pre-rename. Doubles as a projection — extra input keys are dropped.
+# Filtered-comments NDJSON: comment-side columns. The key column is "id"
+# here because the rename to "comment_id" happens after the join in
+# pipeline/results.py. Doubles as a projection — extra input keys dropped.
 COMMENT_INPUT_SCHEMA = pl.Schema(
     {
         ("id" if col == "comment_id" else col): SENTIMENT_SCHEMA[col]
@@ -73,7 +74,8 @@ COMMENT_INPUT_SCHEMA = pl.Schema(
     }
 )
 
-# Parsed batch results, keyed by custom_id ("id" pre-rename).
+# Parsed batch results. The key column is "id" (the request custom_id);
+# same rename-after-join story as COMMENT_INPUT_SCHEMA above.
 RESULTS_SCHEMA = pl.Schema(
     {
         "id": SENTIMENT_SCHEMA["comment_id"],
@@ -136,6 +138,11 @@ def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:
         ValueError: If the schema does not match. The message names the
             target and enumerates missing columns, extra columns, and
             dtype mismatches (or a column-order mismatch).
+
+    Note:
+        Nullable columns must be pinned with schema= at construction —
+        an all-null column built without one infers as Null dtype and
+        will be reported here as a dtype mismatch.
     """
     actual = df.schema
     if actual == expected:

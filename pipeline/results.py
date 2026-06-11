@@ -38,7 +38,8 @@ def build_sentiment_dataframe(
 
     Raises:
         FileNotFoundError: If no results files exist in responses_dir.
-        ValueError: If the assembled frame does not match SENTIMENT_SCHEMA.
+        ValueError: If a results file contains malformed JSON, or the
+            assembled frame does not match SENTIMENT_SCHEMA.
     """
     # Load all results
     results_files = sorted(responses_dir.glob("batch_*_results.jsonl"))
@@ -57,7 +58,12 @@ def build_sentiment_dataframe(
             for line in f:
                 if not line.strip():
                     continue
-                result = json.loads(line)
+                try:
+                    result = json.loads(line)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Malformed JSON in {results_file.name}: {e}"
+                    ) from e
 
                 if result["result_type"] == "succeeded":
                     parsed = parse_response(result["content"])

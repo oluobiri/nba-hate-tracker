@@ -3,11 +3,12 @@
 import json
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from pipeline.batch import init_state
 from pipeline.results import build_sentiment_dataframe
-from pipeline.schemas import SENTIMENT_SCHEMA
+from pipeline.schemas import COMMENT_INPUT_SCHEMA, SENTIMENT_SCHEMA
 
 
 def _succeeded(
@@ -177,3 +178,41 @@ class TestBuildSentimentDataframe:
         assert state["total_input_tokens"] == 180
         assert state["total_output_tokens"] == 35
         assert state["estimated_cost_usd"] > 0
+
+    def test_malformed_results_json_raises_with_filename(
+        self, tmp_path, filtered_comments_file
+    ):
+        """Verify a corrupted results file fails fast naming the file."""
+        # Arrange
+        directory = tmp_path / "responses"
+        directory.mkdir()
+        (directory / "batch_001_results.jsonl").write_text("{not valid json\n")
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="batch_001_results.jsonl"):
+            build_sentiment_dataframe(directory, filtered_comments_file, init_state())
+
+    def test_construction_drift_raises_at_boundary(
+        self, monkeypatch, responses_dir, filtered_comments_file
+    ):
+        """Verify the write-boundary guard fires if construction drifts.
+
+        Simulates a future edit that changes a construction-side schema
+        without updating SENTIMENT_SCHEMA — the strict boundary check
+        must catch the divergence rather than write a drifted parquet.
+        """
+        # Arrange
+        drifted = pl.Schema(
+            {
+                name: (pl.Int32 if name == "score" else dtype)
+                for name, dtype in COMMENT_INPUT_SCHEMA.items()
+            }
+        )
+        monkeypatch.setattr("pipeline.results.COMMENT_INPUT_SCHEMA", drifted)
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="sentiment.parquet") as exc:
+            build_sentiment_dataframe(
+                responses_dir, filtered_comments_file, init_state()
+            )
+        assert "score" in str(exc.value)

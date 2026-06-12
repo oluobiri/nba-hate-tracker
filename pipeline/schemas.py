@@ -5,13 +5,11 @@ Single source of truth for column names and dtypes of every file the
 pipeline produces. Data dictionary first, enforcement second:
 
 - SENTIMENT_SCHEMA is enforced at the sentiment.parquet write boundary
-  (pipeline/results.py).
-- The four aggregate-view schemas document the tabular sections of
-  aggregates.json in their parquet-ready shape; enforcement arrives with
-  their parquet write boundary (issue #28). Note: team_overall's
-  enrichment columns (abbreviation, conference, logo_url) are currently
-  added dict-level after aggregation — the schema records the target
-  shape #28 must produce.
+  (pipeline/results.py) and again as a read-side guard in
+  pipeline/aggregation.py.
+- The four aggregate-view schemas describe the tabular sections of
+  aggregates.json in their parquet-ready shape; they are enforced in
+  aggregate_sentiment() before the views are returned for writing.
 
 This module must not import from other pipeline modules (it is imported
 by them).
@@ -83,7 +81,7 @@ RESULTS_SCHEMA = pl.Schema(
     }
 )
 
-# --- Aggregate views (tabular sections of aggregates.json; enforced in #28) -
+# --- Aggregate views (enforced in pipeline/aggregation.py) ------------------
 # Column order mirrors compute_metrics output: group cols, counts, rates.
 
 _METRIC_COLUMNS: dict[str, pl.DataType] = {
@@ -120,6 +118,17 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
         "logo_url": pl.String,
     }
 )
+
+# View name -> schema, shared by aggregate_sentiment()'s validation loop
+# and the aggregation script's parquet write loop. Keys match the
+# aggregate_sentiment() return-dict keys and the parquet filenames
+# (<view>.parquet).
+AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
+    "player_overall": PLAYER_OVERALL_SCHEMA,
+    "player_temporal": PLAYER_TEMPORAL_SCHEMA,
+    "player_team": PLAYER_TEAM_SCHEMA,
+    "team_overall": TEAM_OVERALL_SCHEMA,
+}
 
 
 def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:

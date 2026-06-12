@@ -17,6 +17,7 @@ from .batch import (
 from .processors import ProcessingStats, extract_fields, has_valid_body, process_line
 from .results import build_sentiment_dataframe
 from .schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
     PLAYER_OVERALL_SCHEMA,
     PLAYER_TEAM_SCHEMA,
     PLAYER_TEMPORAL_SCHEMA,
@@ -27,6 +28,7 @@ from .schemas import (
 )
 
 __all__ = [
+    "AGGREGATE_VIEW_SCHEMAS",
     "ArcticShiftClient",
     "PLAYER_OVERALL_SCHEMA",
     "PLAYER_TEAM_SCHEMA",

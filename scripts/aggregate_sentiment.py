@@ -1,9 +1,11 @@
 """
-Aggregate sentiment data into dashboard-ready JSON.
+Aggregate sentiment data into dashboard-ready outputs.
 
 Reads classified sentiment parquet, computes player rankings,
-flair segmentation, and temporal trends. Outputs precomputed
-aggregates for the Streamlit dashboard.
+flair segmentation, and temporal trends. Writes the nested
+aggregates.json for the Streamlit dashboard plus one parquet per
+tabular view (player_overall, player_temporal, player_team,
+team_overall) alongside it for ad-hoc DuckDB queries.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -17,6 +19,7 @@ import sys
 from pathlib import Path
 
 from pipeline.aggregation import aggregate_sentiment
+from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS
 from utils.paths import get_dashboard_dir, get_processed_dir
 
 # -----------------------------------------------------------------------------
@@ -89,11 +92,22 @@ def main() -> None:
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON output
+    # Write JSON output: frame views -> records, key order preserved;
+    # default=str keeps week datetimes serialized exactly as before.
+    serializable = {
+        key: (value.to_dicts() if key in AGGREGATE_VIEW_SCHEMAS else value)
+        for key, value in result.items()
+    }
     with open(output_path, "w") as f:
-        json.dump(result, f, indent=2, default=str)
+        json.dump(serializable, f, indent=2, default=str)
 
     logger.info(f"Wrote aggregates to {output_path}")
+
+    # Write one parquet per tabular view next to the JSON
+    for view_name in AGGREGATE_VIEW_SCHEMAS:
+        parquet_path = output_path.parent / f"{view_name}.parquet"
+        result[view_name].write_parquet(parquet_path)
+        logger.info(f"Wrote {parquet_path}")
 
     # Log metadata summary
     meta = result["metadata"]

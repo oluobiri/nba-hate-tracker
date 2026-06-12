@@ -6,6 +6,7 @@ and compute_metrics from the aggregation pipeline.
 """
 
 import polars as pl
+import pytest
 
 from pipeline.aggregation import (
     aggregate_sentiment,
@@ -16,7 +17,7 @@ from pipeline.aggregation import (
     pivot_bar_race_wide,
     resolve_player,
 )
-from pipeline.schemas import SCHEMA_VERSION
+from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS, SCHEMA_VERSION, SENTIMENT_SCHEMA
 
 
 class TestResolvePlayer:
@@ -135,11 +136,10 @@ class TestComputeMetrics:
             "sentiment": ["neg", "neg", "pos", "neu", "neu", "neg", "pos", "pos"],
         })
 
-        results = compute_metrics(df, ["player"])
-        results_by_player = {r["player"]: r for r in results}
+        result = compute_metrics(df, ["player"])
 
         # Player A: 2 neg, 1 pos, 2 neu = 5 total
-        a = results_by_player["A"]
+        a = result.row(by_predicate=pl.col("player") == "A", named=True)
         assert a["neg_count"] == 2
         assert a["pos_count"] == 1
         assert a["neu_count"] == 2
@@ -150,7 +150,7 @@ class TestComputeMetrics:
         assert a["polarization"] == 0.6
 
         # Player B: 1 neg, 2 pos, 0 neu = 3 total
-        b = results_by_player["B"]
+        b = result.row(by_predicate=pl.col("player") == "B", named=True)
         assert b["neg_count"] == 1
         assert b["pos_count"] == 2
         assert b["neu_count"] == 0
@@ -163,8 +163,8 @@ class TestComputeMetrics:
             "sentiment": ["neg", "pos", "pos"],
         })
 
-        results = compute_metrics(df, ["player"])
-        a = results[0]
+        result = compute_metrics(df, ["player"])
+        a = result.row(0, named=True)
 
         assert a["neg_rate"] == 0.3333
         assert a["pos_rate"] == 0.6667
@@ -177,13 +177,25 @@ class TestComputeMetrics:
             "sentiment": ["neg", "pos", "neu"],
         })
 
-        results = compute_metrics(df, ["player", "team"])
-        assert len(results) == 3
+        result = compute_metrics(df, ["player", "team"])
+        assert result.height == 3
+
+    def test_returns_frame_sorted_by_group_cols(self):
+        """Output is a DataFrame deterministically sorted by the group columns."""
+        df = pl.DataFrame({
+            "player": ["C", "A", "B"],
+            "sentiment": ["neg", "pos", "neu"],
+        })
+
+        result = compute_metrics(df, ["player"])
+
+        assert isinstance(result, pl.DataFrame)
+        assert result["player"].to_list() == ["A", "B", "C"]
 
 
 def _make_test_parquet(tmp_path, rows):
-    """Create a minimal sentiment parquet for testing aggregate_sentiment."""
-    df = pl.DataFrame(rows)
+    """Create a SENTIMENT_SCHEMA-conforming parquet for testing aggregate_sentiment."""
+    df = pl.DataFrame(rows, schema=SENTIMENT_SCHEMA)
     path = tmp_path / "test_sentiment.parquet"
     df.write_parquet(path)
     return path
@@ -292,7 +304,7 @@ class TestAggregateTeamConference:
 
         result = aggregate_sentiment(path)
 
-        for row in result["team_overall"]:
+        for row in result["team_overall"].to_dicts():
             assert "conference" in row, f"Missing conference for {row['team']}"
 
     def test_conference_values_correct(self, tmp_path):
@@ -314,7 +326,7 @@ class TestAggregateTeamConference:
         })
 
         result = aggregate_sentiment(path)
-        team_by_name = {r["team"]: r for r in result["team_overall"]}
+        team_by_name = {r["team"]: r for r in result["team_overall"].to_dicts()}
 
         assert team_by_name["Los Angeles Lakers"]["conference"] == "West"
         assert team_by_name["Boston Celtics"]["conference"] == "East"
@@ -338,7 +350,7 @@ class TestAggregateTeamConference:
         })
 
         result = aggregate_sentiment(path)
-        team_by_name = {r["team"]: r for r in result["team_overall"]}
+        team_by_name = {r["team"]: r for r in result["team_overall"].to_dicts()}
 
         assert team_by_name["Los Angeles Lakers"]["abbreviation"] == "LAL"
         assert team_by_name["Boston Celtics"]["abbreviation"] == "BOS"
@@ -363,10 +375,104 @@ class TestAggregateTeamConference:
 
         result = aggregate_sentiment(path)
 
-        for row in result["team_overall"]:
+        for row in result["team_overall"].to_dicts():
             assert "logo_url" in row, f"Missing logo_url for {row['team']}"
             assert row["logo_url"] is not None
             assert "cdn.nba.com/logos" in row["logo_url"]
+
+
+class TestAggregateViews:
+    """Tests for the four DataFrame views returned by aggregate_sentiment."""
+
+    @pytest.fixture
+    def views_parquet(self, tmp_path):
+        """Parquet with attributed players and team flairs so all views are non-empty.
+
+        neg_rates by player: Giannis 1.0, Kevin Durant 0.5, LeBron James 0.5
+        (tie with Durant), Stephen Curry 0.0 — exercises the player_overall
+        sort and its tiebreaker.
+        """
+        return _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2", "c3", "c4", "c5", "c6"],
+            "body": [
+                "Giannis traveled again",
+                "KD is a snake",
+                "KD is unstoppable",
+                "LeBron is washed",
+                "LeBron is the GOAT",
+                "Curry never misses",
+            ],
+            "author": ["u1", "u2", "u3", "u4", "u5", "u6"],
+            "author_flair_text": [
+                ":lal-1: Lakers",
+                ":bos-1: Celtics",
+                ":lal-1: Lakers",
+                ":bos-1: Celtics",
+                ":lal-1: Lakers",
+                ":bos-1: Celtics",
+            ],
+            "author_flair_css_class": [
+                "lakers", "celtics", "lakers", "celtics", "lakers", "celtics",
+            ],
+            "created_utc": [
+                1704067200, 1704067200, 1704067200,  # week of 2024-01-01
+                1704672000, 1704672000, 1704672000,  # week of 2024-01-08
+            ],
+            "score": [10, 5, 8, 3, 12, 7],
+            "mentioned_players": [
+                ["Giannis Antetokounmpo"],
+                ["Kevin Durant"],
+                ["Kevin Durant"],
+                ["LeBron James"],
+                ["LeBron James"],
+                ["Stephen Curry"],
+            ],
+            "sentiment": ["neg", "neg", "pos", "neg", "pos", "pos"],
+            "confidence": [0.9, 0.8, 0.9, 0.85, 0.95, 0.9],
+            "sentiment_player": [
+                "Giannis Antetokounmpo",
+                "Kevin Durant",
+                "Kevin Durant",
+                "LeBron James",
+                "LeBron James",
+                "Stephen Curry",
+            ],
+            "input_tokens": [100, 100, 100, 100, 100, 100],
+            "output_tokens": [20, 20, 20, 20, 20, 20],
+        })
+
+    @pytest.mark.parametrize(
+        "view_name,schema",
+        AGGREGATE_VIEW_SCHEMAS.items(),
+        ids=AGGREGATE_VIEW_SCHEMAS.keys(),
+    )
+    def test_views_conform_to_schemas(self, views_parquet, view_name, schema):
+        """Each returned view matches its schema contract exactly."""
+        result = aggregate_sentiment(views_parquet)
+
+        assert result[view_name].schema == schema
+
+    def test_player_overall_sorted_by_neg_rate_desc_then_player_asc(
+        self, views_parquet
+    ):
+        """player_overall sorts by neg_rate descending, player name on ties."""
+        result = aggregate_sentiment(views_parquet)
+
+        players = result["player_overall"]["attributed_player"].to_list()
+        assert players == [
+            "Giannis Antetokounmpo",  # 1.0
+            "Kevin Durant",  # 0.5 — tie, alphabetical before LeBron
+            "LeBron James",  # 0.5
+            "Stephen Curry",  # 0.0
+        ]
+
+    def test_rejects_nonconforming_input_parquet(self, tmp_path):
+        """Input parquet not matching SENTIMENT_SCHEMA fails fast."""
+        path = tmp_path / "bad.parquet"
+        pl.DataFrame({"comment_id": ["c1"], "body": ["hello"]}).write_parquet(path)
+
+        with pytest.raises(ValueError, match="Schema validation failed"):
+            aggregate_sentiment(path)
 
 
 # ---------------------------------------------------------------------------

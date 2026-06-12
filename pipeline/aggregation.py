@@ -11,7 +11,12 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.schemas import SCHEMA_VERSION
+from pipeline.schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
+    SCHEMA_VERSION,
+    SENTIMENT_SCHEMA,
+    validate_schema,
+)
 from utils.player_config import build_alias_to_player_map, load_player_metadata
 from utils.season_config import get_active_season
 from utils.team_config import build_alias_to_team_map, load_team_config
@@ -92,7 +97,7 @@ def extract_team_from_flair(
     return None
 
 
-def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> list[dict]:
+def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     """
     Compute sentiment metrics grouped by specified columns.
 
@@ -104,7 +109,8 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> list[dict]:
         group_cols: Columns to group by.
 
     Returns:
-        List of dicts with group keys and computed metrics.
+        DataFrame with group columns first, then count and rate columns,
+        sorted by group_cols (group_by row order is nondeterministic).
     """
     grouped = (
         df.group_by(group_cols)
@@ -132,7 +138,7 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> list[dict]:
         )
     )
 
-    return grouped.to_dicts()
+    return grouped.sort(group_cols)
 
 
 def aggregate_sentiment(input_path: Path) -> dict:
@@ -146,11 +152,17 @@ def aggregate_sentiment(input_path: Path) -> dict:
         input_path: Path to sentiment.parquet file.
 
     Returns:
-        Dict with keys: player_overall, player_temporal, player_team,
-        team_overall, metadata.
+        Dict where player_overall, player_temporal, player_team, and
+        team_overall hold pl.DataFrames conforming to
+        AGGREGATE_VIEW_SCHEMAS; player_metadata and metadata are dicts.
+
+    Raises:
+        ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
+            or a computed view does not match its schema contract.
     """
     logger.info(f"Loading sentiment data from {input_path}")
     df = pl.read_parquet(input_path)
+    validate_schema(df, SENTIMENT_SCHEMA, str(input_path))
     total_rows = len(df)
     logger.info(f"Loaded {total_rows:,} rows")
 
@@ -213,8 +225,9 @@ def aggregate_sentiment(input_path: Path) -> dict:
     # Player overall (attributed only)
     logger.info("Computing player_overall...")
     df_attributed = df.filter(pl.col("attributed_player").is_not_null())
-    player_overall = compute_metrics(df_attributed, ["attributed_player"])
-    player_overall.sort(key=lambda x: x["neg_rate"], reverse=True)
+    player_overall = compute_metrics(df_attributed, ["attributed_player"]).sort(
+        ["neg_rate", "attributed_player"], descending=[True, False]
+    )
 
     # Player temporal (attributed only)
     logger.info("Computing player_temporal...")
@@ -230,14 +243,30 @@ def aggregate_sentiment(input_path: Path) -> dict:
     # Team overall (team non-null)
     logger.info("Computing team_overall...")
     df_team = df.filter(pl.col("team").is_not_null())
-    team_overall = compute_metrics(df_team, ["team"])
 
-    # Add abbreviation, conference and logo_url to each team row
-    for row in team_overall:
-        team_info = team_config.get(row["team"], {})
-        row["abbreviation"] = team_info.get("abbreviation")
-        row["conference"] = team_info.get("conference")
-        row["logo_url"] = team_info.get("logo_url")
+    # Enrich with abbreviation, conference and logo_url from config/teams.yaml.
+    # Schema pin so an all-null column can't infer as Null dtype; left join
+    # appends the enrichment columns after the metrics, matching
+    # TEAM_OVERALL_SCHEMA order. Re-sort because joins don't preserve row order.
+    team_enrichment = pl.DataFrame(
+        {
+            "team": list(team_config),
+            "abbreviation": [info["abbreviation"] for info in team_config.values()],
+            "conference": [info["conference"] for info in team_config.values()],
+            "logo_url": [info["logo_url"] for info in team_config.values()],
+        },
+        schema={
+            "team": pl.String,
+            "abbreviation": pl.String,
+            "conference": pl.String,
+            "logo_url": pl.String,
+        },
+    )
+    team_overall = (
+        compute_metrics(df_team, ["team"])
+        .join(team_enrichment, on="team", how="left")
+        .sort("team")
+    )
 
     # Metadata
     unique_players = df_attributed["attributed_player"].n_unique()
@@ -259,7 +288,7 @@ def aggregate_sentiment(input_path: Path) -> dict:
 
     # Filter player metadata to only players in player_overall
     # and enrich with team logo_url
-    attributed_players = {row["attributed_player"] for row in player_overall}
+    attributed_players = set(player_overall.get_column("attributed_player").to_list())
     filtered_player_metadata = {}
     for player, meta in player_metadata.items():
         if player in attributed_players:
@@ -273,11 +302,17 @@ def aggregate_sentiment(input_path: Path) -> dict:
         f"{unique_teams} teams, {unique_weeks} weeks"
     )
 
-    return {
+    views = {
         "player_overall": player_overall,
         "player_temporal": player_temporal,
         "player_team": player_team,
         "team_overall": team_overall,
+    }
+    for view_name, schema in AGGREGATE_VIEW_SCHEMAS.items():
+        validate_schema(views[view_name], schema, view_name)
+
+    return {
+        **views,
         "player_metadata": filtered_player_metadata,
         "metadata": metadata,
     }

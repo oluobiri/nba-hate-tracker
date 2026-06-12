@@ -333,7 +333,9 @@ def compute_cumulative_metrics(player_temporal: list[dict]) -> pl.DataFrame:
     keeping cumulative totals stable.
 
     Args:
-        player_temporal: List of weekly metric dicts from aggregates.json.
+        player_temporal: List of weekly metric dicts read back from
+            aggregates.json, with week as a serialized string — not the
+            in-memory DataFrame view returned by aggregate_sentiment().
             Each dict has: attributed_player, week, neg_count, comment_count.
 
     Returns:

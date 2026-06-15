@@ -44,5 +44,8 @@ data/2024-25/*
 docs/notion.md
 .claude/settings.local.json
 
+# Local reference docs — frozen research / working notes (internal working dir)
+docs/internal/
+
 # uv
 .python-version

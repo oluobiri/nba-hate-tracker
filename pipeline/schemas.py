@@ -119,15 +119,43 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
     }
 )
 
-# View name -> schema, shared by aggregate_sentiment()'s validation loop
-# and the aggregation script's parquet write loop. Keys match the
-# aggregate_sentiment() return-dict keys and the parquet filenames
-# (<view>.parquet).
+# View name -> schema for the four aggregate *views* (fact-table rollups).
+# Keys match aggregate_sentiment() return-dict keys and parquet filenames.
+# Deliberately fact-only: the aggregation script keys its JSON record-shaping
+# predicate ("is this a list of records?") off this mapping, so the Player
+# dimension below must NOT live here — it serializes to a nested dict.
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
     "player_team": PLAYER_TEAM_SCHEMA,
     "team_overall": TEAM_OVERALL_SCHEMA,
+}
+
+# --- Player dimension (enforced in pipeline/aggregation.py) ------------------
+# One row per attributed player — the Player dimension the views' attributed_player
+# FK references. Materialized as player_metadata.parquet; also re-serialized to a
+# nested {player: {...}} dict in aggregates.json. A dimension, not an aggregate
+# view, so it is kept out of AGGREGATE_VIEW_SCHEMAS (see note above).
+# NOTE: `team` here is the *roster* team (who the player plays for) — distinct
+# from the *fanbase* `team` in player_team/team_overall. See docs/data-model.md §2.
+PLAYER_METADATA_SCHEMA = pl.Schema(
+    {
+        "attributed_player": pl.String,
+        "team": pl.String,
+        "conference": pl.String,
+        "player_id": pl.Int64,
+        "headshot_url": pl.String,
+        "logo_url": pl.String,
+    }
+)
+
+# Every parquet the aggregation script writes -> its schema. Single source for
+# the write + validation loops; supersets AGGREGATE_VIEW_SCHEMAS with the Player
+# dimension. Use this for "what gets written as parquet"; use
+# AGGREGATE_VIEW_SCHEMAS for "what is a record-shaped view" (JSON serialization).
+PARQUET_SCHEMAS: dict[str, pl.Schema] = {
+    **AGGREGATE_VIEW_SCHEMAS,
+    "player_metadata": PLAYER_METADATA_SCHEMA,
 }
 
 

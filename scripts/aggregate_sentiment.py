@@ -18,8 +18,8 @@ import logging
 import sys
 from pathlib import Path
 
-from pipeline.aggregation import aggregate_sentiment
-from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS
+from pipeline.aggregation import aggregate_sentiment, player_metadata_to_dict
+from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS, PARQUET_SCHEMAS
 from utils.paths import get_dashboard_dir, get_processed_dir
 
 # -----------------------------------------------------------------------------
@@ -92,19 +92,25 @@ def main() -> None:
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON output: frame views -> records, key order preserved;
-    # default=str keeps week datetimes serialized exactly as before.
-    serializable = {
-        key: (value.to_dicts() if key in AGGREGATE_VIEW_SCHEMAS else value)
-        for key, value in result.items()
-    }
+    # Write JSON output: the four record-shaped views -> lists of dicts; the
+    # Player dimension -> its nested {player: {...}} dict (byte-shape identical
+    # to pre-#39); the metadata scalar passes through. default=str keeps week
+    # datetimes serialized exactly as before.
+    serializable = {}
+    for key, value in result.items():
+        if key in AGGREGATE_VIEW_SCHEMAS:
+            serializable[key] = value.to_dicts()
+        elif key == "player_metadata":
+            serializable[key] = player_metadata_to_dict(value)
+        else:
+            serializable[key] = value
     with open(output_path, "w") as f:
         json.dump(serializable, f, indent=2, default=str)
 
     logger.info(f"Wrote aggregates to {output_path}")
 
-    # Write one parquet per tabular view next to the JSON
-    for view_name in AGGREGATE_VIEW_SCHEMAS:
+    # Write one parquet per produced table (four views + the Player dimension)
+    for view_name in PARQUET_SCHEMAS:
         parquet_path = output_path.parent / f"{view_name}.parquet"
         result[view_name].write_parquet(parquet_path)
         logger.info(f"Wrote {parquet_path}")

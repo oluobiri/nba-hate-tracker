@@ -15,9 +15,15 @@ from pipeline.aggregation import (
     extract_team_from_flair,
     mask_below_threshold,
     pivot_bar_race_wide,
+    player_metadata_to_dict,
     resolve_player,
 )
-from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS, SCHEMA_VERSION, SENTIMENT_SCHEMA
+from pipeline.schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
+    PLAYER_METADATA_SCHEMA,
+    SCHEMA_VERSION,
+    SENTIMENT_SCHEMA,
+)
 
 
 class TestResolvePlayer:
@@ -201,62 +207,51 @@ def _make_test_parquet(tmp_path, rows):
     return path
 
 
+def _lebron_parquet(tmp_path):
+    """Two LeBron comments (one Lakers, one Celtics flair) — LeBron the only
+    attributed player. Shared by the Player-dimension tests."""
+    return _make_test_parquet(tmp_path, {
+        "comment_id": ["c1", "c2"],
+        "body": ["LeBron is great", "LeBron is washed"],
+        "author": ["u1", "u2"],
+        "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+        "author_flair_css_class": ["lakers", "celtics"],
+        "created_utc": [1704067200, 1704153600],
+        "score": [10, 5],
+        "mentioned_players": [["LeBron James"], ["LeBron James"]],
+        "sentiment": ["pos", "neg"],
+        "confidence": [0.9, 0.8],
+        "sentiment_player": ["LeBron James", "LeBron James"],
+        "input_tokens": [100, 100],
+        "output_tokens": [20, 20],
+    })
+
+
 class TestAggregatePlayerMetadata:
-    """Tests for player_metadata key in aggregate output."""
+    """Tests for the player_metadata Player-dimension frame in aggregate output."""
 
-    def test_player_metadata_key_exists(self, tmp_path):
-        """Output contains player_metadata top-level key."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+    def test_player_metadata_is_frame_conforming_to_schema(self, tmp_path):
+        """player_metadata is returned as a frame matching PLAYER_METADATA_SCHEMA."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
-        result = aggregate_sentiment(path)
-
-        assert "player_metadata" in result
-        assert isinstance(result["player_metadata"], dict)
+        assert isinstance(result["player_metadata"], pl.DataFrame)
+        assert result["player_metadata"].schema == PLAYER_METADATA_SCHEMA
 
     def test_metadata_contains_attributed_players(self, tmp_path):
-        """player_metadata includes metadata for attributed players."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        """The frame has a row per attributed player, enriched with roster team."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
-        result = aggregate_sentiment(path)
-        meta = result["player_metadata"]
-
-        assert "LeBron James" in meta
-        assert meta["LeBron James"]["team"] == "Los Angeles Lakers"
-        assert meta["LeBron James"]["conference"] == "West"
-        assert meta["LeBron James"]["player_id"] == 2544
-        assert "logo_url" in meta["LeBron James"]
-        assert "cdn.nba.com/logos" in meta["LeBron James"]["logo_url"]
+        row = result["player_metadata"].row(
+            by_predicate=pl.col("attributed_player") == "LeBron James", named=True
+        )
+        assert row["team"] == "Los Angeles Lakers"
+        assert row["conference"] == "West"
+        assert row["player_id"] == 2544
+        assert row["headshot_url"] is not None
+        assert "cdn.nba.com/logos" in row["logo_url"]
 
     def test_metadata_excludes_non_attributed_players(self, tmp_path):
-        """player_metadata only includes players that appear in player_overall."""
+        """The frame only includes players that appear in player_overall."""
         path = _make_test_parquet(tmp_path, {
             "comment_id": ["c1"],
             "body": ["LeBron is great"],
@@ -274,11 +269,52 @@ class TestAggregatePlayerMetadata:
         })
 
         result = aggregate_sentiment(path)
-        meta = result["player_metadata"]
+        players = result["player_metadata"]["attributed_player"].to_list()
 
-        # Only LeBron attributed — Giannis should not be in metadata
-        assert "LeBron James" in meta
-        assert "Giannis Antetokounmpo" not in meta
+        assert "LeBron James" in players
+        assert "Giannis Antetokounmpo" not in players
+
+
+class TestPlayerMetadataToDict:
+    """Tests for player_metadata_to_dict (frame -> nested aggregates.json dict).
+
+    These guard the byte-shape contract: aggregates.json must stay a nested
+    {player: {...}} dict identical to the pre-#39 output.
+    """
+
+    def test_reconstructs_nested_dict_keyed_by_player(self, tmp_path):
+        """The helper keys the dict by player name with the enriched values."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        as_dict = player_metadata_to_dict(result["player_metadata"])
+
+        assert isinstance(as_dict, dict)
+        assert as_dict["LeBron James"]["team"] == "Los Angeles Lakers"
+        assert as_dict["LeBron James"]["conference"] == "West"
+        assert as_dict["LeBron James"]["player_id"] == 2544
+
+    def test_value_keys_match_json_contract(self, tmp_path):
+        """Each entry carries exactly the five metadata keys, in aggregates.json order."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        as_dict = player_metadata_to_dict(result["player_metadata"])
+
+        assert list(as_dict["LeBron James"].keys()) == [
+            "team",
+            "conference",
+            "player_id",
+            "headshot_url",
+            "logo_url",
+        ]
+
+    def test_preserves_row_order(self, tmp_path):
+        """Dict key order follows frame row order (byte-shape stability)."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+        df = result["player_metadata"]
+
+        as_dict = player_metadata_to_dict(df)
+
+        assert list(as_dict.keys()) == df["attributed_player"].to_list()
 
 
 class TestAggregateTeamConference:

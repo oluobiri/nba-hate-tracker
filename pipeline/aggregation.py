@@ -13,6 +13,7 @@ import polars as pl
 
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
+    PLAYER_METADATA_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
     validate_schema,
@@ -153,8 +154,9 @@ def aggregate_sentiment(input_path: Path) -> dict:
 
     Returns:
         Dict where player_overall, player_temporal, player_team, and
-        team_overall hold pl.DataFrames conforming to
-        AGGREGATE_VIEW_SCHEMAS; player_metadata and metadata are dicts.
+        team_overall hold pl.DataFrames conforming to AGGREGATE_VIEW_SCHEMAS;
+        player_metadata holds a pl.DataFrame conforming to
+        PLAYER_METADATA_SCHEMA (the Player dimension); metadata is a dict.
 
     Raises:
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
@@ -286,16 +288,24 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Filter player metadata to only players in player_overall
-    # and enrich with team logo_url
+    # Build the Player dimension: one row per attributed player, enriched with
+    # the roster team's logo. Built in players.yaml order filtered to attributed
+    # players — matching the prior dict's key order so the reconstructed
+    # aggregates.json stays byte-shape identical (see player_metadata_to_dict).
     attributed_players = set(player_overall.get_column("attributed_player").to_list())
-    filtered_player_metadata = {}
-    for player, meta in player_metadata.items():
-        if player in attributed_players:
-            enriched = dict(meta)
-            team_info = team_config.get(enriched.get("team", ""), {})
-            enriched["logo_url"] = team_info.get("logo_url")
-            filtered_player_metadata[player] = enriched
+    metadata_rows = [
+        {
+            "attributed_player": player,
+            "team": meta.get("team"),
+            "conference": meta.get("conference"),
+            "player_id": meta.get("player_id"),
+            "headshot_url": meta.get("headshot_url"),
+            "logo_url": team_config.get(meta.get("team") or "", {}).get("logo_url"),
+        }
+        for player, meta in player_metadata.items()
+        if player in attributed_players
+    ]
+    player_metadata_df = pl.DataFrame(metadata_rows, schema=PLAYER_METADATA_SCHEMA)
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "
@@ -310,11 +320,40 @@ def aggregate_sentiment(input_path: Path) -> dict:
     }
     for view_name, schema in AGGREGATE_VIEW_SCHEMAS.items():
         validate_schema(views[view_name], schema, view_name)
+    validate_schema(player_metadata_df, PLAYER_METADATA_SCHEMA, "player_metadata")
 
     return {
         **views,
-        "player_metadata": filtered_player_metadata,
+        "player_metadata": player_metadata_df,
         "metadata": metadata,
+    }
+
+
+def player_metadata_to_dict(df: pl.DataFrame) -> dict[str, dict]:
+    """
+    Reconstruct the nested aggregates.json metadata dict from the frame.
+
+    Inverse of the Player-dimension frame built in aggregate_sentiment(): keys
+    the dict by player name and drops attributed_player from the value (it is
+    the key). Row order is preserved so the serialized aggregates.json stays
+    byte-shape identical to the pre-#39 dict output.
+
+    Args:
+        df: Player dimension frame conforming to PLAYER_METADATA_SCHEMA.
+
+    Returns:
+        Dict mapping player name to {team, conference, player_id,
+        headshot_url, logo_url}, in frame-row order.
+    """
+    return {
+        row["attributed_player"]: {
+            "team": row["team"],
+            "conference": row["conference"],
+            "player_id": row["player_id"],
+            "headshot_url": row["headshot_url"],
+            "logo_url": row["logo_url"],
+        }
+        for row in df.iter_rows(named=True)
     }
 
 

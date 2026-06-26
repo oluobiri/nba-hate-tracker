@@ -21,6 +21,7 @@ dependencies = [
     "matplotlib>=3.10.8",
     "plotly>=6.5.2",
     "pandas>=2.3.3",
+    "duckdb>=1.5.4",
 ]
 
 [tool.ruff]

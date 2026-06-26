@@ -74,6 +74,48 @@ def build_alias_to_player_map() -> dict[str, str]:
     return alias_map
 
 
+def _normalize_player_name(name: str) -> str:
+    """
+    Normalize a player name for alias-map lookup.
+
+    Lowercases, strips periods, and collapses whitespace so classifier output
+    variants (trailing "Jr." or initials like "O.G.") match the period-free
+    aliases and canonical names in the config.
+
+    Args:
+        name: Raw player name, typically a classifier sentiment_player value.
+
+    Returns:
+        Normalized lookup key.
+    """
+    return " ".join(name.lower().replace(".", "").split())
+
+
+def resolve_sentiment_player(
+    name: str | None, alias_map: dict[str, str]
+) -> str | None:
+    """
+    Resolve a classifier sentiment_player value to a canonical player name.
+
+    Normalizes punctuation and case before the alias-map lookup, so model
+    output variants (e.g. "Michael Porter Jr." with a trailing period) resolve
+    to the tracked canonical name rather than being dropped. Returns None when
+    the name maps to no tracked player — the signal coverage analysis uses to
+    surface discussed-but-untracked players.
+
+    Args:
+        name: The classifier's free-text sentiment_player value (may be None).
+        alias_map: Mapping of lowercase aliases to canonical player names, as
+            returned by build_alias_to_player_map().
+
+    Returns:
+        Canonical player name, or None if the name does not resolve.
+    """
+    if not name:
+        return None
+    return alias_map.get(_normalize_player_name(name))
+
+
 @lru_cache(maxsize=1)
 def load_player_metadata() -> dict[str, dict]:
     """

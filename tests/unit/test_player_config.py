@@ -8,6 +8,7 @@ from utils.player_config import (
     build_alias_to_player_map,
     load_player_config,
     load_player_metadata,
+    resolve_sentiment_player,
 )
 
 
@@ -102,6 +103,43 @@ class TestBuildAliasToPlayerMap:
         result1 = build_alias_to_player_map()
         result2 = build_alias_to_player_map()
         assert result1 is result2
+
+
+class TestResolveSentimentPlayer:
+    """Tests for resolve_sentiment_player normalization and lookup."""
+
+    ALIAS_MAP = {
+        "michael porter jr": "Michael Porter Jr",
+        "mpj": "Michael Porter Jr",
+        "og anunoby": "OG Anunoby",
+        "lebron": "LeBron James",
+    }
+
+    def test_canonical_resolves(self):
+        """A canonical name resolves to itself."""
+        result = resolve_sentiment_player("Michael Porter Jr", self.ALIAS_MAP)
+        assert result == "Michael Porter Jr"
+
+    def test_alias_resolves(self):
+        """A known alias resolves to its canonical name."""
+        assert resolve_sentiment_player("MPJ", self.ALIAS_MAP) == "Michael Porter Jr"
+
+    def test_trailing_period_resolves(self):
+        """Trailing-period variant resolves (e.g. 'Michael Porter Jr.')."""
+        result = resolve_sentiment_player("Michael Porter Jr.", self.ALIAS_MAP)
+        assert result == "Michael Porter Jr"
+
+    def test_internal_periods_resolve(self):
+        """Initials with internal periods resolve (e.g. 'O.G. Anunoby')."""
+        assert resolve_sentiment_player("O.G. Anunoby", self.ALIAS_MAP) == "OG Anunoby"
+
+    def test_none_returns_none(self):
+        """None input returns None."""
+        assert resolve_sentiment_player(None, self.ALIAS_MAP) is None
+
+    def test_unrecognized_returns_none(self):
+        """An untracked name returns None (the coverage-miss signal)."""
+        assert resolve_sentiment_player("Kevin Porter Jr", self.ALIAS_MAP) is None
 
 
 class TestLoadPlayerMetadata:

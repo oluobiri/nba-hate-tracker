@@ -17,7 +17,11 @@ from pipeline.schemas import (
     SENTIMENT_SCHEMA,
     validate_schema,
 )
-from utils.player_config import build_alias_to_player_map, load_player_metadata
+from utils.player_config import (
+    build_alias_to_player_map,
+    load_player_metadata,
+    resolve_sentiment_player,
+)
 from utils.season_config import get_active_season
 from utils.team_config import build_alias_to_team_map, load_team_config
 
@@ -34,9 +38,9 @@ def resolve_player(
 
     Uses four-bucket logic:
     1. Single player in mentioned_players → return it.
-    2. Multi-player + sentiment_player is canonical → return as-is.
-    3. Multi-player + sentiment_player normalizable via alias map → return canonical.
-    4. Otherwise → return None.
+    2. Multi-player + sentiment_player resolves (punctuation/case-normalized
+       alias lookup) → return canonical.
+    3. Otherwise → return None.
 
     Args:
         mentioned_players: List of player names mentioned in the comment.
@@ -53,17 +57,9 @@ def resolve_player(
         player = mentioned_players[0]
         return alias_map.get(player.lower(), player)
 
-    # Multi-player: try to use sentiment_player for disambiguation
-    if not sentiment_player:
-        return None
-
-    # Check if sentiment_player is already canonical
-    if sentiment_player in alias_map.values():
-        return sentiment_player
-
-    # Try normalizing via alias map
-    normalized = alias_map.get(sentiment_player.lower())
-    return normalized
+    # Multi-player: disambiguate via the classifier's sentiment_player,
+    # normalizing punctuation/case before the alias lookup.
+    return resolve_sentiment_player(sentiment_player, alias_map)
 
 
 def extract_team_from_flair(

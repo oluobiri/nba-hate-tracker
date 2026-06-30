@@ -53,6 +53,24 @@ class TestResolvePlayer:
         )
         assert result == "Nikola Jokic"
 
+    def test_multi_player_punctuated_sentiment_player(self):
+        """Multi-player sentiment_player with punctuation still attributes.
+
+        Regression: the model emits "Michael Porter Jr." (trailing period) but
+        the config alias is period-free. Without normalization the comment is
+        dropped even though the player is already in mentioned_players.
+        """
+        alias_map = {
+            "michael porter jr": "Michael Porter Jr",
+            "lebron": "LeBron James",
+        }
+        result = resolve_player(
+            ["Michael Porter Jr", "LeBron James"],
+            "Michael Porter Jr.",
+            alias_map,
+        )
+        assert result == "Michael Porter Jr"
+
     def test_multi_player_null_sentiment_player(self, player_alias_map):
         """Multi-player with null sentiment_player returns None."""
         result = resolve_player(

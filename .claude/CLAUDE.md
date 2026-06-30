@@ -14,7 +14,7 @@ utils/            → Stateless helpers (constants, formatting, paths, player_co
 config/           → YAML configs (2024-25/players.yaml, teams.yaml; season.yaml planned)
 app/              → Streamlit dashboard
 tests/            → pytest (unit/, conftest.py)
-notebooks/        → EDA and exploration (01-06)
+notebooks/        → EDA and exploration, season-scoped (2024-25/, 2025-26/)
 data/             → Not committed
   ├── 2024-25/    → V1 season data
   │   ├── raw/        → Arctic Shift downloads

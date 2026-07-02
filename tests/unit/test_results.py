@@ -111,6 +111,20 @@ class TestBuildSentimentDataframe:
         assert row["input_tokens"] == 100
         assert row["output_tokens"] == 20
 
+    def test_link_id_carried_from_filtered_comments(
+        self, responses_dir, filtered_comments_file
+    ):
+        """Verify link_id flows from the filtered NDJSON into the frame (#43)."""
+        # Act
+        df, _ = build_sentiment_dataframe(
+            responses_dir, filtered_comments_file, init_state()
+        )
+
+        # Assert
+        link_ids = dict(zip(df["comment_id"].to_list(), df["link_id"].to_list()))
+        assert link_ids == {"abc123": "t3_post123", "def456": "t3_post456"}
+        assert df["link_id"].null_count() == 0
+
     def test_empty_results_yield_empty_conformant_frame(
         self, tmp_path, filtered_comments_file
     ):

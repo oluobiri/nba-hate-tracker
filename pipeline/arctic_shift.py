@@ -23,13 +23,37 @@ import requests
 from utils.constants import (
     ARCTIC_SHIFT_BASE_URL,
     ARCTIC_SHIFT_COMMENTS_ENDPOINT,
+    ARCTIC_SHIFT_MAX_ATTEMPTS,
     ARCTIC_SHIFT_PAGE_SIZE,
     ARCTIC_SHIFT_POSTS_ENDPOINT,
     ARCTIC_SHIFT_RATE_LIMIT_BUFFER,
     ARCTIC_SHIFT_REQUEST_DELAY,
+    ARCTIC_SHIFT_RETRY_BACKOFF,
+    ARCTIC_SHIFT_RETRYABLE_STATUSES,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable(error: requests.RequestException) -> bool:
+    """
+    Check whether a request error is worth retrying.
+
+    Connection errors and timeouts are always transient. HTTP errors are
+    retryable only for statuses in ARCTIC_SHIFT_RETRYABLE_STATUSES; other
+    client errors (e.g. 404) indicate a real problem with the request.
+
+    Args:
+        error: The exception raised by the request.
+
+    Returns:
+        True if the request should be retried.
+    """
+    if isinstance(error, requests.HTTPError):
+        if error.response is None:
+            return False
+        return error.response.status_code in ARCTIC_SHIFT_RETRYABLE_STATUSES
+    return isinstance(error, (requests.ConnectionError, requests.Timeout))
 
 
 class ArcticShiftClient:
@@ -44,6 +68,8 @@ class ArcticShiftClient:
         delay: Seconds to wait between requests. Defaults to 0.5s.
         page_size: Max items per request. Defaults to 100.
         rate_limit_buffer: Sleep when remaining requests fall below this. Defaults to 10.
+        max_attempts: Total attempts per page request (1 initial + retries). Defaults to 4.
+        retry_backoff: Base seconds for exponential backoff between retries. Defaults to 2.0.
 
     Example:
         with ArcticShiftClient() as client:
@@ -57,12 +83,16 @@ class ArcticShiftClient:
         delay: float = ARCTIC_SHIFT_REQUEST_DELAY,
         page_size: int = ARCTIC_SHIFT_PAGE_SIZE,
         rate_limit_buffer: int = ARCTIC_SHIFT_RATE_LIMIT_BUFFER,
+        max_attempts: int = ARCTIC_SHIFT_MAX_ATTEMPTS,
+        retry_backoff: float = ARCTIC_SHIFT_RETRY_BACKOFF,
     ) -> None:
         """Initialize the client with configuration."""
         self.base_url = base_url
         self.delay = delay
         self.page_size = page_size
         self.rate_limit_buffer = rate_limit_buffer
+        self.max_attempts = max_attempts
+        self.retry_backoff = retry_backoff
         self.session = requests.Session()
 
     def __enter__(self) -> "ArcticShiftClient":
@@ -197,7 +227,12 @@ class ArcticShiftClient:
         before: int,
     ) -> tuple[list[dict], dict[str, str]]:
         """
-        Fetch a single page from the API.
+        Fetch a single page from the API, retrying transient failures.
+
+        Connection errors, timeouts, 5xx responses, and 422 responses (which
+        this API intermittently returns for requests that succeed on replay)
+        are retried with exponential backoff up to max_attempts. Other HTTP
+        errors raise immediately.
 
         Args:
             endpoint: API endpoint path.
@@ -209,7 +244,9 @@ class ArcticShiftClient:
             Tuple of (list of item dicts, response headers).
 
         Raises:
-            requests.HTTPError: If API returns an error status.
+            requests.HTTPError: If API returns a non-transient error status,
+                or a transient one on every attempt.
+            requests.ConnectionError: If connection fails on every attempt.
         """
         url = f"{self.base_url}{endpoint}"
 
@@ -221,13 +258,27 @@ class ArcticShiftClient:
             "limit": self.page_size,
         }
 
-        response = self.session.get(url, params=params, timeout=60)
-        response.raise_for_status()
+        last_error: requests.RequestException | None = None
 
-        data = response.json()
-        items = data.get("data", [])
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                response = self.session.get(url, params=params, timeout=60)
+                response.raise_for_status()
+                data = response.json()
+                return data.get("data", []), dict(response.headers)
+            except requests.RequestException as e:
+                if not _is_retryable(e):
+                    raise
+                last_error = e
+                if attempt < self.max_attempts:
+                    wait = self.retry_backoff * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"Transient API error (attempt {attempt}/{self.max_attempts}), "
+                        f"retrying in {wait:.0f}s: {e}"
+                    )
+                    time.sleep(wait)
 
-        return items, dict(response.headers)
+        raise last_error  # type: ignore[misc]  # loop always sets it before exiting
 
     def _check_rate_limit(self, headers: dict[str, str]) -> None:
         """

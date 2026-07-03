@@ -1,11 +1,13 @@
 """Unit tests for pipeline.processors module."""
 
+import json
 import logging
 
 from pipeline.processors import (
     ProcessingStats,
     extract_fields,
     has_valid_body,
+    read_last_created_utc,
 )
 from utils.constants import REQUIRED_FIELDS
 
@@ -126,3 +128,58 @@ class TestProcessingStats:
 
         assert "Total processed:" in caplog.text
         assert "Acceptance rate:" in caplog.text
+
+
+class TestReadLastCreatedUtc:
+    """Tests for the read_last_created_utc download-resume helper."""
+
+    def test_returns_last_line_timestamp(self, tmp_path):
+        """Last valid line's created_utc should be returned."""
+        path = tmp_path / "comments.jsonl"
+        lines = [json.dumps({"id": str(i), "created_utc": 1000 + i}) for i in range(3)]
+        path.write_text("\n".join(lines) + "\n")
+
+        assert read_last_created_utc(path) == 1002
+
+    def test_missing_file_returns_none(self, tmp_path):
+        """Nonexistent file should return None (fresh start)."""
+        assert read_last_created_utc(tmp_path / "missing.jsonl") is None
+
+    def test_empty_file_returns_none(self, tmp_path):
+        """Empty file should return None (fresh start)."""
+        path = tmp_path / "empty.jsonl"
+        path.touch()
+
+        assert read_last_created_utc(path) is None
+
+    def test_skips_truncated_final_line(self, tmp_path):
+        """A mid-write truncated last line should fall back to the previous valid one."""
+        path = tmp_path / "comments.jsonl"
+        good = json.dumps({"id": "1", "created_utc": 1500})
+        truncated = '{"id": "2", "created_utc": 16'
+        path.write_text(good + "\n" + truncated)
+
+        assert read_last_created_utc(path) == 1500
+
+    def test_no_parseable_line_returns_none(self, tmp_path):
+        """File with no valid JSON lines should return None."""
+        path = tmp_path / "garbage.jsonl"
+        path.write_text("not json\nalso not json\n")
+
+        assert read_last_created_utc(path) is None
+
+    def test_reads_only_tail_window(self, tmp_path):
+        """Only the tail window is read; a partial first line in the window is skipped."""
+        path = tmp_path / "comments.jsonl"
+        filler = json.dumps({"id": "x", "created_utc": 1}) + "\n"
+        last = json.dumps({"id": "last", "created_utc": 9999}) + "\n"
+        path.write_text(filler * 5000 + last)
+
+        assert read_last_created_utc(path, tail_bytes=1024) == 9999
+
+    def test_float_created_utc_coerced_to_int(self, tmp_path):
+        """Reddit sometimes serializes created_utc as a float; it should coerce to int."""
+        path = tmp_path / "comments.jsonl"
+        path.write_text(json.dumps({"id": "1", "created_utc": 1500.0}) + "\n")
+
+        assert read_last_created_utc(path) == 1500

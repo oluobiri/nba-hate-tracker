@@ -20,7 +20,8 @@ Usage:
 Design decisions:
     - Sequential downloads (one subreddit at a time) to respect the free API
     - Pagination via created_utc ascending - simple and reliable
-    - Progress saved after each subreddit completes (resumable)
+    - Completed subreddits tracked in progress.json; mid-download resume reads
+      the last written comment from the output file itself (survives crashes)
     - Rate limit headers checked to avoid hitting limits
     - Configurable delay between requests (default 0.5s)
 
@@ -42,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.arctic_shift import ArcticShiftClient
+from pipeline.processors import read_last_created_utc
 from utils.constants import ARCTIC_SHIFT_PAGE_SIZE, PROGRESS_FILENAME
 from utils.formatting import format_duration
 from utils.paths import get_raw_dir
@@ -82,18 +84,18 @@ def load_progress(progress_path: Path) -> dict[str, Any]:
 
     Structure:
         {
-            "completed": ["subreddit1", "subreddit2"],
-            "in_progress": {
-                "subreddit3": {"last_timestamp": 1234567890, "count": 50000}
-            }
+            "completed": ["subreddit1", "subreddit2"]
         }
+
+    Only subreddit-level completion is tracked here; mid-download resume
+    reads the last written comment from the output file itself.
 
     Returns empty structure if file doesn't exist (fresh start).
     """
     if progress_path.exists():
         with open(progress_path, "r") as f:
             return json.load(f)
-    return {"completed": [], "in_progress": {}}
+    return {"completed": []}
 
 
 def save_progress(progress_path: Path, progress: dict[str, Any]) -> None:
@@ -143,7 +145,18 @@ def download_subreddit(
     # Open in append mode if resuming, write mode if fresh
     mode = "a" if resume_from else "w"
 
+    # A crash can leave a truncated final line with no trailing newline;
+    # start on a fresh line so appended records don't fuse with it (the
+    # orphaned partial line is rejected downstream as malformed JSON)
+    needs_newline = False
+    if mode == "a" and output_path.exists() and output_path.stat().st_size > 0:
+        with open(output_path, "rb") as check:
+            check.seek(-1, 2)
+            needs_newline = check.read(1) != b"\n"
+
     with open(output_path, mode) as f:
+        if needs_newline:
+            f.write("\n")
         for comment in client.fetch_comments(
             subreddit=subreddit,
             after=after_timestamp,
@@ -206,7 +219,7 @@ def main() -> None:
 
     # Load or reset progress
     if args.force:
-        progress = {"completed": [], "in_progress": {}}
+        progress = {"completed": []}
         logger.info("Force mode: ignoring previous progress")
     else:
         progress = load_progress(progress_path)
@@ -255,16 +268,20 @@ def main() -> None:
 
             output_path = raw_dir / f"r_{subreddit}_comments.jsonl"
 
-            # Check if we're resuming mid-download
+            # Resume mid-download from the output file itself — the file is
+            # the source of truth, so this survives any crash mode
             resume_from = None
-            if subreddit in progress.get("in_progress", {}):
-                resume_info = progress["in_progress"][subreddit]
-                resume_from = resume_info.get("last_timestamp")
-                logger.info(
-                    f"Resuming {subreddit} from {resume_from} "
-                    f"({resume_info.get('count', 0):,} comments so far)"
-                )
-            else:
+            if not args.force:
+                last_ts = read_last_created_utc(output_path)
+                if last_ts is not None:
+                    # +1 mirrors the pagination cursor's advance semantics
+                    resume_from = last_ts + 1
+                    logger.info(
+                        f"Resuming {subreddit} after "
+                        f"{datetime.fromtimestamp(last_ts)} "
+                        f"(appending to {output_path.name})"
+                    )
+            if resume_from is None:
                 logger.info(f"Starting {subreddit}...")
 
             # Download!
@@ -284,8 +301,6 @@ def main() -> None:
 
                 # Mark as complete
                 progress["completed"].append(subreddit)
-                if subreddit in progress.get("in_progress", {}):
-                    del progress["in_progress"][subreddit]
 
                 session_stats[subreddit] = {"count": count, "duration": sub_elapsed}
 
@@ -297,17 +312,17 @@ def main() -> None:
                 )
 
             except KeyboardInterrupt:
-                logger.warning("\nInterrupted! Saving progress...")
-                # Save partial progress
-                if subreddit not in progress.get("in_progress", {}):
-                    progress["in_progress"] = progress.get("in_progress", {})
-                # Note: We could track last_timestamp here for better resume
+                logger.warning(
+                    "\nInterrupted! Partial output is on disk; "
+                    "rerun to resume from the last written comment."
+                )
                 save_progress(progress_path, progress)
                 sys.exit(1)
 
             except Exception as e:
                 logger.error(f"Failed on {subreddit}: {e}")
-                # Save progress so we can resume
+                # Completed list persists; mid-download state resumes from
+                # the output file on rerun
                 save_progress(progress_path, progress)
                 raise
 

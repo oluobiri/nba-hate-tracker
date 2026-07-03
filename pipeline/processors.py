@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from utils.constants import INVALID_BODY_VALUES, REQUIRED_FIELDS
 from utils.player_config import load_player_config
@@ -197,3 +198,49 @@ def process_line(line: str, stats: ProcessingStats) -> dict | None:
 
     stats.accepted_comments += 1
     return result
+
+
+def read_last_created_utc(path: Path, tail_bytes: int = 65536) -> int | None:
+    """
+    Read the most recent created_utc from the tail of a raw JSONL file.
+
+    Used to resume an interrupted download from where it stopped: the output
+    file itself is the source of truth, so this survives any crash mode. Only
+    the last tail_bytes are read (raw files are multi-GB), and lines are
+    walked backward so a final line truncated by a mid-write kill is skipped
+    in favor of the last complete one.
+
+    Args:
+        path: JSONL file of raw comments (one JSON object per line).
+        tail_bytes: Bytes to read from the end of the file. Must comfortably
+            exceed the longest expected line (~64x a typical comment).
+
+    Returns:
+        created_utc of the last parseable line, or None if the file is
+        missing, empty, or has no parseable line in the tail window.
+    """
+    if not path.exists():
+        return None
+
+    file_size = path.stat().st_size
+    if file_size == 0:
+        return None
+
+    with open(path, "rb") as f:
+        f.seek(max(0, file_size - tail_bytes))
+        tail = f.read().decode("utf-8", errors="replace")
+
+    # The window's first line may be partial (seek landed mid-line); walking
+    # backward also naturally skips it.
+    for line in reversed(tail.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            comment = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        created = comment.get("created_utc")
+        if isinstance(created, (int, float)):
+            return int(created)
+
+    return None

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from utils.season_config import get_active_season
 from utils.paths import (
     get_batches_dir,
     get_dashboard_dir,
@@ -23,7 +24,7 @@ from utils.paths import (
 PINNED_SEASON = "2098-99"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def pinned_season(monkeypatch) -> str:
     """Pin the active season so tests don't depend on config/season.yaml."""
     monkeypatch.setattr("utils.paths.get_active_season", lambda: PINNED_SEASON)
@@ -53,6 +54,14 @@ class TestGetDataDir:
         """Data dir ends with the season identifier."""
         result = get_data_dir()
         assert result.name == pinned_season
+
+    def test_real_config_wiring_unmocked(self):
+        """Smoke test: the real active season from season.yaml lands in the path.
+
+        Deliberately unmocked — the only test exercising the wiring between
+        utils.paths and the real config file end-to-end.
+        """
+        assert get_active_season() in str(get_data_dir())
 
 
 class TestLeafPathFunctions:

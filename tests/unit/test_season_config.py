@@ -58,6 +58,7 @@ class TestLoadSeasonConfig:
         config = load_season_config()
         assert re.fullmatch(r"\d{4}-\d{2}", config["season"])
         start_year = int(config["season"][:4])
+        assert config["season"][5:7] == str(start_year + 1)[-2:]
         assert config["start_date"].startswith(str(start_year))
         assert config["end_date"].startswith(str(start_year + 1))
         assert "nba" in config["subreddits"]

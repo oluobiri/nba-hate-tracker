@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.arctic_shift import ArcticShiftClient
-from pipeline.processors import read_last_created_utc
+from pipeline.processors import ensure_trailing_newline, resume_after
 from utils.constants import ARCTIC_SHIFT_PAGE_SIZE, PROGRESS_FILENAME
 from utils.formatting import format_duration
 from utils.paths import get_raw_dir
@@ -145,18 +145,11 @@ def download_subreddit(
     # Open in append mode if resuming, write mode if fresh
     mode = "a" if resume_from else "w"
 
-    # A crash can leave a truncated final line with no trailing newline;
-    # start on a fresh line so appended records don't fuse with it (the
-    # orphaned partial line is rejected downstream as malformed JSON)
-    needs_newline = False
-    if mode == "a" and output_path.exists() and output_path.stat().st_size > 0:
-        with open(output_path, "rb") as check:
-            check.seek(-1, 2)
-            needs_newline = check.read(1) != b"\n"
+    # Crash-truncated final lines must not fuse with appended records
+    if mode == "a":
+        ensure_trailing_newline(output_path)
 
     with open(output_path, mode) as f:
-        if needs_newline:
-            f.write("\n")
         for comment in client.fetch_comments(
             subreddit=subreddit,
             after=after_timestamp,
@@ -269,19 +262,19 @@ def main() -> None:
             output_path = raw_dir / f"r_{subreddit}_comments.jsonl"
 
             # Resume mid-download from the output file itself — the file is
-            # the source of truth, so this survives any crash mode
+            # the source of truth, so this survives any crash mode. A file
+            # with data but no parseable resume point raises rather than
+            # silently starting fresh (which would truncate it).
             resume_from = None
             if not args.force:
-                last_ts = read_last_created_utc(output_path)
-                if last_ts is not None:
-                    # +1 mirrors the pagination cursor's advance semantics
-                    resume_from = last_ts + 1
-                    logger.info(
-                        f"Resuming {subreddit} after "
-                        f"{datetime.fromtimestamp(last_ts)} "
-                        f"(appending to {output_path.name})"
-                    )
-            if resume_from is None:
+                resume_from = resume_after(output_path)
+            if resume_from is not None:
+                logger.info(
+                    f"Resuming {subreddit} from "
+                    f"{datetime.fromtimestamp(resume_from)} "
+                    f"(appending to {output_path.name})"
+                )
+            else:
                 logger.info(f"Starting {subreddit}...")
 
             # Download!

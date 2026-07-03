@@ -66,8 +66,10 @@ ARCTIC_SHIFT_RETRY_BACKOFF = 2.0
 
 # HTTP statuses treated as transient. 422 is included deliberately: the API
 # intermittently surfaces backend hiccups as 422 on requests that succeed
-# when replayed (observed 2026-07-02 on the v2 season download).
-ARCTIC_SHIFT_RETRYABLE_STATUSES = frozenset({422, 500, 502, 503, 504})
+# when replayed (observed 2026-07-02 on the v2 season download). 429 is
+# normally avoided via the rate-limit headers, but retrying covers the case
+# where those headers are absent.
+ARCTIC_SHIFT_RETRYABLE_STATUSES = frozenset({422, 429, 500, 502, 503, 504})
 
 
 

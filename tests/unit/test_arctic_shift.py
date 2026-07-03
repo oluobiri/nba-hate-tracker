@@ -276,7 +276,7 @@ class TestErrorHandling:
                 list(client.fetch_comments("nba", after=0, before=200))
 
 
-def _error_response(status: int):
+def _error_response(status: int) -> Mock:
     """Build a mock response whose raise_for_status raises an HTTPError with a status."""
     response = Mock()
     response.status_code = status

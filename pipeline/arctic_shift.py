@@ -229,10 +229,10 @@ class ArcticShiftClient:
         """
         Fetch a single page from the API, retrying transient failures.
 
-        Connection errors, timeouts, 5xx responses, and 422 responses (which
-        this API intermittently returns for requests that succeed on replay)
-        are retried with exponential backoff up to max_attempts. Other HTTP
-        errors raise immediately.
+        Connection errors, timeouts, and transient HTTP statuses (5xx, 429,
+        and 422 — which this API intermittently returns for requests that
+        succeed on replay) are retried with exponential backoff up to
+        max_attempts. Other HTTP errors raise immediately.
 
         Args:
             endpoint: API endpoint path.

@@ -9,6 +9,7 @@ import re
 
 import pytest
 
+import pipeline.processors
 from utils.paths import get_data_dir
 from utils.player_config import (
     build_alias_to_player_map,
@@ -24,9 +25,15 @@ from utils.season_config import (
 
 
 def _clear_player_caches() -> None:
-    """Clear the season-derived player-config caches."""
+    """Clear the season-derived player-config caches.
+
+    Also resets the compiled-pattern global in pipeline.processors:
+    cache_clear() bypasses the override's warm-cache guard, which
+    normally subsumes that global via load_player_config().
+    """
     for fn in (load_player_config, build_alias_to_player_map, load_player_metadata):
         fn.cache_clear()
+    pipeline.processors._player_patterns = None
 
 
 class TestLoadSeasonConfig:

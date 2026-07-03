@@ -11,6 +11,9 @@ The override redirects only the season identifier (paths, players.yaml);
 load_season_config()'s other fields (start_date, end_date, subreddits)
 deliberately keep their on-disk values, so scripts that consume those
 (download_comments) must not use the override.
+
+The override is process-local module state: spawn-based worker processes
+(multiprocessing) would not inherit it and must set it themselves.
 """
 
 import re

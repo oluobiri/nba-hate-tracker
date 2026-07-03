@@ -525,6 +525,7 @@ def season_override() -> Callable[[str], None]:
     the override. Teardown clears both the override and the caches so
     later tests see the on-disk active season again.
     """
+    import pipeline.processors
     from utils.player_config import (
         build_alias_to_player_map,
         load_player_config,
@@ -539,6 +540,10 @@ def season_override() -> Callable[[str], None]:
             load_player_metadata,
         ):
             fn.cache_clear()
+        # cache_clear() is a side door the override's warm-cache guard
+        # never sees, so the compiled-pattern global it normally subsumes
+        # must be reset by hand or it keeps the wrong season's patterns
+        pipeline.processors._player_patterns = None
 
     def _set(season: str) -> None:
         _clear_caches()

@@ -58,6 +58,19 @@ ARCTIC_SHIFT_REQUEST_DELAY = 0.5
 # Rate limit buffer - sleep when remaining requests drop below this
 ARCTIC_SHIFT_RATE_LIMIT_BUFFER = 10
 
+# Total attempts per page request (1 initial + retries)
+ARCTIC_SHIFT_MAX_ATTEMPTS = 4
+
+# Base seconds for exponential backoff between retries (2s -> 4s -> 8s)
+ARCTIC_SHIFT_RETRY_BACKOFF = 2.0
+
+# HTTP statuses treated as transient. 422 is included deliberately: the API
+# intermittently surfaces backend hiccups as 422 on requests that succeed
+# when replayed (observed 2026-07-02 on the v2 season download). 429 is
+# normally avoided via the rate-limit headers, but retrying covers the case
+# where those headers are absent.
+ARCTIC_SHIFT_RETRYABLE_STATUSES = frozenset({422, 429, 500, 502, 503, 504})
+
 
 
 # =============================================================================

@@ -2,7 +2,7 @@
 
 import time
 import pytest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import requests
 
@@ -264,8 +264,8 @@ class TestErrorHandling:
                 list(client.fetch_comments("nba", after=0, before=200))
 
     def test_connection_error_raises_exception(self):
-        """Verify connection errors propagate."""
-        client = ArcticShiftClient()
+        """Verify persistent connection errors propagate after retries are exhausted."""
+        client = ArcticShiftClient(retry_backoff=0)
 
         with patch.object(
             client.session,
@@ -274,6 +274,93 @@ class TestErrorHandling:
         ):
             with pytest.raises(requests.ConnectionError):
                 list(client.fetch_comments("nba", after=0, before=200))
+
+
+def _error_response(status: int) -> Mock:
+    """Build a mock response whose raise_for_status raises an HTTPError with a status."""
+    response = Mock()
+    response.status_code = status
+    response.raise_for_status.side_effect = requests.HTTPError(
+        f"{status} error", response=response
+    )
+    return response
+
+
+class TestRetry:
+    """Tests for transient-error retry in _fetch_page."""
+
+    def test_retries_transient_422_then_succeeds(
+        self, mock_comments_page, mock_empty_response
+    ):
+        """Verify a transient 422 is retried and the download continues."""
+        client = ArcticShiftClient(retry_backoff=0, delay=0)
+        page = mock_comments_page(start_id=1, count=2)
+
+        with patch.object(
+            client.session,
+            "get",
+            side_effect=[_error_response(422), page, mock_empty_response],
+        ) as mock_get:
+            results = list(client.fetch_comments("nba", after=0, before=200))
+
+        assert len(results) == 2
+        assert mock_get.call_count == 3
+
+    def test_retries_connection_error_then_succeeds(
+        self, mock_comments_page, mock_empty_response
+    ):
+        """Verify a transient connection error is retried."""
+        client = ArcticShiftClient(retry_backoff=0, delay=0)
+        page = mock_comments_page(start_id=1, count=1)
+
+        with patch.object(
+            client.session,
+            "get",
+            side_effect=[
+                requests.ConnectionError("reset"),
+                page,
+                mock_empty_response,
+            ],
+        ) as mock_get:
+            results = list(client.fetch_comments("nba", after=0, before=200))
+
+        assert len(results) == 1
+        assert mock_get.call_count == 3
+
+    def test_raises_after_exhausting_attempts(self):
+        """Verify a persistent transient error raises after max_attempts."""
+        client = ArcticShiftClient(retry_backoff=0, max_attempts=3)
+
+        with patch.object(
+            client.session, "get", return_value=_error_response(503)
+        ) as mock_get:
+            with pytest.raises(requests.HTTPError):
+                list(client.fetch_comments("nba", after=0, before=200))
+
+        assert mock_get.call_count == 3
+
+    def test_non_transient_client_error_not_retried(self):
+        """Verify a 404 raises immediately with no retry."""
+        client = ArcticShiftClient(retry_backoff=0)
+
+        with patch.object(
+            client.session, "get", return_value=_error_response(404)
+        ) as mock_get:
+            with pytest.raises(requests.HTTPError):
+                list(client.fetch_comments("nba", after=0, before=200))
+
+        assert mock_get.call_count == 1
+
+    def test_backoff_grows_exponentially(self):
+        """Verify retry waits follow the exponential backoff schedule."""
+        client = ArcticShiftClient(retry_backoff=2.0, max_attempts=4)
+
+        with patch.object(client.session, "get", return_value=_error_response(503)):
+            with patch("pipeline.arctic_shift.time.sleep") as mock_sleep:
+                with pytest.raises(requests.HTTPError):
+                    list(client.fetch_comments("nba", after=0, before=200))
+
+        assert [c.args[0] for c in mock_sleep.call_args_list] == [2.0, 4.0, 8.0]
 
 
 class TestSessionManagement:

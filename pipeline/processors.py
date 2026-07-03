@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from utils.constants import INVALID_BODY_VALUES, REQUIRED_FIELDS
 from utils.player_config import load_player_config
@@ -197,3 +198,115 @@ def process_line(line: str, stats: ProcessingStats) -> dict | None:
 
     stats.accepted_comments += 1
     return result
+
+
+def read_last_created_utc(path: Path, tail_bytes: int = 65536) -> int | None:
+    """
+    Read the most recent created_utc from the tail of a raw JSONL file.
+
+    Used to resume an interrupted download from where it stopped: the output
+    file itself is the source of truth, so this survives any crash mode. Only
+    the last tail_bytes are read (raw files are multi-GB), and lines are
+    walked backward so a final line truncated by a mid-write kill is skipped
+    in favor of the last complete one.
+
+    Args:
+        path: JSONL file of raw comments (one JSON object per line).
+        tail_bytes: Bytes to read from the end of the file. Must comfortably
+            exceed the longest expected line (~64x a typical comment).
+
+    Returns:
+        created_utc of the last parseable line, or None if the file is
+        missing, empty, or has no parseable line in the tail window.
+    """
+    if not path.exists():
+        return None
+
+    file_size = path.stat().st_size
+    if file_size == 0:
+        return None
+
+    with open(path, "rb") as f:
+        f.seek(max(0, file_size - tail_bytes))
+        tail = f.read().decode("utf-8", errors="replace")
+
+    # split("\n"), not splitlines(): the latter also breaks on Unicode
+    # separators (FS, LSEP, ...), which would misparse lines if the
+    # writer ever emits them unescaped. The window's first line may be
+    # partial (seek landed mid-line); walking backward naturally skips it.
+    for line in reversed(tail.split("\n")):
+        if not line.strip():
+            continue
+        try:
+            comment = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        created = comment.get("created_utc")
+        if isinstance(created, (int, float)):
+            return int(created)
+
+    return None
+
+
+def resume_after(path: Path, tail_bytes: int = 65536) -> int | None:
+    """
+    Resolve the resume cursor for a download output file.
+
+    Fresh-start vs resume is decided by the file's actual state, not by
+    whether a timestamp happened to parse: a non-empty file that yields no
+    resume point raises instead of signaling a fresh start, which would
+    let the caller truncate previously downloaded data.
+
+    Args:
+        path: JSONL output file of a previous download run.
+        tail_bytes: Tail window passed to read_last_created_utc().
+
+    Returns:
+        The `after` cursor to resume from (last created_utc + 1, matching
+        the pagination cursor's advance semantics), or None if the file is
+        missing or empty (fresh start).
+
+    Raises:
+        ValueError: If the file has content but no parseable resume point
+            in the tail window.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+
+    last_ts = read_last_created_utc(path, tail_bytes)
+    if last_ts is None:
+        raise ValueError(
+            f"{path} has data but no parseable resume point in its last "
+            f"{tail_bytes} bytes; refusing to overwrite it. Inspect the "
+            "file, or rerun with --force to start fresh."
+        )
+
+    return last_ts + 1
+
+
+def ensure_trailing_newline(path: Path) -> bool:
+    """
+    Ensure a file ends with a newline before records are appended to it.
+
+    A crash can leave a truncated final line with no trailing newline;
+    appending directly would fuse the next record onto it, corrupting
+    both. The orphaned partial line is rejected downstream as malformed
+    JSON instead.
+
+    Args:
+        path: File about to be appended to.
+
+    Returns:
+        True if a newline was appended, False if none was needed.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+
+    with open(path, "rb") as f:
+        f.seek(-1, 2)
+        if f.read(1) == b"\n":
+            return False
+
+    with open(path, "a") as f:
+        f.write("\n")
+    return True

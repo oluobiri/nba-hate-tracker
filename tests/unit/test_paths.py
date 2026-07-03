@@ -2,10 +2,14 @@
 Tests for season-aware data path construction.
 
 Tests verify that path functions return season-scoped directories
-and that get_data_dir accepts an explicit season override.
+and that get_data_dir accepts an explicit season override. The active
+season is pinned to a synthetic value so tests exercise the plumbing
+without depending on the real config/season.yaml.
 """
 
 from pathlib import Path
+
+import pytest
 
 from utils.paths import (
     get_batches_dir,
@@ -16,6 +20,15 @@ from utils.paths import (
     get_raw_dir,
 )
 
+PINNED_SEASON = "2098-99"
+
+
+@pytest.fixture(autouse=True)
+def pinned_season(monkeypatch) -> str:
+    """Pin the active season so tests don't depend on config/season.yaml."""
+    monkeypatch.setattr("utils.paths.get_active_season", lambda: PINNED_SEASON)
+    return PINNED_SEASON
+
 
 class TestGetDataDir:
     """Tests for get_data_dir function."""
@@ -25,51 +38,52 @@ class TestGetDataDir:
         result = get_data_dir()
         assert isinstance(result, Path)
 
-    def test_includes_active_season(self):
-        """Default data dir includes active season from season.yaml."""
+    def test_includes_active_season(self, pinned_season):
+        """Default data dir includes the active season."""
         result = get_data_dir()
-        assert "2024-25" in str(result)
+        assert pinned_season in str(result)
 
-    def test_explicit_season_override(self):
-        """Passing season explicitly overrides the default."""
-        result = get_data_dir(season="2025-26")
-        assert result.name == "2025-26"
+    def test_explicit_season_override(self, pinned_season):
+        """Passing season explicitly overrides the active-season default."""
+        result = get_data_dir(season="2024-25")
+        assert result.name == "2024-25"
+        assert pinned_season not in str(result)
 
-    def test_ends_with_season(self):
+    def test_ends_with_season(self, pinned_season):
         """Data dir ends with the season identifier."""
         result = get_data_dir()
-        assert result.name == "2024-25"
+        assert result.name == pinned_season
 
 
 class TestLeafPathFunctions:
     """Tests for subdirectory path functions."""
 
-    def test_raw_dir_is_season_scoped(self):
+    def test_raw_dir_is_season_scoped(self, pinned_season):
         """Raw dir is under the season directory."""
         result = get_raw_dir()
-        assert result.parent.name == "2024-25"
+        assert result.parent.name == pinned_season
         assert result.name == "raw"
 
-    def test_filtered_dir_is_season_scoped(self):
+    def test_filtered_dir_is_season_scoped(self, pinned_season):
         """Filtered dir is under the season directory."""
         result = get_filtered_dir()
-        assert result.parent.name == "2024-25"
+        assert result.parent.name == pinned_season
         assert result.name == "filtered"
 
-    def test_batches_dir_is_season_scoped(self):
+    def test_batches_dir_is_season_scoped(self, pinned_season):
         """Batches dir is under the season directory."""
         result = get_batches_dir()
-        assert result.parent.name == "2024-25"
+        assert result.parent.name == pinned_season
         assert result.name == "batches"
 
-    def test_processed_dir_is_season_scoped(self):
+    def test_processed_dir_is_season_scoped(self, pinned_season):
         """Processed dir is under the season directory."""
         result = get_processed_dir()
-        assert result.parent.name == "2024-25"
+        assert result.parent.name == pinned_season
         assert result.name == "processed"
 
-    def test_dashboard_dir_is_season_scoped(self):
+    def test_dashboard_dir_is_season_scoped(self, pinned_season):
         """Dashboard dir is under the season directory."""
         result = get_dashboard_dir()
-        assert result.parent.name == "2024-25"
+        assert result.parent.name == pinned_season
         assert result.name == "dashboard"

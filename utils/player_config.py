@@ -5,7 +5,10 @@ This module provides cached access to player aliases and short alias lists
 from config/{season}/players.yaml for player mention detection.
 
 Note: Config is cached per process invocation via @lru_cache. One season
-per process — call cache_clear() if switching seasons within a single run.
+per process — the season is resolved through get_active_season() at first
+load, honoring a set_season_override() made at script entry (the --season
+flag). The override's guard raises if these caches are already warm, so
+set it before anything triggers a load.
 """
 
 from functools import lru_cache

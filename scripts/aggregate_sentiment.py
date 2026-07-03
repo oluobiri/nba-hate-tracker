@@ -21,6 +21,7 @@ from pathlib import Path
 from pipeline.aggregation import aggregate_sentiment
 from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS
 from utils.paths import get_dashboard_dir, get_processed_dir
+from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -49,9 +50,6 @@ DEFAULT_OUTPUT_FILENAME = "aggregates.json"
 
 def main() -> None:
     """Main entry point for sentiment aggregation."""
-    default_input = get_processed_dir() / DEFAULT_INPUT_FILENAME
-    default_output = get_dashboard_dir() / DEFAULT_OUTPUT_FILENAME
-
     parser = argparse.ArgumentParser(
         description="Aggregate sentiment data into dashboard-ready JSON"
     )
@@ -59,19 +57,32 @@ def main() -> None:
         "--input",
         type=Path,
         default=None,
-        help=f"Path to sentiment parquet file (default: {default_input})",
+        help="Path to sentiment parquet file "
+        f"(default: data/<season>/processed/{DEFAULT_INPUT_FILENAME})",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help=f"Path to write aggregates JSON (default: {default_output})",
+        help="Path to write aggregates JSON "
+        f"(default: data/<season>/dashboard/{DEFAULT_OUTPUT_FILENAME})",
+    )
+    parser.add_argument(
+        "--season",
+        default=None,
+        metavar="YYYY-YY",
+        help='Override the active season (e.g. "2024-25"); data paths and '
+        "player config resolve to it for this run",
     )
     args = parser.parse_args()
 
-    # Apply defaults after parsing
-    input_path = args.input or default_input
-    output_path = args.output or default_output
+    if args.season:
+        set_season_override(args.season)
+
+    # Defaults resolve after the season override so they land in the
+    # right season directory
+    input_path = args.input or get_processed_dir() / DEFAULT_INPUT_FILENAME
+    output_path = args.output or get_dashboard_dir() / DEFAULT_OUTPUT_FILENAME
 
     # Validate input exists
     if not input_path.exists():

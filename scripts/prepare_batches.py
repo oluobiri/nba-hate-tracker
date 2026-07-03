@@ -30,6 +30,7 @@ from tqdm import tqdm
 from pipeline.batch import format_batch_request, REQUESTS_PER_BATCH
 from utils.formatting import format_duration
 from utils.paths import get_batches_dir, get_filtered_dir
+from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -177,12 +178,6 @@ def process_file(
 
 def main() -> None:
     """Main entry point with CLI argument handling."""
-    # Resolve default paths at runtime
-    filtered_dir = get_filtered_dir()
-    batches_dir = get_batches_dir()
-    default_input = filtered_dir / DEFAULT_INPUT_FILENAME
-    default_output = batches_dir / REQUESTS_SUBDIR
-
     parser = argparse.ArgumentParser(
         description="Prepare batch request files for Anthropic Batch API"
     )
@@ -190,13 +185,15 @@ def main() -> None:
         "--input",
         type=Path,
         default=None,
-        help=f"Path to input JSONL file (default: {default_input})",
+        help="Path to input JSONL file "
+        f"(default: data/<season>/filtered/{DEFAULT_INPUT_FILENAME})",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help=f"Directory to write batch files (default: {default_output})",
+        help="Directory to write batch files "
+        f"(default: data/<season>/batches/{REQUESTS_SUBDIR})",
     )
     parser.add_argument(
         "--limit",
@@ -209,13 +206,24 @@ def main() -> None:
         action="store_true",
         help="Skip counting lines (faster start, but no progress percentage)",
     )
+    parser.add_argument(
+        "--season",
+        default=None,
+        metavar="YYYY-YY",
+        help='Override the active season (e.g. "2024-25"); data paths and '
+        "player config resolve to it for this run",
+    )
     args = parser.parse_args()
 
-    # Apply defaults after parsing
+    if args.season:
+        set_season_override(args.season)
+
+    # Defaults resolve after the season override so they land in the
+    # right season directory
     if args.input is None:
-        args.input = default_input
+        args.input = get_filtered_dir() / DEFAULT_INPUT_FILENAME
     if args.output is None:
-        args.output = default_output
+        args.output = get_batches_dir() / REQUESTS_SUBDIR
 
     # Validate input exists
     if not args.input.exists():

@@ -54,8 +54,8 @@ class TestLoadPlayerConfig:
         """Short aliases includes known entries requiring word boundaries."""
         _, short_aliases = load_player_config()
 
-        # These require word boundary matching
-        expected = {"ad", "curry", "james", "green", "ja"}
+        # These require word boundary matching (stable across season configs)
+        expected = {"ad", "curry", "ja"}
         assert expected.issubset(short_aliases)
 
     def test_caching_returns_same_object(self):
@@ -71,7 +71,8 @@ class TestLoadPlayerConfig:
         players, _ = load_player_config()
 
         # Should have dozens of players, but not thousands
-        assert 30 < len(players) < 200
+        # (2024-25 tracked 111, 2025-26 tracks 219)
+        assert 30 < len(players) < 500
 
 
 class TestBuildAliasToPlayerMap:
@@ -163,13 +164,25 @@ class TestLoadPlayerMetadata:
             assert "headshot_url" in player_meta, f"{player_name} missing 'headshot_url'"
 
     def test_conference_values_valid(self):
-        """Conference is always 'East' or 'West'."""
+        """Conference is 'East' or 'West'; None only for teamless players.
+
+        Off-roster carry-overs are kept teamless by design (inclusion is
+        discourse-driven, not roster-gated), so team and conference are
+        None together.
+        """
         metadata = load_player_metadata()
 
         for player_name, player_meta in metadata.items():
-            assert player_meta["conference"] in {"East", "West"}, (
-                f"{player_name} has invalid conference: {player_meta['conference']}"
-            )
+            if player_meta["team"] is None:
+                assert player_meta["conference"] is None, (
+                    f"{player_name} is teamless but has conference: "
+                    f"{player_meta['conference']}"
+                )
+            else:
+                assert player_meta["conference"] in {"East", "West"}, (
+                    f"{player_name} has invalid conference: "
+                    f"{player_meta['conference']}"
+                )
 
     def test_lebron_metadata(self):
         """LeBron James has correct metadata."""

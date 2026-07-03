@@ -5,6 +5,8 @@ Tests cover loading from YAML, required key validation, convenience
 accessors, and caching behavior.
 """
 
+import re
+
 from utils.season_config import get_active_season, load_season_config
 
 
@@ -46,12 +48,18 @@ class TestLoadSeasonConfig:
         for sub in subreddits:
             assert isinstance(sub, str)
 
-    def test_current_season_values(self):
-        """Current config has expected 2024-25 values."""
+    def test_season_and_dates_consistent(self):
+        """Season identifier and date range agree, whatever season is active.
+
+        Invariants instead of pinned values so a legitimate season flip
+        doesn't break the suite: season is YYYY-YY, start_date falls in
+        the first year, end_date in the second.
+        """
         config = load_season_config()
-        assert config["season"] == "2024-25"
-        assert config["start_date"] == "2024-10-01"
-        assert config["end_date"] == "2025-06-30"
+        assert re.fullmatch(r"\d{4}-\d{2}", config["season"])
+        start_year = int(config["season"][:4])
+        assert config["start_date"].startswith(str(start_year))
+        assert config["end_date"].startswith(str(start_year + 1))
         assert "nba" in config["subreddits"]
 
     def test_caching_returns_same_object(self):
@@ -74,6 +82,6 @@ class TestGetActiveSeason:
         config = load_season_config()
         assert get_active_season() == config["season"]
 
-    def test_current_value(self):
-        """Active season is currently 2024-25."""
-        assert get_active_season() == "2024-25"
+    def test_matches_season_format(self):
+        """Active season is a YYYY-YY identifier."""
+        assert re.fullmatch(r"\d{4}-\d{2}", get_active_season())

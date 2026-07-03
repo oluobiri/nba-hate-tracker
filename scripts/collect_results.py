@@ -39,6 +39,7 @@ from pipeline.batch import (
 )
 from pipeline.results import build_sentiment_dataframe
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
+from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -263,7 +264,17 @@ def main() -> None:
         action="store_true",
         help="Check once, download completed batches, and exit",
     )
+    parser.add_argument(
+        "--season",
+        default=None,
+        metavar="YYYY-YY",
+        help='Override the active season (e.g. "2024-25"); data paths and '
+        "player config resolve to it for this run",
+    )
     args = parser.parse_args()
+
+    if args.season:
+        set_season_override(args.season)
 
     # Setup paths
     batches_dir = get_batches_dir()

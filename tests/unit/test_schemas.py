@@ -3,7 +3,7 @@
 import polars as pl
 import pytest
 
-from pipeline.schemas import SENTIMENT_SCHEMA, validate_schema
+from pipeline.schemas import COMMENT_INPUT_SCHEMA, SENTIMENT_SCHEMA, validate_schema
 
 
 @pytest.fixture
@@ -19,6 +19,7 @@ def sentiment_frame() -> pl.DataFrame:
                 "author_flair_css_class": "lakers",
                 "created_utc": 1709251200,
                 "score": 10,
+                "link_id": "t3_post123",
                 "mentioned_players": ["LeBron James"],
                 "sentiment": "neg",
                 "confidence": 0.95,
@@ -29,6 +30,18 @@ def sentiment_frame() -> pl.DataFrame:
         ],
         schema=SENTIMENT_SCHEMA,
     )
+
+
+class TestLinkIdContract:
+    """Contract guards for link_id, the v3 game-thread bridge field (#43)."""
+
+    def test_sentiment_schema_pins_link_id_as_string(self):
+        """Verify link_id is part of the sentiment.parquet contract."""
+        assert SENTIMENT_SCHEMA["link_id"] == pl.String
+
+    def test_comment_input_schema_reads_link_id(self):
+        """Verify the filtered-NDJSON projection carries link_id."""
+        assert COMMENT_INPUT_SCHEMA["link_id"] == pl.String
 
 
 class TestValidateSchema:

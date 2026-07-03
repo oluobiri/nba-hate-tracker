@@ -18,7 +18,7 @@ by them).
 import polars as pl
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -30,6 +30,7 @@ SENTIMENT_SCHEMA = pl.Schema(
         "author_flair_css_class": pl.String,  # nullable
         "created_utc": pl.Int64,  # epoch seconds
         "score": pl.Int64,
+        "link_id": pl.String,  # post fullname (t3_...), the v3 comment->game bridge
         "mentioned_players": pl.List(pl.String),
         "sentiment": pl.String,  # "pos" | "neg" | "neu" | "error"
         "confidence": pl.Float64,
@@ -52,6 +53,7 @@ _COMMENT_SIDE_COLUMNS = [
     "author_flair_css_class",
     "created_utc",
     "score",
+    "link_id",
     "mentioned_players",
 ]
 _RESULTS_SIDE_COLUMNS = [

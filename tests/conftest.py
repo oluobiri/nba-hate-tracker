@@ -507,3 +507,44 @@ def team_alias_map() -> dict[str, str]:
         "cha": "Charlotte Hornets",
         "hornets": "Charlotte Hornets",
     }
+
+
+# ---------------------------------------------------------------------------
+# Season override (issue #51)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def season_override() -> Callable[[str], None]:
+    """
+    Set a process-level season override with cold caches; restores after.
+
+    Yields a callable — season_override("2024-25") — that clears the
+    season-derived player-config caches (the override's warm-cache guard
+    would otherwise trip on caches populated by earlier tests) and sets
+    the override. Teardown clears both the override and the caches so
+    later tests see the on-disk active season again.
+    """
+    from utils.player_config import (
+        build_alias_to_player_map,
+        load_player_config,
+        load_player_metadata,
+    )
+    from utils.season_config import clear_season_override, set_season_override
+
+    def _clear_caches() -> None:
+        for fn in (
+            load_player_config,
+            build_alias_to_player_map,
+            load_player_metadata,
+        ):
+            fn.cache_clear()
+
+    def _set(season: str) -> None:
+        _clear_caches()
+        clear_season_override()
+        set_season_override(season)
+
+    yield _set
+    clear_season_override()
+    _clear_caches()

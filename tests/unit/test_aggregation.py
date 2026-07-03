@@ -810,3 +810,32 @@ class TestAggregateMetadata:
         result = aggregate_sentiment(path)
 
         assert result["metadata"]["schema_version"] == SCHEMA_VERSION
+
+    def test_metadata_season_honors_override(self, tmp_path, season_override):
+        """metadata.season reflects a --season override (#51).
+
+        Pins that aggregation stamps the season via the override-aware
+        get_active_season(), so a future direct load_season_config()
+        read can't silently mislabel a backfill.
+        """
+        season_override("2024-25")
+        path = _make_test_parquet(tmp_path, {
+            "comment_id": ["c1", "c2"],
+            "body": ["LeBron is great", "LeBron is washed"],
+            "author": ["u1", "u2"],
+            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+            "author_flair_css_class": ["lakers", "celtics"],
+            "created_utc": [1704067200, 1704153600],
+            "score": [10, 5],
+            "link_id": ["t3_post123", "t3_post456"],
+            "mentioned_players": [["LeBron James"], ["LeBron James"]],
+            "sentiment": ["pos", "neg"],
+            "confidence": [0.9, 0.8],
+            "sentiment_player": ["LeBron James", "LeBron James"],
+            "input_tokens": [100, 100],
+            "output_tokens": [20, 20],
+        })
+
+        result = aggregate_sentiment(path)
+
+        assert result["metadata"]["season"] == "2024-25"

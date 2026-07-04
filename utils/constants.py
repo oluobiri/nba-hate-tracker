@@ -58,10 +58,12 @@ ARCTIC_SHIFT_REQUEST_DELAY = 0.5
 # Rate limit buffer - sleep when remaining requests drop below this
 ARCTIC_SHIFT_RATE_LIMIT_BUFFER = 10
 
-# Total attempts per page request (1 initial + retries). The window must
-# ride out correlated failure bursts (origin restarts run 30-120s), not
-# just single-request blips: 6 attempts -> 2+4+8+16+32 = 62s of coverage
-# (observed 2026-07-04: a burst outlasted the previous ~14s window).
+# Total attempts per page request (1 initial + retries). Sized for
+# correlated failure bursts (origin restarts), not just single-request
+# blips: 6 attempts -> 2+4+8+16+32 = 62s of coverage, which rides out
+# short restarts (observed 2026-07-04: a burst outlasted the previous
+# ~14s window). Bursts longer than the window still exhaust retries;
+# the download script's resume-from-file is the backstop there.
 ARCTIC_SHIFT_MAX_ATTEMPTS = 6
 
 # Base seconds for exponential backoff between retries (2s -> 4s -> ... -> 32s)

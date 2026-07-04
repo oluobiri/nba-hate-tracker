@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '1.0'
+version: '2.0'
 season: 2025-26
 short_aliases:
 - ad
@@ -102,6 +102,8 @@ short_aliases:
 - keynote
 - kg3
 - keldon
+- terry
+- brown
 players:
   Steven Adams:
     team: Houston Rockets
@@ -400,6 +402,7 @@ players:
     - jaylen brown
     - jaylen
     - robin to tatum
+    - brown  # watchlist: verify post-filter (Bruce Brown collision, color)
     - jb
 
   Jalen Brunson:
@@ -625,7 +628,7 @@ players:
     aliases:
     - gradey
     - grady
-    - dick
+    - dick  # watchlist: verify post-filter (standalone insult)
 
   Rob Dillingham:
     team: Chicago Bulls
@@ -1131,6 +1134,15 @@ players:
     - mr sage
     - third eye
     - antisemite
+
+  Jaden Ivey:
+    team: null
+    conference: null
+    player_id: 1631093
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631093.png
+    aliases:
+    - jaden ivey
+    - ivey
 
   GG Jackson:
     team: Memphis Grizzlies
@@ -1817,6 +1829,17 @@ players:
     - rylo
     - lightskin blade
 
+  Terry Rozier:
+    team: null
+    conference: null
+    player_id: 1626179
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626179.png
+    aliases:
+    - terry rozier
+    - rozier
+    - scary terry
+    - terry  # watchlist: verify post-filter (common name/word)
+
   D'Angelo Russell:
     team: Washington Wizards
     conference: East
@@ -1952,7 +1975,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631095.png
     aliases:
     - jabari smith
-    - jabari
+    - jabari  # watchlist: verify post-filter (Jabari Parker)
 
   Jalen Smith:
     team: Chicago Bulls

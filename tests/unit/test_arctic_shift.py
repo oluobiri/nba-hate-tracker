@@ -327,6 +327,47 @@ class TestRetry:
         assert len(results) == 1
         assert mock_get.call_count == 3
 
+    @pytest.mark.parametrize("status", [520, 521, 522, 523, 524])
+    def test_retries_cloudflare_52x_then_succeeds(
+        self, status, mock_comments_page, mock_empty_response
+    ):
+        """Verify Cloudflare origin-side errors are retried.
+
+        520 ("origin returned unknown response") killed the first v2
+        download attempt; the 52x family signals transient
+        Cloudflare-to-origin failures, not client errors.
+        """
+        client = ArcticShiftClient(retry_backoff=0, delay=0)
+        page = mock_comments_page(start_id=1, count=2)
+
+        with patch.object(
+            client.session,
+            "get",
+            side_effect=[_error_response(status), page, mock_empty_response],
+        ) as mock_get:
+            results = list(client.fetch_comments("nba", after=0, before=200))
+
+        assert len(results) == 2
+        assert mock_get.call_count == 3
+
+    def test_default_backoff_window_covers_short_outages(self):
+        """Verify the default schedule rides out a typical origin restart.
+
+        Correlated failure bursts (backend restarts) last 30-120s; the
+        default attempts/backoff must cover at least ~60s, not just
+        single-request blips.
+        """
+        client = ArcticShiftClient()
+
+        with patch.object(client.session, "get", return_value=_error_response(503)):
+            with patch("pipeline.arctic_shift.time.sleep") as mock_sleep:
+                with pytest.raises(requests.HTTPError):
+                    list(client.fetch_comments("nba", after=0, before=200))
+
+        waits = [c.args[0] for c in mock_sleep.call_args_list]
+        assert waits == [2.0, 4.0, 8.0, 16.0, 32.0]
+        assert sum(waits) >= 60
+
     def test_raises_after_exhausting_attempts(self):
         """Verify a persistent transient error raises after max_attempts."""
         client = ArcticShiftClient(retry_backoff=0, max_attempts=3)

@@ -68,7 +68,8 @@ class ArcticShiftClient:
         delay: Seconds to wait between requests. Defaults to 0.5s.
         page_size: Max items per request. Defaults to 100.
         rate_limit_buffer: Sleep when remaining requests fall below this. Defaults to 10.
-        max_attempts: Total attempts per page request (1 initial + retries). Defaults to 4.
+        max_attempts: Total attempts per page request (1 initial + retries).
+            Defaults to ARCTIC_SHIFT_MAX_ATTEMPTS.
         retry_backoff: Base seconds for exponential backoff between retries. Defaults to 2.0.
 
     Example:

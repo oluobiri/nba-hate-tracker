@@ -104,6 +104,15 @@ short_aliases:
 - keldon
 - terry
 - brown
+- p5
+- dyson
+- kcp
+- kuz
+- rj
+- bones
+- pj
+- hunter
+- benny
 players:
   Steven Adams:
     team: Houston Rockets
@@ -140,6 +149,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628960.png
     aliases:
     - grayson allen
+    - grayson
 
   Jarrett Allen:
     team: Cleveland Cavaliers
@@ -148,6 +158,11 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628386.png
     aliases:
     - jarrett allen
+    - jarrett
+    - frohio
+    - the big fro
+    - froski
+    - one of us  # watchlist: verify post-filter (common phrase)
 
   Jose Alvarado:
     team: New York Knicks
@@ -258,6 +273,7 @@ players:
     - big rig
     - banchurrow
     - pabracadabra
+    - p5
 
   Desmond Bane:
     team: Orlando Magic
@@ -292,6 +308,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629628.png
     aliases:
     - rj barrett
+    - rj  # watchlist: verify post-filter (Richard Jefferson)
 
   Nicolas Batum:
     team: Los Angeles Clippers
@@ -338,6 +355,7 @@ players:
     - bogdan bogdanović
     - bogdan bogdanovic
     - bogdanović
+    - bogdan
 
   Devin Booker:
     team: Phoenix Suns
@@ -458,6 +476,7 @@ players:
     aliases:
     - kentavious caldwell-pope
     - caldwell-pope
+    - kcp
 
   Toumani Camara:
     team: Portland Trail Blazers
@@ -512,6 +531,9 @@ players:
     aliases:
     - julian champagnie
     - champagnie
+    - jcpenney
+    - the counterfeit
+    - sham penny
 
   Jordan Clarkson:
     team: New York Knicks
@@ -586,6 +608,9 @@ players:
     aliases:
     - dyson daniels
     - daniels
+    - dyson
+    - the vacuum
+    - the great barrier thief
 
   Anthony Davis:
     team: Washington Wizards
@@ -1101,6 +1126,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629631.png
     aliases:
     - de'andre hunter
+    - hunter  # watchlist: verify post-filter (common word)
 
   Bones Hyland:
     team: Minnesota Timberwolves
@@ -1110,6 +1136,7 @@ players:
     aliases:
     - bones hyland
     - hyland
+    - bones
 
   Brandon Ingram:
     team: Toronto Raptors
@@ -1306,6 +1333,7 @@ players:
     aliases:
     - kyle kuzma
     - kuzma
+    - kuz
 
   Zach LaVine:
     team: Sacramento Kings
@@ -1404,6 +1432,14 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631097.png
     aliases:
     - bennedict mathurin
+    - mathurin
+    - benedict mathurin
+    - mathurhim
+    - the mathematician
+    - quick math
+    - the math problem
+    - eggs bennedict
+    - benny  # watchlist: verify post-filter (Benny the Bull mascot)
 
   Tyrese Maxey:
     team: Philadelphia 76ers
@@ -1722,6 +1758,8 @@ players:
     aliases:
     - payton pritchard
     - pritchard
+    - fast pp
+    - p-rabbit
 
   Derik Queen:
     team: New Orleans Pelicans
@@ -1902,6 +1940,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629012.png
     aliases:
     - collin sexton
+    - young bull
 
   Landry Shamet:
     team: New York Knicks
@@ -1962,6 +2001,7 @@ players:
     aliases:
     - anfernee simons
     - simons
+    - anfernee
 
   Marcus Smart:
     team: Los Angeles Lakers
@@ -2087,6 +2127,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629018.png
     aliases:
     - gary trent jr
+    - gary trent
 
   Myles Turner:
     team: Milwaukee Bucks
@@ -2169,6 +2210,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629023.png
     aliases:
     - pj washington
+    - pj
 
   Peyton Watson:
     team: Denver Nuggets

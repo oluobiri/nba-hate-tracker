@@ -58,18 +58,25 @@ ARCTIC_SHIFT_REQUEST_DELAY = 0.5
 # Rate limit buffer - sleep when remaining requests drop below this
 ARCTIC_SHIFT_RATE_LIMIT_BUFFER = 10
 
-# Total attempts per page request (1 initial + retries)
-ARCTIC_SHIFT_MAX_ATTEMPTS = 4
+# Total attempts per page request (1 initial + retries). The window must
+# ride out correlated failure bursts (origin restarts run 30-120s), not
+# just single-request blips: 6 attempts -> 2+4+8+16+32 = 62s of coverage
+# (observed 2026-07-04: a burst outlasted the previous ~14s window).
+ARCTIC_SHIFT_MAX_ATTEMPTS = 6
 
-# Base seconds for exponential backoff between retries (2s -> 4s -> 8s)
+# Base seconds for exponential backoff between retries (2s -> 4s -> ... -> 32s)
 ARCTIC_SHIFT_RETRY_BACKOFF = 2.0
 
 # HTTP statuses treated as transient. 422 is included deliberately: the API
 # intermittently surfaces backend hiccups as 422 on requests that succeed
 # when replayed (observed 2026-07-02 on the v2 season download). 429 is
 # normally avoided via the rate-limit headers, but retrying covers the case
-# where those headers are absent.
-ARCTIC_SHIFT_RETRYABLE_STATUSES = frozenset({422, 429, 500, 502, 503, 504})
+# where those headers are absent. The Cloudflare 52x family is origin-side
+# (520 "unknown response" killed the first v2 download attempt; 521-524 are
+# origin down/unreachable/timeout) — transient by nature, never client error.
+ARCTIC_SHIFT_RETRYABLE_STATUSES = frozenset(
+    {422, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
+)
 
 
 

@@ -102,6 +102,8 @@ short_aliases:
 - keynote
 - kg3
 - keldon
+- terry
+- brown
 players:
   Steven Adams:
     team: Houston Rockets
@@ -400,6 +402,7 @@ players:
     - jaylen brown
     - jaylen
     - robin to tatum
+    - brown  # watchlist: verify post-filter (Bruce Brown collision, color)
     - jb
 
   Jalen Brunson:
@@ -625,7 +628,7 @@ players:
     aliases:
     - gradey
     - grady
-    - dick
+    - dick  # watchlist: verify post-filter (standalone insult)
 
   Rob Dillingham:
     team: Chicago Bulls
@@ -1835,6 +1838,7 @@ players:
     - terry rozier
     - rozier
     - scary terry
+    - terry  # watchlist: verify post-filter (common name/word)
 
   D'Angelo Russell:
     team: Washington Wizards
@@ -1971,7 +1975,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631095.png
     aliases:
     - jabari smith
-    - jabari
+    - jabari  # watchlist: verify post-filter (Jabari Parker)
 
   Jalen Smith:
     team: Chicago Bulls

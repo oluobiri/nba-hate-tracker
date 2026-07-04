@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '2.0'
+version: '2.1'
 season: 2025-26
 short_aliases:
 - ad
@@ -1216,6 +1216,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629661.png
     aliases:
     - cameron johnson
+    - cam johnson
 
   Jalen Johnson:
     team: Atlanta Hawks

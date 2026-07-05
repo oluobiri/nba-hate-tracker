@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '2.1'
+version: '2.2'
 season: 2025-26
 short_aliases:
 - ad
@@ -113,6 +113,8 @@ short_aliases:
 - pj
 - hunter
 - benny
+- camara
+- lu
 players:
   Steven Adams:
     team: Houston Rockets
@@ -485,6 +487,8 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641739.png
     aliases:
     - toumani camara
+    - toumani
+    - camara
 
   Clint Capela:
     team: Houston Rockets
@@ -493,6 +497,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203991.png
     aliases:
     - capela
+    - clint
 
   Wendell Carter Jr.:
     team: Orlando Magic
@@ -501,6 +506,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628976.png
     aliases:
     - wendell carter jr
+    - wendell carter
 
   Alex Caruso:
     team: Oklahoma City Thunder
@@ -701,6 +707,8 @@ players:
     - lu dort
     - dort
     - luguentz
+    - lu
+    - dorture chamber
 
   Andre Drummond:
     team: Philadelphia 76ers
@@ -1031,6 +1039,8 @@ players:
     aliases:
     - isaiah hartenstein
     - hartenstein
+    - ihart
+    - i-hart
 
   Jaxson Hayes:
     team: Los Angeles Lakers

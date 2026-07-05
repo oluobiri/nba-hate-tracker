@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '2.1'
+version: '3.0'
 season: 2025-26
 short_aliases:
 - ad
@@ -113,6 +113,11 @@ short_aliases:
 - pj
 - hunter
 - benny
+- camara
+- lu
+- ayton
+- ab
+- beas
 players:
   Steven Adams:
     team: Houston Rockets
@@ -122,6 +127,8 @@ players:
     aliases:
     - steven adams
     - adams
+    - aquaman
+    - big kiwi
 
   Bam Adebayo:
     team: Miami Heat
@@ -141,6 +148,7 @@ players:
     - nickeil
     - alexander walker
     - alexander-walker
+    - nawk
 
   Grayson Allen:
     team: Phoenix Suns
@@ -214,6 +222,8 @@ players:
     aliases:
     - deni
     - avdija
+    - denicide
+    - denigod
 
   Deandre Ayton:
     team: Los Angeles Lakers
@@ -223,6 +233,8 @@ players:
     aliases:
     - deandre ayton
     - ayton
+    - dominayton
+    - procrastinayton
 
   Marvin Bagley III:
     team: Dallas Mavericks
@@ -283,6 +295,7 @@ players:
     aliases:
     - bane
     - desmond
+    - 3-rex
 
   Harrison Barnes:
     team: San Antonio Spurs
@@ -298,8 +311,10 @@ players:
     player_id: 1630567
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630567.png
     aliases:
-    - barnes
-    - scottie
+    - barnes  # watchlist: verify post-filter (Harrison Barnes)
+    - scottie  # watchlist: verify post-filter (Scottie Pippen)
+    - sct brn
+    - scottie bons
 
   RJ Barrett:
     team: Toronto Raptors
@@ -328,6 +343,18 @@ players:
     - bradley beal
     - beal
 
+  Malik Beasley:
+    team: null
+    conference: null
+    player_id: 1627736
+    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627736.png
+    aliases:
+    - malik beasley
+    - beasley  # watchlist: verify post-filter (Michael Beasley)
+    - threesley
+    - malik beastley
+    - beas
+
   Patrick Beverley:
     team: null
     conference: null
@@ -345,6 +372,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641710.png
     aliases:
     - anthony black
+    - ab
 
   Bogdan Bogdanović:
     team: Los Angeles Clippers
@@ -405,6 +433,7 @@ players:
     - dillon brooks
     - dillon
     - brooks
+    - villain brooks
 
   Bruce Brown:
     team: Denver Nuggets
@@ -424,7 +453,7 @@ players:
     - jaylen
     - robin to tatum
     - brown  # watchlist: verify post-filter (Bruce Brown collision, color)
-    - jb
+    - jb  # watchlist: verify post-filter (Jalen Brunson collision)
 
   Jalen Brunson:
     team: New York Knicks
@@ -433,6 +462,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628973.png
     aliases:
     - brunson
+    - the captain  # watchlist: verify post-filter (common phrase)
 
   Carter Bryant:
     team: San Antonio Spurs
@@ -485,6 +515,8 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641739.png
     aliases:
     - toumani camara
+    - toumani
+    - camara
 
   Clint Capela:
     team: Houston Rockets
@@ -493,6 +525,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203991.png
     aliases:
     - capela
+    - clint
 
   Wendell Carter Jr.:
     team: Orlando Magic
@@ -501,6 +534,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628976.png
     aliases:
     - wendell carter jr
+    - wendell carter
 
   Alex Caruso:
     team: Oklahoma City Thunder
@@ -701,6 +735,8 @@ players:
     - lu dort
     - dort
     - luguentz
+    - lu
+    - dorture chamber
 
   Andre Drummond:
     team: Philadelphia 76ers
@@ -1031,6 +1067,8 @@ players:
     aliases:
     - isaiah hartenstein
     - hartenstein
+    - ihart
+    - i-hart
 
   Jaxson Hayes:
     team: Los Angeles Lakers
@@ -1616,7 +1654,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629614.png
     aliases:
     - andrew nembhard
-    - nembhard
+    - nembhard  # watchlist: verify post-filter (Ryan Nembhard, DAL rookie brother)
 
   Aaron Nesmith:
     team: Indiana Pacers

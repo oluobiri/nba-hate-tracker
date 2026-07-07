@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '4.0'
+version: '4.1'
 season: 2025-26
 short_aliases:
 - ad
@@ -1648,13 +1648,22 @@ players:
     aliases:
     - andrew nembhard
     - nembhard  # watchlist: post-classification check (~32% brother Ryan in marked contexts; judge via sentiment_player at #54 assembly)
+    - nemby  # watchlist: brother-pair nesting — 'baby nemby' contains 'nemby' (double-attributes until #54)
+    - nembenyama
+    - nembsanity
   Ryan Nembhard:
     team: Dallas Mavericks
     conference: West
     player_id: 1642948
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1642948.png
     aliases:
-    - ryan nembhard
+    - ryan nembhard  # watchlist: brother pair — referent check at #54 assembly alongside Andrew
+    - baby nemby  # watchlist: brother-pair nesting — also fires Andrew's 'nemby'
+    - microhard
+    - lil nembo
+    - andrews brother  # watchlist: possessive phrase — could be any Andrew's sibling
+    - andrew's brother  # watchlist: possessive phrase — could be any Andrew's sibling
+    - ryhard
 
   Aaron Nesmith:
     team: Indiana Pacers

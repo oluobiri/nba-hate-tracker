@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '3.0'
+version: '3.1'
 season: 2025-26
 short_aliases:
 - ad
@@ -97,13 +97,10 @@ short_aliases:
 - deni
 - gradey
 - grady
-- dick
 - keyonte
 - keynote
 - kg3
 - keldon
-- terry
-- brown
 - p5
 - dyson
 - kcp
@@ -112,12 +109,12 @@ short_aliases:
 - bones
 - pj
 - hunter
-- benny
 - camara
 - lu
 - ayton
 - ab
 - beas
+- eason
 players:
   Steven Adams:
     team: Houston Rockets
@@ -170,7 +167,6 @@ players:
     - frohio
     - the big fro
     - froski
-    - one of us  # watchlist: verify post-filter (common phrase)
 
   Jose Alvarado:
     team: New York Knicks
@@ -304,6 +300,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203084.png
     aliases:
     - harrison barnes
+    - barnes  # watchlist: verify post-filter 2026-27 (was Scottie's; 85/15 Harrison in 25-26 marked contexts; Matt Barnes unmeasured)
 
   Scottie Barnes:
     team: Toronto Raptors
@@ -311,8 +308,7 @@ players:
     player_id: 1630567
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630567.png
     aliases:
-    - barnes  # watchlist: verify post-filter (Harrison Barnes)
-    - scottie  # watchlist: verify post-filter (Scottie Pippen)
+    - scottie  # watchlist: verified 03_filter_coverage (~89% precision; Pippen tail in all-time threads)
     - sct brn
     - scottie bons
 
@@ -323,7 +319,8 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629628.png
     aliases:
     - rj barrett
-    - rj  # watchlist: verify post-filter (Richard Jefferson)
+    - barrett
+    - rj  # watchlist: verified 03_filter_coverage (Jefferson ~6%, June broadcast-concentrated)
 
   Nicolas Batum:
     team: Los Angeles Clippers
@@ -350,7 +347,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627736.png
     aliases:
     - malik beasley
-    - beasley  # watchlist: verify post-filter (Michael Beasley)
+    - beasley  # watchlist: verified 03_filter_coverage (~95% precision)
     - threesley
     - malik beastley
     - beas
@@ -452,8 +449,7 @@ players:
     - jaylen brown
     - jaylen
     - robin to tatum
-    - brown  # watchlist: verify post-filter (Bruce Brown collision, color)
-    - jb  # watchlist: verify post-filter (Jalen Brunson collision)
+    - jb  # watchlist: post-classification check (~24% Brunson in marked contexts; judge via sentiment_player at #54 assembly)
 
   Jalen Brunson:
     team: New York Knicks
@@ -462,7 +458,6 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628973.png
     aliases:
     - brunson
-    - the captain  # watchlist: verify post-filter (common phrase)
 
   Carter Bryant:
     team: San Antonio Spurs
@@ -690,7 +685,6 @@ players:
     aliases:
     - gradey
     - grady
-    - dick  # watchlist: verify post-filter (standalone insult)
 
   Rob Dillingham:
     team: Chicago Bulls
@@ -1164,7 +1158,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629631.png
     aliases:
     - de'andre hunter
-    - hunter  # watchlist: verify post-filter (common word)
+    - hunter  # watchlist: verified 03_filter_coverage (majority De'Andre; minor NFL/first-name tail)
 
   Bones Hyland:
     team: Minnesota Timberwolves
@@ -1477,7 +1471,6 @@ players:
     - quick math
     - the math problem
     - eggs bennedict
-    - benny  # watchlist: verify post-filter (Benny the Bull mascot)
 
   Tyrese Maxey:
     team: Philadelphia 76ers
@@ -1654,7 +1647,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629614.png
     aliases:
     - andrew nembhard
-    - nembhard  # watchlist: verify post-filter (Ryan Nembhard, DAL rookie brother)
+    - nembhard  # watchlist: post-classification check (~32% brother Ryan in marked contexts; judge via sentiment_player at #54 assembly)
 
   Aaron Nesmith:
     team: Indiana Pacers
@@ -1918,7 +1911,6 @@ players:
     - terry rozier
     - rozier
     - scary terry
-    - terry  # watchlist: verify post-filter (common name/word)
 
   D'Angelo Russell:
     team: Washington Wizards
@@ -2057,7 +2049,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631095.png
     aliases:
     - jabari smith
-    - jabari  # watchlist: verify post-filter (Jabari Parker)
+    - jabari  # watchlist: verified 03_filter_coverage (~94% precision)
 
   Jalen Smith:
     team: Chicago Bulls

@@ -274,6 +274,31 @@ def get_downloadable_batches(state: dict) -> list[dict]:
     ]
 
 
+def get_missing_results(state: dict) -> list[dict]:
+    """
+    Get batches whose results file is still expected but not downloaded.
+
+    This is the build gate for sentiment.parquet: assembly must wait for
+    every batch that will eventually produce a results file — including
+    retryable wholesale failures (their retry will be downloaded) and
+    terminally failed ended batches (their errored rows are captured).
+    Submission-failure entries (no batch_id, status "failed") can never
+    be downloaded and must not block the build forever.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        List of batch entries still owing a results file.
+    """
+    return [
+        b
+        for b in state.get("batches", [])
+        if not b.get("results_downloaded", False)
+        and not (b.get("failed", False) and b.get("status") != "ended")
+    ]
+
+
 def is_wholesale_failure(batch: dict) -> bool:
     """
     Check whether a batch ended with zero successful requests.
@@ -502,6 +527,8 @@ def compute_run_totals(state: dict) -> dict:
 
     Recomputed from scratch rather than incremented, so repeated calls
     (and retries that reset per-batch actuals) can never double-count.
+    estimated_cost_usd reflects each batch's current attempt, not
+    cumulative exposure across superseded attempts.
 
     Args:
         state: Current state dict.

@@ -37,6 +37,7 @@ from pipeline.batch import (
     download_results,
     get_batch_status,
     get_downloadable_batches,
+    get_missing_results,
     get_pending_batches,
     is_wholesale_failure,
     load_state,
@@ -333,9 +334,7 @@ def main() -> None:
 
     # Check if we can build the final output
     pending = get_pending_batches(state)
-    not_downloaded = [
-        b for b in state.get("batches", []) if not b.get("results_downloaded", False)
-    ]
+    not_downloaded = get_missing_results(state)
 
     if pending or not_downloaded:
         logger.info(

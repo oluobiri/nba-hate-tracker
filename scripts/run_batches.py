@@ -124,6 +124,8 @@ def run_loop(
                 "scripts.collect_results", ["--no-wait"], season
             )
             if returncode != 0:
+                # Safe mid-run: with --no-wait, collect only exits nonzero on
+                # precondition checks, never after downloading data
                 logger.warning(f"collect_results exited {returncode}; continuing")
             state = load_state(state_path)
 
@@ -140,9 +142,15 @@ def run_loop(
         all_submitted = all(f.name in submitted_files for f in batch_files)
 
         if not pending:
-            if all_submitted and not (retryable and retry_enabled):
+            if all_submitted and not retryable:
                 logger.info("All batches complete!")
                 return 0
+            if all_submitted and retryable and not retry_enabled:
+                logger.error(
+                    f"--no-retry: {len(retryable)} wholesale-failed batch(es) "
+                    f"left unretried - run is incomplete"
+                )
+                return 1
 
             returncode = run_step("scripts.submit_batches", submit_args, season)
             if returncode != 0:

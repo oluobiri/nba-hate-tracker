@@ -352,10 +352,11 @@ def resubmit_batch(
         logger.info(f"  -> Deleted stale results file {stale_results.name}")
 
     try:
-        result = submit_batch_with_retry(batch_file, max_retries)
+        # Submission-attempt retries are a separate dimension from the
+        # wholesale-failure budget (max_retries), so always use the default
+        result = submit_batch_with_retry(batch_file)
     except RuntimeError as e:
         mark_batch_failed(batch)
-        batch["retry_count"] = max_retries
         save_state(state, state_path)
         logger.error(f"Resubmission failed terminally for {batch_file.name}: {e}")
         logger.error(
@@ -444,7 +445,7 @@ def submit_batches(
         logger.info(f"Submitting {filename} ({request_count:,} requests)...")
 
         try:
-            result = submit_batch_with_retry(batch_file, max_retries)
+            result = submit_batch_with_retry(batch_file)
         except KeyboardInterrupt:
             logger.warning("Interrupted! Saving state...")
             save_state(state, state_path)
@@ -456,7 +457,7 @@ def submit_batches(
                     batch_num=batch_num,
                     request_file=filename,
                     attempted_at=datetime.now(timezone.utc).isoformat(),
-                    retry_count=max_retries,
+                    retry_count=0,
                 )
             )
             save_state(state, state_path)

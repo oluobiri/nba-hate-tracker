@@ -16,6 +16,7 @@ from pipeline.batch import (
     format_batch_request,
     get_downloadable_batches,
     get_exhausted_batches,
+    get_missing_results,
     get_pending_batches,
     get_retryable_batches,
     init_state,
@@ -410,6 +411,91 @@ class TestGetDownloadableBatches:
     def test_empty_state(self):
         """Verify empty state yields no downloadable batches."""
         assert get_downloadable_batches(init_state()) == []
+
+
+class TestGetMissingResults:
+    """Tests for get_missing_results function."""
+
+    def test_includes_ended_batch_not_downloaded(self):
+        """Verify a healthy ended batch still owes its results file."""
+        state = init_state()
+        state["batches"] = [
+            {
+                "batch_num": 1,
+                "status": "ended",
+                "results_downloaded": False,
+                "request_counts": _ended_counts(succeeded=100),
+            }
+        ]
+
+        missing = get_missing_results(state)
+
+        assert [b["batch_num"] for b in missing] == [1]
+
+    def test_excludes_downloaded_batch(self):
+        """Verify a downloaded batch owes nothing."""
+        state = init_state()
+        state["batches"] = [
+            {
+                "batch_num": 1,
+                "status": "ended",
+                "results_downloaded": True,
+                "request_counts": _ended_counts(succeeded=100),
+            }
+        ]
+
+        assert get_missing_results(state) == []
+
+    def test_excludes_submission_failure_entry(self):
+        """Verify a never-submitted terminal entry cannot block the build.
+
+        A new_failed_entry has no batch_id and status 'failed' — there is
+        nothing to download, so it must not gate sentiment.parquet forever.
+        """
+        state = init_state()
+        state["batches"] = [
+            new_failed_entry(
+                batch_num=1,
+                request_file="batch_001.jsonl",
+                attempted_at="2026-07-08T00:00:00+00:00",
+                retry_count=3,
+            )
+        ]
+
+        assert get_missing_results(state) == []
+
+    def test_includes_terminally_failed_ended_batch(self):
+        """Verify a failed-but-ended batch still owes its errored rows."""
+        state = init_state()
+        state["batches"] = [
+            {
+                "batch_num": 1,
+                "status": "ended",
+                "results_downloaded": False,
+                "request_counts": _ended_counts(succeeded=0, errored=100),
+                "failed": True,
+            }
+        ]
+
+        missing = get_missing_results(state)
+
+        assert [b["batch_num"] for b in missing] == [1]
+
+    def test_includes_retryable_wholesale_failure(self):
+        """Verify a batch awaiting retry blocks the build until superseded."""
+        state = init_state()
+        state["batches"] = [
+            {
+                "batch_num": 1,
+                "status": "ended",
+                "results_downloaded": False,
+                "request_counts": _ended_counts(succeeded=0, errored=100),
+            }
+        ]
+
+        missing = get_missing_results(state)
+
+        assert [b["batch_num"] for b in missing] == [1]
 
 
 class TestIsWholesaleFailure:

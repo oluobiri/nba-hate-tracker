@@ -31,11 +31,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from pipeline.batch import (
+    RESPONSES_SUBDIR,
     STATE_FILENAME,
+    compute_run_totals,
     download_results,
     get_batch_status,
+    get_downloadable_batches,
+    get_missing_results,
+    get_pending_batches,
+    is_wholesale_failure,
     load_state,
     save_state,
+    summarize_actual_usage,
 )
 from pipeline.results import build_sentiment_dataframe
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
@@ -56,7 +63,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # -----------------------------------------------------------------------------
 
-RESPONSES_SUBDIR = "responses"
 FILTERED_FILENAME = "r_nba_player_mentions.jsonl"
 OUTPUT_FILENAME = "sentiment.parquet"
 FAILED_FILENAME = "failed_requests.jsonl"
@@ -64,36 +70,6 @@ FAILED_FILENAME = "failed_requests.jsonl"
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
-
-
-def get_pending_batches(state: dict) -> list[dict]:
-    """
-    Get batches that haven't finished processing yet.
-
-    Args:
-        state: Current state dict.
-
-    Returns:
-        List of batch entries with status != "ended".
-    """
-    return [b for b in state.get("batches", []) if b.get("status") != "ended"]
-
-
-def get_downloadable_batches(state: dict) -> list[dict]:
-    """
-    Get batches that are complete but haven't had results downloaded.
-
-    Args:
-        state: Current state dict.
-
-    Returns:
-        List of batch entries with status == "ended" and results_downloaded == False.
-    """
-    return [
-        b
-        for b in state.get("batches", [])
-        if b.get("status") == "ended" and not b.get("results_downloaded", False)
-    ]
 
 
 def poll_batch_statuses(state: dict) -> int:
@@ -121,11 +97,18 @@ def poll_batch_statuses(state: dict) -> int:
 
             if old_status != "ended" and status["processing_status"] == "ended":
                 newly_completed += 1
-                logger.info(
-                    f"Batch {batch['batch_num']} completed: "
-                    f"{status['request_counts']['succeeded']} succeeded, "
-                    f"{status['request_counts']['errored']} errored"
-                )
+                if is_wholesale_failure(batch):
+                    logger.warning(
+                        f"Batch {batch['batch_num']} ended with ZERO successes "
+                        f"(attempt {batch.get('retry_count', 0) + 1}) - "
+                        f"eligible for retry via submit_batches"
+                    )
+                else:
+                    logger.info(
+                        f"Batch {batch['batch_num']} completed: "
+                        f"{status['request_counts']['succeeded']} succeeded, "
+                        f"{status['request_counts']['errored']} errored"
+                    )
             else:
                 logger.debug(
                     f"Batch {batch['batch_num']}: {status['processing_status']}"
@@ -167,6 +150,13 @@ def download_batch_results(batch: dict, responses_dir: Path) -> Path:
         f"  -> Saved {len(results)} results ({succeeded} succeeded, {errored} failed)"
     )
 
+    # Reconcile actual token usage into the batch entry
+    batch.update(summarize_actual_usage(results))
+    logger.info(
+        f"  -> Actual cost: ${batch['actual_cost_usd']:.2f} "
+        f"(estimated: ${batch.get('estimated_cost_usd', 0.0):.2f})"
+    )
+
     return output_file
 
 
@@ -205,6 +195,7 @@ def poll_until_complete(
             try:
                 download_batch_results(batch, responses_dir)
                 batch["results_downloaded"] = True
+                state.update(compute_run_totals(state))
                 save_state(state, state_path)
             except RuntimeError as e:
                 logger.error(f"Failed to download batch {batch['batch_num']}: {e}")
@@ -321,6 +312,7 @@ def main() -> None:
             try:
                 download_batch_results(batch, responses_dir)
                 batch["results_downloaded"] = True
+                state.update(compute_run_totals(state))
                 save_state(state, state_path)
             except RuntimeError as e:
                 logger.error(f"Failed to download batch {batch['batch_num']}: {e}")
@@ -342,9 +334,7 @@ def main() -> None:
 
     # Check if we can build the final output
     pending = get_pending_batches(state)
-    not_downloaded = [
-        b for b in state.get("batches", []) if not b.get("results_downloaded", False)
-    ]
+    not_downloaded = get_missing_results(state)
 
     if pending or not_downloaded:
         logger.info(
@@ -354,13 +344,27 @@ def main() -> None:
         sys.exit(0)
 
     # Build final sentiment.parquet
+    failed_batches = [b for b in state.get("batches", []) if b.get("failed", False)]
+    if failed_batches:
+        logger.warning("=" * 60)
+        logger.warning(
+            f"{len(failed_batches)} batch(es) FAILED terminally - their requests "
+            f"are missing from the output. Building anyway; re-run after manual "
+            f"recovery to rebuild."
+        )
+        for batch in failed_batches:
+            logger.warning(
+                f"  batch {batch['batch_num']}: batch_id={batch.get('batch_id')}"
+            )
+        logger.warning("=" * 60)
+
     logger.info("=" * 60)
     logger.info("Building sentiment.parquet...")
     logger.info("=" * 60)
 
     try:
         sentiment_df, failed_requests = build_sentiment_dataframe(
-            responses_dir, filtered_path, state
+            responses_dir, filtered_path
         )
 
         # Save parquet
@@ -378,6 +382,7 @@ def main() -> None:
             )
 
         # Update and save final state
+        state.update(compute_run_totals(state))
         save_state(state, state_path)
         logger.info("=" * 60)
         logger.info("Summary")
@@ -385,6 +390,7 @@ def main() -> None:
         logger.info(f"Total input tokens:  {state['total_input_tokens']:,}")
         logger.info(f"Total output tokens: {state['total_output_tokens']:,}")
         logger.info(f"Estimated cost:      ${state['estimated_cost_usd']:.2f}")
+        logger.info(f"Actual cost:         ${state['actual_cost_usd']:.2f}")
 
     except FileNotFoundError as e:
         logger.error(f"Missing file: {e}")

@@ -6,7 +6,6 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from pipeline.batch import init_state
 from pipeline.results import build_sentiment_dataframe
 from pipeline.schemas import COMMENT_INPUT_SCHEMA, SENTIMENT_SCHEMA
 
@@ -87,9 +86,7 @@ class TestBuildSentimentDataframe:
     ):
         """Verify the assembled frame conforms to SENTIMENT_SCHEMA."""
         # Act
-        df, _ = build_sentiment_dataframe(
-            responses_dir, filtered_comments_file, init_state()
-        )
+        df, _ = build_sentiment_dataframe(responses_dir, filtered_comments_file)
 
         # Assert
         assert df.schema == SENTIMENT_SCHEMA
@@ -98,9 +95,7 @@ class TestBuildSentimentDataframe:
     def test_joined_values_match_inputs(self, responses_dir, filtered_comments_file):
         """Verify joined row values carry through from both inputs."""
         # Act
-        df, _ = build_sentiment_dataframe(
-            responses_dir, filtered_comments_file, init_state()
-        )
+        df, _ = build_sentiment_dataframe(responses_dir, filtered_comments_file)
 
         # Assert
         row = df.filter(df["comment_id"] == "abc123").to_dicts()[0]
@@ -116,9 +111,7 @@ class TestBuildSentimentDataframe:
     ):
         """Verify link_id flows from the filtered NDJSON into the frame (#43)."""
         # Act
-        df, _ = build_sentiment_dataframe(
-            responses_dir, filtered_comments_file, init_state()
-        )
+        df, _ = build_sentiment_dataframe(responses_dir, filtered_comments_file)
 
         # Assert
         link_ids = dict(zip(df["comment_id"].to_list(), df["link_id"].to_list()))
@@ -134,9 +127,7 @@ class TestBuildSentimentDataframe:
         _write_results_file(directory, [_errored("abc123"), _errored("def456")])
 
         # Act
-        df, failed = build_sentiment_dataframe(
-            directory, filtered_comments_file, init_state()
-        )
+        df, failed = build_sentiment_dataframe(directory, filtered_comments_file)
 
         # Assert
         assert df.height == 0
@@ -156,9 +147,7 @@ class TestBuildSentimentDataframe:
         )
 
         # Act
-        df, failed = build_sentiment_dataframe(
-            directory, filtered_comments_file, init_state()
-        )
+        df, failed = build_sentiment_dataframe(directory, filtered_comments_file)
 
         # Assert
         assert df.height == 1
@@ -176,22 +165,7 @@ class TestBuildSentimentDataframe:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="No results files"):
-            build_sentiment_dataframe(directory, filtered_comments_file, init_state())
-
-    def test_state_updated_with_token_totals(
-        self, responses_dir, filtered_comments_file
-    ):
-        """Verify token totals and cost are written into the state dict."""
-        # Arrange
-        state = init_state()
-
-        # Act
-        build_sentiment_dataframe(responses_dir, filtered_comments_file, state)
-
-        # Assert
-        assert state["total_input_tokens"] == 180
-        assert state["total_output_tokens"] == 35
-        assert state["estimated_cost_usd"] > 0
+            build_sentiment_dataframe(directory, filtered_comments_file)
 
     def test_malformed_results_json_raises_with_filename(
         self, tmp_path, filtered_comments_file
@@ -204,7 +178,7 @@ class TestBuildSentimentDataframe:
 
         # Act / Assert
         with pytest.raises(ValueError, match="batch_001_results.jsonl"):
-            build_sentiment_dataframe(directory, filtered_comments_file, init_state())
+            build_sentiment_dataframe(directory, filtered_comments_file)
 
     def test_construction_drift_raises_at_boundary(
         self, monkeypatch, responses_dir, filtered_comments_file
@@ -226,7 +200,5 @@ class TestBuildSentimentDataframe:
 
         # Act / Assert
         with pytest.raises(ValueError, match="sentiment.parquet") as exc:
-            build_sentiment_dataframe(
-                responses_dir, filtered_comments_file, init_state()
-            )
+            build_sentiment_dataframe(responses_dir, filtered_comments_file)
         assert "score" in str(exc.value)

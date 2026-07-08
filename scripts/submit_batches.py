@@ -31,17 +31,27 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from pipeline.batch import (
+    DEFAULT_MAX_RETRIES,
     INPUT_COST_PER_MTOK,
     MAX_TOKENS,
     OUTPUT_COST_PER_MTOK,
     REQUESTS_SUBDIR,
+    RESPONSES_SUBDIR,
     STATE_FILENAME,
     calculate_cost,
+    compute_run_totals,
+    get_exhausted_batches,
+    get_retryable_batches,
     load_state,
+    mark_batch_failed,
+    new_batch_entry,
+    new_failed_entry,
+    record_retry_attempt,
     save_state,
-    submit_batch,
+    submit_batch_with_retry,
 )
 from utils.paths import get_batches_dir
+from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -186,13 +196,18 @@ def extract_batch_num(filename: str) -> int:
 # -----------------------------------------------------------------------------
 
 
-def dry_run(batch_files: list[Path], state: dict) -> None:
+def dry_run(
+    batch_files: list[Path],
+    state: dict,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+) -> None:
     """
     Validate batch files and estimate costs without making API calls.
 
     Args:
         batch_files: List of batch file paths.
         state: Current state dict.
+        max_retries: Maximum resubmission attempts per batch.
     """
     logger.info("DRY RUN MODE - No API calls will be made")
     logger.info("=" * 60)
@@ -228,11 +243,26 @@ def dry_run(batch_files: list[Path], state: dict) -> None:
         total_cost += estimated_cost
         pending_files.append(filename)
 
+    retryable = get_retryable_batches(state, max_retries)
+    exhausted = get_exhausted_batches(state, max_retries)
+
     logger.info("=" * 60)
     logger.info("Summary")
     logger.info("=" * 60)
     logger.info(f"Already submitted:    {len(skipped_files)} batches")
     logger.info(f"Pending submission:   {len(pending_files)} batches")
+    if retryable:
+        logger.info(f"Pending resubmission: {len(retryable)} failed batch(es)")
+        for batch in retryable:
+            logger.info(
+                f"  batch {batch['batch_num']} ({batch['request_file']}): "
+                f"retry {batch.get('retry_count', 0) + 1}/{max_retries}"
+            )
+    if exhausted:
+        logger.warning(
+            f"Exhausted (blocking):  {len(exhausted)} batch(es) - "
+            f"submission will refuse to run"
+        )
     logger.info(f"Total requests:       {total_requests:,}")
     logger.info(f"Estimated cost:       ${total_cost:.2f}")
     logger.info("")
@@ -248,36 +278,165 @@ def dry_run(batch_files: list[Path], state: dict) -> None:
 # -----------------------------------------------------------------------------
 
 
+def fail_fast_on_exhausted(
+    state: dict, state_path: Path, max_retries: int
+) -> None:
+    """
+    Refuse to run if state holds batches that exhausted their retries.
+
+    Marks any newly exhausted batches as terminally failed, logs each
+    batch_id prominently for manual investigation, and exits.
+
+    Args:
+        state: Current state dict (will be modified).
+        state_path: Path to save state file.
+        max_retries: Maximum resubmission attempts per batch.
+    """
+    exhausted = get_exhausted_batches(state, max_retries)
+    if not exhausted:
+        return
+
+    for batch in exhausted:
+        if not batch.get("failed", False):
+            mark_batch_failed(batch)
+    save_state(state, state_path)
+
+    logger.error("=" * 60)
+    logger.error(
+        f"{len(exhausted)} batch(es) failed after exhausting retries - "
+        f"refusing to submit new work until resolved"
+    )
+    for batch in exhausted:
+        logger.error(
+            f"  batch {batch['batch_num']} ({batch['request_file']}): "
+            f"batch_id={batch.get('batch_id')} "
+            f"superseded={batch.get('superseded_batch_ids', [])}"
+        )
+    logger.error("Investigate these batch_ids in the Anthropic console.")
+    logger.error("=" * 60)
+    sys.exit(1)
+
+
+def resubmit_batch(
+    batch: dict,
+    requests_dir: Path,
+    responses_dir: Path,
+    state: dict,
+    state_path: Path,
+    max_retries: int,
+) -> None:
+    """
+    Resubmit a wholesale-failed batch and record the attempt in state.
+
+    Deletes the superseded attempt's results file (if downloaded) so
+    exactly one results file per batch_num survives for assembly.
+
+    Args:
+        batch: Retryable batch entry from state (will be modified).
+        requests_dir: Directory containing batch request files.
+        responses_dir: Directory containing downloaded results files.
+        state: Current state dict (will be modified).
+        state_path: Path to save state file.
+        max_retries: Maximum submission attempts before terminal failure.
+    """
+    batch_file = requests_dir / batch["request_file"]
+    attempt = batch.get("retry_count", 0) + 1
+    logger.info(
+        f"Resubmitting batch {batch['batch_num']} "
+        f"(retry {attempt}/{max_retries}, superseding {batch.get('batch_id')})..."
+    )
+
+    stale_results = responses_dir / f"batch_{batch['batch_num']:03d}_results.jsonl"
+    if stale_results.exists():
+        stale_results.unlink()
+        logger.info(f"  -> Deleted stale results file {stale_results.name}")
+
+    try:
+        result = submit_batch_with_retry(batch_file, max_retries)
+    except RuntimeError as e:
+        mark_batch_failed(batch)
+        batch["retry_count"] = max_retries
+        save_state(state, state_path)
+        logger.error(f"Resubmission failed terminally for {batch_file.name}: {e}")
+        logger.error(
+            f"  batch {batch['batch_num']}: "
+            f"superseded={batch.get('superseded_batch_ids', [])} - "
+            f"investigate in the Anthropic console"
+        )
+        sys.exit(1)
+
+    record_retry_attempt(
+        batch,
+        submit_result=result,
+        submitted_at=datetime.now(timezone.utc).isoformat(),
+        estimated_cost_usd=estimate_batch_cost(count_requests(batch_file)),
+    )
+    state.update(compute_run_totals(state))
+    save_state(state, state_path)
+
+    logger.info(f"  -> batch_id: {result['batch_id']}, retry_count: {attempt}")
+
+
 def submit_batches(
     batch_files: list[Path],
     state: dict,
     state_path: Path,
+    requests_dir: Path,
+    responses_dir: Path,
     max_batches: int | None = None,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    retry_enabled: bool = True,
 ) -> None:
     """
-    Submit batch files to the Anthropic API.
+    Submit batch files to the Anthropic API, resubmitting failures first.
+
+    Refuses to run if state holds batches that exhausted their retries.
+    Resubmissions of wholesale-failed batches count against max_batches
+    so the one-in-flight orchestrator semantics hold.
 
     Args:
         batch_files: List of batch file paths.
         state: Current state dict (will be modified).
         state_path: Path to save state file.
+        requests_dir: Directory containing batch request files.
+        responses_dir: Directory containing downloaded results files.
         max_batches: Maximum number of batches to submit (None = all).
+        max_retries: Maximum resubmission attempts per batch.
+        retry_enabled: If False, skip resubmission of failed batches.
     """
-    pending = [
-        f for f in batch_files if not is_batch_submitted(state, f.name)
-    ]
+    fail_fast_on_exhausted(state, state_path, max_retries)
 
-    if not pending:
+    limit = max_batches if max_batches is not None else len(batch_files)
+    submitted = 0
+
+    retryable = get_retryable_batches(state, max_retries)
+    if retryable and not retry_enabled:
+        logger.warning(
+            f"--no-retry: skipping {len(retryable)} retryable failed batch(es)"
+        )
+    elif retryable:
+        for batch in retryable:
+            if submitted >= limit:
+                break
+            try:
+                resubmit_batch(
+                    batch, requests_dir, responses_dir, state, state_path, max_retries
+                )
+            except KeyboardInterrupt:
+                logger.warning("Interrupted! Saving state...")
+                save_state(state, state_path)
+                sys.exit(1)
+            submitted += 1
+
+    pending = [f for f in batch_files if not is_batch_submitted(state, f.name)]
+
+    if not pending and submitted == 0:
         logger.info("No new batches to submit")
         return
 
-    if max_batches is not None:
-        pending = pending[:max_batches]
-
-    logger.info(f"Submitting {len(pending)} batch(es)...")
-    logger.info("=" * 60)
-
     for batch_file in pending:
+        if submitted >= limit:
+            break
         filename = batch_file.name
         batch_num = extract_batch_num(filename)
         request_count = count_requests(batch_file)
@@ -285,42 +444,46 @@ def submit_batches(
         logger.info(f"Submitting {filename} ({request_count:,} requests)...")
 
         try:
-            result = submit_batch(batch_file)
-
-            # Add to state
-            batch_entry = {
-                "batch_num": batch_num,
-                "batch_id": result["batch_id"],
-                "request_file": filename,
-                "status": result["processing_status"],
-                "submitted_at": datetime.now(timezone.utc).isoformat(),
-                "ended_at": result["ended_at"],
-                "results_url": result["results_url"],
-                "request_counts": result["request_counts"],
-                "results_downloaded": False,
-            }
-            state["batches"].append(batch_entry)
-
-            # Save state immediately
-            save_state(state, state_path)
-
-            logger.info(
-                f"  -> batch_id: {result['batch_id']}, "
-                f"status: {result['processing_status']}"
-            )
-
+            result = submit_batch_with_retry(batch_file, max_retries)
         except KeyboardInterrupt:
             logger.warning("Interrupted! Saving state...")
             save_state(state, state_path)
             sys.exit(1)
-
-        except Exception as e:
-            logger.error(f"Failed to submit {filename}: {e}")
+        except RuntimeError as e:
+            # Record a terminal entry so fail-fast trips on the next run
+            state["batches"].append(
+                new_failed_entry(
+                    batch_num=batch_num,
+                    request_file=filename,
+                    attempted_at=datetime.now(timezone.utc).isoformat(),
+                    retry_count=max_retries,
+                )
+            )
             save_state(state, state_path)
-            raise
+            logger.error(f"Failed to submit {filename} terminally: {e}")
+            logger.error("Marked failed in state; resolve before resubmitting.")
+            sys.exit(1)
+
+        state["batches"].append(
+            new_batch_entry(
+                batch_num=batch_num,
+                request_file=filename,
+                submit_result=result,
+                submitted_at=datetime.now(timezone.utc).isoformat(),
+                estimated_cost_usd=estimate_batch_cost(request_count),
+            )
+        )
+        state.update(compute_run_totals(state))
+        save_state(state, state_path)
+        submitted += 1
+
+        logger.info(
+            f"  -> batch_id: {result['batch_id']}, "
+            f"status: {result['processing_status']}"
+        )
 
     logger.info("=" * 60)
-    logger.info(f"Submitted {len(pending)} batch(es)")
+    logger.info(f"Submitted {submitted} batch(es)")
     logger.info(f"State saved to: {state_path}")
 
 
@@ -332,8 +495,6 @@ def submit_batches(
 def main() -> None:
     """Main entry point with CLI argument handling."""
     load_dotenv()
-    batches_dir = get_batches_dir()
-    default_requests_dir = batches_dir / REQUESTS_SUBDIR
 
     parser = argparse.ArgumentParser(
         description="Submit batch files to Anthropic Batch API"
@@ -348,18 +509,45 @@ def main() -> None:
         type=int,
         default=None,
         metavar="N",
-        help="Submit only first N pending batches",
+        help="Submit only first N pending batches (resubmissions count)",
     )
     parser.add_argument(
         "--requests-dir",
         type=Path,
         default=None,
-        help=f"Directory containing batch files (default: {default_requests_dir})",
+        help="Directory containing batch files (default: <batches_dir>/requests)",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=DEFAULT_MAX_RETRIES,
+        metavar="N",
+        help=f"Resubmission attempts for a batch that ended with zero "
+        f"successes before it is marked terminally failed "
+        f"(default: {DEFAULT_MAX_RETRIES})",
+    )
+    parser.add_argument(
+        "--no-retry",
+        action="store_true",
+        help="Do not resubmit failed batches (debugging escape hatch); "
+        "the fail-fast gate on exhausted batches still applies",
+    )
+    parser.add_argument(
+        "--season",
+        default=None,
+        metavar="YYYY-YY",
+        help='Override the active season (e.g. "2024-25"); data paths and '
+        "player config resolve to it for this run",
     )
     args = parser.parse_args()
 
-    # Apply defaults
-    requests_dir = args.requests_dir or default_requests_dir
+    if args.season:
+        set_season_override(args.season)
+
+    # Apply defaults (after the season override so paths resolve to it)
+    batches_dir = get_batches_dir()
+    requests_dir = args.requests_dir or batches_dir / REQUESTS_SUBDIR
+    responses_dir = batches_dir / RESPONSES_SUBDIR
     state_path = batches_dir / STATE_FILENAME
 
     # Discover batch files
@@ -384,9 +572,18 @@ def main() -> None:
         logger.info(f"Resuming: {submitted_count} batch(es) already submitted")
 
     if args.dry_run:
-        dry_run(batch_files, state)
+        dry_run(batch_files, state, max_retries=args.max_retries)
     else:
-        submit_batches(batch_files, state, state_path, max_batches=args.batches)
+        submit_batches(
+            batch_files,
+            state,
+            state_path,
+            requests_dir=requests_dir,
+            responses_dir=responses_dir,
+            max_batches=args.batches,
+            max_retries=args.max_retries,
+            retry_enabled=not args.no_retry,
+        )
 
 
 if __name__ == "__main__":

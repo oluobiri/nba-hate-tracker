@@ -21,8 +21,10 @@ REQUESTS_PER_BATCH = 100_000
 INPUT_COST_PER_MTOK = 0.50  # $0.50 per million input tokens
 OUTPUT_COST_PER_MTOK = 2.50  # $2.50 per million output tokens
 
-# State file
+# State file and batch data layout
 STATE_FILENAME = "state.json"
+REQUESTS_SUBDIR = "requests"
+RESPONSES_SUBDIR = "responses"
 
 
 def build_prompt(comment_body: str) -> str:
@@ -215,6 +217,36 @@ def save_state(state: dict, state_path: Path) -> None:
         # Clean up temp file on failure
         Path(temp_path).unlink(missing_ok=True)
         raise
+
+
+def get_pending_batches(state: dict) -> list[dict]:
+    """
+    Get batches that haven't finished processing yet.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        List of batch entries with status != "ended".
+    """
+    return [b for b in state.get("batches", []) if b.get("status") != "ended"]
+
+
+def get_downloadable_batches(state: dict) -> list[dict]:
+    """
+    Get batches that are complete but haven't had results downloaded.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        List of batch entries with status == "ended" and results_downloaded == False.
+    """
+    return [
+        b
+        for b in state.get("batches", [])
+        if b.get("status") == "ended" and not b.get("results_downloaded", False)
+    ]
 
 
 # -----------------------------------------------------------------------------

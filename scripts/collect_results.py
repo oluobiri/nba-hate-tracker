@@ -31,9 +31,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from pipeline.batch import (
+    RESPONSES_SUBDIR,
     STATE_FILENAME,
     download_results,
     get_batch_status,
+    get_downloadable_batches,
+    get_pending_batches,
     load_state,
     save_state,
 )
@@ -56,7 +59,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # -----------------------------------------------------------------------------
 
-RESPONSES_SUBDIR = "responses"
 FILTERED_FILENAME = "r_nba_player_mentions.jsonl"
 OUTPUT_FILENAME = "sentiment.parquet"
 FAILED_FILENAME = "failed_requests.jsonl"
@@ -64,36 +66,6 @@ FAILED_FILENAME = "failed_requests.jsonl"
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
-
-
-def get_pending_batches(state: dict) -> list[dict]:
-    """
-    Get batches that haven't finished processing yet.
-
-    Args:
-        state: Current state dict.
-
-    Returns:
-        List of batch entries with status != "ended".
-    """
-    return [b for b in state.get("batches", []) if b.get("status") != "ended"]
-
-
-def get_downloadable_batches(state: dict) -> list[dict]:
-    """
-    Get batches that are complete but haven't had results downloaded.
-
-    Args:
-        state: Current state dict.
-
-    Returns:
-        List of batch entries with status == "ended" and results_downloaded == False.
-    """
-    return [
-        b
-        for b in state.get("batches", [])
-        if b.get("status") == "ended" and not b.get("results_downloaded", False)
-    ]
 
 
 def poll_batch_statuses(state: dict) -> int:

@@ -34,6 +34,7 @@ from pipeline.batch import (
     INPUT_COST_PER_MTOK,
     MAX_TOKENS,
     OUTPUT_COST_PER_MTOK,
+    REQUESTS_SUBDIR,
     STATE_FILENAME,
     calculate_cost,
     load_state,
@@ -58,7 +59,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # -----------------------------------------------------------------------------
 
-REQUESTS_SUBDIR = "requests"
 AVG_INPUT_TOKENS = 60  # From notebook cost analysis
 
 

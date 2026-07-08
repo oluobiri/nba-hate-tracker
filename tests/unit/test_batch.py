@@ -11,6 +11,8 @@ from pipeline.batch import (
     build_prompt,
     calculate_cost,
     format_batch_request,
+    get_downloadable_batches,
+    get_pending_batches,
     init_state,
     load_state,
     parse_response,
@@ -245,6 +247,67 @@ class TestLoadState:
         assert state["total_input_tokens"] == 0
         assert state["total_output_tokens"] == 0
         assert state["estimated_cost_usd"] == 0.0
+
+
+class TestGetPendingBatches:
+    """Tests for get_pending_batches function."""
+
+    def test_returns_batches_not_ended(self):
+        """Verify batches with status other than 'ended' are pending."""
+        state = init_state()
+        state["batches"] = [
+            {"batch_num": 1, "status": "in_progress"},
+            {"batch_num": 2, "status": "ended"},
+            {"batch_num": 3, "status": "canceling"},
+        ]
+
+        pending = get_pending_batches(state)
+
+        assert [b["batch_num"] for b in pending] == [1, 3]
+
+    def test_empty_when_all_ended(self):
+        """Verify no batches are pending when all have ended."""
+        state = init_state()
+        state["batches"] = [
+            {"batch_num": 1, "status": "ended"},
+            {"batch_num": 2, "status": "ended"},
+        ]
+
+        assert get_pending_batches(state) == []
+
+    def test_empty_state(self):
+        """Verify empty state yields no pending batches."""
+        assert get_pending_batches(init_state()) == []
+
+
+class TestGetDownloadableBatches:
+    """Tests for get_downloadable_batches function."""
+
+    def test_returns_ended_not_downloaded(self):
+        """Verify ended batches without downloaded results are returned."""
+        state = init_state()
+        state["batches"] = [
+            {"batch_num": 1, "status": "ended", "results_downloaded": False},
+            {"batch_num": 2, "status": "ended", "results_downloaded": True},
+            {"batch_num": 3, "status": "in_progress", "results_downloaded": False},
+        ]
+
+        downloadable = get_downloadable_batches(state)
+
+        assert [b["batch_num"] for b in downloadable] == [1]
+
+    def test_missing_downloaded_flag_treated_as_not_downloaded(self):
+        """Verify a batch without results_downloaded is downloadable."""
+        state = init_state()
+        state["batches"] = [{"batch_num": 1, "status": "ended"}]
+
+        downloadable = get_downloadable_batches(state)
+
+        assert [b["batch_num"] for b in downloadable] == [1]
+
+    def test_empty_state(self):
+        """Verify empty state yields no downloadable batches."""
+        assert get_downloadable_batches(init_state()) == []
 
 
 class TestSaveState:

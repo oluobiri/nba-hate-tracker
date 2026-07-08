@@ -5,11 +5,15 @@ API submission functions use the Anthropic Batch API.
 """
 
 import json
+import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 # Model configuration
 MODEL = "claude-haiku-4-5-20251001"
@@ -25,6 +29,11 @@ OUTPUT_COST_PER_MTOK = 2.50  # $2.50 per million output tokens
 STATE_FILENAME = "state.json"
 REQUESTS_SUBDIR = "requests"
 RESPONSES_SUBDIR = "responses"
+
+# Retry configuration
+DEFAULT_MAX_RETRIES = 3
+BACKOFF_BASE_SECONDS = 2.0
+BACKOFF_CAP_SECONDS = 60.0
 
 
 def build_prompt(comment_body: str) -> str:
@@ -223,30 +232,259 @@ def get_pending_batches(state: dict) -> list[dict]:
     """
     Get batches that haven't finished processing yet.
 
-    Args:
-        state: Current state dict.
-
-    Returns:
-        List of batch entries with status != "ended".
-    """
-    return [b for b in state.get("batches", []) if b.get("status") != "ended"]
-
-
-def get_downloadable_batches(state: dict) -> list[dict]:
-    """
-    Get batches that are complete but haven't had results downloaded.
+    Terminally failed entries are excluded — they will never end, and
+    submission-failure entries carry no batch_id to poll.
 
     Args:
         state: Current state dict.
 
     Returns:
-        List of batch entries with status == "ended" and results_downloaded == False.
+        List of batch entries with status != "ended" and not failed.
     """
     return [
         b
         for b in state.get("batches", [])
-        if b.get("status") == "ended" and not b.get("results_downloaded", False)
+        if b.get("status") != "ended" and not b.get("failed", False)
     ]
+
+
+def get_downloadable_batches(state: dict) -> list[dict]:
+    """
+    Get batches whose results should be downloaded.
+
+    Retryable wholesale failures are skipped — their attempt is about to
+    be superseded, so downloading would only produce a stale results file.
+    Terminally failed batches ARE downloadable so their errored rows reach
+    failed_requests.jsonl for manual investigation.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        List of ended, not-yet-downloaded batch entries that either
+        produced successes or are terminally failed.
+    """
+    return [
+        b
+        for b in state.get("batches", [])
+        if b.get("status") == "ended"
+        and not b.get("results_downloaded", False)
+        and (not is_wholesale_failure(b) or b.get("failed", False))
+    ]
+
+
+def is_wholesale_failure(batch: dict) -> bool:
+    """
+    Check whether a batch ended with zero successful requests.
+
+    Only wholesale failures are eligible for whole-batch retry; a batch
+    with any successes keeps its results, and its failed rows go to
+    failed_requests.jsonl instead (per-request retry is out of scope).
+
+    Args:
+        batch: Batch entry dict from state.
+
+    Returns:
+        True if the batch ended and request_counts shows no successes.
+        An ended batch with missing counts is NOT treated as a failure.
+    """
+    if batch.get("status") != "ended":
+        return False
+    counts = batch.get("request_counts")
+    if not counts:
+        return False
+    return counts.get("succeeded", 0) == 0
+
+
+def get_retryable_batches(
+    state: dict, max_retries: int = DEFAULT_MAX_RETRIES
+) -> list[dict]:
+    """
+    Get wholesale-failed batches that still have retry budget.
+
+    Args:
+        state: Current state dict.
+        max_retries: Maximum resubmission attempts per batch.
+
+    Returns:
+        List of batch entries eligible for resubmission.
+    """
+    return [
+        b
+        for b in state.get("batches", [])
+        if is_wholesale_failure(b)
+        and not b.get("failed", False)
+        and b.get("retry_count", 0) < max_retries
+    ]
+
+
+def get_exhausted_batches(
+    state: dict, max_retries: int = DEFAULT_MAX_RETRIES
+) -> list[dict]:
+    """
+    Get batches that failed terminally or consumed their retry budget.
+
+    Args:
+        state: Current state dict.
+        max_retries: Maximum resubmission attempts per batch.
+
+    Returns:
+        List of batch entries requiring manual investigation.
+    """
+    return [
+        b
+        for b in state.get("batches", [])
+        if b.get("failed", False)
+        or (is_wholesale_failure(b) and b.get("retry_count", 0) >= max_retries)
+    ]
+
+
+def mark_batch_failed(batch: dict) -> None:
+    """
+    Mark a batch entry as terminally failed (in place).
+
+    Stored explicitly rather than derived so the terminal state survives
+    later runs invoked with a different --max-retries value.
+
+    Args:
+        batch: Batch entry dict from state.
+    """
+    batch["failed"] = True
+
+
+def new_batch_entry(
+    batch_num: int,
+    request_file: str,
+    submit_result: dict,
+    submitted_at: str,
+    estimated_cost_usd: float,
+) -> dict:
+    """
+    Build a state entry for a freshly submitted batch.
+
+    Args:
+        batch_num: Batch number extracted from the request filename.
+        request_file: Name of the request JSONL file.
+        submit_result: Dict returned by submit_batch.
+        submitted_at: ISO 8601 submission timestamp.
+        estimated_cost_usd: Pre-submission cost estimate for this batch.
+
+    Returns:
+        Batch entry dict with retry tracking and cost fields initialized.
+    """
+    return {
+        "batch_num": batch_num,
+        "batch_id": submit_result["batch_id"],
+        "request_file": request_file,
+        "status": submit_result["processing_status"],
+        "submitted_at": submitted_at,
+        "ended_at": submit_result["ended_at"],
+        "results_url": submit_result["results_url"],
+        "request_counts": submit_result["request_counts"],
+        "results_downloaded": False,
+        "retry_count": 0,
+        "superseded_batch_ids": [],
+        "failed": False,
+        "estimated_cost_usd": estimated_cost_usd,
+        "actual_input_tokens": 0,
+        "actual_output_tokens": 0,
+        "actual_cost_usd": 0.0,
+    }
+
+
+def new_failed_entry(
+    batch_num: int,
+    request_file: str,
+    attempted_at: str,
+    retry_count: int,
+) -> dict:
+    """
+    Build a terminal state entry for a batch whose submission never succeeded.
+
+    The entry has no batch_id to poll and failed=True, so it trips the
+    fail-fast gate on the next run instead of being silently reattempted.
+
+    Args:
+        batch_num: Batch number extracted from the request filename.
+        request_file: Name of the request JSONL file.
+        attempted_at: ISO 8601 timestamp of the final failed attempt.
+        retry_count: Submission attempts consumed.
+
+    Returns:
+        Terminal batch entry dict.
+    """
+    return {
+        "batch_num": batch_num,
+        "batch_id": None,
+        "request_file": request_file,
+        "status": "failed",
+        "submitted_at": attempted_at,
+        "ended_at": None,
+        "results_url": None,
+        "request_counts": None,
+        "results_downloaded": False,
+        "retry_count": retry_count,
+        "superseded_batch_ids": [],
+        "failed": True,
+        "estimated_cost_usd": 0.0,
+        "actual_input_tokens": 0,
+        "actual_output_tokens": 0,
+        "actual_cost_usd": 0.0,
+    }
+
+
+def record_retry_attempt(
+    batch: dict,
+    submit_result: dict,
+    submitted_at: str,
+    estimated_cost_usd: float,
+) -> None:
+    """
+    Record a resubmission on an existing batch entry (in place).
+
+    The superseded batch_id is kept for console investigation; download
+    and cost fields are reset so the surviving attempt's results fully
+    replace the failed attempt's.
+
+    Args:
+        batch: Batch entry dict from state.
+        submit_result: Dict returned by submit_batch for the new attempt.
+        submitted_at: ISO 8601 submission timestamp.
+        estimated_cost_usd: Cost estimate for the resubmitted batch.
+    """
+    if batch.get("batch_id"):
+        batch.setdefault("superseded_batch_ids", []).append(batch["batch_id"])
+    batch["batch_id"] = submit_result["batch_id"]
+    batch["status"] = submit_result["processing_status"]
+    batch["submitted_at"] = submitted_at
+    batch["ended_at"] = submit_result["ended_at"]
+    batch["results_url"] = submit_result["results_url"]
+    batch["request_counts"] = submit_result["request_counts"]
+    batch["results_downloaded"] = False
+    batch["retry_count"] = batch.get("retry_count", 0) + 1
+    batch["estimated_cost_usd"] = estimated_cost_usd
+    batch["actual_input_tokens"] = 0
+    batch["actual_output_tokens"] = 0
+    batch["actual_cost_usd"] = 0.0
+
+
+def backoff_delay(
+    attempt: int,
+    base: float = BACKOFF_BASE_SECONDS,
+    cap: float = BACKOFF_CAP_SECONDS,
+) -> float:
+    """
+    Compute the exponential backoff delay for a retry attempt.
+
+    Args:
+        attempt: Zero-based attempt index.
+        base: Delay in seconds for the first retry.
+        cap: Maximum delay in seconds.
+
+    Returns:
+        Delay in seconds, capped.
+    """
+    return min(base * (2**attempt), cap)
 
 
 # -----------------------------------------------------------------------------
@@ -296,6 +534,48 @@ def submit_batch(request_file: Path) -> dict:
         "ended_at": batch.ended_at.isoformat() if batch.ended_at else None,
         "results_url": batch.results_url,
     }
+
+
+def submit_batch_with_retry(
+    request_file: Path, max_retries: int = DEFAULT_MAX_RETRIES
+) -> dict:
+    """
+    Submit a batch file, retrying submission-time API errors with backoff.
+
+    Backoff attempts within one call are not persisted to state; only
+    full exhaustion is surfaced (the caller records terminal failure).
+    The Anthropic SDK already retries transient 429/5xx internally, so
+    this wraps hard submission failures.
+
+    Args:
+        request_file: Path to JSONL file with batch requests.
+        max_retries: Maximum submission attempts before giving up.
+
+    Returns:
+        Dict from submit_batch (batch_id, processing_status, ...).
+
+    Raises:
+        FileNotFoundError: If request_file doesn't exist.
+        RuntimeError: If every submission attempt fails.
+    """
+    last_error: RuntimeError | None = None
+
+    for attempt in range(max_retries):
+        try:
+            return submit_batch(request_file)
+        except RuntimeError as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                delay = backoff_delay(attempt)
+                logger.warning(
+                    f"Submission attempt {attempt + 1}/{max_retries} failed for "
+                    f"{request_file.name}: {e}. Retrying in {delay:.0f}s..."
+                )
+                time.sleep(delay)
+
+    raise RuntimeError(
+        f"Failed to submit {request_file.name} after {max_retries} attempts"
+    ) from last_error
 
 
 def get_batch_status(batch_id: str) -> dict:

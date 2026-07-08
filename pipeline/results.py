@@ -11,7 +11,7 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.batch import calculate_cost, parse_response
+from pipeline.batch import parse_response
 from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,
     RESULTS_SCHEMA,
@@ -23,15 +23,18 @@ logger = logging.getLogger(__name__)
 
 
 def build_sentiment_dataframe(
-    responses_dir: Path, filtered_path: Path, state: dict
+    responses_dir: Path, filtered_path: Path
 ) -> tuple[pl.DataFrame, list[dict]]:
     """
     Build sentiment DataFrame by joining results with comment metadata.
 
+    Token and cost accounting happens per batch at download time (see
+    summarize_actual_usage in pipeline.batch); this function is a pure
+    files-to-DataFrame transform.
+
     Args:
         responses_dir: Directory containing batch_NNN_results.jsonl files.
         filtered_path: Path to filtered comments JSONL file.
-        state: State dict to update with token totals.
 
     Returns:
         Tuple of (sentiment DataFrame, list of failed requests).
@@ -50,8 +53,6 @@ def build_sentiment_dataframe(
 
     all_results = []
     failed_requests = []
-    total_input_tokens = 0
-    total_output_tokens = 0
 
     for results_file in results_files:
         with open(results_file) as f:
@@ -77,21 +78,12 @@ def build_sentiment_dataframe(
                             "output_tokens": result["output_tokens"],
                         }
                     )
-                    total_input_tokens += result["input_tokens"]
-                    total_output_tokens += result["output_tokens"]
                 else:
                     failed_requests.append(result)
 
     logger.info(f"Loaded {len(all_results)} successful results")
     if failed_requests:
         logger.warning(f"Found {len(failed_requests)} failed requests")
-
-    # Update state with token totals
-    state["total_input_tokens"] = total_input_tokens
-    state["total_output_tokens"] = total_output_tokens
-    state["estimated_cost_usd"] = calculate_cost(
-        total_input_tokens, total_output_tokens
-    )
 
     # Create results DataFrame with pinned dtypes (correct even when empty)
     results_df = pl.DataFrame(all_results, schema=RESULTS_SCHEMA)

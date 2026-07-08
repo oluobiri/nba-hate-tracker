@@ -12,6 +12,7 @@ from pipeline.batch import (
     backoff_delay,
     build_prompt,
     calculate_cost,
+    compute_run_totals,
     format_batch_request,
     get_downloadable_batches,
     get_exhausted_batches,
@@ -26,6 +27,7 @@ from pipeline.batch import (
     parse_response,
     record_retry_attempt,
     save_state,
+    summarize_actual_usage,
 )
 
 
@@ -210,11 +212,13 @@ class TestInitState:
         assert "total_input_tokens" in state
         assert "total_output_tokens" in state
         assert "estimated_cost_usd" in state
+        assert "actual_cost_usd" in state
         assert "batches" in state
 
         assert state["total_input_tokens"] == 0
         assert state["total_output_tokens"] == 0
         assert state["estimated_cost_usd"] == 0.0
+        assert state["actual_cost_usd"] == 0.0
         assert state["batches"] == []
 
     def test_returns_new_dict_each_call(self):
@@ -248,6 +252,7 @@ class TestLoadState:
             "total_input_tokens": 1000,
             "total_output_tokens": 500,
             "estimated_cost_usd": 1.25,
+            "actual_cost_usd": 1.10,
             "batches": [
                 {
                     "batch_num": 1,
@@ -284,6 +289,7 @@ class TestLoadState:
         assert state["total_input_tokens"] == 0
         assert state["total_output_tokens"] == 0
         assert state["estimated_cost_usd"] == 0.0
+        assert state["actual_cost_usd"] == 0.0
 
 
 class TestGetPendingBatches:
@@ -766,6 +772,144 @@ class TestRecordRetryAttempt:
         assert batch["retry_count"] == 1
         assert batch["superseded_batch_ids"] == ["msgbatch_v1"]
         assert batch["results_downloaded"] is False
+
+
+class TestSummarizeActualUsage:
+    """Tests for summarize_actual_usage function."""
+
+    def test_cost_reconciliation_matches_results(self):
+        """Verify actual usage sums succeeded rows and matches calculate_cost.
+
+        Issue #29 required scenario: actual cost reconciles against the
+        downloaded results.
+        """
+        results = [
+            {
+                "custom_id": "a",
+                "result_type": "succeeded",
+                "input_tokens": 100,
+                "output_tokens": 20,
+            },
+            {
+                "custom_id": "b",
+                "result_type": "succeeded",
+                "input_tokens": 80,
+                "output_tokens": 15,
+            },
+        ]
+
+        usage = summarize_actual_usage(results)
+
+        assert usage["actual_input_tokens"] == 180
+        assert usage["actual_output_tokens"] == 35
+        assert usage["actual_cost_usd"] == pytest.approx(calculate_cost(180, 35))
+
+    def test_errored_rows_contribute_zero(self):
+        """Verify non-succeeded rows are excluded from actual usage."""
+        results = [
+            {
+                "custom_id": "a",
+                "result_type": "succeeded",
+                "input_tokens": 100,
+                "output_tokens": 20,
+            },
+            {"custom_id": "b", "result_type": "errored", "error": "overloaded"},
+            {"custom_id": "c", "result_type": "expired", "error": "expired"},
+        ]
+
+        usage = summarize_actual_usage(results)
+
+        assert usage["actual_input_tokens"] == 100
+        assert usage["actual_output_tokens"] == 20
+
+    def test_empty_results_yield_zeros(self):
+        """Verify no results produce zero usage and zero cost."""
+        usage = summarize_actual_usage([])
+
+        assert usage == {
+            "actual_input_tokens": 0,
+            "actual_output_tokens": 0,
+            "actual_cost_usd": 0.0,
+        }
+
+
+class TestComputeRunTotals:
+    """Tests for compute_run_totals function."""
+
+    def test_sums_per_batch_estimates_and_actuals(self):
+        """Verify run totals are sums over batch entries."""
+        state = init_state()
+        state["batches"] = [
+            {
+                "estimated_cost_usd": 1.0,
+                "actual_input_tokens": 100,
+                "actual_output_tokens": 20,
+                "actual_cost_usd": 0.5,
+            },
+            {
+                "estimated_cost_usd": 2.0,
+                "actual_input_tokens": 300,
+                "actual_output_tokens": 60,
+                "actual_cost_usd": 1.5,
+            },
+        ]
+
+        totals = compute_run_totals(state)
+
+        assert totals == {
+            "total_input_tokens": 400,
+            "total_output_tokens": 80,
+            "estimated_cost_usd": 3.0,
+            "actual_cost_usd": 2.0,
+        }
+
+    def test_idempotent_when_applied_to_state(self):
+        """Verify recomputing after state.update yields identical totals."""
+        state = init_state()
+        state["batches"] = [
+            {
+                "estimated_cost_usd": 1.0,
+                "actual_input_tokens": 100,
+                "actual_output_tokens": 20,
+                "actual_cost_usd": 0.5,
+            }
+        ]
+
+        state.update(compute_run_totals(state))
+        first = {k: state[k] for k in compute_run_totals(state)}
+        state.update(compute_run_totals(state))
+        second = {k: state[k] for k in compute_run_totals(state)}
+
+        assert first == second
+
+    def test_tolerates_entries_missing_cost_fields(self):
+        """Verify v1-shaped entries without cost fields count as zero."""
+        state = init_state()
+        state["batches"] = [
+            {"batch_num": 1, "status": "ended"},
+            {
+                "estimated_cost_usd": 2.0,
+                "actual_input_tokens": 300,
+                "actual_output_tokens": 60,
+                "actual_cost_usd": 1.5,
+            },
+        ]
+
+        totals = compute_run_totals(state)
+
+        assert totals["total_input_tokens"] == 300
+        assert totals["estimated_cost_usd"] == 2.0
+
+    def test_empty_state_yields_zeros(self):
+        """Verify an empty batches list produces zero totals."""
+        totals = compute_run_totals(init_state())
+
+        assert totals == {
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "actual_cost_usd": 0.0,
+        }
 
 
 class TestBackoffDelay:

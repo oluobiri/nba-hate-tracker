@@ -167,6 +167,7 @@ def init_state() -> dict:
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "estimated_cost_usd": 0.0,
+        "actual_cost_usd": 0.0,
         "batches": [],
     }
 
@@ -466,6 +467,57 @@ def record_retry_attempt(
     batch["actual_input_tokens"] = 0
     batch["actual_output_tokens"] = 0
     batch["actual_cost_usd"] = 0.0
+
+
+def summarize_actual_usage(results: list[dict]) -> dict:
+    """
+    Sum actual token usage over a batch's downloaded results.
+
+    Only succeeded rows carry usage; errored/canceled/expired rows
+    contribute zero, so actual cost reflects only paid-for results.
+
+    Args:
+        results: Result dicts as returned by download_results.
+
+    Returns:
+        Dict with actual_input_tokens, actual_output_tokens, and
+        actual_cost_usd, ready to merge into a batch entry.
+    """
+    input_tokens = sum(
+        r["input_tokens"] for r in results if r["result_type"] == "succeeded"
+    )
+    output_tokens = sum(
+        r["output_tokens"] for r in results if r["result_type"] == "succeeded"
+    )
+    return {
+        "actual_input_tokens": input_tokens,
+        "actual_output_tokens": output_tokens,
+        "actual_cost_usd": calculate_cost(input_tokens, output_tokens),
+    }
+
+
+def compute_run_totals(state: dict) -> dict:
+    """
+    Compute run-level totals as sums over per-batch entries.
+
+    Recomputed from scratch rather than incremented, so repeated calls
+    (and retries that reset per-batch actuals) can never double-count.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        Dict with total_input_tokens, total_output_tokens,
+        estimated_cost_usd, and actual_cost_usd, ready to merge into
+        the state dict via state.update().
+    """
+    batches = state.get("batches", [])
+    return {
+        "total_input_tokens": sum(b.get("actual_input_tokens", 0) for b in batches),
+        "total_output_tokens": sum(b.get("actual_output_tokens", 0) for b in batches),
+        "estimated_cost_usd": sum(b.get("estimated_cost_usd", 0.0) for b in batches),
+        "actual_cost_usd": sum(b.get("actual_cost_usd", 0.0) for b in batches),
+    }
 
 
 def backoff_delay(

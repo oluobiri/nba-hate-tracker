@@ -1,0 +1,210 @@
+# Ground-truth cases for the LLM classifier eval suite (issue #62).
+#
+# Ported verbatim from VALIDATION_SET in
+# notebooks/2024-25/04_cost_analysis.ipynb — the 23-case set the
+# production minimal prompt was validated against. Categories follow the
+# notebook's grouping.
+#
+# Per-case schema (loader: pipeline/evaluation.py):
+#   id                unique, category-prefixed
+#   text              comment body sent to the classifier
+#   expected          pos | neg | neu
+#   expected_player   canonical player name, or null
+#   category          must have an entry in meta.category_floors
+#   source            synthetic | mined-v1 | mined-v2
+#   comment_id        (optional) Reddit comment id for mined cases
+#   note              (optional) context, e.g. why a case is a known miss
+#   known_miss        (optional) sentiment test is xfail at current baseline
+#   known_miss_player (optional) player-attribution test is xfail
+#
+# meta.category_floors are minimum sentiment-accuracy fractions per
+# category, pinned from the baseline run (see PR for the recorded run).
+
+# Baseline (2026-07-09, 3 runs, claude-haiku-4-5-20251001 @ temp 0):
+# 21/23 sentiment stable-correct; sarcasm-01 stable miss, sarcasm-02
+# unstable across runs. Floors: baseline minus one case of slack for
+# categories with >=5 cases, exact baseline otherwise.
+meta:
+  category_floors:
+    clear_positive: 0.8
+    clear_negative: 0.83
+    neutral: 1.0
+    slang_inversion: 1.0
+    sarcasm: 0.0
+    negative_nickname: 1.0
+
+cases:
+  # --- Clear positive ---
+  - id: pos-01
+    text: "LeBron is the GOAT"
+    expected: pos
+    expected_player: "LeBron James"
+    category: clear_positive
+    source: synthetic
+
+  - id: pos-02
+    text: "Curry is absolutely disgusting from three"
+    expected: pos
+    expected_player: "Stephen Curry"
+    category: clear_positive
+    source: synthetic
+
+  - id: pos-03
+    text: "That dunk was NASTY"
+    expected: pos
+    expected_player: null
+    category: clear_positive
+    source: synthetic
+
+  - id: pos-04
+    text: "Jokic is a generational talent"
+    expected: pos
+    expected_player: "Nikola Jokic"
+    category: clear_positive
+    source: synthetic
+
+  - id: pos-05
+    text: "Shai is so good it's unfair"
+    expected: pos
+    expected_player: "Shai Gilgeous-Alexander"
+    category: clear_positive
+    source: synthetic
+
+  # --- Clear negative ---
+  - id: neg-01
+    text: "Westbrook is absolute trash"
+    expected: neg
+    expected_player: "Russell Westbrook"
+    category: clear_negative
+    source: synthetic
+
+  - id: neg-02
+    text: "LeBron is washed"
+    expected: neg
+    expected_player: "LeBron James"
+    category: clear_negative
+    source: synthetic
+
+  - id: neg-03
+    text: "Harden choked again in the playoffs"
+    expected: neg
+    expected_player: "James Harden"
+    category: clear_negative
+    source: synthetic
+
+  - id: neg-04
+    text: "Another brick from Westbrick"
+    expected: neg
+    expected_player: "Russell Westbrook"
+    category: clear_negative
+    source: synthetic
+
+  - id: neg-05
+    text: "Ben Simmons is a fraud"
+    expected: neg
+    expected_player: "Ben Simmons"
+    category: clear_negative
+    source: synthetic
+
+  - id: neg-06
+    text: "KD took the easy way out"
+    expected: neg
+    expected_player: "Kevin Durant"
+    category: clear_negative
+    source: synthetic
+
+  # --- Neutral ---
+  - id: neu-01
+    text: "Lakers play tomorrow at 7pm"
+    expected: neu
+    expected_player: null
+    category: neutral
+    source: synthetic
+
+  - id: neu-02
+    text: "Tatum had 25 points last night"
+    expected: neu
+    expected_player: "Jayson Tatum"
+    category: neutral
+    source: synthetic
+
+  - id: neu-03
+    text: "Trade deadline is next week"
+    expected: neu
+    expected_player: null
+    category: neutral
+    source: synthetic
+
+  # --- Slang that inverts meaning ---
+  - id: slang-01
+    text: "Ant is fucking sick bro"
+    expected: pos
+    expected_player: "Anthony Edwards"
+    category: slang_inversion
+    source: synthetic
+
+  - id: slang-02
+    text: "Giannis is a freak of nature"
+    expected: pos
+    expected_player: "Giannis Antetokounmpo"
+    category: slang_inversion
+    source: synthetic
+
+  - id: slang-03
+    text: "Luka cooked the entire defense"
+    expected: pos
+    expected_player: "Luka Doncic"
+    category: slang_inversion
+    source: synthetic
+    note: "active 'cooked' = dominated (positive); contrast pair with slang-04"
+
+  - id: slang-04
+    text: "Dame got cooked on defense"
+    expected: neg
+    expected_player: "Damian Lillard"
+    category: slang_inversion
+    source: synthetic
+    note: "'got cooked' = exposed (negative); contrast pair with slang-03"
+
+  # --- Sarcasm ---
+  - id: sarcasm-01
+    text: "Wow Simmons shot a three, league fucked"
+    expected: neg
+    expected_player: "Ben Simmons"
+    category: sarcasm
+    source: synthetic
+    known_miss: true
+    note: "layered sarcasm — the known accuracy ceiling (§4.2); baseline: pos @ 0.85, stable"
+
+  - id: sarcasm-02
+    text: "Great defense from Trae Young as usual"
+    expected: neg
+    expected_player: "Trae Young"
+    category: sarcasm
+    source: synthetic
+    known_miss: true
+    note: "unstable at temp 0 — baseline flipped pass/neu@0.5 across runs; xfail(strict=False) tolerates both"
+
+  # --- Negative nicknames ---
+  - id: nickname-01
+    text: "LeMickey needs more help"
+    expected: neg
+    expected_player: "LeBron James"
+    category: negative_nickname
+    source: synthetic
+
+  - id: nickname-02
+    text: "Westbrick back at it"
+    expected: neg
+    expected_player: "Russell Westbrook"
+    category: negative_nickname
+    source: synthetic
+
+  - id: nickname-03
+    text: "ADisney only shows up in the bubble"
+    expected: neg
+    expected_player: "Anthony Davis"
+    category: negative_nickname
+    source: synthetic
+    known_miss_player: true
+    note: "baseline: model attributes 'AD' — initialism, not caught by substring player_match; sentiment itself correct"

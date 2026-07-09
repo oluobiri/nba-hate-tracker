@@ -17,15 +17,17 @@ import pytest
 from pipeline.evaluation import (
     EvalCase,
     accuracy_by_category,
+    attribution_match,
     load_cases,
     load_category_floors,
-    player_match,
 )
+from utils.player_config import build_alias_to_player_map
 
 pytestmark = pytest.mark.eval
 
 CASES = load_cases()
 FLOORS = load_category_floors()
+ALIAS_MAP = build_alias_to_player_map()
 
 
 def _case_params(known_miss_attr: str) -> list:
@@ -61,11 +63,12 @@ class TestSentimentPerCase:
 class TestPlayerAttributionPerCase:
     @pytest.mark.parametrize("case", _case_params("known_miss_player"))
     def test_player(self, case: EvalCase, eval_results: dict[str, dict]):
-        """The model's p field matches the expected player attribution."""
+        """The model's p field, resolved as production does, matches."""
         result = eval_results[case.id]
-        assert player_match(result["p"], case.expected_player), (
+        assert attribution_match(result["p"], case.expected_player, ALIAS_MAP), (
             f"{case.id}: expected player {case.expected_player!r}, "
-            f"got {result['p']!r} for text {case.text!r}"
+            f"got {result['p']!r} (unresolved or wrong after alias-map "
+            f"resolution) for text {case.text!r}"
         )
 
 

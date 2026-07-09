@@ -9,6 +9,7 @@ import yaml
 from pipeline.batch import MAX_TOKENS, MODEL, TEMPERATURE
 from pipeline.evaluation import (
     accuracy_by_category,
+    attribution_match,
     classify_cases,
     load_cases,
     load_category_floors,
@@ -207,6 +208,32 @@ class TestPlayerMatch:
     def test_matches(self, predicted: str | None, expected: str | None, matches: bool):
         """Bidirectional substring match after normalization."""
         assert player_match(predicted, expected) is matches
+
+
+class TestAttributionMatch:
+    ALIAS_MAP = {
+        "ad": "Anthony Davis",
+        "anthony davis": "Anthony Davis",
+        "lebron": "LeBron James",
+        "lebron james": "LeBron James",
+    }
+
+    @pytest.mark.parametrize(
+        "predicted,expected,matches",
+        [
+            ("AD", "Anthony Davis", True),
+            ("Anthony Davis", "Anthony Davis", True),
+            ("LeBron", "Anthony Davis", False),
+            (None, None, True),
+            (None, "Anthony Davis", False),
+            ("AD", None, False),
+            ("the refs", None, True),
+            ("the refs", "Anthony Davis", False),
+        ],
+    )
+    def test_matches(self, predicted: str | None, expected: str | None, matches: bool):
+        """Predicted resolves through the alias map as production does."""
+        assert attribution_match(predicted, expected, self.ALIAS_MAP) is matches
 
 
 class TestClassifyCases:

@@ -206,5 +206,4 @@ cases:
     expected_player: "Anthony Davis"
     category: negative_nickname
     source: synthetic
-    known_miss_player: true
-    note: "baseline: model attributes 'AD' — initialism, not caught by substring player_match; sentiment itself correct"
+    note: "baseline: model attributes 'AD' — raw initialism output; resolves to Anthony Davis via the alias map (item-4 data point)"

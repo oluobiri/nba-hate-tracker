@@ -24,6 +24,7 @@ import anthropic
 import yaml
 
 from pipeline.batch import MAX_TOKENS, MODEL, TEMPERATURE, build_prompt, parse_response
+from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +272,34 @@ def player_match(predicted: str | None, expected: str | None) -> bool:
     if pred_norm is None or exp_norm is None:
         return False
     return pred_norm in exp_norm or exp_norm in pred_norm
+
+
+def attribution_match(
+    predicted: str | None, expected: str | None, alias_map: dict[str, str]
+) -> bool:
+    """
+    Check attribution the way production consumes the model's p field.
+
+    Resolves the predicted name through the alias map exactly as
+    resolve_player() does at aggregation, so nickname or initialism
+    output (e.g. "AD") counts as correct when it resolves to the
+    expected canonical player. Unresolvable output counts as None —
+    matching production, where such attributions are dropped.
+
+    Contrast with player_match(), which compares raw model output by
+    substring: useful for measuring what the model literally says
+    (issue #62 item 4), but stricter than the pipeline's behavior.
+
+    Args:
+        predicted: The model's attributed player, or None.
+        expected: The ground-truth canonical player name, or None.
+        alias_map: Mapping of lowercase aliases to canonical player names,
+            as returned by build_alias_to_player_map().
+
+    Returns:
+        True if the resolved prediction equals the expected canonical name.
+    """
+    return resolve_sentiment_player(predicted, alias_map) == expected
 
 
 def accuracy_by_category(

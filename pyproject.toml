@@ -29,7 +29,10 @@ exclude = ["notebooks/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-x --tb=short"
+addopts = "-x --tb=short -m 'not eval'"
+markers = [
+    "eval: live LLM classifier eval (needs ANTHROPIC_API_KEY; run: uv run pytest -m eval --maxfail=0 -rxX)",
+]
 
 [tool.uv]
 dev-dependencies = [

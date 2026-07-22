@@ -24,6 +24,9 @@ EXPECTED_CATEGORIES = {
     "slang_inversion",
     "sarcasm",
     "negative_nickname",
+    "short",
+    "multi_player",
+    "genuine_praise",
 }
 
 
@@ -347,14 +350,14 @@ class TestAccuracyByCategory:
 
 
 class TestRealCasesFile:
-    def test_cases_file_loads_with_23_cases(self):
-        """The committed cases.yaml parses cleanly at its baseline size."""
+    def test_cases_file_loads_with_100_cases(self):
+        """The committed cases.yaml parses cleanly at its expanded size."""
         cases = load_cases()
 
-        assert len(cases) == 23
+        assert len(cases) == 100
 
     def test_floors_cover_expected_categories(self):
-        """Floors exist for exactly the six baseline categories."""
+        """Floors exist for exactly the nine post-expansion categories."""
         floors = load_category_floors()
 
         assert set(floors) == EXPECTED_CATEGORIES

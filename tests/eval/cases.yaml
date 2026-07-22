@@ -20,9 +20,17 @@
 # meta.category_floors are minimum sentiment-accuracy fractions per
 # category, pinned from the baseline run (see PR for the recorded run).
 
-# Baseline (2026-07-09, 3 runs, claude-haiku-4-5-20251001 @ temp 0):
+# Synthetic baseline (2026-07-09, 3 runs, claude-haiku-4-5-20251001 @ temp 0):
 # 21/23 sentiment stable-correct; sarcasm-01 stable miss, sarcasm-02
 # unstable across runs. Floors: baseline minus one case of slack for
+# categories with >=5 cases, exact baseline otherwise.
+#
+# Mined expansion baseline (2026-07-22, 3 runs, claude-haiku-4-5-20251001
+# @ temp 0, ZERO flaky outcomes): 77 mined cases, owner-labeled +
+# nba-superfan-verified. Category results: short 18/21, multi_player 5/9,
+# sarcasm 5/20 (the ceiling, incl. the tag-intact /s case — classifier
+# does not read /s), genuine_praise 29/29 (regression trap armed at a
+# perfect baseline). Floors: baseline minus one case of slack for
 # categories with >=5 cases, exact baseline otherwise.
 meta:
   category_floors:
@@ -30,8 +38,11 @@ meta:
     clear_negative: 0.83
     neutral: 1.0
     slang_inversion: 1.0
-    sarcasm: 0.0
+    sarcasm: 0.2
     negative_nickname: 1.0
+    short: 0.8
+    multi_player: 0.44
+    genuine_praise: 0.96
 
 cases:
   # --- Clear positive ---
@@ -207,3 +218,725 @@ cases:
     category: negative_nickname
     source: synthetic
     note: "baseline: model attributes 'AD' — raw initialism output; resolves to Anthony Davis via the alias map (item-4 data point)"
+
+  # --- Short (mined) ---
+
+  - id: short-m02
+    text: Draymond
+    expected: neu
+    expected_player: Draymond Green
+    category: short
+    source: mined-v2
+    comment_id: ouiju97
+
+  - id: short-m03
+    text: Giannis
+    expected: neu
+    expected_player: Giannis Antetokounmpo
+    category: short
+    source: mined-v2
+    comment_id: opn7obi
+
+  - id: short-m04
+    text: KD
+    expected: neu
+    expected_player: Kevin Durant
+    category: short
+    source: mined-v2
+    comment_id: o9c9v7j
+    known_miss_player: true
+    note: 'baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: short-m05
+    text: Amen
+    expected: neu
+    expected_player: Amen Thompson
+    category: short
+    source: mined-v2
+    comment_id: nuzq5zb
+    known_miss_player: true
+    note: 'baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: short-m07
+    text: Randle.
+    expected: neu
+    expected_player: Julius Randle
+    category: short
+    source: mined-v2
+    comment_id: om28czv
+
+  - id: short-m08
+    text: Wemby
+    expected: neu
+    expected_player: Victor Wembanyama
+    category: short
+    source: mined-v2
+    comment_id: obyrukg
+
+  - id: short-m09
+    text: Bones
+    expected: neu
+    expected_player: Bones Hyland
+    category: short
+    source: mined-v2
+    comment_id: oiaxr55
+    known_miss_player: true
+    note: 'baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: short-m10
+    text: JamALLSTAR
+    expected: pos
+    expected_player: Jamal Murray
+    category: short
+    source: mined-v2
+    comment_id: nussx8o
+
+  - id: short-m11
+    text: Bronny effect
+    expected: neu
+    expected_player: Bronny James
+    category: short
+    source: mined-v2
+    comment_id: np2vw14
+    known_miss_player: true
+    note: 'baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: short-m12
+    text: Wemby throwing
+    expected: neg
+    expected_player: Victor Wembanyama
+    category: short
+    source: mined-v2
+    comment_id: oov2e9z
+    known_miss: true
+    note: 'baseline (2026-07-22, 3 runs stable): got pos @ 0.85'
+
+  - id: short-m14
+    text: Rudy gobert
+    expected: neu
+    expected_player: Rudy Gobert
+    category: short
+    source: mined-v2
+    comment_id: nqnx6tj
+
+  - id: short-m16
+    text: Lonzo Ball
+    expected: neu
+    expected_player: Lonzo Ball
+    category: short
+    source: mined-v2
+    comment_id: olmhy58
+
+  - id: short-m17
+    text: Evan Mobley?
+    expected: neu
+    expected_player: Evan Mobley
+    category: short
+    source: mined-v2
+    comment_id: nr4o1d9
+
+  - id: short-m19
+    text: Tyrese Haliburger
+    expected: neg
+    expected_player: Tyrese Haliburton
+    category: short
+    source: mined-v2
+    comment_id: ofyryog
+    known_miss: true
+    note: 'negative nickname about weight gain; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+
+  - id: short-m21
+    text: Bruce brown masterclass
+    expected: pos
+    expected_player: Bruce Brown
+    category: short
+    source: mined-v2
+    comment_id: nrholpj
+
+  - id: short-m22
+    text: Sga is impressive
+    expected: pos
+    expected_player: Shai Gilgeous-Alexander
+    category: short
+    source: mined-v2
+    comment_id: np2ve6z
+
+  - id: short-m23
+    text: Wilt. Bam. Kobe.
+    expected: pos
+    expected_player: Bam Adebayo
+    category: short
+    source: mined-v2
+    comment_id: odj572p
+    known_miss_player: true
+    note: 'baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: short-m24
+    text: You suck Caruso
+    expected: neg
+    expected_player: Alex Caruso
+    category: short
+    source: mined-v2
+    comment_id: oov3ne7
+
+  - id: short-m25
+    text: Jose Joese Joseeeee
+    expected: pos
+    expected_player: Jose Alvarado
+    category: short
+    source: mined-v2
+    comment_id: opmkivm
+    known_miss: true
+    known_miss_player: true
+    note: 'baseline (2026-07-22, 3 runs stable): got neu @ 0.5; baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: short-m26
+    text: Anthony "Glass" Davis
+    expected: neg
+    expected_player: Anthony Davis
+    category: short
+    source: mined-v2
+    comment_id: nyk00gb
+    note: negative nickname about health issues
+
+  - id: short-m30
+    text: Jamal awful tonight
+    expected: neg
+    expected_player: Jamal Murray
+    category: short
+    source: mined-v2
+    comment_id: oaieeds
+
+  # --- Multi-player (mined) ---
+
+  - id: multi-m02
+    text: Just feels like a smarter player. Poole will probably have higher highs but Ajay feels more consistent
+    expected: pos
+    expected_player: Ajay Mitchell
+    category: multi_player
+    source: mined-v2
+    comment_id: oldhosi
+
+  - id: multi-m05
+    text: They need to stop playing through Russ at the expense of DeRozan, I don't know if there is a way out of this for them but what they're doing currenlty definitely isn't working
+    expected: neg
+    expected_player: Russell Westbrook
+    category: multi_player
+    source: mined-v2
+    comment_id: nq4377u
+
+  - id: multi-m07
+    text: And Simmons *still* played way better. Simmons only managed 5 points on 4 shots, but he had 8 rebounds and 13 assists. Chet was completely out of it.
+    expected: neg
+    expected_player: Chet Holmgren
+    category: multi_player
+    source: mined-v2
+    comment_id: ophpwrl
+    known_miss: true
+    known_miss_player: true
+    note: 'baseline (2026-07-22, 3 runs stable): got pos @ 0.85; baseline p: Ben Simmons (p LOAD-BEARING here (multi-mention) — production would misattribute/drop; item-4 evidence)'
+
+  - id: multi-m10
+    text: "He was already -140 to win mvp before jokics injury. Acting like SGA had no shot to win it before the injury is just lame. \n\nIt’s possible he doesn’t win it with jokic playing fucking insane. But he was still the betting favorite"
+    expected: pos
+    expected_player: Shai Gilgeous-Alexander
+    category: multi_player
+    source: mined-v2
+    comment_id: nwrr25y
+    known_miss: true
+    known_miss_player: true
+    note: 'baseline (2026-07-22, 3 runs stable): got neu @ 0.5; baseline p: null (p LOAD-BEARING here (multi-mention) — production would misattribute/drop; item-4 evidence)'
+
+  - id: multi-m14
+    text: I think Atlanta should do this too, could even do Porizingis instead of Okongwu. But if Giannis wants a specific location the bucks have very little they can do
+    expected: neu
+    expected_player: Giannis Antetokounmpo
+    category: multi_player
+    source: mined-v2
+    comment_id: ns61lf9
+    known_miss_player: true
+    note: 'baseline p: null (p LOAD-BEARING here (multi-mention) — production would misattribute/drop; item-4 evidence)'
+
+  - id: multi-m17
+    text: Kawhi deserved the all star nod. But chet isnt the one who should be out
+    expected: pos
+    expected_player: Kawhi Leonard
+    category: multi_player
+    source: mined-v2
+    comment_id: o33myj2
+    known_miss: true
+    known_miss_player: true
+    note: 'baseline (2026-07-22, 3 runs stable): got neu @ 0.5; baseline p: null (p LOAD-BEARING here (multi-mention) — production would misattribute/drop; item-4 evidence)'
+
+  - id: multi-m18
+    text: Dort’s cheapshot was bush league, but Joker’s out here trying to dislocate knees and rupture discs lol
+    expected: neg
+    expected_player: Nikola Jokic
+    category: multi_player
+    source: mined-v2
+    comment_id: o8cvypf
+
+  - id: multi-m28
+    text: It doesn’t even matter they could get rid of dub, Dort, and like one other guy and Presti would just find another guy like Ajay Mitchell to start playing like an all star as a 40th pick making 2 million a year.
+    expected: pos
+    expected_player: Ajay Mitchell
+    category: multi_player
+    source: mined-v2
+    comment_id: okzkmhv
+    known_miss_player: true
+    note: 'baseline p: Sam Presti (p LOAD-BEARING here (multi-mention) — production would misattribute/drop; item-4 evidence)'
+
+  - id: multi-m30
+    text: Ironically there are only a couple players in the league that when healthy could hide reaves and luka defensively both on the court at the same time. One of them was AD.
+    expected: pos
+    expected_player: Anthony Davis
+    category: multi_player
+    source: mined-v2
+    comment_id: ol86d0t
+    known_miss: true
+    known_miss_player: true
+    note: 'baseline (2026-07-22, 3 runs stable): got neu @ 0.5; baseline p: null (p LOAD-BEARING here (multi-mention) — production would misattribute/drop; item-4 evidence)'
+
+  # --- Sarcasm (mined) ---
+
+  - id: sarcasm-m01
+    text: His Slovenian brother Luka Doncic introduced him to some texas bbq
+    expected: neu
+    expected_player: Luka Doncic
+    category: sarcasm
+    source: mined-v2
+    comment_id: oi5rpd1
+    known_miss_player: true
+    note: 'Although Luka gets comments about his weight, I think it would be premputious to attribute that here. It''s more likely negative towards his teammate''s (guessing Goran Dragic) weight gain.; baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: sarcasm-m02
+    text: Out of uniform, Brunson definitely doesn’t look big enough to be an NBA player
+    expected: neu
+    expected_player: Jalen Brunson
+    category: sarcasm
+    source: mined-v2
+    comment_id: orlj1km
+    known_miss: true
+    note: 'Sarcastic because the commentor is saying Brunson doesn''t look short in the context of the real world/; baseline (2026-07-22, 3 runs stable): got neg @ 0.75'
+
+  - id: sarcasm-m03
+    text: "Yeah how dare that guy. \n\nThunder... Harden was the victim. \nRockets.... Harden was the victim. \nNets... Harden was the victim. \n76ers... Harden was the victim. \nClippers... Harden was the victim. \n\n5 times asked out, never at all his fault."
+    expected: neg
+    expected_player: James Harden
+    category: sarcasm
+    source: mined-v2
+    comment_id: o6aazrw
+    note: Basically saying Harden can't be the victim 5 times in a row without having any part to play
+
+  - id: sarcasm-m04
+    text: I was getting ready to hate the guy wearing the Tatum jersey.
+    expected: neu
+    expected_player: Jayson Tatum
+    category: sarcasm
+    source: mined-v2
+    comment_id: oi8ai8t
+    known_miss_player: true
+    note: 'Lakers fan joking about hating a fan for wearing a Celtics'' jersey; baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: sarcasm-m06
+    text: "But but Cade won't be eligible for more money! \n\nIt's a stupid rule and shouldn't keep cade out of the conversations but he really should focus on his health for the playoffs instead of pushing out 4 more games for awards"
+    expected: neg
+    expected_player: Cade Cunningham
+    category: sarcasm
+    source: mined-v2
+    comment_id: obccbv7
+    known_miss: true
+    note: 'Borderline negative—commentor thinks Cade should focus on staying healthy vs award-chasing; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+
+  - id: sarcasm-m07
+    text: "Draymond playing the long game to get the Warriors something out of a trade, immediately injure Dillon Brooks and tank his value, then get traded back to the Warriors. \n\nBravo Draymond"
+    expected: neg
+    expected_player: Draymond Green
+    category: sarcasm
+    source: mined-v2
+    comment_id: nvib0m4
+    known_miss: true
+    note: 'Sarcastic joke about Draymond''s antics; baseline (2026-07-22, 3 runs stable): got pos @ 0.85'
+
+  - id: sarcasm-m08
+    text: What a terrible take. Wemby wound up and gave it all his tig arms could muster. At least when Dort dick punches a guy he hides it behind a screen
+    expected: neg
+    expected_player: Lu Dort
+    category: sarcasm
+    source: mined-v2
+    comment_id: ol8fpzl
+    known_miss: true
+    known_miss_player: true
+    note: 'Sarcastic joke about Dort''s dirty antics; baseline (2026-07-22, 3 runs stable): got neu @ 0.5; baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: sarcasm-m09
+    text: "Tatum needs to be drug tested \n\nNo one can be this good after what he’s been through\n\nCeltics fans you guys are lucky"
+    expected: pos
+    expected_player: Jayson Tatum
+    category: sarcasm
+    source: mined-v2
+    comment_id: oi4gua5
+    note: Praising Tatum's comeback from his ACL injury
+
+  - id: sarcasm-m11
+    text: I mean KAT/robinson move on all their screens too which freed up Brunson a ton. My biggest pet peeve is the allowed moving screens, so this game was an absolute joy to watch between the two of them
+    expected: neg
+    expected_player: Karl-Anthony Towns
+    category: sarcasm
+    source: mined-v2
+    comment_id: opng141
+    known_miss: true
+    known_miss_player: true
+    note: 'Commentor didn''t enjoy watching the game due to KAT and Mitchell Robinson''s moving screens; baseline (2026-07-22, 3 runs stable): got pos @ 0.85; baseline p: Jalen Brunson (p LOAD-BEARING — comment mentions Brunson+KAT, production would misattribute to Brunson; item-4 evidence)'
+
+  - id: sarcasm-m16
+    text: Draymond plays 90’s ball. So in that, he never did anything wrong. You guys give him a hard time
+    expected: neg
+    expected_player: Draymond Green
+    category: sarcasm
+    source: mined-v2
+    comment_id: o49v40u
+    known_miss: true
+    note: 'Sarcastic joke about Draymond playing 90''s ball negating criticsm about his play-style; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+
+  - id: sarcasm-m19
+    text: IDK bro I think Cade's better, don't you? /s
+    expected: neg
+    expected_player: Cade Cunningham
+    category: sarcasm
+    source: mined-v2
+    comment_id: nxry0w5
+    known_miss: true
+    note: 'tag INTACT (marked-sarcasm case, contrast with stripped cases): tests that the classifier reads /s at all; placement normalized to trailing; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+
+  - id: sarcasm-m21
+    text: 'The NBA just set the precedent to injure star players these playoffs. Absolutely ridiculous there is no suspension, just because an elimination game is coming up?
+  
+  
+      Joe Ingles get ready to take down Jokic, fuck it. Just a flagrant.'
+    expected: neu
+    expected_player: Nikola Jokic
+    category: sarcasm
+    source: mined-v2
+    comment_id: ogg28n1
+    known_miss: true
+    note: 'Jokic isn''t the subject of the comment, but part of the punchline that another star player should be injured in retaliation; baseline (2026-07-22, 3 runs stable): got neg @ 0.9'
+
+  - id: sarcasm-m22
+    text: Jokic was holding them all back
+    expected: pos
+    expected_player: Nikola Jokic
+    category: sarcasm
+    source: mined-v2
+    comment_id: nybpv7o
+    known_miss: true
+    note: 'Joke about Jokic holding the Nuggets back; baseline (2026-07-22, 3 runs stable): got neg @ 0.7'
+
+  - id: sarcasm-m23
+    text: Cade has been super important obviously, but I think this is a bit disrespectful to others who contributed like Monty Williams
+    expected: pos
+    expected_player: Cade Cunningham
+    category: sarcasm
+    source: mined-v2
+    comment_id: ojscotk
+    known_miss: true
+    note: 'Sarcstic mocking of former Piston''s coach; Could also be ''neu''; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+
+  - id: sarcasm-m25
+    text: Ok officially want JB traded. Can’t support a cat person
+    expected: neu
+    expected_player: Jaylen Brown
+    category: sarcasm
+    source: mined-v2
+    comment_id: otm41ee
+    known_miss: true
+    note: 'Sarcastic trade request from Celtics fan; baseline (2026-07-22, 3 runs stable): got neg @ 0.7'
+
+  - id: sarcasm-m27
+    text: Yeah stupid LeBron should've just seen that Miller is in an illegal guarding position and said damn sorry Imma try to go around you so that you don't get called for a blocking foul
+    expected: neu
+    expected_player: LeBron James
+    category: sarcasm
+    source: mined-v2
+    comment_id: o02vc2a
+    known_miss: true
+    note: 'Mock criticism of LeBron fouling; baseline (2026-07-22, 3 runs stable): got neg @ 0.7'
+
+  - id: sarcasm-m29
+    text: "Definitely \n\nNot even mocking the Knicks. I’m mocking national media obsession with Giannis to Knicks."
+    expected: neu
+    expected_player: Giannis Antetokounmpo
+    category: sarcasm
+    source: mined-v2
+    comment_id: o13sha6
+    known_miss_player: true
+    note: 'Fan explaining that their previous comment was sarcastic mocking of the media''s obsession with Giannes to Knicks; baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+
+  - id: sarcasm-m30
+    text: No dude, he slammed a chair and cried like a baby in college, so we must hate him forever. I love Grayson Allen.
+    expected: pos
+    expected_player: Grayson Allen
+    category: sarcasm
+    source: mined-v2
+    comment_id: nrylxbz
+    known_miss: true
+    note: 'Suns fan mocking their perceived reason of why Grayson Allen is hated; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+
+  # --- Genuine praise of hated/struggling players (mined) ---
+
+  - id: praise-m01
+    text: 'oh yeaa Dray locked Celtics TF up
+  
+  
+      GOAT SHIIIITT'
+    expected: pos
+    expected_player: Draymond Green
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mjlurzp
+
+  - id: praise-m02
+    text: It would be a travesty if Draymond retired with only 1 DPOY. He is easily the best defender of his generation.
+    expected: pos
+    expected_player: Draymond Green
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mlb6q0b
+
+  - id: praise-m03
+    text: Dray one of the defensive GOATs with or without Steph
+    expected: pos
+    expected_player: Draymond Green
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mnczzc4
+
+  - id: praise-m04
+    text: 'The Mavs do need a playmaker that can run the offense though. I don’t know, seems like a rip off. Draymond is an actual DPOY and AD is a fraud. Mavs would have to attach a first round pick.
+  
+  
+  
+  
+      ^hehe'
+    expected: pos
+    expected_player: Draymond Green
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mb4snje
+
+  - id: praise-m05
+    text: Dray’s such a great model for how you can protect the rim by just being a fucking brick wall
+    expected: pos
+    expected_player: Draymond Green
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mqmvr5h
+
+  - id: praise-m07
+    text: Healthy Embiid is like easily top 3.  One of the best scorers ever.  2024 Embiid was gonna win MVP by a lot if he didn’t get hurt.
+    expected: pos
+    expected_player: Joel Embiid
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mu7uzlv
+
+  - id: praise-m08
+    text: I'm a simple man. I read Embiid, I upvote.
+    expected: pos
+    expected_player: Joel Embiid
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m29uqix
+
+  - id: praise-m09
+    text: I love watching Embiid play basketball.  He is an incredibly talented player and is the only reason I watch the NBA.
+    expected: pos
+    expected_player: Joel Embiid
+    category: genuine_praise
+    source: mined-v1
+    comment_id: ly7uqez
+
+  - id: praise-m10
+    text: Embiid scored 50 points last playoffs on one knee with half his face drooping
+    expected: pos
+    expected_player: Joel Embiid
+    category: genuine_praise
+    source: mined-v1
+    comment_id: lz6m0ef
+
+  - id: praise-m13
+    text: SIMMONS WHAT A FUCKING REBOUND
+    expected: pos
+    expected_player: Ben Simmons
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mikfguv
+
+  - id: praise-m15
+    text: Rookie year Simmons was a fucking phenomenon. Especially during that 17 game winning streak with Embiid out. Some of the most fun basketball I've ever seen.
+    expected: pos
+    expected_player: Ben Simmons
+    category: genuine_praise
+    source: mined-v1
+    comment_id: lwozbtg
+
+  - id: praise-m16
+    text: "i fucking love westbrook. \n\n\nseein him talk to beal's kids and hug kd's mom was awesome"
+    expected: pos
+    expected_player: Russell Westbrook
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m3u8nej
+
+  - id: praise-m17
+    text: 'I love Russ he’s my favorite player of all time alongside Melo
+  
+  
+      What the fuck makes you think he’s on the same tier as Hookah Luka? And 2nd of all what makes you think this is a move made to win this season? It’s not this is a move to secure the Lakers franchise for the next decade'
+    expected: pos
+    expected_player: Russell Westbrook
+    category: genuine_praise
+    source: mined-v1
+    comment_id: maj74gu
+
+  - id: praise-m18
+    text: As a Thunder fan it does my heart good to see Brodie cooking.  No matter where he is!
+    expected: pos
+    expected_player: Russell Westbrook
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m780xd6
+
+  - id: praise-m19
+    text: NAHHH russ wants it, getting your own rebound of your own freethrow in the paint is INSANE
+    expected: pos
+    expected_player: Russell Westbrook
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mqgkbrh
+
+  - id: praise-m20
+    text: I fucking love Westbrook
+    expected: pos
+    expected_player: Russell Westbrook
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m6iuwlp
+
+  - id: praise-m21
+    text: I am forever grateful I got to watch prime Rockets Harden in person, dude has an unreal control of the game
+    expected: pos
+    expected_player: James Harden
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m9kw6ye
+
+  - id: praise-m22
+    text: This shows Harden’s ball IQ is actually insane to know exactly where this passes are going, looks like an adults playing defense on elementary school kids how easy that ball strips
+    expected: pos
+    expected_player: James Harden
+    category: genuine_praise
+    source: mined-v1
+    comment_id: lvki2jh
+
+  - id: praise-m23
+    text: Harden getting triple team at 35… my goat
+    expected: pos
+    expected_player: James Harden
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m0f7qrv
+
+  - id: praise-m24
+    text: "He came to the Nets and Kyrie went missing, then KD pulled his hamstring.  Harden put the team on his back. \n\nWent on a crazy winning streak.  He's unreal."
+    expected: pos
+    expected_player: James Harden
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mim4pcn
+
+  - id: praise-m25
+    text: James harden with 61/17/21/8/5
+    expected: pos
+    expected_player: James Harden
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m2z2ys7
+
+  - id: praise-m26
+    text: I was a Gobert hater until I watched damn near every minute he played last year. One of the most impactful players I’ve ever rooted for. I love you Rudy Gobert, you are my friend.
+    expected: pos
+    expected_player: Rudy Gobert
+    category: genuine_praise
+    source: mined-v1
+    comment_id: lqib55k
+
+  - id: praise-m27
+    text: Gobert on a Generational run fr. Took out KD and Book, Jokic and Murray, LeBron and Luka and is now waiting to take out Jimmy, Curry and Dray, or Sengun and Brooks 😤
+    expected: pos
+    expected_player: Rudy Gobert
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mpyxkqc
+    note: 'mock-heroic tone, deliberately kept: sits exactly on the sarcasm boundary the sarcasm-line experiment must not cross (owner-confirmed genuine flowers)'
+
+  - id: praise-m28
+    text: That gobert stat line is nasty
+    expected: pos
+    expected_player: Rudy Gobert
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mp33s5r
+
+  - id: praise-m29
+    text: Gobert's perimeter defense this game has also been fucking incredible lol
+    expected: pos
+    expected_player: Rudy Gobert
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mpyv6od
+
+  - id: praise-m30
+    text: 'I''m a Lakers fan and I''m a huge fan of Rudy.
+  
+  
+      He can single handedly make a bad team defense become good.
+  
+  
+      He''s also a walking double double and one of the most reliable centers around.
+  
+  
+      I actually like asking people what they think of Rudy, he''s a good litmus test to weed out idiots.'
+    expected: pos
+    expected_player: Rudy Gobert
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m24z83a
+
+  - id: praise-m31
+    text: Playoffs Murray is absolutely insane
+    expected: pos
+    expected_player: Jamal Murray
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mrjhspk
+
+  - id: praise-m33
+    text: Jamal Murray masterclass
+    expected: pos
+    expected_player: Jamal Murray
+    category: genuine_praise
+    source: mined-v1
+    comment_id: mp8izbb
+
+  - id: praise-m34
+    text: 'Jamal ends up outscoring Dallas'' top 4 scorers, including Kyrie Irving, on his own.
+  
+  
+  
+      Good lord.'
+    expected: pos
+    expected_player: Jamal Murray
+    category: genuine_praise
+    source: mined-v1
+    comment_id: m785xmm

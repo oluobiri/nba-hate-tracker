@@ -32,16 +32,26 @@
 # does not read /s), genuine_praise 29/29 (regression trap armed at a
 # perfect baseline). Floors: baseline minus one case of slack for
 # categories with >=5 cases, exact baseline otherwise.
+#
+# v2 prompt freeze (2026-07-24, notebooks/2025-26/06_prompt_experiments):
+# /s-hint line adopted; judgment-based sarcasm lines rejected (genuine_praise
+# floor fails); slang line unchanged. Against the frozen prompt, 3 runs:
+# sarcasm 8/20 stable (02/m07/m19 unflagged), multi-m05 newly unstable
+# (flagged), praise-m04 pruned (ruled out 07-15, never removed; 28 cases).
+# Floors re-pinned: sarcasm 0.35, multi_player 0.33. Attribution under the
+# frozen prompt (pytest caught what 06 §6 didn't measure): short-m04 p now
+# stable-correct (unflagged), multi-m05 p unstable (flagged), multi-m18 p
+# stably wrong — Dort for Jokic (flagged; item-4 evidence).
 meta:
   category_floors:
     clear_positive: 0.8
     clear_negative: 0.83
     neutral: 1.0
     slang_inversion: 1.0
-    sarcasm: 0.2
+    sarcasm: 0.35
     negative_nickname: 1.0
     short: 0.8
-    multi_player: 0.44
+    multi_player: 0.33
     genuine_praise: 0.96
 
 cases:
@@ -193,8 +203,7 @@ cases:
     expected_player: "Trae Young"
     category: sarcasm
     source: synthetic
-    known_miss: true
-    note: "unstable at temp 0 — baseline flipped pass/neu@0.5 across runs; xfail(strict=False) tolerates both"
+    note: "was unstable at temp 0 under the v1 prompt (flipped pass/neu@0.5 across runs); fixed and stabilized by the /s-hint line (06_prompt_experiments §6: neg, 3 runs stable)"
 
   # --- Negative nicknames ---
   - id: nickname-01
@@ -244,8 +253,7 @@ cases:
     category: short
     source: mined-v2
     comment_id: o9c9v7j
-    known_miss_player: true
-    note: 'baseline p: null (p informational — production attributes single-mention rows via regex mention)'
+    note: 'v1-prompt baseline p: null; v2 /s-hint prompt attributes stably (06 §6 artifacts: Kevin Durant ×3, pytest XPASS ×4)'
 
   - id: short-m05
     text: Amen
@@ -424,6 +432,9 @@ cases:
     category: multi_player
     source: mined-v2
     comment_id: nq4377u
+    known_miss: true
+    known_miss_player: true
+    note: 'stable-correct under the v1 prompt; unstable under the v2 /s-hint prompt on both axes (06_prompt_experiments §6: sentiment neu/neu/neg, p None/None/Russ across 3 runs); xfail(strict=False) tolerates both'
 
   - id: multi-m07
     text: And Simmons *still* played way better. Simmons only managed 5 points on 4 shots, but he had 8 rebounds and 13 assists. Chet was completely out of it.
@@ -475,6 +486,8 @@ cases:
     category: multi_player
     source: mined-v2
     comment_id: o8cvypf
+    known_miss_player: true
+    note: 'v1-prompt p: Nikola Jokic (correct); v2 /s-hint prompt stably outputs p: Dort (06 §6 artifacts, 3 runs + pytest ×4) — sentiment unaffected; multi-mention p-quality evidence for the item-4 write-up'
 
   - id: multi-m28
     text: It doesn’t even matter they could get rid of dub, Dort, and like one other guy and Presti would just find another guy like Ajay Mitchell to start playing like an all star as a 40th pick making 2 million a year.
@@ -555,8 +568,7 @@ cases:
     category: sarcasm
     source: mined-v2
     comment_id: nvib0m4
-    known_miss: true
-    note: 'Sarcastic joke about Draymond''s antics; baseline (2026-07-22, 3 runs stable): got pos @ 0.85'
+    note: 'Sarcastic joke about Draymond''s antics; v1-prompt baseline (2026-07-22, 3 runs stable): got pos @ 0.85; fixed by the /s-hint line (06_prompt_experiments §6: neg, 3 runs stable)'
 
   - id: sarcasm-m08
     text: What a terrible take. Wemby wound up and gave it all his tig arms could muster. At least when Dort dick punches a guy he hides it behind a screen
@@ -606,8 +618,7 @@ cases:
     category: sarcasm
     source: mined-v2
     comment_id: nxry0w5
-    known_miss: true
-    note: 'tag INTACT (marked-sarcasm case, contrast with stripped cases): tests that the classifier reads /s at all; placement normalized to trailing; baseline (2026-07-22, 3 runs stable): got neu @ 0.5'
+    note: 'tag INTACT (marked-sarcasm case, contrast with stripped cases): tests that the classifier reads /s at all; placement normalized to trailing; v1-prompt baseline (2026-07-22, 3 runs stable): got neu @ 0.5; fixed by the /s-hint line (06_prompt_experiments §2/§6: neg @ 0.85, 3 runs stable)'
 
   - id: sarcasm-m21
     text: 'The NBA just set the precedent to injure star players these playoffs. Absolutely ridiculous there is no suspension, just because an elimination game is coming up?
@@ -710,19 +721,6 @@ cases:
     category: genuine_praise
     source: mined-v1
     comment_id: mnczzc4
-
-  - id: praise-m04
-    text: 'The Mavs do need a playmaker that can run the offense though. I don’t know, seems like a rip off. Draymond is an actual DPOY and AD is a fraud. Mavs would have to attach a first round pick.
-  
-  
-  
-  
-      ^hehe'
-    expected: pos
-    expected_player: Draymond Green
-    category: genuine_praise
-    source: mined-v1
-    comment_id: mb4snje
 
   - id: praise-m05
     text: Dray’s such a great model for how you can protect the rim by just being a fucking brick wall

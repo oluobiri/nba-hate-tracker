@@ -40,6 +40,10 @@ def build_prompt(comment_body: str) -> str:
     """
     Build minimal prompt for sentiment classification.
 
+    Frozen v2 prompt (notebooks/2025-26/06_prompt_experiments): the eval
+    floors and known_miss flags in tests/eval/cases.yaml are pinned to this
+    exact text — any edit here requires a re-baselined eval suite.
+
     Args:
         comment_body: The raw Reddit comment text.
 
@@ -48,6 +52,7 @@ def build_prompt(comment_body: str) -> str:
     """
     return f"""Classify sentiment toward NBA players.
 Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative, GOAT=positive.
+A trailing "/s" tags the comment as sarcasm.
 
 Comment: {comment_body}
 

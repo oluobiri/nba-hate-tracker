@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '4.1'
+version: '4.2'
 season: 2025-26
 short_aliases:
 - ad
@@ -115,6 +115,63 @@ short_aliases:
 - ab
 - beas
 - eason
+# v4.2 (#67): boundary guards from the all-alias sweep (notebook 03 §6).
+# Each showed meaningful inside-word bleed on the pre-guard 2025-26 corpus
+# (e.g. cade<-"decade", the king<-"the kings", daniels<-"mcdaniels",
+# hayes<-"schayes"); guarding keeps word matches, stops inside-word fires.
+- hayes
+- cade
+- the king
+- daniels
+- steph
+- kp
+- victor
+- playoff p
+- chet
+- the brow
+- zion
+- demar
+- dlo
+- hield
+- the don
+- loon
+- kai
+- lonzo
+- flagg
+- jimmy g
+- jay will
+- clint
+- himmy
+- bogdan
+- scoot
+- ryhard
+- debo
+- k love
+- zach
+- beal
+- snake
+- simmons
+- sarr
+- towns
+- dbook
+- abraham
+- king james
+- alphabet
+- donkey
+- flat earther
+- the alien
+- triple j
+- antisemite
+- socialite
+- big rig
+- cupcake
+- beef stew
+- spicy p
+- pandemic p
+- the process
+- fun guy
+- chosen one
+- cmb
 players:
   Steven Adams:
     team: Houston Rockets
@@ -1071,7 +1128,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629637.png
     aliases:
     - jaxson hayes
-    - hayes
+    - hayes  # guarded v4.2 (#67): "schayes"/"hayesing" bleed, 74 rows pre-guard
 
   Scoot Henderson:
     team: Portland Trail Blazers
@@ -1374,7 +1431,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203897.png
     aliases:
     - lavine
-    - zach
+    - zach  # watchlist: ~80-90% non-LaVine in alias-only rows (Lowe/Edey/Collins/Zarba); judge via sentiment_player at #54 assembly — drop candidate; LaVine sits at 4,952 without it (bar edge case)
 
   Kawhi Leonard:
     team: Los Angeles Clippers
@@ -1639,6 +1696,7 @@ players:
     aliases:
     - collin murray-boyles
     - murray-boyles
+    - cmb  # added v4.2 (#67 comment): 1,490 v2 hits; guarded like other acronyms
 
   Andrew Nembhard:
     team: Indiana Pacers
@@ -2202,6 +2260,7 @@ players:
     aliases:
     - devin vassell
     - vassell
+    - vassel  # added v4.2 (#67 comment): single-L misspelling, ~576 v2 hits
 
   Gabe Vincent:
     team: Atlanta Hawks

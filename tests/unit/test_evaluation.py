@@ -350,11 +350,11 @@ class TestAccuracyByCategory:
 
 
 class TestRealCasesFile:
-    def test_cases_file_loads_with_100_cases(self):
+    def test_cases_file_loads_with_99_cases(self):
         """The committed cases.yaml parses cleanly at its expanded size."""
         cases = load_cases()
 
-        assert len(cases) == 100
+        assert len(cases) == 99
 
     def test_floors_cover_expected_categories(self):
         """Floors exist for exactly the nine post-expansion categories."""

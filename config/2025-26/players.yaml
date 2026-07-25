@@ -1431,7 +1431,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203897.png
     aliases:
     - lavine
-    - zach
+    - zach  # watchlist: ~80-90% non-LaVine in alias-only rows (Lowe/Edey/Collins/Zarba); judge via sentiment_player at #54 assembly — drop candidate; LaVine sits at 4,952 without it (bar edge case)
 
   Kawhi Leonard:
     team: Los Angeles Clippers

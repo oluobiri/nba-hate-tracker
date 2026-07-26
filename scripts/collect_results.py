@@ -31,6 +31,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from pipeline.batch import (
+    REQUESTS_SUBDIR,
     RESPONSES_SUBDIR,
     STATE_FILENAME,
     compute_run_totals,
@@ -39,6 +40,7 @@ from pipeline.batch import (
     get_downloadable_batches,
     get_missing_results,
     get_pending_batches,
+    get_unsubmitted_request_files,
     is_wholesale_failure,
     load_state,
     save_state,
@@ -270,6 +272,7 @@ def main() -> None:
     # Setup paths
     batches_dir = get_batches_dir()
     state_path = batches_dir / STATE_FILENAME
+    requests_dir = batches_dir / REQUESTS_SUBDIR
     responses_dir = batches_dir / RESPONSES_SUBDIR
     filtered_path = get_filtered_dir() / FILTERED_FILENAME
     processed_dir = get_processed_dir()
@@ -331,6 +334,17 @@ def main() -> None:
         )
         if not completed:
             logger.warning("Exiting with pending batches due to timeout")
+
+    # Mid-run guard (#71): state only knows about submitted batches; the
+    # requests directory is the ground truth of the full population.
+    unsubmitted = get_unsubmitted_request_files(state, requests_dir)
+    if unsubmitted:
+        total = len(list(requests_dir.glob("batch_*.jsonl")))
+        logger.info(
+            f"{total - len(unsubmitted)}/{total} request files submitted - "
+            f"downloading available results, skipping parquet build"
+        )
+        sys.exit(0)
 
     # Check if we can build the final output
     pending = get_pending_batches(state)

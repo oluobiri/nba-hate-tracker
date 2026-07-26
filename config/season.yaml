@@ -1,4 +1,8 @@
 season: "2025-26"
+# What the deployed dashboard serves — decoupled from `season` (the pipeline's
+# operational pointer) so a season flip for pipeline work cannot take the
+# public app down. Flipping this line IS the v2 dashboard launch.
+published_season: "2024-25"
 start_date: "2025-10-01"
 end_date: "2026-06-30"
 subreddits:

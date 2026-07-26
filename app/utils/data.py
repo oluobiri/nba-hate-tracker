@@ -59,7 +59,13 @@ METRIC_CONFIG: dict[str, dict[str, Any]] = {
 
 
 def _get_data_path() -> Path:
-    """Resolve the aggregates.json path for the active season."""
+    """Resolve the aggregates.json path for the published season.
+
+    The dashboard serves `published_season`, decoupled from `season` (the
+    pipeline's operational pointer), so flipping the active season for
+    pipeline work cannot break the deployed app. Falls back to `season`
+    when `published_season` is absent.
+    """
     if not _SEASON_CONFIG_PATH.exists():
         st.error(
             f"Season config not found: {_SEASON_CONFIG_PATH}. "
@@ -68,7 +74,8 @@ def _get_data_path() -> Path:
         st.stop()
 
     with open(_SEASON_CONFIG_PATH) as f:
-        season = yaml.safe_load(f)["season"]
+        config = yaml.safe_load(f)
+    season = config.get("published_season") or config["season"]
 
     return _REPO_ROOT / "data" / season / "dashboard" / "aggregates.json"
 

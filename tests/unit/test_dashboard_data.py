@@ -9,6 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from app.utils import data
 from app.utils.data import (
     enrich_with_metadata,
     filter_by_threshold,
@@ -334,3 +335,27 @@ class TestEnrichWithMetadata:
         """Row count is unchanged after enrichment (left join)."""
         result = enrich_with_metadata(sample_player_df, sample_metadata)
         assert len(result) == len(sample_player_df)
+
+
+class TestGetDataPath:
+    """Tests for published-season resolution in _get_data_path."""
+
+    def test_serves_published_season(self, tmp_path, monkeypatch) -> None:
+        """Dashboard path should come from published_season, not the active season."""
+        cfg = tmp_path / "season.yaml"
+        cfg.write_text('season: "2025-26"\npublished_season: "2024-25"\n')
+        monkeypatch.setattr(data, "_SEASON_CONFIG_PATH", cfg)
+
+        path = data._get_data_path()
+
+        assert path == data._REPO_ROOT / "data" / "2024-25" / "dashboard" / "aggregates.json"
+
+    def test_falls_back_to_active_season(self, tmp_path, monkeypatch) -> None:
+        """Without published_season, the active season keeps working (pre-hotfix behavior)."""
+        cfg = tmp_path / "season.yaml"
+        cfg.write_text('season: "2025-26"\n')
+        monkeypatch.setattr(data, "_SEASON_CONFIG_PATH", cfg)
+
+        path = data._get_data_path()
+
+        assert path == data._REPO_ROOT / "data" / "2025-26" / "dashboard" / "aggregates.json"

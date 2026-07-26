@@ -1,6 +1,7 @@
 """Tests for pipeline/results.py sentiment frame assembly."""
 
 import json
+import logging
 from pathlib import Path
 
 import polars as pl
@@ -154,6 +155,77 @@ class TestBuildSentimentDataframe:
         assert df["comment_id"].to_list() == ["abc123"]
         assert len(failed) == 1
         assert failed[0]["custom_id"] == "def456"
+
+    def test_list_valued_p_normalizes_to_null_player(
+        self, tmp_path, filtered_comments_file
+    ):
+        """Verify a list-valued p row assembles with a null sentiment_player (#71).
+
+        The schema equality also pins the explicit row projection: the
+        p_raw signal from parse_response must never reach the frame.
+        """
+        # Arrange
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [
+                _succeeded(
+                    "abc123", '{"s": "neg", "c": 0.85, "p": ["Julian", "Keldon"]}'
+                )
+            ],
+        )
+
+        # Act
+        df, failed = build_sentiment_dataframe(directory, filtered_comments_file)
+
+        # Assert
+        assert df.height == 1
+        row = df.to_dicts()[0]
+        assert row["sentiment"] == "neg"
+        assert row["sentiment_player"] is None
+        assert df.schema == SENTIMENT_SCHEMA
+        assert failed == []
+
+    def test_list_valued_p_normalization_logged(
+        self, tmp_path, filtered_comments_file, caplog
+    ):
+        """Verify each normalization warns with custom_id and a count is logged.
+
+        The WARNING lines are the observability channel for #71 (and the
+        raw material for the #62 item-4 record), so their presence is
+        pinned, not just the normalized values.
+        """
+        # Arrange
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [
+                _succeeded(
+                    "abc123", '{"s": "neg", "c": 0.85, "p": ["Julian", "Keldon"]}'
+                ),
+                _succeeded("def456", '{"s": "pos", "c": 0.9, "p": ["Chet Holmgren"]}'),
+            ],
+        )
+
+        # Act
+        with caplog.at_level(logging.WARNING, logger="pipeline.results"):
+            build_sentiment_dataframe(directory, filtered_comments_file)
+
+        # Assert
+        warnings = [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+        ]
+        assert any(
+            "abc123" in message and "['Julian', 'Keldon']" in message
+            for message in warnings
+        )
+        assert any(
+            "def456" in message and "'Chet Holmgren'" in message
+            for message in warnings
+        )
+        assert any("Normalized 2 list-valued p field(s)" in m for m in warnings)
 
     def test_missing_results_files_raise_file_not_found(
         self, tmp_path, filtered_comments_file

@@ -1,6 +1,7 @@
 """Tests for pipeline.batch module."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,7 @@ from pipeline.batch import (
     get_missing_results,
     get_pending_batches,
     get_retryable_batches,
+    get_unsubmitted_request_files,
     init_state,
     is_wholesale_failure,
     load_state,
@@ -138,6 +140,45 @@ class TestParseResponse:
         assert result["s"] == "error"
         assert result["c"] == 0.0
         assert result["p"] is None
+
+    @pytest.mark.parametrize(
+        "raw_response,expected_p,expected_p_raw",
+        [
+            (
+                '{"s": "neg", "c": 0.85, "p": ["Keldon Johnson"]}',
+                "Keldon Johnson",
+                ["Keldon Johnson"],
+            ),
+            (
+                '{"s": "neg", "c": 0.85, "p": ["Julian", "Keldon"]}',
+                None,
+                ["Julian", "Keldon"],
+            ),
+            ('{"s": "neu", "c": 0.5, "p": []}', None, []),
+            ('{"s": "neg", "c": 0.85, "p": [42]}', None, [42]),
+        ],
+    )
+    def test_list_valued_p_normalized(
+        self,
+        raw_response: str,
+        expected_p: str | None,
+        expected_p_raw: list,
+    ):
+        """Verify list-valued p unwraps singleton strings, nulls the rest (#71).
+
+        Every list shape must set p_raw so the caller can log and count
+        the normalization — including unwrapped singletons.
+        """
+        result = parse_response(raw_response)
+
+        assert result["p"] == expected_p
+        assert result["p_raw"] == expected_p_raw
+
+    def test_non_list_p_has_no_p_raw(self):
+        """Verify a normal string p leaves the success dict unmarked."""
+        result = parse_response('{"s": "pos", "c": 0.9, "p": "LeBron James"}')
+
+        assert result == {"s": "pos", "c": 0.9, "p": "LeBron James"}
 
 
 class TestCalculateCost:
@@ -496,6 +537,66 @@ class TestGetMissingResults:
         missing = get_missing_results(state)
 
         assert [b["batch_num"] for b in missing] == [1]
+
+
+def _make_requests_dir(tmp_path: Path, names: list[str]) -> Path:
+    """Create a requests dir containing empty request files."""
+    requests_dir = tmp_path / "requests"
+    requests_dir.mkdir()
+    for name in names:
+        (requests_dir / name).touch()
+    return requests_dir
+
+
+def _state_with_request_files(names: list[str]) -> dict:
+    """Build a state whose batch entries cover the given request files."""
+    state = init_state()
+    state["batches"] = [{"request_file": name} for name in names]
+    return state
+
+
+class TestGetUnsubmittedRequestFiles:
+    """Tests for get_unsubmitted_request_files function."""
+
+    def test_returns_files_missing_from_state(self, tmp_path: Path):
+        """Verify request files with no state entry are returned sorted."""
+        requests_dir = _make_requests_dir(
+            tmp_path, ["batch_003.jsonl", "batch_001.jsonl", "batch_002.jsonl"]
+        )
+        state = _state_with_request_files(["batch_002.jsonl"])
+
+        unsubmitted = get_unsubmitted_request_files(state, requests_dir)
+
+        assert unsubmitted == ["batch_001.jsonl", "batch_003.jsonl"]
+
+    def test_empty_when_state_covers_disk(self, tmp_path: Path):
+        """Verify no files are returned when every request file is in state."""
+        names = ["batch_001.jsonl", "batch_002.jsonl"]
+        requests_dir = _make_requests_dir(tmp_path, names)
+        state = _state_with_request_files(names)
+
+        assert get_unsubmitted_request_files(state, requests_dir) == []
+
+    def test_empty_when_requests_dir_missing(self, tmp_path: Path):
+        """Verify a nonexistent requests dir yields no unsubmitted files."""
+        state = _state_with_request_files(["batch_001.jsonl"])
+
+        missing_dir = tmp_path / "does_not_exist"
+
+        assert get_unsubmitted_request_files(state, missing_dir) == []
+
+    def test_empty_when_requests_dir_empty(self, tmp_path: Path):
+        """Verify an empty requests dir yields no unsubmitted files."""
+        requests_dir = _make_requests_dir(tmp_path, [])
+
+        assert get_unsubmitted_request_files(init_state(), requests_dir) == []
+
+    def test_extra_state_entry_not_on_disk_is_ignored(self, tmp_path: Path):
+        """Verify state entries without a matching file don't affect the result."""
+        requests_dir = _make_requests_dir(tmp_path, ["batch_001.jsonl"])
+        state = _state_with_request_files(["batch_001.jsonl", "batch_099.jsonl"])
+
+        assert get_unsubmitted_request_files(state, requests_dir) == []
 
 
 class TestIsWholesaleFailure:

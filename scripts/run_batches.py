@@ -35,6 +35,7 @@ from pipeline.batch import (
     get_exhausted_batches,
     get_pending_batches,
     get_retryable_batches,
+    get_unsubmitted_request_files,
     load_state,
 )
 from utils.paths import get_batches_dir
@@ -138,8 +139,7 @@ def run_loop(
 
         pending = get_pending_batches(state)
         retryable = get_retryable_batches(state, max_retries)
-        submitted_files = {b.get("request_file") for b in state.get("batches", [])}
-        all_submitted = all(f.name in submitted_files for f in batch_files)
+        all_submitted = not get_unsubmitted_request_files(state, requests_dir)
 
         if not pending:
             if all_submitted and not retryable:

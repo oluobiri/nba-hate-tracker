@@ -73,6 +73,9 @@ def parse_response(text: str) -> dict:
 
     Returns:
         Success: {"s": "pos|neg|neu", "c": float, "p": str|None}
+        A rare list-valued "p" (#71) is normalized — a single-string list
+        unwraps, anything else becomes None — and the original list is
+        preserved under "p_raw" so callers can log the occurrence.
         Error: {"s": "error", "c": 0.0, "p": None, "raw": str}
     """
     if not text or not text.strip():
@@ -109,11 +112,25 @@ def parse_response(text: str) -> dict:
         if sentiment not in ("pos", "neg", "neu"):
             return {"s": "error", "c": 0.0, "p": None, "raw": text}
 
-        return {
+        parsed = {
             "s": result["s"],
             "c": float(result.get("c", 0.0)),
             "p": result.get("p"),
         }
+
+        # Normalize rare list-valued player field (#71): unwrap a
+        # single-string list, drop anything else; keep the original
+        # under p_raw so callers can log the occurrence.
+        if isinstance(parsed["p"], list):
+            raw_list = parsed["p"]
+            parsed["p_raw"] = raw_list
+            parsed["p"] = (
+                raw_list[0]
+                if len(raw_list) == 1 and isinstance(raw_list[0], str)
+                else None
+            )
+
+        return parsed
     except (json.JSONDecodeError, ValueError, TypeError):
         return {"s": "error", "c": 0.0, "p": None, "raw": text}
 
@@ -302,6 +319,31 @@ def get_missing_results(state: dict) -> list[dict]:
         if not b.get("results_downloaded", False)
         and not (b.get("failed", False) and b.get("status") != "ended")
     ]
+
+
+def get_unsubmitted_request_files(state: dict, requests_dir: Path) -> list[str]:
+    """
+    Get request files on disk that have no corresponding state entry.
+
+    This reconciles state against the requests directory — the ground
+    truth of the run's population (#71). Mid-run, state only knows about
+    batches submitted so far, so the parquet build must not proceed while
+    any request file is still unsubmitted. Submission-failure entries
+    carry request_file too, so they correctly count as submitted.
+
+    Args:
+        state: Current state dict.
+        requests_dir: Directory containing batch_NNN.jsonl request files.
+
+    Returns:
+        Sorted request filenames with no state entry. A missing or empty
+        requests directory yields an empty list (the gate falls through
+        to the state-based checks).
+    """
+    submitted = {b.get("request_file") for b in state.get("batches", [])}
+    return sorted(
+        f.name for f in requests_dir.glob("batch_*.jsonl") if f.name not in submitted
+    )
 
 
 def is_wholesale_failure(batch: dict) -> bool:

@@ -53,6 +53,7 @@ def build_sentiment_dataframe(
 
     all_results = []
     failed_requests = []
+    normalized_count = 0
 
     for results_file in results_files:
         with open(results_file) as f:
@@ -68,6 +69,12 @@ def build_sentiment_dataframe(
 
                 if result["result_type"] == "succeeded":
                     parsed = parse_response(result["content"])
+                    if "p_raw" in parsed:
+                        normalized_count += 1
+                        logger.warning(
+                            f"Normalized list-valued p {parsed['p_raw']!r} -> "
+                            f"{parsed['p']!r} for {result['custom_id']}"
+                        )
                     all_results.append(
                         {
                             "id": result["custom_id"],
@@ -82,6 +89,8 @@ def build_sentiment_dataframe(
                     failed_requests.append(result)
 
     logger.info(f"Loaded {len(all_results)} successful results")
+    if normalized_count:
+        logger.warning(f"Normalized {normalized_count} list-valued p field(s)")
     if failed_requests:
         logger.warning(f"Found {len(failed_requests)} failed requests")
 

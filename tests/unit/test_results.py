@@ -48,11 +48,13 @@ def filtered_comments_file(
     Two filtered comments as JSONL (ids abc123 and def456).
 
     Composes the conftest raw-comment fixtures with mentioned_players,
-    the field the filter stage appends before classification.
+    the field the filter stage appends before classification. The values
+    are deliberately wrong (pre-#54 stale-provenance simulation): assembly
+    must ignore them and re-derive from body.
     """
     comments = [
-        {**valid_nba_comment, "mentioned_players": ["LeBron James"]},
-        {**valid_team_subreddit_comment, "mentioned_players": ["Jayson Tatum"]},
+        {**valid_nba_comment, "mentioned_players": ["Michael Jordan"]},
+        {**valid_team_subreddit_comment, "mentioned_players": ["Stale Player"]},
     ]
     path = tmp_path / "filtered.jsonl"
     path.write_text("\n".join(json.dumps(comment) for comment in comments) + "\n")
@@ -118,6 +120,99 @@ class TestBuildSentimentDataframe:
         link_ids = dict(zip(df["comment_id"].to_list(), df["link_id"].to_list()))
         assert link_ids == {"abc123": "t3_post123", "def456": "t3_post456"}
         assert df["link_id"].null_count() == 0
+
+    def test_mentions_rederived_from_body_not_ndjson(
+        self, responses_dir, filtered_comments_file
+    ):
+        """Verify mentioned_players comes from body, not the NDJSON copy (#54).
+
+        The fixture NDJSON carries deliberately wrong mentions; the
+        assembled values must reflect the assembly-time season config.
+        Real-config dependent: the fixture bodies must keep matching
+        "LeBron James" / "Jayson Tatum" under the active players.yaml.
+        """
+        # Act
+        df, _ = build_sentiment_dataframe(responses_dir, filtered_comments_file)
+
+        # Assert
+        mentions = dict(
+            zip(df["comment_id"].to_list(), df["mentioned_players"].to_list())
+        )
+        assert mentions == {
+            "abc123": ["LeBron James"],
+            "def456": ["Jayson Tatum"],
+        }
+
+    def test_zero_mention_rows_kept_with_empty_list(
+        self, tmp_path, valid_nba_comment, valid_team_subreddit_comment,
+        valid_sentiment_responses,
+    ):
+        """Verify rows with no re-derived mentions stay in the frame (#54).
+
+        Population is frozen at filter time ($-backed classifications);
+        a row whose only filter-time match was contamination re-derives
+        to an empty list, never drops.
+        """
+        # Arrange
+        comments = [
+            {**valid_nba_comment, "mentioned_players": ["Michael Jordan"]},
+            {**valid_team_subreddit_comment, "mentioned_players": ["Stale Player"]},
+            {
+                **valid_nba_comment,
+                "id": "ghi789",
+                "body": "the refs decided this game",
+                "mentioned_players": ["LeBron James"],  # contamination-only match
+            },
+        ]
+        filtered_path = tmp_path / "filtered.jsonl"
+        filtered_path.write_text(
+            "\n".join(json.dumps(comment) for comment in comments) + "\n"
+        )
+        raw_responses = [raw for raw, _ in valid_sentiment_responses]
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [
+                _succeeded("abc123", raw_responses[0]),
+                _succeeded("def456", raw_responses[2]),
+                _succeeded("ghi789", raw_responses[2]),
+            ],
+        )
+
+        # Act
+        df, _ = build_sentiment_dataframe(directory, filtered_path)
+
+        # Assert
+        assert df.height == 3
+        row = df.filter(df["comment_id"] == "ghi789").to_dicts()[0]
+        assert row["mentioned_players"] == []
+
+    def test_null_body_yields_null_mentions(
+        self, tmp_path, valid_nba_comment, valid_sentiment_responses
+    ):
+        """Verify a null body maps to null mentions, not a crash.
+
+        Polars map_elements skips nulls. Filtered data cannot contain
+        null bodies (the filter stage requires a valid body); this test
+        exists so a Polars behavior change is noticed, not to bless
+        null bodies.
+        """
+        # Arrange
+        comments = [{**valid_nba_comment, "body": None, "mentioned_players": []}]
+        filtered_path = tmp_path / "filtered.jsonl"
+        filtered_path.write_text(
+            "\n".join(json.dumps(comment) for comment in comments) + "\n"
+        )
+        raw_responses = [raw for raw, _ in valid_sentiment_responses]
+        directory = tmp_path / "responses"
+        _write_results_file(directory, [_succeeded("abc123", raw_responses[0])])
+
+        # Act
+        df, _ = build_sentiment_dataframe(directory, filtered_path)
+
+        # Assert
+        assert df.height == 1
+        assert df["mentioned_players"].to_list() == [None]
 
     def test_empty_results_yield_empty_conformant_frame(
         self, tmp_path, filtered_comments_file

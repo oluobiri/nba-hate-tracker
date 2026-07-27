@@ -19,6 +19,7 @@ from pipeline.schemas import (
 )
 from utils.player_config import (
     build_alias_to_player_map,
+    load_player_config_version,
     load_player_metadata,
     resolve_sentiment_player,
 )
@@ -159,6 +160,24 @@ def aggregate_sentiment(input_path: Path) -> dict:
     logger.info(f"Loading sentiment data from {input_path}")
     df = pl.read_parquet(input_path)
     validate_schema(df, SENTIMENT_SCHEMA, str(input_path))
+
+    # Config-lineage check (#54): mentioned_players in the parquet reflects
+    # the players.yaml it was assembled under; stale attribution is
+    # legitimate to read, just not silently.
+    stamped = pl.read_parquet_metadata(input_path).get("players_config_version")
+    active = load_player_config_version()
+    if stamped is None:
+        logger.warning(
+            f"{input_path} carries no players_config_version stamp (written "
+            f"before #54) - config lineage cannot be verified"
+        )
+    elif stamped != active:
+        logger.warning(
+            f"{input_path}: players_config_version drift - parquet assembled "
+            f"with config {stamped!r} but active config is {active!r}; "
+            f"mentioned_players may not reflect the current players.yaml"
+        )
+
     total_rows = len(df)
     logger.info(f"Loaded {total_rows:,} rows")
 

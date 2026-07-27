@@ -47,7 +47,9 @@ from pipeline.batch import (
     summarize_actual_usage,
 )
 from pipeline.results import build_sentiment_dataframe
+from pipeline.schemas import SCHEMA_VERSION
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
+from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
@@ -388,9 +390,16 @@ def main() -> None:
             responses_dir, filtered_path
         )
 
-        # Save parquet
+        # Save parquet with config-lineage stamp (#54): mentioned_players
+        # was re-derived under this config version at assembly
         processed_dir.mkdir(parents=True, exist_ok=True)
-        sentiment_df.write_parquet(output_path)
+        sentiment_df.write_parquet(
+            output_path,
+            metadata={
+                "players_config_version": load_player_config_version(),
+                "schema_version": str(SCHEMA_VERSION),
+            },
+        )
         logger.info(f"Wrote {len(sentiment_df)} rows to {output_path}")
 
         # Save failed requests

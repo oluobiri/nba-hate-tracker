@@ -5,6 +5,8 @@ Tests cover the pure functions resolve_player, extract_team_from_flair,
 and compute_metrics from the aggregation pipeline.
 """
 
+import logging
+
 import polars as pl
 import pytest
 
@@ -18,6 +20,7 @@ from pipeline.aggregation import (
     resolve_player,
 )
 from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS, SCHEMA_VERSION, SENTIMENT_SCHEMA
+from utils.player_config import load_player_config_version
 
 
 class TestResolvePlayer:
@@ -211,11 +214,15 @@ class TestComputeMetrics:
         assert result["player"].to_list() == ["A", "B", "C"]
 
 
-def _make_test_parquet(tmp_path, rows):
-    """Create a SENTIMENT_SCHEMA-conforming parquet for testing aggregate_sentiment."""
+def _make_test_parquet(tmp_path, rows, metadata=None):
+    """Create a SENTIMENT_SCHEMA-conforming parquet for testing aggregate_sentiment.
+
+    metadata, when given, is written as file-level key-value metadata
+    (the config-lineage stamp from scripts/collect_results.py).
+    """
     df = pl.DataFrame(rows, schema=SENTIMENT_SCHEMA)
     path = tmp_path / "test_sentiment.parquet"
-    df.write_parquet(path)
+    df.write_parquet(path, metadata=metadata)
     return path
 
 
@@ -300,6 +307,88 @@ class TestAggregatePlayerMetadata:
         # Only LeBron attributed — Giannis should not be in metadata
         assert "LeBron James" in meta
         assert "Giannis Antetokounmpo" not in meta
+
+
+class TestConfigVersionLineage:
+    """Tests for the players_config_version drift warning (#54)."""
+
+    ROWS = {
+        "comment_id": ["c1", "c2"],
+        "body": ["LeBron is great", "LeBron is washed"],
+        "author": ["u1", "u2"],
+        "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+        "author_flair_css_class": ["lakers", "celtics"],
+        "created_utc": [1704067200, 1704153600],
+        "score": [10, 5],
+        "link_id": ["t3_post123", "t3_post456"],
+        "mentioned_players": [["LeBron James"], ["LeBron James"]],
+        "sentiment": ["pos", "neg"],
+        "confidence": [0.9, 0.8],
+        "sentiment_player": ["LeBron James", "LeBron James"],
+        "input_tokens": [100, 100],
+        "output_tokens": [20, 20],
+    }
+
+    def _lineage_warnings(self, caplog) -> list[str]:
+        """Extract WARNING messages about the config-version stamp."""
+        return [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and "players_config_version" in record.message
+        ]
+
+    def test_matching_stamp_emits_no_lineage_warning(self, tmp_path, caplog):
+        """A stamp matching the on-disk config version stays silent."""
+        # Arrange
+        path = _make_test_parquet(
+            tmp_path,
+            self.ROWS,
+            metadata={"players_config_version": load_player_config_version()},
+        )
+
+        # Act
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        # Assert
+        assert self._lineage_warnings(caplog) == []
+
+    def test_stamp_drift_warns_naming_both_versions(self, tmp_path, caplog):
+        """A stamp differing from the on-disk config warns, naming both."""
+        # Arrange
+        path = _make_test_parquet(
+            tmp_path, self.ROWS, metadata={"players_config_version": "0.1"}
+        )
+
+        # Act
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        # Assert
+        warnings = self._lineage_warnings(caplog)
+        assert len(warnings) == 1
+        assert "0.1" in warnings[0]
+        assert load_player_config_version() in warnings[0]
+
+    def test_absent_stamp_warns_distinctly(self, tmp_path, caplog):
+        """An unstamped parquet (pre-#54 legacy) warns with its own message.
+
+        Absent is not drift: the message must say lineage cannot be
+        verified, not claim a version mismatch.
+        """
+        # Arrange
+        path = _make_test_parquet(tmp_path, self.ROWS)
+
+        # Act
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        # Assert
+        warnings = self._lineage_warnings(caplog)
+        assert len(warnings) == 1
+        assert "no players_config_version" in warnings[0]
+        assert "drift" not in warnings[0]
 
 
 class TestAggregateTeamConference:

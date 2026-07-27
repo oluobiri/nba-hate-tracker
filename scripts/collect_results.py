@@ -182,7 +182,8 @@ def poll_until_complete(
         max_wait: Maximum wait time in seconds.
 
     Returns:
-        True if all batches completed, False if timeout.
+        True if all batches in state completed (the run may still have
+        unsubmitted request files), False if timeout.
     """
     start_time = time.time()
 
@@ -202,10 +203,10 @@ def poll_until_complete(
             except RuntimeError as e:
                 logger.error(f"Failed to download batch {batch['batch_num']}: {e}")
 
-        # Check if all done
+        # Check if all done (state-scoped: submitted batches only)
         pending = get_pending_batches(state)
         if not pending:
-            logger.info("All batches completed!")
+            logger.info("All submitted batches completed")
             return True
 
         # Check timeout
@@ -301,6 +302,10 @@ def main() -> None:
 
     logger.info(f"Found {batch_count} batch(es) in state")
 
+    # Collect never submits, so the set of request files with state
+    # entries is fixed for this run - compute the reconciliation once.
+    unsubmitted = get_unsubmitted_request_files(state, requests_dir)
+
     # Handle --no-wait mode
     if args.no_wait:
         logger.info("Running in --no-wait mode (single check)")
@@ -323,7 +328,10 @@ def main() -> None:
         pending = get_pending_batches(state)
         if pending:
             logger.info(f"{len(pending)} batch(es) still pending")
-        else:
+        elif not unsubmitted:
+            # With unsubmitted request files, "complete" would be a lie
+            # (#71's state-vs-reality trap); the guard below logs the
+            # cycle's one summary line instead.
             logger.info("All batches completed!")
 
     else:
@@ -337,7 +345,6 @@ def main() -> None:
 
     # Mid-run guard (#71): state only knows about submitted batches; the
     # requests directory is the ground truth of the full population.
-    unsubmitted = get_unsubmitted_request_files(state, requests_dir)
     if unsubmitted:
         total = len(list(requests_dir.glob("batch_*.jsonl")))
         logger.info(

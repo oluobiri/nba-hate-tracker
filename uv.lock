@@ -3,7 +3,8 @@ revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
-    "python_full_version >= '3.12' and python_full_version < '3.14'",
+    "python_full_version == '3.13.*'",
+    "python_full_version == '3.12.*'",
     "python_full_version < '3.12'",
 ]
 
@@ -1655,6 +1656,20 @@ wheels = [
 ]
 
 [[package]]
+name = "nba-api"
+version = "1.11.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0d/f8/761434ce98e39d6bdd1b98611102fdc054920e330a5b5194464cb340adf8/nba_api-1.11.4.tar.gz", hash = "sha256:1dccd70b78f36f64260e1f353c4a02c1644147c4a2a5ce42fbd9f637d70bad3e", size = 177323, upload-time = "2026-02-20T07:02:39.61Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/c2/17c805220de846ea9280f62a003c0cdebddf1de3d387614162891502a3a6/nba_api-1.11.4-py3-none-any.whl", hash = "sha256:f489b2a1d67ee4298f5173775b335d0e43e63455ed157a5612b542094b9f1963", size = 322583, upload-time = "2026-02-20T07:02:36.578Z" },
+]
+
+[[package]]
 name = "nba-hate-tracker"
 version = "0.1.0"
 source = { virtual = "." }
@@ -1665,6 +1680,7 @@ dependencies = [
     { name = "duckdb" },
     { name = "jupyter" },
     { name = "matplotlib" },
+    { name = "nba-api" },
     { name = "pandas" },
     { name = "plotly" },
     { name = "polars" },
@@ -1695,6 +1711,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.5.4" },
     { name = "jupyter" },
     { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "nba-api", specifier = ">=1.11.4" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "plotly", specifier = ">=6.5.2" },
     { name = "polars" },

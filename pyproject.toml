@@ -22,6 +22,7 @@ dependencies = [
     "plotly>=6.5.2",
     "pandas>=2.3.3",
     "duckdb>=1.5.4",
+    "nba-api>=1.11.4",
 ]
 
 [tool.ruff]

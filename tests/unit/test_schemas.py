@@ -1,9 +1,16 @@
 """Tests for pipeline/schemas.py schema validation."""
 
+from datetime import date
+
 import polars as pl
 import pytest
 
-from pipeline.schemas import COMMENT_INPUT_SCHEMA, SENTIMENT_SCHEMA, validate_schema
+from pipeline.schemas import (
+    COMMENT_INPUT_SCHEMA,
+    ROSTERS_SCHEMA,
+    SENTIMENT_SCHEMA,
+    validate_schema,
+)
 
 
 @pytest.fixture
@@ -42,6 +49,47 @@ class TestLinkIdContract:
     def test_comment_input_schema_reads_link_id(self):
         """Verify the filtered-NDJSON projection carries link_id."""
         assert COMMENT_INPUT_SCHEMA["link_id"] == pl.String
+
+
+@pytest.fixture
+def roster_frame() -> pl.DataFrame:
+    """One-row DataFrame conforming exactly to ROSTERS_SCHEMA."""
+    return pl.DataFrame(
+        [
+            {
+                "player_id": 2544,
+                "player_name": "LeBron James",
+                "team_name": "Los Angeles Lakers",
+                "team_abbr": "LAL",
+                "jersey_number": "23",
+                "position": "F",
+                "height": "6-9",
+                "weight": "250",
+                "age": 40,
+                "experience": "21",
+                "birth_date": date(1984, 12, 30),
+                "school": "St. Vincent-St. Mary HS (OH)",
+            }
+        ],
+        schema=ROSTERS_SCHEMA,
+    )
+
+
+class TestRostersContract:
+    """Contract guards for the roster snapshot reference asset."""
+
+    def test_conforming_frame_passes(self, roster_frame):
+        """Verify a frame matching ROSTERS_SCHEMA validates without raising."""
+        validate_schema(roster_frame, ROSTERS_SCHEMA, "rosters.parquet")
+
+    def test_pins_height_and_weight(self):
+        """Verify the bio columns are in the contract (the re-snapshot's point)."""
+        assert ROSTERS_SCHEMA["height"] == pl.String
+        assert ROSTERS_SCHEMA["weight"] == pl.String
+
+    def test_birth_date_is_date_typed(self):
+        """Verify birth_date lands as a real Date, not the endpoint's raw string."""
+        assert ROSTERS_SCHEMA["birth_date"] == pl.Date
 
 
 class TestValidateSchema:

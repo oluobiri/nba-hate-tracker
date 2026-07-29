@@ -1,5 +1,5 @@
 """
-Schema contracts for produced data files.
+Schema contracts for produced data files and cached reference assets.
 
 Single source of truth for column names and dtypes of every file the
 pipeline produces. Data dictionary first, enforcement second:
@@ -10,6 +10,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - The four aggregate-view schemas describe the tabular sections of
   aggregates.json in their parquet-ready shape; they are enforced in
   aggregate_sentiment() before the views are returned for writing.
+- ROSTERS_SCHEMA describes the season roster snapshot — a reference
+  asset (pipeline ingredient, not a published output) enforced at the
+  fetch write boundary (scripts/fetch_rosters.py).
 
 This module must not import from other pipeline modules (it is imported
 by them).
@@ -85,6 +88,31 @@ RESULTS_SCHEMA = pl.Schema(
     {
         "id": SENTIMENT_SCHEMA["comment_id"],
         **{col: SENTIMENT_SCHEMA[col] for col in _RESULTS_SIDE_COLUMNS},
+    }
+)
+
+# --- Reference assets (enforced at the fetch write site) --------------------
+
+# data/<season>/reference/rosters.parquet — one row per rostered player, the
+# season roster snapshot from stats.nba.com (pipeline/nba_stats.py). A faithful
+# capture of the endpoint: columns the Player-dimension build ignores
+# (player_name, team_name/team_abbr, age) stay here deliberately — the
+# dimension, not the snapshot, decides what ships. Roster team is
+# point-in-time (season-end); see docs/data-model.md §3.
+ROSTERS_SCHEMA = pl.Schema(
+    {
+        "player_id": pl.Int64,
+        "player_name": pl.String,
+        "team_name": pl.String,
+        "team_abbr": pl.String,
+        "jersey_number": pl.String,  # string on purpose: "00" is a real number
+        "position": pl.String,
+        "height": pl.String,  # feet-inches format ("6-8"); bio-line only
+        "weight": pl.String,  # pounds-as-string; bio-line only
+        "age": pl.Int64,  # frozen at fetch; consumers derive age from birth_date
+        "experience": pl.String,  # "R" for rookies, else years as string
+        "birth_date": pl.Date,
+        "school": pl.String,
     }
 )
 

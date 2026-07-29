@@ -22,6 +22,7 @@ from utils.constants import (
     BATCHES_DATA_SUBDIR,
     PROCESSED_DATA_SUBDIR,
     DASHBOARD_DATA_SUBDIR,
+    REFERENCE_DATA_SUBDIR,
 )
 from utils.season_config import get_active_season
 
@@ -95,3 +96,13 @@ def get_dashboard_dir() -> Path:
         Path to dashboard directory (e.g., data/2024-25/dashboard/).
     """
     return get_data_dir() / DASHBOARD_DATA_SUBDIR
+
+
+def get_reference_dir() -> Path:
+    """
+    Get reference directory for cached external snapshots (e.g. rosters).
+
+    Returns:
+        Path to reference directory (e.g., data/2024-25/reference/).
+    """
+    return get_data_dir() / REFERENCE_DATA_SUBDIR

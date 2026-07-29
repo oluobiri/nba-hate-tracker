@@ -36,6 +36,29 @@
 | `docs` | README, strategy docs |
 | `deps` | Dependency changes |
 
+## Commit Cadence
+
+- **One logical change per commit** — a reviewer should be able to read the
+  branch commit-by-commit, each with its own what/why body.
+- **Commit at behavior boundaries, not file boundaries:** a red-green TDD
+  cycle is one commit — the test and the implementation it pins land
+  together. Never separate tests from the code they cover.
+- **Every commit passes the gate alone.** The pre-commit hook runs ruff +
+  pytest against the staged state, so this is enforced — don't fight it
+  with `--no-verify`.
+- **Order commits dependency-first:** contract/loader changes, then
+  consumers, then docs.
+
+## PR Scope
+
+- One ticket, one branch, one PR. A PR spanning multiple pipeline stages
+  with unrelated changes means the ticket was too big — split the ticket.
+- A sub-deliverable that is independently mergeable and useful (e.g. a new
+  loader + its wiring) may go as its own preceding PR.
+- Merge strategy: squash is the default (main stays one-commit-per-ticket;
+  intra-PR commits serve review). Use rebase-merge only when the commit
+  structure itself is worth preserving on main.
+
 ## Branch Naming
 
 ```

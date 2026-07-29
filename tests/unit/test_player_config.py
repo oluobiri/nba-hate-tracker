@@ -4,9 +4,15 @@ Tests for player configuration loading.
 Tests cover loading from YAML, alias map building, and caching behavior.
 """
 
+import re
+
+import pytest
+import yaml
+
 from utils.player_config import (
     build_alias_to_player_map,
     load_player_config,
+    load_player_config_version,
     load_player_metadata,
     resolve_sentiment_player,
 )
@@ -206,3 +212,66 @@ class TestLoadPlayerMetadata:
         players, _ = load_player_config()
         metadata = load_player_metadata()
         assert len(metadata) == len(players)
+
+
+class TestLoadPlayerConfigVersion:
+    """Tests for load_player_config_version function."""
+
+    @pytest.fixture
+    def cold_version_cache(self):
+        """Clear the version loader's cache before and after the test.
+
+        The missing-version test monkeypatches the config path; a warm
+        cache would return the real config's version and never consult
+        the patched path.
+        """
+        load_player_config_version.cache_clear()
+        yield
+        load_player_config_version.cache_clear()
+
+    def test_returns_version_string(self):
+        """Version is a MAJOR.MINOR string (format pinned, not the value —
+        the active-season version bumps on every roster/alias change)."""
+        version = load_player_config_version()
+        assert re.fullmatch(r"\d+\.\d+", version)
+
+    def test_caching_returns_same_object(self):
+        """Multiple calls return the same cached object."""
+        result1 = load_player_config_version()
+        result2 = load_player_config_version()
+        assert result1 is result2
+
+    def test_missing_version_raises(self, tmp_path, monkeypatch, cold_version_cache):
+        """A players.yaml without a version key raises ValueError with context."""
+        config_path = tmp_path / "players.yaml"
+        config_path.write_text(yaml.safe_dump({"players": {}}))
+        monkeypatch.setattr(
+            "utils.player_config._get_players_path", lambda: config_path
+        )
+
+        with pytest.raises(ValueError, match="version"):
+            load_player_config_version()
+
+    def test_unquoted_version_raises(self, tmp_path, monkeypatch, cold_version_cache):
+        """An unquoted YAML version (parsed as float) raises ValueError.
+
+        Floats silently lose trailing zeros (4.10 -> "4.1"), which would
+        mis-stamp lineage; the loader demands a quoted string instead.
+        """
+        config_path = tmp_path / "players.yaml"
+        config_path.write_text("version: 4.10\nplayers: {}\n")
+        monkeypatch.setattr(
+            "utils.player_config._get_players_path", lambda: config_path
+        )
+
+        with pytest.raises(ValueError, match="quoted string"):
+            load_player_config_version()
+
+    def test_honors_season_override(self, season_override):
+        """Assembly under --season resolves the override season's version.
+
+        Pins the archived 2024-25 config's version exactly — frozen
+        config, safe to pin (unlike the active season's).
+        """
+        season_override("2024-25")
+        assert load_player_config_version() == "2.0"

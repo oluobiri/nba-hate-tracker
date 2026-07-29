@@ -1,8 +1,9 @@
 """
 Player configuration loading from YAML.
 
-This module provides cached access to player aliases and short alias lists
-from config/{season}/players.yaml for player mention detection.
+This module provides cached access to player aliases, short alias lists,
+player metadata, and the config version string from
+config/{season}/players.yaml.
 
 Note: Config is cached per process invocation via @lru_cache. One season
 per process — the season is resolved through get_active_season() at first
@@ -117,6 +118,43 @@ def resolve_sentiment_player(
     if not name:
         return None
     return alias_map.get(_normalize_player_name(name))
+
+
+@lru_cache(maxsize=1)
+def load_player_config_version() -> str:
+    """
+    Load the config version string from config/{season}/players.yaml.
+
+    The version (MAJOR = roster add/drop, MINOR = alias-only change) is
+    lineage metadata: it is stamped into sentiment.parquet at assembly
+    and checked against the on-disk config at aggregation read time.
+
+    Returns:
+        Version string, e.g. "4.2".
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist.
+        yaml.YAMLError: If config file is invalid YAML.
+        ValueError: If the config has no 'version' key, or the value is
+            not a quoted string (an unquoted version parses as a YAML
+            float and would silently mis-stamp, e.g. 4.10 -> "4.1").
+    """
+    path = _get_players_path()
+    with open(path) as f:
+        config = yaml.safe_load(f)
+
+    version = config.get("version")
+    if version is None:
+        raise ValueError(
+            f"players.yaml for season {get_active_season()!r} has no "
+            f"'version' key: {path}"
+        )
+    if not isinstance(version, str):
+        raise ValueError(
+            f"players.yaml version must be a quoted string, got "
+            f"{version!r} ({type(version).__name__}) in {path}"
+        )
+    return version
 
 
 @lru_cache(maxsize=1)

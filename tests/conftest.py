@@ -529,6 +529,7 @@ def season_override() -> Callable[[str], None]:
     from utils.player_config import (
         build_alias_to_player_map,
         load_player_config,
+        load_player_config_version,
         load_player_metadata,
     )
     from utils.season_config import clear_season_override, set_season_override
@@ -538,6 +539,7 @@ def season_override() -> Callable[[str], None]:
             load_player_config,
             build_alias_to_player_map,
             load_player_metadata,
+            load_player_config_version,
         ):
             fn.cache_clear()
         # cache_clear() is a side door the override's warm-cache guard

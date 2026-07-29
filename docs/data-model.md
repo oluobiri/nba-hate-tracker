@@ -2,7 +2,7 @@
 
 **Purpose:** The shared conceptual vocabulary for V2 dashboard design. A new dashboard view is a question asked against this model; having the model written down is what lets you tell at a glance whether a question is **cheap** (already in an aggregate), **needs a join** (a dimension lookup, no new pipeline output), or **expensive** (a new aggregate view the pipeline must produce).
 
-**How to read it:** The core model below — the ER diagram, the entity key, and the view-lineage table — is the authoritative *"is"*: what the pipeline produces today (plus the one dimension #39 materializes). The single fenced section at the very end, **Forward look (v3)**, is *"will be"* — direction, not built. Nothing in that section touches the core diagram or the present-now key.
+**How to read it:** The core model below — the ER diagram, the entity key, and the view-lineage table — is the authoritative *"is"*: what the pipeline produces today (plus the planned standalone Player dimension file). The single fenced section at the very end, **Forward look (v3)**, is *"will be"* — direction, not built. Nothing in that section touches the core diagram or the present-now key.
 
 `pipeline/schemas.py` is the source of truth for column *structure* (names + dtypes). This doc is the source of truth for the *relationships* between those structures.
 
@@ -52,7 +52,7 @@ The four aggregate views (`player_overall`, `player_temporal`, `player_team`, `t
 | `body`, `author`, `created_utc`, `score` | event attributes |
 | `sentiment` | categorical attribute (junk-dimension candidate) — you group by it; the `neg_count` / `pos_count` / `neu_count` rollups derived from it are the measures |
 | `confidence` | numeric measure |
-| `mentioned_players[]` | → **Player**, M:N — raw substring matches, *pre-resolution* |
+| `mentioned_players[]` | → **Player**, M:N — substring matches re-derived from `body` at assembly time under the active `players.yaml`, *pre-resolution* |
 | `sentiment_player` | the classifier's single pick — a disambiguation input |
 | `attributed_player` | → **Player**, the *resolved* single FK the aggregate views key on |
 | `author_flair_text` → `fan_team` | → **Team** (fan role), 0-or-1 (flair may not resolve) |
@@ -60,11 +60,18 @@ The four aggregate views (`player_overall`, `player_temporal`, `player_team`, `t
 
 **The player FK is resolved, not raw.** `mentioned_players[]` (M:N) and `sentiment_player` are the *inputs*; `resolve_player()` collapses them to a single `attributed_player` (or null). The fact tables join on `attributed_player`. ~1.57M of ~1.93M classified rows resolve to a player.
 
+**Two provenance layers on the fact.** The fact's attributes split into two classes with opposite change semantics:
+
+- **Population + event/classification fields** — frozen at filter/classification time: `body`, `author`, `created_utc`, `score`, `link_id`, `sentiment`, `confidence`, `sentiment_player`. Re-running assembly never changes them; which comments exist in the fact (the population) is part of this frozen layer.
+- **Config-versioned derivations** — `mentioned_players`, and therefore `attributed_player`: caches of `f(body, players.yaml@version)`, re-derived at every assembly and stamped with the config `version` into the parquet's file metadata. The stamp is checked at aggregation read time (drift → WARNING) — the config `version` field (major = roster, minor = alias) is load-bearing lineage metadata, not documentation.
+
+The distinction matters because the two layers age differently: frozen fields stay correct forever, while a stored derivation is only as current as the config it was derived under — copying it forward through a rebuild silently reintroduces every alias fix made since. `fan_team` = `f(author_flair_text, teams.yaml)` is the **same attribute class** (a config-derived attribute, currently unversioned) — a future team-alias fix is this same problem and gets this same treatment, not a rediscovery.
+
 > `link_id` — decided V2 addition for the v3 bridge; pending, must land before the classify run (see Forward look).
 
 ### `Player` — dimension
 
-**Grain:** one canonical player. Sourced from `config/<season>/players.yaml`; #39 materializes it as `player_metadata.parquet` (today it ships as a nested dict inside `aggregates.json`).
+**Grain:** one canonical player. Sourced from `config/<season>/players.yaml`; today it ships as a nested dict inside `aggregates.json`, with a standalone Player-dimension parquet planned.
 
 | Field | Notes |
 |---|---|
@@ -136,7 +143,7 @@ All four views are **fact tables** (rollups of `ClassifiedComment`); `Player` an
 | `player_team` | Player × `fan_team` | fact → Player, Team(fan) | "Lakers fans about Draymond" |
 | `team_overall` | `fan_team` | fact → Team(fan) | "Which fanbase is saltiest" |
 
-**Needs a join** (no new pipeline output — cheap once #39 materializes the Player dimension): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `Player.roster_team`. Today that means JSON-key gymnastics against `aggregates.json`; #39 turns it into a clean `USING (attributed_player)` join.
+**Needs a join** (no new pipeline output — cheap once the Player dimension is materialized as its own parquet): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `Player.roster_team`. Today that means JSON-key gymnastics against `aggregates.json`; the dimension file turns it into a clean `USING (attributed_player)` join.
 
 **Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
 

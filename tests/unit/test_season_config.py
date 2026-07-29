@@ -14,6 +14,7 @@ from utils.paths import get_data_dir
 from utils.player_config import (
     build_alias_to_player_map,
     load_player_config,
+    load_player_config_version,
     load_player_metadata,
 )
 from utils.season_config import (
@@ -31,7 +32,12 @@ def _clear_player_caches() -> None:
     cache_clear() bypasses the override's warm-cache guard, which
     normally subsumes that global via load_player_config().
     """
-    for fn in (load_player_config, build_alias_to_player_map, load_player_metadata):
+    for fn in (
+        load_player_config,
+        build_alias_to_player_map,
+        load_player_metadata,
+        load_player_config_version,
+    ):
         fn.cache_clear()
     pipeline.processors._player_patterns = None
 
@@ -161,12 +167,18 @@ class TestSeasonOverride:
         with pytest.raises(ValueError, match="YYYY-YY"):
             set_season_override("2024-2025")
 
-    def test_raises_if_caches_already_warm(self):
+    @pytest.mark.parametrize(
+        "warming_call",
+        [load_player_config, load_player_config_version],
+        ids=["player_config", "config_version"],
+    )
+    def test_raises_if_caches_already_warm(self, warming_call):
         """Setting the override after config loading fails loud.
 
         A silent cache clear could mask early code having already acted
-        on the wrong season, so the guard raises instead.
+        on the wrong season, so the guard raises instead. Every
+        season-derived cache must trip it.
         """
-        load_player_config()
+        warming_call()
         with pytest.raises(RuntimeError, match="script entry"):
             set_season_override("2024-25")

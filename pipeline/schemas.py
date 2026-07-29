@@ -31,6 +31,8 @@ SENTIMENT_SCHEMA = pl.Schema(
         "created_utc": pl.Int64,  # epoch seconds
         "score": pl.Int64,
         "link_id": pl.String,  # post fullname (t3_...), the v3 comment->game bridge
+        # Re-derived from body at assembly under the active players.yaml
+        # (pipeline/results.py) - NOT projected from the filtered NDJSON
         "mentioned_players": pl.List(pl.String),
         "sentiment": pl.String,  # "pos" | "neg" | "neu" | "error"
         "confidence": pl.Float64,
@@ -41,7 +43,9 @@ SENTIMENT_SCHEMA = pl.Schema(
 )
 
 # --- Construction-side schemas, derived from SENTIMENT_SCHEMA ---------------
-# The joined frame is assembled from two inputs. Deriving their schemas from
+# The joined frame is assembled from two file inputs plus one assembly-derived
+# column: mentioned_players is recomputed from body at assembly time (#54), so
+# neither input schema carries it. Deriving the input schemas from
 # SENTIMENT_SCHEMA means a dtype change happens in exactly one place and the
 # strict boundary check can never drift from construction.
 
@@ -54,7 +58,6 @@ _COMMENT_SIDE_COLUMNS = [
     "created_utc",
     "score",
     "link_id",
-    "mentioned_players",
 ]
 _RESULTS_SIDE_COLUMNS = [
     "sentiment",
@@ -66,7 +69,9 @@ _RESULTS_SIDE_COLUMNS = [
 
 # Filtered-comments NDJSON: comment-side columns. The key column is "id"
 # here because the rename to "comment_id" happens after the join in
-# pipeline/results.py. Doubles as a projection — extra input keys dropped.
+# pipeline/results.py. Doubles as a projection — extra input keys dropped,
+# including the NDJSON's filter-time mentioned_players copy (kept in the
+# filtered file only as a debugging record of what the filter matched).
 COMMENT_INPUT_SCHEMA = pl.Schema(
     {
         ("id" if col == "comment_id" else col): SENTIMENT_SCHEMA[col]

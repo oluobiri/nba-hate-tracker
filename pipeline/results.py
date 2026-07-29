@@ -12,6 +12,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.batch import parse_response
+from pipeline.processors import find_player_mentions
 from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,
     RESULTS_SCHEMA,
@@ -27,6 +28,14 @@ def build_sentiment_dataframe(
 ) -> tuple[pl.DataFrame, list[dict]]:
     """
     Build sentiment DataFrame by joining results with comment metadata.
+
+    mentioned_players is re-derived from body at assembly time under the
+    active (or --season override) season's config (#54) — the filtered
+    NDJSON's filter-time copy is ignored, so alias fixes reach the parquet
+    on any rebuild. Rows whose body no longer matches any tracked player
+    are kept with an empty list: population selection stays frozen at
+    filter time, only the derivation tracks config. Error-sentiment rows
+    get mentions derived too (harmless; aggregation filters them).
 
     Token and cost accounting happens per batch at download time (see
     summarize_actual_usage in pipeline.batch); this function is a pure
@@ -107,6 +116,11 @@ def build_sentiment_dataframe(
     joined_df = (
         comments_df.join(results_df.lazy(), on="id", how="inner")
         .rename({"id": "comment_id"})
+        .with_columns(
+            pl.col("body")
+            .map_elements(find_player_mentions, return_dtype=pl.List(pl.String))
+            .alias("mentioned_players")
+        )
         .select(SENTIMENT_SCHEMA.names())
         .collect()
     )

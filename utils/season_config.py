@@ -126,12 +126,18 @@ def _ensure_season_caches_cold() -> None:
     from utils.player_config import (
         build_alias_to_player_map,
         load_player_config,
+        load_player_config_version,
         load_player_metadata,
     )
 
     warm = [
         fn.__name__
-        for fn in (load_player_config, build_alias_to_player_map, load_player_metadata)
+        for fn in (
+            load_player_config,
+            build_alias_to_player_map,
+            load_player_metadata,
+            load_player_config_version,
+        )
         if fn.cache_info().currsize > 0
     ]
     if warm:

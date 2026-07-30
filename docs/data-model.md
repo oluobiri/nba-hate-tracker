@@ -2,7 +2,7 @@
 
 **Purpose:** The shared conceptual vocabulary for V2 dashboard design. A new dashboard view is a question asked against this model; having the model written down is what lets you tell at a glance whether a question is **cheap** (already in an aggregate), **needs a join** (a dimension lookup, no new pipeline output), or **expensive** (a new aggregate view the pipeline must produce).
 
-**How to read it:** The core model below — the ER diagram, the entity key, and the view-lineage table — is the authoritative *"is"*: what the pipeline produces today (plus the planned standalone Player dimension file). The single fenced section at the very end, **Forward look (v3)**, is *"will be"* — direction, not built. Nothing in that section touches the core diagram or the present-now key.
+**How to read it:** The core model below — the ER diagram, the entity key, and the view-lineage table — is the authoritative *"is"*: what the pipeline produces today. The single fenced section at the very end, **Forward look (v3)**, is *"will be"* — direction, not built. Nothing in that section touches the core diagram or the present-now key.
 
 `pipeline/schemas.py` is the source of truth for column *structure* (names + dtypes). This doc is the source of truth for the *relationships* between those structures.
 
@@ -71,14 +71,15 @@ The distinction matters because the two layers age differently: frozen fields st
 
 ### `Player` — dimension
 
-**Grain:** one canonical player. Sourced from `config/<season>/players.yaml`; today it ships as a nested dict inside `aggregates.json`, with a standalone Player-dimension parquet planned.
+**Grain:** one canonical player. Materialized as `players.parquet`: the curated layer from `config/<season>/players.yaml` LEFT JOINed on `player_id` with the season roster snapshot (`data/<season>/reference/rosters.parquet`) — a snapshot gap nulls the snapshot attributes, it never drops the row. The nested `player_metadata` dict inside `aggregates.json` is a legacy serialization of the same dimension (curated attributes only).
 
 | Field | Notes |
 |---|---|
 | `player` | canonical name (PK) |
-| `roster_team` | → **Team** (roster role). **Point-in-time** — see §3 |
-| `conference`, `player_id`, `headshot_url` | descriptive attributes |
-| `aliases[]` | the substring fragments feeding `mentioned_players` matching |
+| `roster_team` | → **Team** (roster role), from config. **Point-in-time** — see §3 |
+| `conference`, `player_id`, `headshot_url` | curated attributes (config) |
+| `position`, `birth_date`, `experience`, `school`, `jersey_number`, `height`, `weight` | snapshot attributes (roster snapshot, joined on `player_id`). Age is derived from `birth_date` at read time — a stored age is frozen at fetch |
+| `aliases[]` | the substring fragments feeding `mentioned_players` matching. **Config-only, never materialized**: the dimension describes and slices; it does not select the population (selection = config tracked set + fact-side qualification) |
 
 ### `Team` — dimension (role-playing)
 
@@ -114,21 +115,24 @@ The atomic fact stays at `created_utc` (seconds) and serves the replay directly;
 
 **Decided convention:** mark the role everywhere as `roster_team` / `fan_team`.
 
-**Current-column map** (the physical columns are both literally named `team` today):
+**Current-column map:**
 
 | Physical column | Role |
 |---|---|
-| `player_metadata.team` | `roster_team` |
+| `players.parquet.roster_team` | `roster_team` (role-marked physical name) |
+| `player_metadata.team` (legacy JSON only) | `roster_team` |
 | `player_team.team` | `fan_team` |
 | `team_overall.team` | `fan_team` |
 
-The physical column rename is a **pending follow-up** (a separate ticket), not planned here. This doc records the concept and the mapping so the model and the code don't read as contradictory in the meantime.
+The fan-team columns still carry the unmarked physical name `team`; their rename is a **pending follow-up** (a separate ticket), not planned here. This doc records the concept and the mapping so the model and the code don't read as contradictory in the meantime.
 
 ---
 
 ## 3. Roster team is point-in-time
 
-The `Player → Team (roster)` edge carries a fidelity ceiling worth stating plainly: **roster team is point-in-time, not static.** A traded player has different roster teams across weeks, but the season config and `player_metadata` carry a single **season-end** team. So roster-keyed temporal and cross-season analysis mis-homes traded players (e.g. Luka). A trade-aware (slowly-changing) mapping is a future refinement; the model only flags the ceiling.
+The `Player → Team (roster)` edge carries a fidelity ceiling worth stating plainly: **roster team is point-in-time, not static.** A traded player has different roster teams across weeks, but the season config and the Player dimension carry a single **season-end** team. So roster-keyed temporal and cross-season analysis mis-homes traded players (e.g. Luka). A trade-aware (slowly-changing) mapping is a future refinement; the model only flags the ceiling.
+
+`jersey_number` sits under the same ceiling: it can change mid-season, and the dimension carries the snapshot's single value. The consequence class is cosmetic, which is why the ceiling is accepted rather than engineered around.
 
 ---
 
@@ -143,7 +147,7 @@ All four views are **fact tables** (rollups of `ClassifiedComment`); `Player` an
 | `player_team` | Player × `fan_team` | fact → Player, Team(fan) | "Lakers fans about Draymond" |
 | `team_overall` | `fan_team` | fact → Team(fan) | "Which fanbase is saltiest" |
 
-**Needs a join** (no new pipeline output — cheap once the Player dimension is materialized as its own parquet): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `Player.roster_team`. Today that means JSON-key gymnastics against `aggregates.json`; the dimension file turns it into a clean `USING (attributed_player)` join.
+**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school).
 
 **Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
 

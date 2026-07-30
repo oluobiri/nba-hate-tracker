@@ -6,7 +6,11 @@ import polars as pl
 import pytest
 
 from pipeline.schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
     COMMENT_INPUT_SCHEMA,
+    DASHBOARD_OUTPUT_SCHEMAS,
+    PLAYERS_SCHEMA,
+    PLAYERS_SNAPSHOT_COLUMNS,
     ROSTERS_SCHEMA,
     SENTIMENT_SCHEMA,
     validate_schema,
@@ -73,6 +77,33 @@ def roster_frame() -> pl.DataFrame:
         ],
         schema=ROSTERS_SCHEMA,
     )
+
+
+class TestPlayersContract:
+    """Contract guards for the Player dimension (players.parquet)."""
+
+    def test_roster_team_is_role_marked(self):
+        """Verify the roster column is role-marked from birth — never bare `team`."""
+        assert PLAYERS_SCHEMA["roster_team"] == pl.String
+        assert "team" not in PLAYERS_SCHEMA.names()
+
+    def test_excludes_rejected_columns(self):
+        """Verify decided-out columns stay out (logo_url, age, snapshot team fields)."""
+        for col in ("logo_url", "age", "player_name", "team_name", "team_abbr"):
+            assert col not in PLAYERS_SCHEMA.names()
+
+    def test_snapshot_side_dtypes_derive_from_rosters(self):
+        """Verify snapshot-side dtypes match ROSTERS_SCHEMA exactly (no drift)."""
+        for col in PLAYERS_SNAPSHOT_COLUMNS:
+            assert PLAYERS_SCHEMA[col] == ROSTERS_SCHEMA[col]
+
+    def test_dashboard_outputs_superset(self):
+        """Verify the output mapping is views + the dimension, and views stay fact-only."""
+        assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
+            "players"
+        }
+        assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
+        assert "players" not in AGGREGATE_VIEW_SCHEMAS
 
 
 class TestRostersContract:

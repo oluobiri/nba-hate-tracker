@@ -13,6 +13,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - ROSTERS_SCHEMA describes the season roster snapshot — a reference
   asset (pipeline ingredient, not a published output) enforced at the
   fetch write boundary (scripts/fetch_rosters.py).
+- PLAYERS_SCHEMA describes the Player dimension (players.parquet),
+  config curation joined with snapshot facts; enforced in
+  aggregate_sentiment() via the unified DASHBOARD_OUTPUT_SCHEMAS loop.
 
 This module must not import from other pipeline modules (it is imported
 by them).
@@ -21,7 +24,7 @@ by them).
 import polars as pl
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -154,15 +157,65 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
     }
 )
 
-# View name -> schema, shared by aggregate_sentiment()'s validation loop
-# and the aggregation script's parquet write loop. Keys match the
-# aggregate_sentiment() return-dict keys and the parquet filenames
-# (<view>.parquet).
+# View name -> schema for the four aggregate *views* (fact-table rollups).
+# Keys match aggregate_sentiment() return-dict keys and parquet filenames.
+# Deliberately fact-only: the aggregation script keys its JSON
+# record-shaping predicate ("is this a list of records?") off this
+# mapping, so the Player dimension below must NOT live here — it
+# serializes to a nested dict.
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
     "player_team": PLAYER_TEAM_SCHEMA,
     "team_overall": TEAM_OVERALL_SCHEMA,
+}
+
+# --- Player dimension (enforced in pipeline/aggregation.py) ------------------
+# One row per attributed player — the Player dimension the views'
+# attributed_player FK references. Materialized as players.parquet; also
+# re-serialized to the legacy nested {player: {...}} player_metadata dict in
+# aggregates.json (players_to_metadata_dict). The config side is curated in
+# config/<season>/players.yaml; the snapshot side LEFT JOINs from the season's
+# rosters.parquet on player_id, so snapshot gaps surface as nulls, never
+# dropped rows.
+# NOTE: roster_team is the *roster* role (who the player plays for),
+# role-marked from birth — distinct from the fan-role `team` in
+# player_team/team_overall. See docs/data-model.md §2.
+
+PLAYERS_CONFIG_COLUMNS: dict[str, pl.DataType] = {
+    "attributed_player": pl.String,
+    "roster_team": pl.String,
+    "conference": pl.String,
+    "player_id": pl.Int64,
+    "headshot_url": pl.String,
+}
+
+# Joined from ROSTERS_SCHEMA columns of the same name (dtypes derived so
+# snapshot and dimension can never drift).
+PLAYERS_SNAPSHOT_COLUMNS = [
+    "position",
+    "birth_date",
+    "experience",
+    "school",
+    "jersey_number",
+    "height",
+    "weight",
+]
+
+PLAYERS_SCHEMA = pl.Schema(
+    {
+        **PLAYERS_CONFIG_COLUMNS,
+        **{col: ROSTERS_SCHEMA[col] for col in PLAYERS_SNAPSHOT_COLUMNS},
+    }
+)
+
+# Every table the aggregation stage produces -> its schema: the four fact
+# views plus the Player dimension. Single source for aggregate_sentiment()'s
+# unified validation loop and the script's parquet write loop
+# (<name>.parquet).
+DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
+    **AGGREGATE_VIEW_SCHEMAS,
+    "players": PLAYERS_SCHEMA,
 }
 
 

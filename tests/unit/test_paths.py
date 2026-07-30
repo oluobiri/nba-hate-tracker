@@ -19,6 +19,7 @@ from utils.paths import (
     get_filtered_dir,
     get_processed_dir,
     get_raw_dir,
+    get_reference_dir,
 )
 
 PINNED_SEASON = "2098-99"
@@ -96,3 +97,9 @@ class TestLeafPathFunctions:
         result = get_dashboard_dir()
         assert result.parent.name == pinned_season
         assert result.name == "dashboard"
+
+    def test_reference_dir_is_season_scoped(self, pinned_season):
+        """Reference dir is under the season directory."""
+        result = get_reference_dir()
+        assert result.parent.name == pinned_season
+        assert result.name == "reference"

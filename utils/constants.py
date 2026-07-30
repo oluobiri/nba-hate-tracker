@@ -4,6 +4,7 @@ Constants for the NBA Hate Tracker project.
 This module contains:
 - Data validation constants
 - Arctic Shift API configuration
+- NBA Stats API configuration
 - Season date boundaries
 """
 
@@ -81,6 +82,27 @@ ARCTIC_SHIFT_RETRYABLE_STATUSES = frozenset(
 )
 
 
+# =============================================================================
+# NBA STATS API CONFIGURATION (stats.nba.com via nba_api)
+# =============================================================================
+
+# Delay between per-team roster requests in seconds (be polite to
+# stats.nba.com — it rate-limits aggressively and bans are opaque)
+NBA_STATS_REQUEST_DELAY = 0.6
+
+# Per-request timeout in seconds. stats.nba.com's characteristic failure
+# mode is hanging, not erroring — a bounded timeout is what converts a
+# hang into a retryable Timeout.
+NBA_STATS_TIMEOUT = 30
+
+# Total attempts per endpoint call (1 initial + retries). The full fetch
+# is only 30 requests, so unlike the Arctic Shift download there is no
+# long burst to ride out: 4 attempts -> 2+4+8 = 14s of coverage per call.
+NBA_STATS_MAX_ATTEMPTS = 4
+
+# Base seconds for exponential backoff between retries (2s -> 4s -> 8s)
+NBA_STATS_RETRY_BACKOFF = 2.0
+
 
 # =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)
@@ -92,3 +114,4 @@ PROGRESS_FILENAME = ".progress.json"
 BATCHES_DATA_SUBDIR = "batches"
 PROCESSED_DATA_SUBDIR = "processed"
 DASHBOARD_DATA_SUBDIR = "dashboard"
+REFERENCE_DATA_SUBDIR = "reference"

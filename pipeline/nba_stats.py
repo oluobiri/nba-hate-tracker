@@ -53,6 +53,18 @@ _RENAME = {
     "SCHOOL": "school",
 }
 
+# Endpoint columns that must land as strings (birth_date included: it is
+# parsed from string downstream). The endpoint serves these as strings
+# today, but they are semantically numeric-ish (EXP "5"/"R", NUM "00"),
+# so a serialization change to raw JSON numbers would hand pandas a
+# mixed str/int object column that pl.from_pandas cannot convert —
+# coercing in pandas first makes the fetch immune to that drift.
+_STRING_SOURCE_COLUMNS = [
+    raw
+    for raw, col in _RENAME.items()
+    if col == "birth_date" or ROSTERS_SCHEMA[col] == pl.String
+]
+
 
 def _call_with_retries(
     make_request: Callable[[], pl.DataFrame],
@@ -115,7 +127,13 @@ def _fetch_team_roster(team_id: int, season: str, timeout: int) -> pl.DataFrame:
         team_id=team_id, season=season, timeout=timeout
     ).get_data_frames()[0]
     cols = [c for c in _RENAME if c in raw.columns]
-    return pl.from_pandas(raw[cols]).rename({c: _RENAME[c] for c in cols})
+    selected = raw[cols].copy()
+    for col in _STRING_SOURCE_COLUMNS:
+        if col in selected.columns:
+            # pandas "string" dtype stringifies elements but keeps NA as
+            # NA (plain astype(str) would turn None into the string "None")
+            selected[col] = selected[col].astype("string")
+    return pl.from_pandas(selected).rename({c: _RENAME[c] for c in cols})
 
 
 def fetch_rosters(

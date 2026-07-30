@@ -67,9 +67,29 @@ def _fetch_with_mocks(
 
 
 def _two_team_frames() -> dict[int, pd.DataFrame]:
-    """Raw frames for the two fake teams, one player each."""
+    """Raw frames for the two fake teams: a vet + a rookie, then one player.
+
+    Team 1 mixes a veteran and a rookie so fixtures carry the endpoint's
+    real shape heterogeneity (EXP "5" vs "R", NUM "23" vs "00", a null
+    SCHOOL) instead of homogeneous single-row frames.
+    """
     return {
-        1: pd.DataFrame([_raw_row()]),
+        1: pd.DataFrame(
+            [
+                _raw_row(),
+                _raw_row(
+                    PLAYER="Rookie One",
+                    PLAYER_ID=101,
+                    NUM="00",
+                    HEIGHT="7-1",
+                    WEIGHT="232",
+                    BIRTH_DATE="JUN 26, 2005",
+                    AGE=21.0,
+                    EXP="R",
+                    SCHOOL=None,
+                ),
+            ]
+        ),
         2: pd.DataFrame(
             [_raw_row(TeamID=2, PLAYER="Player Two", PLAYER_ID=200, NUM="0")]
         ),
@@ -89,14 +109,26 @@ class TestFetchRosters:
         """HEIGHT/WEIGHT survive normalization (the notebook capture dropped them)."""
         df, _, _ = _fetch_with_mocks(_endpoint_returning(_two_team_frames()))
 
-        assert df["height"].to_list() == ["6-8", "6-8"]
-        assert df["weight"].to_list() == ["230", "230"]
+        by_player = {r["player_name"]: r for r in df.to_dicts()}
+        assert by_player["Player One"]["height"] == "6-8"
+        assert by_player["Player One"]["weight"] == "230"
+        assert by_player["Rookie One"]["height"] == "7-1"
+        assert by_player["Rookie One"]["weight"] == "232"
 
     def test_parses_birth_date(self):
         """The endpoint's 'MAR 03, 1998' string lands as a real Date."""
         df, _, _ = _fetch_with_mocks(_endpoint_returning(_two_team_frames()))
 
-        assert df["birth_date"].to_list() == [date(1998, 3, 3)] * 2
+        by_player = {r["player_name"]: r for r in df.to_dicts()}
+        assert by_player["Player One"]["birth_date"] == date(1998, 3, 3)
+        assert by_player["Rookie One"]["birth_date"] == date(2005, 6, 26)
+
+    def test_null_school_survives_as_null(self):
+        """A missing SCHOOL value lands as null, not the string 'None'."""
+        df, _, _ = _fetch_with_mocks(_endpoint_returning(_two_team_frames()))
+
+        by_player = {r["player_name"]: r for r in df.to_dicts()}
+        assert by_player["Rookie One"]["school"] is None
 
     def test_adds_team_literals_from_static_data(self):
         """team_name/team_abbr come from the static team list, one pair per team."""
@@ -104,9 +136,29 @@ class TestFetchRosters:
 
         by_player = {r["player_name"]: r for r in df.to_dicts()}
         assert by_player["Player One"]["team_name"] == "Atlanta Hawks"
-        assert by_player["Player One"]["team_abbr"] == "ATL"
+        assert by_player["Rookie One"]["team_abbr"] == "ATL"
         assert by_player["Player Two"]["team_name"] == "Boston Celtics"
         assert by_player["Player Two"]["team_abbr"] == "BOS"
+
+    def test_coerces_numeric_serialized_string_columns(self):
+        """Raw JSON ints in string-typed columns coerce instead of crashing.
+
+        The endpoint serves EXP/NUM as strings today; if that serialization
+        ever drifts to raw numbers, the mixed str/int object column must
+        still convert (pl.from_pandas would otherwise raise ArrowInvalid).
+        """
+        frames = {
+            1: pd.DataFrame([_raw_row(EXP=5, NUM=0), _raw_row(PLAYER_ID=101)]),
+            2: pd.DataFrame(
+                [_raw_row(TeamID=2, PLAYER="Player Two", PLAYER_ID=200, NUM="00")]
+            ),
+        }
+
+        df, _, _ = _fetch_with_mocks(_endpoint_returning(frames))
+
+        assert df.schema == ROSTERS_SCHEMA
+        assert sorted(df["experience"].to_list()) == ["5", "5", "5"]
+        assert sorted(df["jersey_number"].to_list()) == ["0", "00", "23"]
 
     def test_passes_season_and_timeout_to_endpoint(self):
         """Every endpoint call carries the requested season and timeout."""
@@ -148,7 +200,7 @@ class TestRetry:
         df, mock_endpoint, _ = _fetch_with_mocks(_flaky)
 
         assert mock_endpoint.call_count == 3  # team 1 twice, team 2 once
-        assert df.height == 2
+        assert df.height == 3
 
     def test_exhaustion_raises_with_backoff_schedule(self):
         """Persistent timeouts raise after max_attempts, backing off exponentially."""

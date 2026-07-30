@@ -187,8 +187,9 @@ def fetch_rosters(
         logger.debug(f"{team['abbreviation']}: {frame.height} players")
         time.sleep(delay)
 
+    combined = pl.concat(frames, how="diagonal")
     rosters = (
-        pl.concat(frames, how="diagonal")
+        combined
         # nba_api serves "MAR 03, 1998"; titlecase so %b parses.
         .with_columns(
             pl.col("birth_date")
@@ -198,6 +199,17 @@ def fetch_rosters(
         .select(list(ROSTERS_SCHEMA.names()))
         .cast(dict(ROSTERS_SCHEMA))
     )
+    # strict=False nulls unparseable dates silently; surface the ones the
+    # parse nulled (as opposed to endpoint-supplied nulls) so a format
+    # drift can't degrade the column while the run reports success.
+    parse_failures = (
+        rosters["birth_date"].null_count() - combined["birth_date"].null_count()
+    )
+    if parse_failures:
+        logger.warning(
+            f'{parse_failures} birth_date value(s) did not match "%b %d, %Y" '
+            f"and were nulled"
+        )
     logger.info(
         f"Fetched {rosters.height} players across "
         f"{rosters['team_abbr'].n_unique()} teams"

@@ -1,5 +1,6 @@
 """Tests for pipeline/nba_stats.py roster snapshot acquisition."""
 
+import logging
 from datetime import date
 from unittest.mock import Mock, call, patch
 
@@ -122,6 +123,34 @@ class TestFetchRosters:
         by_player = {r["player_name"]: r for r in df.to_dicts()}
         assert by_player["Player One"]["birth_date"] == date(1998, 3, 3)
         assert by_player["Rookie One"]["birth_date"] == date(2005, 6, 26)
+
+    def test_warns_on_unparseable_birth_date(self, caplog):
+        """A birth date that doesn't match the format nulls with a warning."""
+        frames = _two_team_frames()
+        frames[2] = pd.DataFrame(
+            [
+                _raw_row(
+                    TeamID=2,
+                    PLAYER="Player Two",
+                    PLAYER_ID=200,
+                    BIRTH_DATE="1998-03-03",
+                )
+            ]
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.nba_stats"):
+            df, _, _ = _fetch_with_mocks(_endpoint_returning(frames))
+
+        by_player = {r["player_name"]: r for r in df.to_dicts()}
+        assert by_player["Player Two"]["birth_date"] is None
+        assert "1 birth_date value(s)" in caplog.text
+
+    def test_no_warning_when_all_birth_dates_parse(self, caplog):
+        """Endpoint-supplied nulls don't trigger the parse-failure warning."""
+        with caplog.at_level(logging.WARNING, logger="pipeline.nba_stats"):
+            _fetch_with_mocks(_endpoint_returning(_two_team_frames()))
+
+        assert "birth_date" not in caplog.text
 
     def test_null_school_survives_as_null(self):
         """A missing SCHOOL value lands as null, not the string 'None'."""

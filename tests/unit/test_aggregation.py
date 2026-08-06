@@ -6,6 +6,7 @@ and compute_metrics from the aggregation pipeline.
 """
 
 import logging
+from datetime import date
 
 import polars as pl
 import pytest
@@ -17,10 +18,18 @@ from pipeline.aggregation import (
     extract_team_from_flair,
     mask_below_threshold,
     pivot_bar_race_wide,
+    players_to_metadata_dict,
     resolve_player,
 )
-from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS, SCHEMA_VERSION, SENTIMENT_SCHEMA
-from utils.player_config import load_player_config_version
+from pipeline.schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
+    PLAYERS_SCHEMA,
+    ROSTERS_SCHEMA,
+    SCHEMA_VERSION,
+    SENTIMENT_SCHEMA,
+)
+from utils.player_config import load_player_config_version, load_player_metadata
+from utils.season_config import get_active_season
 
 
 class TestResolvePlayer:
@@ -28,9 +37,7 @@ class TestResolvePlayer:
 
     def test_single_player_returns_it(self, player_alias_map):
         """Single player in mentioned_players is returned directly."""
-        result = resolve_player(
-            ["LeBron James"], "Nikola Jokic", player_alias_map
-        )
+        result = resolve_player(["LeBron James"], "Nikola Jokic", player_alias_map)
         assert result == "LeBron James"
 
     def test_single_player_normalizes_alias(self, player_alias_map):
@@ -152,10 +159,12 @@ class TestComputeMetrics:
 
     def test_basic_counts_and_rates(self):
         """Verify counts and rate calculations on synthetic data."""
-        df = pl.DataFrame({
-            "player": ["A", "A", "A", "A", "A", "B", "B", "B"],
-            "sentiment": ["neg", "neg", "pos", "neu", "neu", "neg", "pos", "pos"],
-        })
+        df = pl.DataFrame(
+            {
+                "player": ["A", "A", "A", "A", "A", "B", "B", "B"],
+                "sentiment": ["neg", "neg", "pos", "neu", "neu", "neg", "pos", "pos"],
+            }
+        )
 
         result = compute_metrics(df, ["player"])
 
@@ -179,10 +188,12 @@ class TestComputeMetrics:
 
     def test_rates_rounded_to_four_decimals(self):
         """Rate values are rounded to 4 decimal places."""
-        df = pl.DataFrame({
-            "player": ["A", "A", "A"],
-            "sentiment": ["neg", "pos", "pos"],
-        })
+        df = pl.DataFrame(
+            {
+                "player": ["A", "A", "A"],
+                "sentiment": ["neg", "pos", "pos"],
+            }
+        )
 
         result = compute_metrics(df, ["player"])
         a = result.row(0, named=True)
@@ -192,21 +203,25 @@ class TestComputeMetrics:
 
     def test_multi_group_columns(self):
         """Grouping by multiple columns works."""
-        df = pl.DataFrame({
-            "player": ["A", "A", "B"],
-            "team": ["LAL", "BOS", "LAL"],
-            "sentiment": ["neg", "pos", "neu"],
-        })
+        df = pl.DataFrame(
+            {
+                "player": ["A", "A", "B"],
+                "team": ["LAL", "BOS", "LAL"],
+                "sentiment": ["neg", "pos", "neu"],
+            }
+        )
 
         result = compute_metrics(df, ["player", "team"])
         assert result.height == 3
 
     def test_returns_frame_sorted_by_group_cols(self):
         """Output is a DataFrame deterministically sorted by the group columns."""
-        df = pl.DataFrame({
-            "player": ["C", "A", "B"],
-            "sentiment": ["neg", "pos", "neu"],
-        })
+        df = pl.DataFrame(
+            {
+                "player": ["C", "A", "B"],
+                "sentiment": ["neg", "pos", "neu"],
+            }
+        )
 
         result = compute_metrics(df, ["player"])
 
@@ -226,87 +241,292 @@ def _make_test_parquet(tmp_path, rows, metadata=None):
     return path
 
 
-class TestAggregatePlayerMetadata:
-    """Tests for player_metadata key in aggregate output."""
+def _lebron_rows() -> dict:
+    """Two LeBron comments (Lakers + Celtics flair) in SENTIMENT_SCHEMA shape.
 
-    def test_player_metadata_key_exists(self, tmp_path):
-        """Output contains player_metadata top-level key."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+    Base rows for the Player-dimension tests; override columns to vary
+    the mentioned players.
+    """
+    return {
+        "comment_id": ["c1", "c2"],
+        "body": ["LeBron is great", "LeBron is washed"],
+        "author": ["u1", "u2"],
+        "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+        "author_flair_css_class": ["lakers", "celtics"],
+        "created_utc": [1704067200, 1704153600],
+        "score": [10, 5],
+        "link_id": ["t3_post123", "t3_post456"],
+        "mentioned_players": [["LeBron James"], ["LeBron James"]],
+        "sentiment": ["pos", "neg"],
+        "confidence": [0.9, 0.8],
+        "sentiment_player": ["LeBron James", "LeBron James"],
+        "input_tokens": [100, 100],
+        "output_tokens": [20, 20],
+    }
+
+
+def _lebron_parquet(tmp_path):
+    """Parquet of _lebron_rows() — LeBron the only attributed player."""
+    return _make_test_parquet(tmp_path, _lebron_rows())
+
+
+def _write_snapshot(ref_dir, rows, season=None):
+    """Overwrite the pinned snapshot with custom rows (season=None → active)."""
+    pl.DataFrame(rows, schema=ROSTERS_SCHEMA).write_parquet(
+        ref_dir / "rosters.parquet",
+        metadata={"season": season or get_active_season()},
+    )
+
+
+@pytest.fixture(autouse=True)
+def pinned_snapshot(monkeypatch, tmp_path, lebron_roster_row):
+    """Pin pipeline.aggregation's reference dir to a tmp roster snapshot.
+
+    Autouse so no test in this module reads the real data/ reference dir —
+    aggregate_sentiment() takes the same code path on every machine.
+    Defaults to a one-row LeBron snapshot stamped with the active season;
+    tests needing other snapshot states overwrite or delete
+    rosters.parquet in the returned dir.
+    """
+    ref_dir = tmp_path / "reference"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("pipeline.aggregation.get_reference_dir", lambda: ref_dir)
+    _write_snapshot(ref_dir, [lebron_roster_row])
+    return ref_dir
+
+
+class TestAggregatePlayers:
+    """Tests for the players Player-dimension frame in aggregate output."""
+
+    def test_players_is_frame_conforming_to_schema(self, tmp_path):
+        """players is returned as a frame matching PLAYERS_SCHEMA; the legacy
+        player_metadata key no longer appears in the return dict."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert isinstance(result["players"], pl.DataFrame)
+        assert result["players"].schema == PLAYERS_SCHEMA
+        assert "player_metadata" not in result
+
+    def test_config_side_populated(self, tmp_path):
+        """Config columns carry the curated fields, roster team role-marked."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "LeBron James", named=True
+        )
+        assert row["roster_team"] == "Los Angeles Lakers"
+        assert row["conference"] == "West"
+        assert row["player_id"] == 2544
+        assert row["headshot_url"] is not None
+
+    def test_snapshot_side_joined(self, tmp_path):
+        """Snapshot columns join in via player_id."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "LeBron James", named=True
+        )
+        assert row["position"] == "F"
+        assert row["jersey_number"] == "23"
+        assert row["height"] == "6-9"
+        assert row["birth_date"] == date(1984, 12, 30)
+
+    def test_excludes_non_attributed_players(self, tmp_path):
+        """The frame only includes players that appear in player_overall."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+        players = result["players"]["attributed_player"].to_list()
+
+        assert players == ["LeBron James"]
+
+    def test_multi_player_join_follows_config_order(
+        self, tmp_path, pinned_snapshot, lebron_roster_row
+    ):
+        """Two attributed players: one row each, ordered by players.yaml."""
+        giannis_row = {
+            **lebron_roster_row,
+            "player_id": 203507,
+            "player_name": "Giannis Antetokounmpo",
+            "team_name": "Milwaukee Bucks",
+            "team_abbr": "MIL",
+            "jersey_number": "34",
+        }
+        _write_snapshot(pinned_snapshot, [lebron_roster_row, giannis_row])
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                **_lebron_rows(),
+                "body": ["LeBron is great", "Giannis is a freak"],
+                "mentioned_players": [["LeBron James"], ["Giannis Antetokounmpo"]],
+                "sentiment_player": ["LeBron James", "Giannis Antetokounmpo"],
+            },
+        )
 
         result = aggregate_sentiment(path)
 
-        assert "player_metadata" in result
-        assert isinstance(result["player_metadata"], dict)
+        expected_order = [
+            player
+            for player in load_player_metadata()
+            if player in {"LeBron James", "Giannis Antetokounmpo"}
+        ]
+        assert result["players"]["attributed_player"].to_list() == expected_order
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "Giannis Antetokounmpo",
+            named=True,
+        )
+        assert row["jersey_number"] == "34"
 
-    def test_metadata_contains_attributed_players(self, tmp_path):
-        """player_metadata includes metadata for attributed players."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+    def test_duplicate_snapshot_player_id_raises(
+        self, tmp_path, pinned_snapshot, lebron_roster_row
+    ):
+        """A duplicate player_id in the snapshot fails loudly, not by fanning
+        the dimension out to multiple rows per player."""
+        _write_snapshot(
+            pinned_snapshot,
+            [lebron_roster_row, {**lebron_roster_row, "team_abbr": "BOS"}],
+        )
 
-        result = aggregate_sentiment(path)
-        meta = result["player_metadata"]
+        with pytest.raises(ValueError, match="duplicate") as exc:
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+        assert "2544" in str(exc.value)
 
-        assert "LeBron James" in meta
-        assert meta["LeBron James"]["team"] == "Los Angeles Lakers"
-        assert meta["LeBron James"]["conference"] == "West"
-        assert meta["LeBron James"]["player_id"] == 2544
-        assert "logo_url" in meta["LeBron James"]
-        assert "cdn.nba.com/logos" in meta["LeBron James"]["logo_url"]
+    def test_missing_snapshot_row_nulls_and_logs(
+        self, tmp_path, pinned_snapshot, lebron_roster_row, caplog
+    ):
+        """An attributed player absent from the snapshot gets null snapshot
+        columns and is logged (the baked-config fallback case)."""
+        _write_snapshot(
+            pinned_snapshot,
+            [{**lebron_roster_row, "player_id": 999, "player_name": "Other"}],
+        )
 
-    def test_metadata_excludes_non_attributed_players(self, tmp_path):
-        """player_metadata only includes players that appear in player_overall."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1"],
-            "body": ["LeBron is great"],
-            "author": ["u1"],
-            "author_flair_text": [":lal-1: Lakers"],
-            "author_flair_css_class": ["lakers"],
-            "created_utc": [1704067200],
-            "score": [10],
-            "link_id": ["t3_post123"],
-            "mentioned_players": [["LeBron James"]],
-            "sentiment": ["pos"],
-            "confidence": [0.9],
-            "sentiment_player": ["LeBron James"],
-            "input_tokens": [100],
-            "output_tokens": [20],
-        })
+        with caplog.at_level(logging.INFO, logger="pipeline.aggregation"):
+            result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
-        result = aggregate_sentiment(path)
-        meta = result["player_metadata"]
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "LeBron James", named=True
+        )
+        assert row["roster_team"] == "Los Angeles Lakers"  # config side intact
+        assert row["position"] is None
+        assert row["birth_date"] is None
+        assert "missing from the roster snapshot" in caplog.text
+        assert "LeBron James" in caplog.text
 
-        # Only LeBron attributed — Giannis should not be in metadata
-        assert "LeBron James" in meta
-        assert "Giannis Antetokounmpo" not in meta
+    def test_missing_snapshot_file_warns_and_degrades(
+        self, tmp_path, pinned_snapshot, caplog
+    ):
+        """No snapshot on disk: warn and ship the dimension with null
+        snapshot columns (aggregation stays runnable without reference assets)."""
+        (pinned_snapshot / "rosters.parquet").unlink()
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["players"].schema == PLAYERS_SCHEMA
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "LeBron James", named=True
+        )
+        assert row["roster_team"] == "Los Angeles Lakers"
+        assert row["position"] is None
+        assert "snapshot columns will be null" in caplog.text
+
+    def test_snapshot_season_stamp_mismatch_warns(
+        self, tmp_path, pinned_snapshot, lebron_roster_row, caplog
+    ):
+        """A snapshot stamped for another season triggers the lineage warning."""
+        _write_snapshot(pinned_snapshot, [lebron_roster_row], season="1999-00")
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert "season stamp" in caplog.text
+        assert "1999-00" in caplog.text
+
+    def test_unstamped_snapshot_warns_distinctly(
+        self, tmp_path, pinned_snapshot, lebron_roster_row, caplog
+    ):
+        """A snapshot with no season stamp warns that lineage is unverifiable.
+
+        Absent is not drift: the message must say lineage cannot be
+        verified, not claim a season mismatch.
+        """
+        pl.DataFrame([lebron_roster_row], schema=ROSTERS_SCHEMA).write_parquet(
+            pinned_snapshot / "rosters.parquet"
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert "no season stamp" in caplog.text
+        assert "does not match" not in caplog.text
+
+
+class TestPlayersToMetadataDict:
+    """Tests for players_to_metadata_dict (frame -> legacy aggregates.json dict).
+
+    These guard the consumer contract: aggregates.json must keep serving
+    the nested {player: {...}} dict with the legacy value keys.
+    """
+
+    @pytest.fixture
+    def players_frame(self) -> pl.DataFrame:
+        """Two-row Player dimension frame conforming to PLAYERS_SCHEMA."""
+        rows = [
+            {
+                "attributed_player": "LeBron James",
+                "roster_team": "Los Angeles Lakers",
+                "conference": "West",
+                "player_id": 2544,
+                "headshot_url": "https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png",
+                "position": "F",
+                "birth_date": date(1984, 12, 30),
+                "experience": "21",
+                "school": "St. Vincent-St. Mary HS (OH)",
+                "jersey_number": "23",
+                "height": "6-9",
+                "weight": "250",
+            },
+            {
+                "attributed_player": "Bam Adebayo",
+                "roster_team": "Miami Heat",
+                "conference": "East",
+                "player_id": 1628389,
+                "headshot_url": "https://cdn.nba.com/headshots/nba/latest/1040x760/1628389.png",
+                "position": "C",
+                "birth_date": date(1997, 7, 18),
+                "experience": "8",
+                "school": "Kentucky",
+                "jersey_number": "13",
+                "height": "6-9",
+                "weight": "255",
+            },
+        ]
+        return pl.DataFrame(rows, schema=PLAYERS_SCHEMA)
+
+    def test_reconstructs_nested_dict_keyed_by_player(self, players_frame):
+        """The dict keys by player name; roster_team serializes as legacy team."""
+        as_dict = players_to_metadata_dict(players_frame)
+
+        assert as_dict["LeBron James"]["team"] == "Los Angeles Lakers"
+        assert as_dict["LeBron James"]["conference"] == "West"
+        assert as_dict["Bam Adebayo"]["player_id"] == 1628389
+
+    def test_value_keys_match_json_contract(self, players_frame):
+        """Each entry carries exactly the legacy consumer keys, in order —
+        no snapshot columns, no logo_url."""
+        as_dict = players_to_metadata_dict(players_frame)
+
+        assert list(as_dict["LeBron James"].keys()) == [
+            "team",
+            "conference",
+            "player_id",
+            "headshot_url",
+        ]
+
+    def test_preserves_row_order(self, players_frame):
+        """Dict key order follows frame row order (players.yaml order)."""
+        as_dict = players_to_metadata_dict(players_frame)
+
+        assert list(as_dict.keys()) == players_frame["attributed_player"].to_list()
 
 
 class TestConfigVersionLineage:
@@ -396,22 +616,25 @@ class TestAggregateTeamConference:
 
     def test_team_overall_has_conference(self, tmp_path):
         """Each team_overall row has a conference field."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["Go team", "Nice game"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [[], []],
-            "sentiment": ["pos", "neu"],
-            "confidence": [0.9, 0.7],
-            "sentiment_player": [None, None],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2"],
+                "body": ["Go team", "Nice game"],
+                "author": ["u1", "u2"],
+                "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+                "author_flair_css_class": ["lakers", "celtics"],
+                "created_utc": [1704067200, 1704153600],
+                "score": [10, 5],
+                "link_id": ["t3_post123", "t3_post456"],
+                "mentioned_players": [[], []],
+                "sentiment": ["pos", "neu"],
+                "confidence": [0.9, 0.7],
+                "sentiment_player": [None, None],
+                "input_tokens": [100, 100],
+                "output_tokens": [20, 20],
+            },
+        )
 
         result = aggregate_sentiment(path)
 
@@ -420,22 +643,25 @@ class TestAggregateTeamConference:
 
     def test_conference_values_correct(self, tmp_path):
         """Conference values match expected East/West assignments."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["Go team", "Nice game"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [[], []],
-            "sentiment": ["pos", "neu"],
-            "confidence": [0.9, 0.7],
-            "sentiment_player": [None, None],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2"],
+                "body": ["Go team", "Nice game"],
+                "author": ["u1", "u2"],
+                "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+                "author_flair_css_class": ["lakers", "celtics"],
+                "created_utc": [1704067200, 1704153600],
+                "score": [10, 5],
+                "link_id": ["t3_post123", "t3_post456"],
+                "mentioned_players": [[], []],
+                "sentiment": ["pos", "neu"],
+                "confidence": [0.9, 0.7],
+                "sentiment_player": [None, None],
+                "input_tokens": [100, 100],
+                "output_tokens": [20, 20],
+            },
+        )
 
         result = aggregate_sentiment(path)
         team_by_name = {r["team"]: r for r in result["team_overall"].to_dicts()}
@@ -445,22 +671,25 @@ class TestAggregateTeamConference:
 
     def test_team_overall_has_abbreviation(self, tmp_path):
         """Each team_overall row has the correct abbreviation."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["Go team", "Nice game"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [[], []],
-            "sentiment": ["pos", "neu"],
-            "confidence": [0.9, 0.7],
-            "sentiment_player": [None, None],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2"],
+                "body": ["Go team", "Nice game"],
+                "author": ["u1", "u2"],
+                "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+                "author_flair_css_class": ["lakers", "celtics"],
+                "created_utc": [1704067200, 1704153600],
+                "score": [10, 5],
+                "link_id": ["t3_post123", "t3_post456"],
+                "mentioned_players": [[], []],
+                "sentiment": ["pos", "neu"],
+                "confidence": [0.9, 0.7],
+                "sentiment_player": [None, None],
+                "input_tokens": [100, 100],
+                "output_tokens": [20, 20],
+            },
+        )
 
         result = aggregate_sentiment(path)
         team_by_name = {r["team"]: r for r in result["team_overall"].to_dicts()}
@@ -470,22 +699,25 @@ class TestAggregateTeamConference:
 
     def test_team_overall_has_logo_url(self, tmp_path):
         """Each team_overall row has a logo_url field."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["Go team", "Nice game"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [[], []],
-            "sentiment": ["pos", "neu"],
-            "confidence": [0.9, 0.7],
-            "sentiment_player": [None, None],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2"],
+                "body": ["Go team", "Nice game"],
+                "author": ["u1", "u2"],
+                "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+                "author_flair_css_class": ["lakers", "celtics"],
+                "created_utc": [1704067200, 1704153600],
+                "score": [10, 5],
+                "link_id": ["t3_post123", "t3_post456"],
+                "mentioned_players": [[], []],
+                "sentiment": ["pos", "neu"],
+                "confidence": [0.9, 0.7],
+                "sentiment_player": [None, None],
+                "input_tokens": [100, 100],
+                "output_tokens": [20, 20],
+            },
+        )
 
         result = aggregate_sentiment(path)
 
@@ -506,58 +738,74 @@ class TestAggregateViews:
         (tie with Durant), Stephen Curry 0.0 — exercises the player_overall
         sort and its tiebreaker.
         """
-        return _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2", "c3", "c4", "c5", "c6"],
-            "body": [
-                "Giannis traveled again",
-                "KD is a snake",
-                "KD is unstoppable",
-                "LeBron is washed",
-                "LeBron is the GOAT",
-                "Curry never misses",
-            ],
-            "author": ["u1", "u2", "u3", "u4", "u5", "u6"],
-            "author_flair_text": [
-                ":lal-1: Lakers",
-                ":bos-1: Celtics",
-                ":lal-1: Lakers",
-                ":bos-1: Celtics",
-                ":lal-1: Lakers",
-                ":bos-1: Celtics",
-            ],
-            "author_flair_css_class": [
-                "lakers", "celtics", "lakers", "celtics", "lakers", "celtics",
-            ],
-            "created_utc": [
-                1704067200, 1704067200, 1704067200,  # week of 2024-01-01
-                1704672000, 1704672000, 1704672000,  # week of 2024-01-08
-            ],
-            "score": [10, 5, 8, 3, 12, 7],
-            "link_id": [
-                "t3_game1", "t3_game1", "t3_game1",
-                "t3_game2", "t3_game2", "t3_game2",
-            ],
-            "mentioned_players": [
-                ["Giannis Antetokounmpo"],
-                ["Kevin Durant"],
-                ["Kevin Durant"],
-                ["LeBron James"],
-                ["LeBron James"],
-                ["Stephen Curry"],
-            ],
-            "sentiment": ["neg", "neg", "pos", "neg", "pos", "pos"],
-            "confidence": [0.9, 0.8, 0.9, 0.85, 0.95, 0.9],
-            "sentiment_player": [
-                "Giannis Antetokounmpo",
-                "Kevin Durant",
-                "Kevin Durant",
-                "LeBron James",
-                "LeBron James",
-                "Stephen Curry",
-            ],
-            "input_tokens": [100, 100, 100, 100, 100, 100],
-            "output_tokens": [20, 20, 20, 20, 20, 20],
-        })
+        return _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2", "c3", "c4", "c5", "c6"],
+                "body": [
+                    "Giannis traveled again",
+                    "KD is a snake",
+                    "KD is unstoppable",
+                    "LeBron is washed",
+                    "LeBron is the GOAT",
+                    "Curry never misses",
+                ],
+                "author": ["u1", "u2", "u3", "u4", "u5", "u6"],
+                "author_flair_text": [
+                    ":lal-1: Lakers",
+                    ":bos-1: Celtics",
+                    ":lal-1: Lakers",
+                    ":bos-1: Celtics",
+                    ":lal-1: Lakers",
+                    ":bos-1: Celtics",
+                ],
+                "author_flair_css_class": [
+                    "lakers",
+                    "celtics",
+                    "lakers",
+                    "celtics",
+                    "lakers",
+                    "celtics",
+                ],
+                "created_utc": [
+                    1704067200,
+                    1704067200,
+                    1704067200,  # week of 2024-01-01
+                    1704672000,
+                    1704672000,
+                    1704672000,  # week of 2024-01-08
+                ],
+                "score": [10, 5, 8, 3, 12, 7],
+                "link_id": [
+                    "t3_game1",
+                    "t3_game1",
+                    "t3_game1",
+                    "t3_game2",
+                    "t3_game2",
+                    "t3_game2",
+                ],
+                "mentioned_players": [
+                    ["Giannis Antetokounmpo"],
+                    ["Kevin Durant"],
+                    ["Kevin Durant"],
+                    ["LeBron James"],
+                    ["LeBron James"],
+                    ["Stephen Curry"],
+                ],
+                "sentiment": ["neg", "neg", "pos", "neg", "pos", "pos"],
+                "confidence": [0.9, 0.8, 0.9, 0.85, 0.95, 0.9],
+                "sentiment_player": [
+                    "Giannis Antetokounmpo",
+                    "Kevin Durant",
+                    "Kevin Durant",
+                    "LeBron James",
+                    "LeBron James",
+                    "Stephen Curry",
+                ],
+                "input_tokens": [100, 100, 100, 100, 100, 100],
+                "output_tokens": [20, 20, 20, 20, 20, 20],
+            },
+        )
 
     @pytest.mark.parametrize(
         "view_name,schema",
@@ -613,18 +861,20 @@ def _make_temporal_records(
     records = []
     for player, weeks in players_weeks.items():
         for week_str, neg, total in weeks:
-            records.append({
-                "attributed_player": player,
-                "week": week_str,
-                "neg_count": neg,
-                "pos_count": total - neg,
-                "neu_count": 0,
-                "comment_count": total,
-                "neg_rate": round(neg / total, 4) if total else 0,
-                "pos_rate": round((total - neg) / total, 4) if total else 0,
-                "net_sentiment": 0.0,
-                "polarization": 0.0,
-            })
+            records.append(
+                {
+                    "attributed_player": player,
+                    "week": week_str,
+                    "neg_count": neg,
+                    "pos_count": total - neg,
+                    "neu_count": 0,
+                    "comment_count": total,
+                    "neg_rate": round(neg / total, 4) if total else 0,
+                    "pos_rate": round((total - neg) / total, 4) if total else 0,
+                    "net_sentiment": 0.0,
+                    "polarization": 0.0,
+                }
+            )
     return records
 
 
@@ -633,28 +883,33 @@ class TestComputeCumulativeMetrics:
 
     def test_excludes_stub_week(self):
         """The maximum week (stub) is excluded from the output."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 5, 50),
-                ("2024-10-14 00:00:00", 10, 100),
-                ("2024-10-21 00:00:00", 2, 10),  # stub (max week)
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 5, 50),
+                    ("2024-10-14 00:00:00", 10, 100),
+                    ("2024-10-21 00:00:00", 2, 10),  # stub (max week)
+                ],
+            }
+        )
         result = compute_cumulative_metrics(records)
         weeks = result["week"].to_list()
         from datetime import date
+
         assert date(2024, 10, 21) not in weeks
         assert len(weeks) == 2
 
     def test_cumulative_sums_correct(self):
         """Running neg and total counts accumulate across weeks."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 5, 50),
-                ("2024-10-14 00:00:00", 10, 100),
-                ("2024-10-21 00:00:00", 1, 10),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 5, 50),
+                    ("2024-10-14 00:00:00", 10, 100),
+                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                ],
+            }
+        )
         result = compute_cumulative_metrics(records)
         rows = result.sort("week").to_dicts()
 
@@ -665,24 +920,28 @@ class TestComputeCumulativeMetrics:
 
     def test_fills_missing_weeks(self):
         """A player missing from a week gets zero new counts, cumulative carries forward."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 5, 50),
-                # gap at 2024-10-14
-                ("2024-10-21 00:00:00", 10, 100),
-                ("2024-10-28 00:00:00", 1, 10),  # stub
-            ],
-            "Player B": [
-                ("2024-10-07 00:00:00", 3, 30),
-                ("2024-10-14 00:00:00", 7, 70),
-                ("2024-10-21 00:00:00", 2, 20),
-                ("2024-10-28 00:00:00", 1, 10),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 5, 50),
+                    # gap at 2024-10-14
+                    ("2024-10-21 00:00:00", 10, 100),
+                    ("2024-10-28 00:00:00", 1, 10),  # stub
+                ],
+                "Player B": [
+                    ("2024-10-07 00:00:00", 3, 30),
+                    ("2024-10-14 00:00:00", 7, 70),
+                    ("2024-10-21 00:00:00", 2, 20),
+                    ("2024-10-28 00:00:00", 1, 10),  # stub
+                ],
+            }
+        )
         result = compute_cumulative_metrics(records)
-        a_rows = result.filter(
-            pl.col("attributed_player") == "Player A"
-        ).sort("week").to_dicts()
+        a_rows = (
+            result.filter(pl.col("attributed_player") == "Player A")
+            .sort("week")
+            .to_dicts()
+        )
 
         # Player A has 3 rows (all non-stub weeks)
         assert len(a_rows) == 3
@@ -695,24 +954,28 @@ class TestComputeCumulativeMetrics:
 
     def test_cum_neg_rate_rounded(self):
         """Cumulative neg_rate is rounded to 4 decimal places."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 1, 3),
-                ("2024-10-14 00:00:00", 1, 1),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 1, 3),
+                    ("2024-10-14 00:00:00", 1, 1),  # stub
+                ],
+            }
+        )
         result = compute_cumulative_metrics(records)
         rate = result["cum_neg_rate"][0]
         assert rate == 0.3333
 
     def test_single_player_single_week(self):
         """Minimal input: one player, two weeks (one real + one stub)."""
-        records = _make_temporal_records({
-            "Solo": [
-                ("2024-10-07 00:00:00", 4, 10),
-                ("2024-10-14 00:00:00", 1, 5),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Solo": [
+                    ("2024-10-07 00:00:00", 4, 10),
+                    ("2024-10-14 00:00:00", 1, 5),  # stub
+                ],
+            }
+        )
         result = compute_cumulative_metrics(records)
         assert result.height == 1
         row = result.to_dicts()[0]
@@ -727,13 +990,15 @@ class TestMaskBelowThreshold:
 
     def test_below_threshold_is_null(self):
         """Rows with cum_total below threshold get null cum_neg_rate."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 50, 500),
-                ("2024-10-14 00:00:00", 60, 600),
-                ("2024-10-21 00:00:00", 1, 10),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 50, 500),
+                    ("2024-10-14 00:00:00", 60, 600),
+                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                ],
+            }
+        )
         cumulative = compute_cumulative_metrics(records)
         # cum_total after week 1: 500, week 2: 1100
         masked = mask_below_threshold(cumulative, min_comments=1000)
@@ -744,12 +1009,14 @@ class TestMaskBelowThreshold:
 
     def test_above_threshold_preserved(self):
         """Rows at or above threshold retain their cum_neg_rate."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 100, 1000),
-                ("2024-10-14 00:00:00", 1, 10),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 100, 1000),
+                    ("2024-10-14 00:00:00", 1, 10),  # stub
+                ],
+            }
+        )
         cumulative = compute_cumulative_metrics(records)
         masked = mask_below_threshold(cumulative, min_comments=1000)
         row = masked.to_dicts()[0]
@@ -757,13 +1024,15 @@ class TestMaskBelowThreshold:
 
     def test_custom_threshold(self):
         """Custom min_comments threshold is respected."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 25, 250),
-                ("2024-10-14 00:00:00", 30, 300),
-                ("2024-10-21 00:00:00", 1, 10),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 25, 250),
+                    ("2024-10-14 00:00:00", 30, 300),
+                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                ],
+            }
+        )
         cumulative = compute_cumulative_metrics(records)
         # cum_total: 250, 550
         masked = mask_below_threshold(cumulative, min_comments=500)
@@ -778,23 +1047,25 @@ class TestPivotBarRaceWide:
 
     def _build_test_data(self):
         """Build test temporal records and metadata for pivot tests."""
-        records = _make_temporal_records({
-            "Player A": [
-                ("2024-10-07 00:00:00", 100, 1000),
-                ("2024-10-14 00:00:00", 150, 1500),
-                ("2024-10-21 00:00:00", 1, 10),  # stub
-            ],
-            "Player B": [
-                ("2024-10-07 00:00:00", 200, 1000),
-                ("2024-10-14 00:00:00", 250, 1500),
-                ("2024-10-21 00:00:00", 1, 10),  # stub
-            ],
-            "Player C": [
-                ("2024-10-07 00:00:00", 50, 1000),
-                ("2024-10-14 00:00:00", 80, 1500),
-                ("2024-10-21 00:00:00", 1, 10),  # stub
-            ],
-        })
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 100, 1000),
+                    ("2024-10-14 00:00:00", 150, 1500),
+                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                ],
+                "Player B": [
+                    ("2024-10-07 00:00:00", 200, 1000),
+                    ("2024-10-14 00:00:00", 250, 1500),
+                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                ],
+                "Player C": [
+                    ("2024-10-07 00:00:00", 50, 1000),
+                    ("2024-10-14 00:00:00", 80, 1500),
+                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                ],
+            }
+        )
         metadata = {
             "Player A": {
                 "team": "Team Alpha",
@@ -816,8 +1087,11 @@ class TestPivotBarRaceWide:
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
-            cumulative, metadata, top_n=3,
-            min_ranking_comments=0, min_entry_comments=0,
+            cumulative,
+            metadata,
+            top_n=3,
+            min_ranking_comments=0,
+            min_entry_comments=0,
         )
 
         cols = wide.columns
@@ -831,8 +1105,11 @@ class TestPivotBarRaceWide:
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
-            cumulative, metadata, top_n=2,
-            min_ranking_comments=0, min_entry_comments=0,
+            cumulative,
+            metadata,
+            top_n=2,
+            min_ranking_comments=0,
+            min_entry_comments=0,
         )
 
         assert wide.height == 2
@@ -849,8 +1126,11 @@ class TestPivotBarRaceWide:
         records, metadata = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
-            cumulative, metadata, top_n=2,
-            min_ranking_comments=0, min_entry_comments=0,
+            cumulative,
+            metadata,
+            top_n=2,
+            min_ranking_comments=0,
+            min_entry_comments=0,
         )
 
         date_cols = [c for c in wide.columns if c not in {"Label", "Category", "Image"}]
@@ -864,8 +1144,11 @@ class TestPivotBarRaceWide:
         # Ranking threshold 0 lets all players qualify; entry threshold 1500
         # means week 1 (cum_total=1000) is below, week 2 (cum_total=2500) is above
         wide = pivot_bar_race_wide(
-            cumulative, metadata, top_n=2,
-            min_ranking_comments=0, min_entry_comments=1500,
+            cumulative,
+            metadata,
+            top_n=2,
+            min_ranking_comments=0,
+            min_entry_comments=1500,
         )
 
         # First week column should have null values
@@ -879,22 +1162,25 @@ class TestAggregateMetadata:
 
     def test_metadata_includes_schema_version(self, tmp_path):
         """metadata carries the SCHEMA_VERSION from pipeline/schemas.py."""
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2"],
+                "body": ["LeBron is great", "LeBron is washed"],
+                "author": ["u1", "u2"],
+                "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+                "author_flair_css_class": ["lakers", "celtics"],
+                "created_utc": [1704067200, 1704153600],
+                "score": [10, 5],
+                "link_id": ["t3_post123", "t3_post456"],
+                "mentioned_players": [["LeBron James"], ["LeBron James"]],
+                "sentiment": ["pos", "neg"],
+                "confidence": [0.9, 0.8],
+                "sentiment_player": ["LeBron James", "LeBron James"],
+                "input_tokens": [100, 100],
+                "output_tokens": [20, 20],
+            },
+        )
 
         result = aggregate_sentiment(path)
 
@@ -908,22 +1194,25 @@ class TestAggregateMetadata:
         read can't silently mislabel a backfill.
         """
         season_override("2024-25")
-        path = _make_test_parquet(tmp_path, {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        })
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                "comment_id": ["c1", "c2"],
+                "body": ["LeBron is great", "LeBron is washed"],
+                "author": ["u1", "u2"],
+                "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+                "author_flair_css_class": ["lakers", "celtics"],
+                "created_utc": [1704067200, 1704153600],
+                "score": [10, 5],
+                "link_id": ["t3_post123", "t3_post456"],
+                "mentioned_players": [["LeBron James"], ["LeBron James"]],
+                "sentiment": ["pos", "neg"],
+                "confidence": [0.9, 0.8],
+                "sentiment_player": ["LeBron James", "LeBron James"],
+                "input_tokens": [100, 100],
+                "output_tokens": [20, 20],
+            },
+        )
 
         result = aggregate_sentiment(path)
 

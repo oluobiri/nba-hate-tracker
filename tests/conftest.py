@@ -6,7 +6,8 @@ into test functions by name — pytest handles the wiring automatically.
 """
 
 import json
-from typing import Callable
+from collections.abc import Callable, Generator
+from datetime import date
 from unittest.mock import Mock
 
 import pytest
@@ -510,12 +511,42 @@ def team_alias_map() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Roster snapshot (issue #39)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def lebron_roster_row() -> dict:
+    """
+    One ROSTERS_SCHEMA-shaped snapshot row (LeBron James, player_id 2544).
+
+    player_id matches the real config entry, so tests that resolve
+    attribution against the on-disk players.yaml line up with the
+    snapshot join.
+    """
+    return {
+        "player_id": 2544,
+        "player_name": "LeBron James",
+        "team_name": "Los Angeles Lakers",
+        "team_abbr": "LAL",
+        "jersey_number": "23",
+        "position": "F",
+        "height": "6-9",
+        "weight": "250",
+        "age": 40,
+        "experience": "21",
+        "birth_date": date(1984, 12, 30),
+        "school": "St. Vincent-St. Mary HS (OH)",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Season override (issue #51)
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def season_override() -> Callable[[str], None]:
+def season_override() -> Generator[Callable[[str], None], None, None]:
     """
     Set a process-level season override with cold caches; restores after.
 

@@ -4,8 +4,8 @@ Aggregate sentiment data into dashboard-ready outputs.
 Reads classified sentiment parquet, computes player rankings,
 flair segmentation, and temporal trends. Writes the nested
 aggregates.json for the Streamlit dashboard plus one parquet per
-tabular view (player_overall, player_temporal, player_team,
-team_overall) alongside it for ad-hoc DuckDB queries.
+produced table (the four fact views and the players dimension)
+alongside it for ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -18,9 +18,14 @@ import logging
 import sys
 from pathlib import Path
 
-from pipeline.aggregation import aggregate_sentiment
-from pipeline.schemas import AGGREGATE_VIEW_SCHEMAS
+from pipeline.aggregation import aggregate_sentiment, players_to_metadata_dict
+from pipeline.schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
+    DASHBOARD_OUTPUT_SCHEMAS,
+    SCHEMA_VERSION,
+)
 from utils.paths import get_dashboard_dir, get_processed_dir
+from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
@@ -103,21 +108,37 @@ def main() -> None:
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON output: frame views -> records, key order preserved;
+    # Write JSON output: the four record-shaped views -> lists of dicts;
+    # the players dimension -> the legacy nested player_metadata dict
+    # (consumer-safe shim); the metadata scalar passes through.
     # default=str keeps week datetimes serialized exactly as before.
-    serializable = {
-        key: (value.to_dicts() if key in AGGREGATE_VIEW_SCHEMAS else value)
-        for key, value in result.items()
-    }
+    serializable = {}
+    for key, value in result.items():
+        if key in AGGREGATE_VIEW_SCHEMAS:
+            serializable[key] = value.to_dicts()
+        elif key == "players":
+            serializable["player_metadata"] = players_to_metadata_dict(value)
+        else:
+            serializable[key] = value
     with open(output_path, "w") as f:
         json.dump(serializable, f, indent=2, default=str)
 
     logger.info(f"Wrote aggregates to {output_path}")
 
-    # Write one parquet per tabular view next to the JSON
-    for view_name in AGGREGATE_VIEW_SCHEMAS:
-        parquet_path = output_path.parent / f"{view_name}.parquet"
-        result[view_name].write_parquet(parquet_path)
+    # Write one parquet per produced table (four views + the players
+    # dimension). players.parquet carries the config-version stamp so
+    # fact<->dimension drift is checkable (same mechanism as
+    # sentiment.parquet's stamp in collect_results).
+    players_stamp = {
+        "players_config_version": load_player_config_version(),
+        "schema_version": str(SCHEMA_VERSION),
+    }
+    for name in DASHBOARD_OUTPUT_SCHEMAS:
+        parquet_path = output_path.parent / f"{name}.parquet"
+        result[name].write_parquet(
+            parquet_path,
+            metadata=players_stamp if name == "players" else None,
+        )
         logger.info(f"Wrote {parquet_path}")
 
     # Log metadata summary

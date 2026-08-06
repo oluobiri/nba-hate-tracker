@@ -12,11 +12,15 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.schemas import (
-    AGGREGATE_VIEW_SCHEMAS,
+    DASHBOARD_OUTPUT_SCHEMAS,
+    PLAYERS_CONFIG_COLUMNS,
+    PLAYERS_SCHEMA,
+    PLAYERS_SNAPSHOT_COLUMNS,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
     validate_schema,
 )
+from utils.paths import get_reference_dir
 from utils.player_config import (
     build_alias_to_player_map,
     load_player_config_version,
@@ -112,9 +116,18 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     grouped = (
         df.group_by(group_cols)
         .agg(
-            pl.col("sentiment").filter(pl.col("sentiment") == "neg").len().alias("neg_count"),
-            pl.col("sentiment").filter(pl.col("sentiment") == "pos").len().alias("pos_count"),
-            pl.col("sentiment").filter(pl.col("sentiment") == "neu").len().alias("neu_count"),
+            pl.col("sentiment")
+            .filter(pl.col("sentiment") == "neg")
+            .len()
+            .alias("neg_count"),
+            pl.col("sentiment")
+            .filter(pl.col("sentiment") == "pos")
+            .len()
+            .alias("pos_count"),
+            pl.col("sentiment")
+            .filter(pl.col("sentiment") == "neu")
+            .len()
+            .alias("neu_count"),
             pl.len().alias("comment_count"),
         )
         .with_columns(
@@ -126,12 +139,12 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
         .with_columns(
             (pl.col("neg_count") / pl.col("comment_count")).round(4).alias("neg_rate"),
             (pl.col("pos_count") / pl.col("comment_count")).round(4).alias("pos_rate"),
-            (
-                (pl.col("pos_count") - pl.col("neg_count")) / pl.col("comment_count")
-            ).round(4).alias("net_sentiment"),
-            (
-                (pl.col("pos_count") + pl.col("neg_count")) / pl.col("comment_count")
-            ).round(4).alias("polarization"),
+            ((pl.col("pos_count") - pl.col("neg_count")) / pl.col("comment_count"))
+            .round(4)
+            .alias("net_sentiment"),
+            ((pl.col("pos_count") + pl.col("neg_count")) / pl.col("comment_count"))
+            .round(4)
+            .alias("polarization"),
         )
     )
 
@@ -149,13 +162,15 @@ def aggregate_sentiment(input_path: Path) -> dict:
         input_path: Path to sentiment.parquet file.
 
     Returns:
-        Dict where player_overall, player_temporal, player_team, and
-        team_overall hold pl.DataFrames conforming to
-        AGGREGATE_VIEW_SCHEMAS; player_metadata and metadata are dicts.
+        Dict where player_overall, player_temporal, player_team,
+        team_overall, and players hold pl.DataFrames conforming to
+        DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy
+        player_metadata dict is reconstructed at serialization time via
+        players_to_metadata_dict().
 
     Raises:
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
-            or a computed view does not match its schema contract.
+            or a computed output does not match its schema contract.
     """
     logger.info(f"Loading sentiment data from {input_path}")
     df = pl.read_parquet(input_path)
@@ -229,11 +244,7 @@ def aggregate_sentiment(input_path: Path) -> dict:
     logger.info(f"Matched {team_count:,} comments to team flairs")
 
     # Temporal prep: convert created_utc to datetime, truncate to week (Monday)
-    df = df.with_columns(
-        pl.from_epoch("created_utc")
-        .dt.truncate("1w")
-        .alias("week")
-    )
+    df = df.with_columns(pl.from_epoch("created_utc").dt.truncate("1w").alias("week"))
 
     # --- Aggregation views ---
 
@@ -301,35 +312,151 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Filter player metadata to only players in player_overall
-    # and enrich with team logo_url
+    # Player dimension: config curation joined with snapshot facts, one
+    # row per attributed player in players.yaml order
     attributed_players = set(player_overall.get_column("attributed_player").to_list())
-    filtered_player_metadata = {}
-    for player, meta in player_metadata.items():
-        if player in attributed_players:
-            enriched = dict(meta)
-            team_info = team_config.get(enriched.get("team", ""), {})
-            enriched["logo_url"] = team_info.get("logo_url")
-            filtered_player_metadata[player] = enriched
+    players = _build_players_dimension(player_metadata, attributed_players)
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks"
     )
 
-    views = {
+    outputs = {
         "player_overall": player_overall,
         "player_temporal": player_temporal,
         "player_team": player_team,
         "team_overall": team_overall,
+        "players": players,
     }
-    for view_name, schema in AGGREGATE_VIEW_SCHEMAS.items():
-        validate_schema(views[view_name], schema, view_name)
+    for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
+        validate_schema(outputs[name], schema, name)
 
     return {
-        **views,
-        "player_metadata": filtered_player_metadata,
+        **outputs,
         "metadata": metadata,
+    }
+
+
+def _build_players_dimension(
+    player_metadata: dict[str, dict], attributed_players: set[str]
+) -> pl.DataFrame:
+    """
+    Build the Player dimension: config curation joined with snapshot facts.
+
+    Config side: one row per attributed player, in players.yaml order,
+    with the roster team role-marked as roster_team. Snapshot side: LEFT
+    JOIN on player_id from the season's rosters.parquet — a missing
+    snapshot row (or the whole snapshot file) degrades to null snapshot
+    columns, never dropped rows.
+
+    Args:
+        player_metadata: Per-player config dict from load_player_metadata().
+        attributed_players: Players present in player_overall.
+
+    Returns:
+        Frame conforming to PLAYERS_SCHEMA.
+    """
+    config_rows = [
+        {
+            "attributed_player": player,
+            "roster_team": meta.get("team"),
+            "conference": meta.get("conference"),
+            "player_id": meta.get("player_id"),
+            "headshot_url": meta.get("headshot_url"),
+        }
+        for player, meta in player_metadata.items()
+        if player in attributed_players
+    ]
+    config_side = pl.DataFrame(config_rows, schema=PLAYERS_CONFIG_COLUMNS)
+
+    snapshot_path = get_reference_dir() / "rosters.parquet"
+    if not snapshot_path.exists():
+        logger.warning(
+            f"{snapshot_path} not found (run scripts.fetch_rosters) - "
+            f"snapshot columns will be null"
+        )
+        return config_side.with_columns(
+            pl.lit(None, dtype=PLAYERS_SCHEMA[col]).alias(col)
+            for col in PLAYERS_SNAPSHOT_COLUMNS
+        )
+
+    # Snapshot-lineage check, same spirit as the players_config_version
+    # stamp: a snapshot fetched for another season is legitimate to read,
+    # just not silently.
+    stamped_season = pl.read_parquet_metadata(snapshot_path).get("season")
+    active_season = get_active_season()
+    if stamped_season is None:
+        logger.warning(
+            f"{snapshot_path} carries no season stamp - snapshot lineage "
+            f"cannot be verified"
+        )
+    elif stamped_season != active_season:
+        logger.warning(
+            f"{snapshot_path}: season stamp {stamped_season!r} does not match "
+            f"active season {active_season!r}; snapshot facts may be stale"
+        )
+
+    snapshot = pl.read_parquet(snapshot_path).select(
+        ["player_id", *PLAYERS_SNAPSHOT_COLUMNS]
+    )
+    unmatched = config_side.join(snapshot, on="player_id", how="anti")
+    if unmatched.height:
+        logger.info(
+            f"{unmatched.height} attributed player(s) missing from the roster "
+            f"snapshot (snapshot columns null): "
+            f"{unmatched['attributed_player'].to_list()}"
+        )
+    players = config_side.join(
+        snapshot, on="player_id", how="left", maintain_order="left"
+    )
+    # Grain guard: a duplicate player_id in the snapshot would fan the LEFT
+    # JOIN out to multiple rows per player - silent corruption downstream
+    # (double-counted view joins, shim rows dropped by last-key-wins), so
+    # it fails loudly here instead. validate_schema can't catch this: it
+    # checks columns, not row grain.
+    if players.height != config_side.height:
+        duplicated = (
+            snapshot.group_by("player_id")
+            .len()
+            .filter(pl.col("len") > 1)
+            .get_column("player_id")
+            .to_list()
+        )
+        raise ValueError(
+            f"Player dimension fan-out: roster snapshot carries duplicate "
+            f"player_id(s) {duplicated}; the dimension's grain is one row "
+            f"per player - fix the snapshot (re-run scripts.fetch_rosters)"
+        )
+    return players
+
+
+def players_to_metadata_dict(df: pl.DataFrame) -> dict[str, dict]:
+    """
+    Reconstruct the legacy aggregates.json player_metadata dict.
+
+    Keys the dict by player name; values carry the config-side columns
+    under their legacy JSON names (roster_team serializes as `team`).
+    Snapshot columns don't ship in the JSON — the legacy consumers never
+    knew them. Row order is preserved.
+
+    Args:
+        df: Player dimension frame conforming to PLAYERS_SCHEMA.
+
+    Returns:
+        Dict mapping player name to the legacy metadata fields, in
+        frame-row order.
+    """
+    legacy_names = {
+        col: ("team" if col == "roster_team" else col)
+        for col in PLAYERS_CONFIG_COLUMNS
+        if col != "attributed_player"
+    }
+    return {
+        row["attributed_player"]: {
+            legacy: row[col] for col, legacy in legacy_names.items()
+        }
+        for row in df.select(list(PLAYERS_CONFIG_COLUMNS)).iter_rows(named=True)
     }
 
 
@@ -360,9 +487,7 @@ def compute_cumulative_metrics(player_temporal: list[dict]) -> pl.DataFrame:
     df = pl.DataFrame(player_temporal)
 
     # Parse week strings to Date and exclude stub week
-    df = df.with_columns(
-        pl.col("week").str.to_datetime().cast(pl.Date)
-    )
+    df = df.with_columns(pl.col("week").str.to_datetime().cast(pl.Date))
     stub_week = df["week"].max()
     df = df.filter(pl.col("week") != stub_week)
 
@@ -397,7 +522,9 @@ def compute_cumulative_metrics(player_temporal: list[dict]) -> pl.DataFrame:
         )
     )
 
-    return df.select("attributed_player", "week", "cum_neg", "cum_total", "cum_neg_rate")
+    return df.select(
+        "attributed_player", "week", "cum_neg", "cum_total", "cum_neg_rate"
+    )
 
 
 def mask_below_threshold(
@@ -503,11 +630,13 @@ def pivot_bar_race_wide(
 
     # Reorder: Label, Category, Image, then week columns sorted chronologically
     week_cols = sorted(
-        [c for c in wide.columns if c not in {"attributed_player", "Label", "Category", "Image"}]
+        [
+            c
+            for c in wide.columns
+            if c not in {"attributed_player", "Label", "Category", "Image"}
+        ]
     )
-    wide = wide.with_columns(
-        [(pl.col(c) * 100).round(2) for c in week_cols]
-    )
+    wide = wide.with_columns([(pl.col(c) * 100).round(2) for c in week_cols])
     wide = wide.select(["Label", "Category", "Image"] + week_cols)
 
     return wide

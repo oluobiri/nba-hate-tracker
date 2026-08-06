@@ -1,12 +1,14 @@
 """Tests for pipeline/schemas.py schema validation."""
 
-from datetime import date
-
 import polars as pl
 import pytest
 
 from pipeline.schemas import (
+    AGGREGATE_VIEW_SCHEMAS,
     COMMENT_INPUT_SCHEMA,
+    DASHBOARD_OUTPUT_SCHEMAS,
+    PLAYERS_SCHEMA,
+    PLAYERS_SNAPSHOT_COLUMNS,
     ROSTERS_SCHEMA,
     SENTIMENT_SCHEMA,
     validate_schema,
@@ -52,27 +54,36 @@ class TestLinkIdContract:
 
 
 @pytest.fixture
-def roster_frame() -> pl.DataFrame:
+def roster_frame(lebron_roster_row) -> pl.DataFrame:
     """One-row DataFrame conforming exactly to ROSTERS_SCHEMA."""
-    return pl.DataFrame(
-        [
-            {
-                "player_id": 2544,
-                "player_name": "LeBron James",
-                "team_name": "Los Angeles Lakers",
-                "team_abbr": "LAL",
-                "jersey_number": "23",
-                "position": "F",
-                "height": "6-9",
-                "weight": "250",
-                "age": 40,
-                "experience": "21",
-                "birth_date": date(1984, 12, 30),
-                "school": "St. Vincent-St. Mary HS (OH)",
-            }
-        ],
-        schema=ROSTERS_SCHEMA,
-    )
+    return pl.DataFrame([lebron_roster_row], schema=ROSTERS_SCHEMA)
+
+
+class TestPlayersContract:
+    """Contract guards for the Player dimension (players.parquet)."""
+
+    def test_roster_team_is_role_marked(self):
+        """Verify the roster column is role-marked from birth — never bare `team`."""
+        assert PLAYERS_SCHEMA["roster_team"] == pl.String
+        assert "team" not in PLAYERS_SCHEMA.names()
+
+    def test_excludes_rejected_columns(self):
+        """Verify decided-out columns stay out (logo_url, age, snapshot team fields)."""
+        for col in ("logo_url", "age", "player_name", "team_name", "team_abbr"):
+            assert col not in PLAYERS_SCHEMA.names()
+
+    def test_snapshot_side_dtypes_derive_from_rosters(self):
+        """Verify snapshot-side dtypes match ROSTERS_SCHEMA exactly (no drift)."""
+        for col in PLAYERS_SNAPSHOT_COLUMNS:
+            assert PLAYERS_SCHEMA[col] == ROSTERS_SCHEMA[col]
+
+    def test_dashboard_outputs_superset(self):
+        """Verify the output mapping is views + the dimension, and views stay fact-only."""
+        assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
+            "players"
+        }
+        assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
+        assert "players" not in AGGREGATE_VIEW_SCHEMAS
 
 
 class TestRostersContract:

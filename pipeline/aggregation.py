@@ -386,7 +386,12 @@ def _build_players_dimension(
     # just not silently.
     stamped_season = pl.read_parquet_metadata(snapshot_path).get("season")
     active_season = get_active_season()
-    if stamped_season is not None and stamped_season != active_season:
+    if stamped_season is None:
+        logger.warning(
+            f"{snapshot_path} carries no season stamp - snapshot lineage "
+            f"cannot be verified"
+        )
+    elif stamped_season != active_season:
         logger.warning(
             f"{snapshot_path}: season stamp {stamped_season!r} does not match "
             f"active season {active_season!r}; snapshot facts may be stale"

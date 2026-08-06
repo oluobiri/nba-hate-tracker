@@ -441,6 +441,24 @@ class TestAggregatePlayers:
         assert "season stamp" in caplog.text
         assert "1999-00" in caplog.text
 
+    def test_unstamped_snapshot_warns_distinctly(
+        self, tmp_path, pinned_snapshot, lebron_roster_row, caplog
+    ):
+        """A snapshot with no season stamp warns that lineage is unverifiable.
+
+        Absent is not drift: the message must say lineage cannot be
+        verified, not claim a season mismatch.
+        """
+        pl.DataFrame([lebron_roster_row], schema=ROSTERS_SCHEMA).write_parquet(
+            pinned_snapshot / "rosters.parquet"
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert "no season stamp" in caplog.text
+        assert "does not match" not in caplog.text
+
 
 class TestPlayersToMetadataDict:
     """Tests for players_to_metadata_dict (frame -> legacy aggregates.json dict).

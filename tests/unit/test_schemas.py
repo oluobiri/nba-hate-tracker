@@ -1,7 +1,5 @@
 """Tests for pipeline/schemas.py schema validation."""
 
-from datetime import date
-
 import polars as pl
 import pytest
 
@@ -56,27 +54,9 @@ class TestLinkIdContract:
 
 
 @pytest.fixture
-def roster_frame() -> pl.DataFrame:
+def roster_frame(lebron_roster_row) -> pl.DataFrame:
     """One-row DataFrame conforming exactly to ROSTERS_SCHEMA."""
-    return pl.DataFrame(
-        [
-            {
-                "player_id": 2544,
-                "player_name": "LeBron James",
-                "team_name": "Los Angeles Lakers",
-                "team_abbr": "LAL",
-                "jersey_number": "23",
-                "position": "F",
-                "height": "6-9",
-                "weight": "250",
-                "age": 40,
-                "experience": "21",
-                "birth_date": date(1984, 12, 30),
-                "school": "St. Vincent-St. Mary HS (OH)",
-            }
-        ],
-        schema=ROSTERS_SCHEMA,
-    )
+    return pl.DataFrame([lebron_roster_row], schema=ROSTERS_SCHEMA)
 
 
 class TestPlayersContract:

@@ -265,60 +265,45 @@ def _lebron_parquet(tmp_path):
     )
 
 
-_LEBRON_ROSTER_ROW = {
-    "player_id": 2544,
-    "player_name": "LeBron James",
-    "team_name": "Los Angeles Lakers",
-    "team_abbr": "LAL",
-    "jersey_number": "23",
-    "position": "F",
-    "height": "6-9",
-    "weight": "250",
-    "age": 40,
-    "experience": "21",
-    "birth_date": date(1984, 12, 30),
-    "school": "St. Vincent-St. Mary HS (OH)",
-}
+def _write_snapshot(ref_dir, rows, season=None):
+    """Overwrite the pinned snapshot with custom rows (season=None → active)."""
+    pl.DataFrame(rows, schema=ROSTERS_SCHEMA).write_parquet(
+        ref_dir / "rosters.parquet",
+        metadata={"season": season or get_active_season()},
+    )
 
 
-def _pin_snapshot(monkeypatch, tmp_path, rows=None, season=None, missing=False):
-    """Point pipeline.aggregation at a tmp reference dir with a roster snapshot.
+@pytest.fixture(autouse=True)
+def pinned_snapshot(monkeypatch, tmp_path, lebron_roster_row):
+    """Pin pipeline.aggregation's reference dir to a tmp roster snapshot.
 
-    rows=None writes the LeBron row; missing=True leaves the dir empty
-    (the no-snapshot degradation path). season stamps the file's metadata
-    (defaults to the active season so no drift warning fires).
+    Autouse so no test in this module reads the real data/ reference dir —
+    aggregate_sentiment() takes the same code path on every machine.
+    Defaults to a one-row LeBron snapshot stamped with the active season;
+    tests needing other snapshot states overwrite or delete
+    rosters.parquet in the returned dir.
     """
     ref_dir = tmp_path / "reference"
     ref_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("pipeline.aggregation.get_reference_dir", lambda: ref_dir)
-    if missing:
-        return ref_dir
-    df = pl.DataFrame(rows or [_LEBRON_ROSTER_ROW], schema=ROSTERS_SCHEMA)
-    df.write_parquet(
-        ref_dir / "rosters.parquet",
-        metadata={"season": season or get_active_season()},
-    )
+    _write_snapshot(ref_dir, [lebron_roster_row])
     return ref_dir
 
 
 class TestAggregatePlayers:
     """Tests for the players Player-dimension frame in aggregate output."""
 
-    def test_players_is_frame_conforming_to_schema(self, tmp_path, monkeypatch):
+    def test_players_is_frame_conforming_to_schema(self, tmp_path):
         """players is returned as a frame matching PLAYERS_SCHEMA; the legacy
         player_metadata key no longer appears in the return dict."""
-        _pin_snapshot(monkeypatch, tmp_path)
-
         result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
         assert isinstance(result["players"], pl.DataFrame)
         assert result["players"].schema == PLAYERS_SCHEMA
         assert "player_metadata" not in result
 
-    def test_config_side_populated(self, tmp_path, monkeypatch):
+    def test_config_side_populated(self, tmp_path):
         """Config columns carry the curated fields, roster team role-marked."""
-        _pin_snapshot(monkeypatch, tmp_path)
-
         result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
         row = result["players"].row(
@@ -329,10 +314,8 @@ class TestAggregatePlayers:
         assert row["player_id"] == 2544
         assert row["headshot_url"] is not None
 
-    def test_snapshot_side_joined(self, tmp_path, monkeypatch):
+    def test_snapshot_side_joined(self, tmp_path):
         """Snapshot columns join in via player_id."""
-        _pin_snapshot(monkeypatch, tmp_path)
-
         result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
         row = result["players"].row(
@@ -343,22 +326,21 @@ class TestAggregatePlayers:
         assert row["height"] == "6-9"
         assert row["birth_date"] == date(1984, 12, 30)
 
-    def test_excludes_non_attributed_players(self, tmp_path, monkeypatch):
+    def test_excludes_non_attributed_players(self, tmp_path):
         """The frame only includes players that appear in player_overall."""
-        _pin_snapshot(monkeypatch, tmp_path)
-
         result = aggregate_sentiment(_lebron_parquet(tmp_path))
         players = result["players"]["attributed_player"].to_list()
 
         assert players == ["LeBron James"]
 
-    def test_missing_snapshot_row_nulls_and_logs(self, tmp_path, monkeypatch, caplog):
+    def test_missing_snapshot_row_nulls_and_logs(
+        self, tmp_path, pinned_snapshot, lebron_roster_row, caplog
+    ):
         """An attributed player absent from the snapshot gets null snapshot
         columns and is logged (the baked-config fallback case)."""
-        _pin_snapshot(
-            monkeypatch,
-            tmp_path,
-            rows=[{**_LEBRON_ROSTER_ROW, "player_id": 999, "player_name": "Other"}],
+        _write_snapshot(
+            pinned_snapshot,
+            [{**lebron_roster_row, "player_id": 999, "player_name": "Other"}],
         )
 
         with caplog.at_level(logging.INFO, logger="pipeline.aggregation"):
@@ -374,11 +356,11 @@ class TestAggregatePlayers:
         assert "LeBron James" in caplog.text
 
     def test_missing_snapshot_file_warns_and_degrades(
-        self, tmp_path, monkeypatch, caplog
+        self, tmp_path, pinned_snapshot, caplog
     ):
         """No snapshot on disk: warn and ship the dimension with null
         snapshot columns (aggregation stays runnable without reference assets)."""
-        _pin_snapshot(monkeypatch, tmp_path, missing=True)
+        (pinned_snapshot / "rosters.parquet").unlink()
 
         with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
             result = aggregate_sentiment(_lebron_parquet(tmp_path))
@@ -391,9 +373,11 @@ class TestAggregatePlayers:
         assert row["position"] is None
         assert "snapshot columns will be null" in caplog.text
 
-    def test_snapshot_season_stamp_mismatch_warns(self, tmp_path, monkeypatch, caplog):
+    def test_snapshot_season_stamp_mismatch_warns(
+        self, tmp_path, pinned_snapshot, lebron_roster_row, caplog
+    ):
         """A snapshot stamped for another season triggers the lineage warning."""
-        _pin_snapshot(monkeypatch, tmp_path, season="1999-00")
+        _write_snapshot(pinned_snapshot, [lebron_roster_row], season="1999-00")
 
         with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
             aggregate_sentiment(_lebron_parquet(tmp_path))

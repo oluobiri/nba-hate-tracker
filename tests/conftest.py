@@ -6,8 +6,8 @@ into test functions by name — pytest handles the wiring automatically.
 """
 
 import json
+from collections.abc import Callable, Generator
 from datetime import date
-from typing import Callable
 from unittest.mock import Mock
 
 import pytest
@@ -546,7 +546,7 @@ def lebron_roster_row() -> dict:
 
 
 @pytest.fixture
-def season_override() -> Callable[[str], None]:
+def season_override() -> Generator[Callable[[str], None], None, None]:
     """
     Set a process-level season override with cold caches; restores after.
 

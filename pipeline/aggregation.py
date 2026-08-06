@@ -402,7 +402,28 @@ def _build_players_dimension(
             f"snapshot (snapshot columns null): "
             f"{unmatched['attributed_player'].to_list()}"
         )
-    return config_side.join(snapshot, on="player_id", how="left", maintain_order="left")
+    players = config_side.join(
+        snapshot, on="player_id", how="left", maintain_order="left"
+    )
+    # Grain guard: a duplicate player_id in the snapshot would fan the LEFT
+    # JOIN out to multiple rows per player - silent corruption downstream
+    # (double-counted view joins, shim rows dropped by last-key-wins), so
+    # it fails loudly here instead. validate_schema can't catch this: it
+    # checks columns, not row grain.
+    if players.height != config_side.height:
+        duplicated = (
+            snapshot.group_by("player_id")
+            .len()
+            .filter(pl.col("len") > 1)
+            .get_column("player_id")
+            .to_list()
+        )
+        raise ValueError(
+            f"Player dimension fan-out: roster snapshot carries duplicate "
+            f"player_id(s) {duplicated}; the dimension's grain is one row "
+            f"per player - fix the snapshot (re-run scripts.fetch_rosters)"
+        )
+    return players
 
 
 def players_to_metadata_dict(df: pl.DataFrame) -> dict[str, dict]:

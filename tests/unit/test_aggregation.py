@@ -28,7 +28,7 @@ from pipeline.schemas import (
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
 )
-from utils.player_config import load_player_config_version
+from utils.player_config import load_player_config_version, load_player_metadata
 from utils.season_config import get_active_season
 
 
@@ -241,28 +241,33 @@ def _make_test_parquet(tmp_path, rows, metadata=None):
     return path
 
 
+def _lebron_rows() -> dict:
+    """Two LeBron comments (Lakers + Celtics flair) in SENTIMENT_SCHEMA shape.
+
+    Base rows for the Player-dimension tests; override columns to vary
+    the mentioned players.
+    """
+    return {
+        "comment_id": ["c1", "c2"],
+        "body": ["LeBron is great", "LeBron is washed"],
+        "author": ["u1", "u2"],
+        "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
+        "author_flair_css_class": ["lakers", "celtics"],
+        "created_utc": [1704067200, 1704153600],
+        "score": [10, 5],
+        "link_id": ["t3_post123", "t3_post456"],
+        "mentioned_players": [["LeBron James"], ["LeBron James"]],
+        "sentiment": ["pos", "neg"],
+        "confidence": [0.9, 0.8],
+        "sentiment_player": ["LeBron James", "LeBron James"],
+        "input_tokens": [100, 100],
+        "output_tokens": [20, 20],
+    }
+
+
 def _lebron_parquet(tmp_path):
-    """Two LeBron comments (Lakers + Celtics flair) — LeBron the only
-    attributed player. Shared by the Player-dimension tests."""
-    return _make_test_parquet(
-        tmp_path,
-        {
-            "comment_id": ["c1", "c2"],
-            "body": ["LeBron is great", "LeBron is washed"],
-            "author": ["u1", "u2"],
-            "author_flair_text": [":lal-1: Lakers", ":bos-1: Celtics"],
-            "author_flair_css_class": ["lakers", "celtics"],
-            "created_utc": [1704067200, 1704153600],
-            "score": [10, 5],
-            "link_id": ["t3_post123", "t3_post456"],
-            "mentioned_players": [["LeBron James"], ["LeBron James"]],
-            "sentiment": ["pos", "neg"],
-            "confidence": [0.9, 0.8],
-            "sentiment_player": ["LeBron James", "LeBron James"],
-            "input_tokens": [100, 100],
-            "output_tokens": [20, 20],
-        },
-    )
+    """Parquet of _lebron_rows() — LeBron the only attributed player."""
+    return _make_test_parquet(tmp_path, _lebron_rows())
 
 
 def _write_snapshot(ref_dir, rows, season=None):
@@ -332,6 +337,57 @@ class TestAggregatePlayers:
         players = result["players"]["attributed_player"].to_list()
 
         assert players == ["LeBron James"]
+
+    def test_multi_player_join_follows_config_order(
+        self, tmp_path, pinned_snapshot, lebron_roster_row
+    ):
+        """Two attributed players: one row each, ordered by players.yaml."""
+        giannis_row = {
+            **lebron_roster_row,
+            "player_id": 203507,
+            "player_name": "Giannis Antetokounmpo",
+            "team_name": "Milwaukee Bucks",
+            "team_abbr": "MIL",
+            "jersey_number": "34",
+        }
+        _write_snapshot(pinned_snapshot, [lebron_roster_row, giannis_row])
+        path = _make_test_parquet(
+            tmp_path,
+            {
+                **_lebron_rows(),
+                "body": ["LeBron is great", "Giannis is a freak"],
+                "mentioned_players": [["LeBron James"], ["Giannis Antetokounmpo"]],
+                "sentiment_player": ["LeBron James", "Giannis Antetokounmpo"],
+            },
+        )
+
+        result = aggregate_sentiment(path)
+
+        expected_order = [
+            player
+            for player in load_player_metadata()
+            if player in {"LeBron James", "Giannis Antetokounmpo"}
+        ]
+        assert result["players"]["attributed_player"].to_list() == expected_order
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "Giannis Antetokounmpo",
+            named=True,
+        )
+        assert row["jersey_number"] == "34"
+
+    def test_duplicate_snapshot_player_id_raises(
+        self, tmp_path, pinned_snapshot, lebron_roster_row
+    ):
+        """A duplicate player_id in the snapshot fails loudly, not by fanning
+        the dimension out to multiple rows per player."""
+        _write_snapshot(
+            pinned_snapshot,
+            [lebron_roster_row, {**lebron_roster_row, "team_abbr": "BOS"}],
+        )
+
+        with pytest.raises(ValueError, match="duplicate") as exc:
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+        assert "2544" in str(exc.value)
 
     def test_missing_snapshot_row_nulls_and_logs(
         self, tmp_path, pinned_snapshot, lebron_roster_row, caplog

@@ -18,6 +18,7 @@ from pipeline.schemas import (
     PLAYERS_SNAPSHOT_COLUMNS,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
+    TEAMS_SCHEMA,
     validate_schema,
 )
 from utils.paths import get_reference_dir
@@ -163,8 +164,8 @@ def aggregate_sentiment(input_path: Path) -> dict:
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
-        team_overall, and players hold pl.DataFrames conforming to
-        DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy
+        team_overall, players, and teams hold pl.DataFrames conforming
+        to DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy
         player_metadata dict is reconstructed at serialization time via
         players_to_metadata_dict().
 
@@ -270,27 +271,16 @@ def aggregate_sentiment(input_path: Path) -> dict:
     logger.info("Computing team_overall...")
     df_team = df.filter(pl.col("team").is_not_null())
 
-    # Enrich with abbreviation, conference and logo_url from config/teams.yaml.
-    # Schema pin so an all-null column can't infer as Null dtype; left join
-    # appends the enrichment columns after the metrics, matching
+    # Team dimension: pure config export, also the single source for
+    # team_overall's baked enrichment columns (abbreviation, conference,
+    # logo_url) so the two can never drift.
+    teams = build_teams_dimension(team_config)
+
+    # Left join appends the enrichment columns after the metrics, matching
     # TEAM_OVERALL_SCHEMA order. Re-sort because joins don't preserve row order.
-    team_enrichment = pl.DataFrame(
-        {
-            "team": list(team_config),
-            "abbreviation": [info["abbreviation"] for info in team_config.values()],
-            "conference": [info["conference"] for info in team_config.values()],
-            "logo_url": [info["logo_url"] for info in team_config.values()],
-        },
-        schema={
-            "team": pl.String,
-            "abbreviation": pl.String,
-            "conference": pl.String,
-            "logo_url": pl.String,
-        },
-    )
     team_overall = (
         compute_metrics(df_team, ["team"])
-        .join(team_enrichment, on="team", how="left")
+        .join(teams.drop("team_id"), on="team", how="left")
         .sort("team")
     )
 
@@ -328,6 +318,7 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "player_team": player_team,
         "team_overall": team_overall,
         "players": players,
+        "teams": teams,
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
         validate_schema(outputs[name], schema, name)
@@ -336,6 +327,33 @@ def aggregate_sentiment(input_path: Path) -> dict:
         **outputs,
         "metadata": metadata,
     }
+
+
+def build_teams_dimension(team_config: dict[str, dict]) -> pl.DataFrame:
+    """
+    Build the Team dimension: a pure export of config/teams.yaml.
+
+    One row per franchise, in teams.yaml order. No fact dependency —
+    every franchise ships regardless of which fan_teams the comments
+    resolved to. Aliases stay config-only: the dimension describes and
+    slices, it never selects.
+
+    Args:
+        team_config: Per-team config dict from load_team_config().
+
+    Returns:
+        Frame conforming to TEAMS_SCHEMA.
+    """
+    return pl.DataFrame(
+        {
+            "team": list(team_config),
+            "abbreviation": [info["abbreviation"] for info in team_config.values()],
+            "conference": [info["conference"] for info in team_config.values()],
+            "team_id": [info["team_id"] for info in team_config.values()],
+            "logo_url": [info["logo_url"] for info in team_config.values()],
+        },
+        schema=TEAMS_SCHEMA,
+    )
 
 
 def _build_players_dimension(

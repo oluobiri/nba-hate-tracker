@@ -209,13 +209,32 @@ PLAYERS_SCHEMA = pl.Schema(
     }
 )
 
+# --- Team dimension (enforced in pipeline/aggregation.py) -------------------
+# One row per franchise — the Team dimension the fan-role `team` FK in
+# player_team/team_overall references (and the roster_team FK in players).
+# Pure config export from config/teams.yaml; aliases stay config-only (the
+# dimension describes and slices, it never selects). PK is bare `team`:
+# role-marking (roster_team/fan_team) applies to FK columns on fact tables,
+# not the dimension's own key. See docs/data-model.md §2.
+
+TEAMS_SCHEMA = pl.Schema(
+    {
+        "team": pl.String,
+        "abbreviation": pl.String,
+        "conference": pl.String,
+        "team_id": pl.Int64,
+        "logo_url": pl.String,
+    }
+)
+
 # Every table the aggregation stage produces -> its schema: the four fact
-# views plus the Player dimension. Single source for aggregate_sentiment()'s
-# unified validation loop and the script's parquet write loop
-# (<name>.parquet).
+# views plus the Player and Team dimensions. Single source for
+# aggregate_sentiment()'s unified validation loop and the script's parquet
+# write loop (<name>.parquet).
 DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     **AGGREGATE_VIEW_SCHEMAS,
     "players": PLAYERS_SCHEMA,
+    "teams": TEAMS_SCHEMA,
 }
 
 

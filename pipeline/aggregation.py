@@ -18,6 +18,7 @@ from pipeline.schemas import (
     PLAYERS_SNAPSHOT_COLUMNS,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
+    TEAM_OVERALL_SCHEMA,
     TEAMS_SCHEMA,
     validate_schema,
 )
@@ -276,11 +277,15 @@ def aggregate_sentiment(input_path: Path) -> dict:
     # logo_url) so the two can never drift.
     teams = build_teams_dimension(team_config)
 
-    # Left join appends the enrichment columns after the metrics, matching
-    # TEAM_OVERALL_SCHEMA order. Re-sort because joins don't preserve row order.
+    # Positive selection: the enrichment set is the intersection of the
+    # two contracts, so a column added to the dimension alone never
+    # propagates into the view. Left join appends the columns after the
+    # metrics, matching TEAM_OVERALL_SCHEMA order; re-sort because joins
+    # don't preserve row order.
+    enrichment_cols = [c for c in TEAM_OVERALL_SCHEMA.names() if c in TEAMS_SCHEMA]
     team_overall = (
         compute_metrics(df_team, ["team"])
-        .join(teams.drop("team_id"), on="team", how="left")
+        .join(teams.select(enrichment_cols), on="team", how="left")
         .sort("team")
     )
 

@@ -1074,10 +1074,9 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201935.png
     aliases:
     - harden
-    - the beard
+    - the beard  # kept v4.4 (#81 amendment): 82% sentiment_player agreement among named; generic-beard chatter sits below the 2:1 action rule
     - james floppen
-    - james soften
-    - literally hitler
+    - james soften  # kept v4.4 (#81 amendment): 92% agreement. 'literally hitler' dropped same pass: 0% — meme applied to SGA/Dort/Brown, never Harden
 
   Dylan Harper:
     team: San Antonio Spurs

@@ -104,6 +104,22 @@ def main() -> None:
     logger.info(f"Output: {output_path}")
     logger.info("=" * 60)
 
+    # Pre-flight the config-version stamps before anything runs or is
+    # written: a bad config version (e.g. an unquoted YAML float) must
+    # abort here, never between output writes — a torn output set
+    # (fresh aggregates.json beside stale parquets) is exactly the
+    # inconsistency the stamps exist to make detectable.
+    stamps = {
+        "players": {
+            "players_config_version": load_player_config_version(),
+            "schema_version": str(SCHEMA_VERSION),
+        },
+        "teams": {
+            "teams_config_version": load_team_config_version(),
+            "schema_version": str(SCHEMA_VERSION),
+        },
+    }
+
     # Run aggregation
     result = aggregate_sentiment(input_path)
 
@@ -131,19 +147,9 @@ def main() -> None:
     logger.info(f"Wrote aggregates to {output_path}")
 
     # Write one parquet per produced table (four views + the players and
-    # teams dimensions). Each dimension carries its config-version stamp
-    # so fact<->dimension drift is checkable (same mechanism as
-    # sentiment.parquet's stamp in collect_results).
-    stamps = {
-        "players": {
-            "players_config_version": load_player_config_version(),
-            "schema_version": str(SCHEMA_VERSION),
-        },
-        "teams": {
-            "teams_config_version": load_team_config_version(),
-            "schema_version": str(SCHEMA_VERSION),
-        },
-    }
+    # teams dimensions). Each dimension carries the config-version stamp
+    # pre-flighted above, so fact<->dimension drift is checkable (same
+    # mechanism as sentiment.parquet's stamp in collect_results).
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_path.parent / f"{name}.parquet"
         result[name].write_parquet(parquet_path, metadata=stamps.get(name))

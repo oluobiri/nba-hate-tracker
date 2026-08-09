@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '4.3'
+version: '4.4'
 season: 2025-26
 short_aliases:
 - ad
@@ -135,7 +135,6 @@ short_aliases:
 - hield
 - the don
 - loon
-- kai
 - lonzo
 - flagg
 - jimmy g
@@ -148,7 +147,6 @@ short_aliases:
 - debo
 - k love
 - beal
-- snake
 - simmons
 - sarr
 - towns
@@ -808,8 +806,7 @@ players:
     - durantula
     - slim reaper
     - easy money sniper
-    - cupcake
-    - snake
+    - cupcake  # 'snake' dropped v4.4 (#81): 12% sentiment_player agreement — generic insult aimed at owners/execs/anyone, 0.60 neg rate
 
   Jalen Duren:
     team: Detroit Pistons
@@ -1077,10 +1074,9 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201935.png
     aliases:
     - harden
-    - the beard
+    - the beard  # kept v4.4 (#81 amendment): 82% sentiment_player agreement among named; generic-beard chatter sits below the 2:1 action rule
     - james floppen
-    - james soften
-    - literally hitler
+    - james soften  # kept v4.4 (#81 amendment): 92% agreement. 'literally hitler' dropped same pass: 0% — meme applied to SGA/Dort/Brown, never Harden
 
   Dylan Harper:
     team: San Antonio Spurs
@@ -1244,8 +1240,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202681.png
     aliases:
     - kyrie
-    - irving
-    - kai
+    - irving  # 'kai' dropped v4.4 (#81): 31% sentiment_player agreement — Kai Jones/Sotto/Cenat/Lowry
     - uncle drew
     - world b flat
     - flat earther
@@ -1359,7 +1354,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203999.png
     aliases:
     - jokic
-    - joker
+    - joker  # kept v4.4 (#81): 92% sentiment_player agreement on 4,097 at-risk rows; movie/Murray bleed negligible
     - chokic
     - big honey
     - sombor shuffle

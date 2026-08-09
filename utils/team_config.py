@@ -33,6 +33,45 @@ def load_team_config() -> dict[str, dict]:
 
 
 @lru_cache(maxsize=1)
+def load_team_config_version() -> str:
+    """
+    Load the config version string from config/teams.yaml.
+
+    The version is lineage metadata: it is stamped into teams.parquet at
+    the aggregation write site, giving fan_team derivations the same
+    config-lineage treatment as players.yaml's version stamp on
+    sentiment.parquet.
+
+    Deliberately season-independent: teams.yaml is not season-scoped, so
+    this loader does not join the season-cache registry (no override
+    guard, no season_override fixture cache-clear) — by design, not
+    omission.
+
+    Returns:
+        Version string, e.g. "2.1".
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist.
+        yaml.YAMLError: If config file is invalid YAML.
+        ValueError: If the config has no 'version' key, or the value is
+            not a quoted string (an unquoted version parses as a YAML
+            float and would silently mis-stamp, e.g. 2.10 -> "2.1").
+    """
+    with open(CONFIG_PATH) as f:
+        config = yaml.safe_load(f)
+
+    version = config.get("version")
+    if version is None:
+        raise ValueError(f"teams.yaml has no 'version' key: {CONFIG_PATH}")
+    if not isinstance(version, str):
+        raise ValueError(
+            f"teams.yaml version must be a quoted string, got "
+            f"{version!r} ({type(version).__name__}) in {CONFIG_PATH}"
+        )
+    return version
+
+
+@lru_cache(maxsize=1)
 def build_alias_to_team_map() -> dict[str, str]:
     """
     Invert team aliases to map each alias to its canonical team name.

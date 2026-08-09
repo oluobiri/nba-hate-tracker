@@ -13,6 +13,7 @@ import pytest
 
 from pipeline.aggregation import (
     aggregate_sentiment,
+    build_teams_dimension,
     compute_cumulative_metrics,
     compute_metrics,
     extract_team_from_flair,
@@ -27,9 +28,11 @@ from pipeline.schemas import (
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
+    TEAMS_SCHEMA,
 )
 from utils.player_config import load_player_config_version, load_player_metadata
 from utils.season_config import get_active_season
+from utils.team_config import load_team_config
 
 
 class TestResolvePlayer:
@@ -458,6 +461,77 @@ class TestAggregatePlayers:
 
         assert "no season stamp" in caplog.text
         assert "does not match" not in caplog.text
+
+
+class TestBuildTeamsDimension:
+    """Tests for build_teams_dimension (pure config export)."""
+
+    @pytest.fixture
+    def two_team_config(self) -> dict[str, dict]:
+        """Minimal two-team config in deliberate non-alphabetical order."""
+        return {
+            "Utah Jazz": {
+                "abbreviation": "UTA",
+                "conference": "West",
+                "team_id": 1610612762,
+                "logo_url": "https://cdn.nba.com/logos/nba/1610612762/primary/L/logo.svg",
+                "aliases": ["uta", "jazz"],
+            },
+            "Boston Celtics": {
+                "abbreviation": "BOS",
+                "conference": "East",
+                "team_id": 1610612738,
+                "logo_url": "https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg",
+                "aliases": ["bos", "celtics"],
+            },
+        }
+
+    def test_conforms_to_schema(self, two_team_config):
+        """The frame matches TEAMS_SCHEMA exactly."""
+        frame = build_teams_dimension(two_team_config)
+
+        assert frame.schema == TEAMS_SCHEMA
+
+    def test_preserves_config_order(self, two_team_config):
+        """Rows follow teams.yaml insertion order, never sorted."""
+        frame = build_teams_dimension(two_team_config)
+
+        assert frame["team"].to_list() == ["Utah Jazz", "Boston Celtics"]
+
+    def test_row_values_from_config(self, two_team_config):
+        """Each descriptive column carries its config value."""
+        frame = build_teams_dimension(two_team_config)
+
+        row = frame.row(by_predicate=pl.col("team") == "Boston Celtics", named=True)
+        assert row["abbreviation"] == "BOS"
+        assert row["conference"] == "East"
+        assert row["team_id"] == 1610612738
+        assert row["logo_url"].endswith("1610612738/primary/L/logo.svg")
+
+    def test_aliases_stay_config_only(self, two_team_config):
+        """The dimension describes and slices; aliases never materialize."""
+        frame = build_teams_dimension(two_team_config)
+
+        assert "aliases" not in frame.columns
+
+
+class TestAggregateTeams:
+    """Tests for the teams Team-dimension frame in aggregate output."""
+
+    def test_teams_is_frame_conforming_to_schema(self, tmp_path):
+        """teams is returned as a frame matching TEAMS_SCHEMA."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert isinstance(result["teams"], pl.DataFrame)
+        assert result["teams"].schema == TEAMS_SCHEMA
+
+    def test_all_30_franchises_in_config_order(self, tmp_path):
+        """Every franchise ships, in teams.yaml order — the dimension is a
+        pure config export, independent of which fan_teams the facts hit."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["teams"]["team"].to_list() == list(load_team_config())
+        assert result["teams"].height == 30
 
 
 class TestPlayersToMetadataDict:

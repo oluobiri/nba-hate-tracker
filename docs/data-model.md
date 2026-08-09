@@ -65,7 +65,7 @@ The four aggregate views (`player_overall`, `player_temporal`, `player_team`, `t
 - **Population + event/classification fields** — frozen at filter/classification time: `body`, `author`, `created_utc`, `score`, `link_id`, `sentiment`, `confidence`, `sentiment_player`. Re-running assembly never changes them; which comments exist in the fact (the population) is part of this frozen layer.
 - **Config-versioned derivations** — `mentioned_players`, and therefore `attributed_player`: caches of `f(body, players.yaml@version)`, re-derived at every assembly and stamped with the config `version` into the parquet's file metadata. The stamp is checked at aggregation read time (drift → WARNING) — the config `version` field (major = roster, minor = alias) is load-bearing lineage metadata, not documentation.
 
-The distinction matters because the two layers age differently: frozen fields stay correct forever, while a stored derivation is only as current as the config it was derived under — copying it forward through a rebuild silently reintroduces every alias fix made since. `fan_team` = `f(author_flair_text, teams.yaml)` is the **same attribute class** (a config-derived attribute, currently unversioned) — a future team-alias fix is this same problem and gets this same treatment, not a rediscovery.
+The distinction matters because the two layers age differently: frozen fields stay correct forever, while a stored derivation is only as current as the config it was derived under — copying it forward through a rebuild silently reintroduces every alias fix made since. `fan_team` = `f(author_flair_text, teams.yaml)` is the **same attribute class** — a config-derived attribute, and a future team-alias fix is this same problem. Its lineage anchor is the `teams.yaml` `version` stamped into `teams.parquet`; the dimension and the fan-team views are produced in one atomic aggregation run, so the stamp dates the config every `fan_team` derivation in the output set was built under.
 
 > `link_id` — decided V2 addition for the v3 bridge; pending, must land before the classify run (see Forward look).
 
@@ -83,7 +83,7 @@ The distinction matters because the two layers age differently: frozen fields st
 
 ### `Team` — dimension (role-playing)
 
-**Grain:** one franchise. Sourced from `config/teams.yaml`. Referenced in **two roles** today (see §2).
+**Grain:** one franchise. Materialized as `teams.parquet`: a pure export of `config/teams.yaml` — all 30 franchises in config order, no fact dependency. The file carries the `teams.yaml` `version` in its parquet metadata (the same lineage stamp mechanism as the Player dimension). Referenced in **two roles** today (see §2).
 
 | Field | Notes |
 |---|---|

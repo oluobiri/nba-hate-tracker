@@ -13,7 +13,6 @@
 #   - Multi-team flairs (Mavs & Magic)
 
 version: "2.1"
-season: "2024-25"
 
 teams:
   Atlanta Hawks:

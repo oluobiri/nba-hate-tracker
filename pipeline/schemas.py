@@ -157,12 +157,12 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
     }
 )
 
-# View name -> schema for the four aggregate *views* (fact-table rollups).
+# View name -> schema for the aggregate *views* (fact-table rollups).
 # Keys match aggregate_sentiment() return-dict keys and parquet filenames.
-# Deliberately fact-only: the aggregation script keys its JSON
-# record-shaping predicate ("is this a list of records?") off this
-# mapping, so the Player dimension below must NOT live here — it
-# serializes to a nested dict.
+# Deliberately fact-only: dimensions live in DASHBOARD_OUTPUT_SCHEMAS
+# below. Membership here does NOT put a view into aggregates.json — the
+# script freezes that key set separately as a literal (LEGACY_JSON_VIEWS),
+# so future fact views join this mapping without touching the legacy file.
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
@@ -209,13 +209,32 @@ PLAYERS_SCHEMA = pl.Schema(
     }
 )
 
+# --- Team dimension (enforced in pipeline/aggregation.py) -------------------
+# One row per franchise — the Team dimension the fan-role `team` FK in
+# player_team/team_overall references (and the roster_team FK in players).
+# Pure config export from config/teams.yaml; aliases stay config-only (the
+# dimension describes and slices, it never selects). PK is bare `team`:
+# role-marking (roster_team/fan_team) applies to FK columns on fact tables,
+# not the dimension's own key. See docs/data-model.md §2.
+
+TEAMS_SCHEMA = pl.Schema(
+    {
+        "team": pl.String,
+        "abbreviation": pl.String,
+        "conference": pl.String,
+        "team_id": pl.Int64,
+        "logo_url": pl.String,
+    }
+)
+
 # Every table the aggregation stage produces -> its schema: the four fact
-# views plus the Player dimension. Single source for aggregate_sentiment()'s
-# unified validation loop and the script's parquet write loop
-# (<name>.parquet).
+# views plus the Player and Team dimensions. Single source for
+# aggregate_sentiment()'s unified validation loop and the script's parquet
+# write loop (<name>.parquet).
 DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     **AGGREGATE_VIEW_SCHEMAS,
     "players": PLAYERS_SCHEMA,
+    "teams": TEAMS_SCHEMA,
 }
 
 

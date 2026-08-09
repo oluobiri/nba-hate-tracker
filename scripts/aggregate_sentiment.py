@@ -4,8 +4,9 @@ Aggregate sentiment data into dashboard-ready outputs.
 Reads classified sentiment parquet, computes player rankings,
 flair segmentation, and temporal trends. Writes the nested
 aggregates.json for the Streamlit dashboard plus one parquet per
-produced table (the four fact views and the players dimension)
-alongside it for ad-hoc DuckDB queries and the v2 frontend.
+produced table (the four fact views and the players and teams
+dimensions) alongside it for ad-hoc DuckDB queries and the v2
+frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -19,14 +20,11 @@ import sys
 from pathlib import Path
 
 from pipeline.aggregation import aggregate_sentiment, players_to_metadata_dict
-from pipeline.schemas import (
-    AGGREGATE_VIEW_SCHEMAS,
-    DASHBOARD_OUTPUT_SCHEMAS,
-    SCHEMA_VERSION,
-)
+from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.paths import get_dashboard_dir, get_processed_dir
 from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
+from utils.team_config import load_team_config_version
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -46,6 +44,18 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INPUT_FILENAME = "sentiment.parquet"
 DEFAULT_OUTPUT_FILENAME = "aggregates.json"
+
+# The legacy aggregates.json key set, frozen as a literal: exactly the
+# record-shaped views the file carried when it was demoted to legacy.
+# Deliberately NOT keyed off AGGREGATE_VIEW_SCHEMAS — that mapping grows
+# with new fact views, and this list never does. New outputs of any kind
+# are parquet-only; the file retires wholesale.
+LEGACY_JSON_VIEWS = (
+    "player_overall",
+    "player_temporal",
+    "player_team",
+    "team_overall",
+)
 
 
 # -----------------------------------------------------------------------------
@@ -102,43 +112,54 @@ def main() -> None:
     logger.info(f"Output: {output_path}")
     logger.info("=" * 60)
 
+    # Pre-flight the config-version stamps before anything runs or is
+    # written: a bad config version (e.g. an unquoted YAML float) must
+    # abort here, never between output writes — a torn output set
+    # (fresh aggregates.json beside stale parquets) is exactly the
+    # inconsistency the stamps exist to make detectable.
+    stamps = {
+        "players": {
+            "players_config_version": load_player_config_version(),
+            "schema_version": str(SCHEMA_VERSION),
+        },
+        "teams": {
+            "teams_config_version": load_team_config_version(),
+            "schema_version": str(SCHEMA_VERSION),
+        },
+    }
+
     # Run aggregation
     result = aggregate_sentiment(input_path)
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON output: the four record-shaped views -> lists of dicts;
-    # the players dimension -> the legacy nested player_metadata dict
-    # (consumer-safe shim); the metadata scalar passes through.
+    # Write JSON output — the LEGACY_JSON_VIEWS literal freezes the key
+    # set: those views -> lists of dicts; the players dimension -> the
+    # legacy nested player_metadata dict (consumer-safe shim); the
+    # metadata scalar passes through. Anything else (the teams
+    # dimension, any future output) is parquet-only.
     # default=str keeps week datetimes serialized exactly as before.
     serializable = {}
     for key, value in result.items():
-        if key in AGGREGATE_VIEW_SCHEMAS:
+        if key in LEGACY_JSON_VIEWS:
             serializable[key] = value.to_dicts()
         elif key == "players":
             serializable["player_metadata"] = players_to_metadata_dict(value)
-        else:
+        elif key == "metadata":
             serializable[key] = value
     with open(output_path, "w") as f:
         json.dump(serializable, f, indent=2, default=str)
 
     logger.info(f"Wrote aggregates to {output_path}")
 
-    # Write one parquet per produced table (four views + the players
-    # dimension). players.parquet carries the config-version stamp so
-    # fact<->dimension drift is checkable (same mechanism as
-    # sentiment.parquet's stamp in collect_results).
-    players_stamp = {
-        "players_config_version": load_player_config_version(),
-        "schema_version": str(SCHEMA_VERSION),
-    }
+    # Write one parquet per produced table (four views + the players and
+    # teams dimensions). Each dimension carries the config-version stamp
+    # pre-flighted above, so fact<->dimension drift is checkable (same
+    # mechanism as sentiment.parquet's stamp in collect_results).
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_path.parent / f"{name}.parquet"
-        result[name].write_parquet(
-            parquet_path,
-            metadata=players_stamp if name == "players" else None,
-        )
+        result[name].write_parquet(parquet_path, metadata=stamps.get(name))
         logger.info(f"Wrote {parquet_path}")
 
     # Log metadata summary

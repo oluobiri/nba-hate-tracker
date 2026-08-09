@@ -1,10 +1,19 @@
 """
 Tests for team configuration loading.
 
-Tests cover loading from YAML, alias map building, and caching behavior.
+Tests cover loading from YAML, alias map building, version loading,
+and caching behavior.
 """
 
-from utils.team_config import build_alias_to_team_map, load_team_config
+import re
+
+import pytest
+
+from utils.team_config import (
+    build_alias_to_team_map,
+    load_team_config,
+    load_team_config_version,
+)
 
 
 class TestLoadTeamConfig:
@@ -77,3 +86,53 @@ class TestBuildAliasToTeamMap:
         result1 = build_alias_to_team_map()
         result2 = build_alias_to_team_map()
         assert result1 is result2
+
+
+class TestLoadTeamConfigVersion:
+    """Tests for load_team_config_version function."""
+
+    @pytest.fixture
+    def cold_version_cache(self):
+        """Clear the version loader's cache before and after the test.
+
+        The invalid-config tests monkeypatch the config path; a warm
+        cache would return the real config's version and never consult
+        the patched path.
+        """
+        load_team_config_version.cache_clear()
+        yield
+        load_team_config_version.cache_clear()
+
+    def test_returns_version_string(self):
+        """Version is a MAJOR.MINOR string (format pinned, not the value —
+        the version bumps on team-config changes)."""
+        version = load_team_config_version()
+        assert re.fullmatch(r"\d+\.\d+", version)
+
+    def test_caching_returns_same_object(self):
+        """Multiple calls return the same cached object."""
+        result1 = load_team_config_version()
+        result2 = load_team_config_version()
+        assert result1 is result2
+
+    def test_missing_version_raises(self, tmp_path, monkeypatch, cold_version_cache):
+        """A teams.yaml without a version key raises ValueError with context."""
+        config_path = tmp_path / "teams.yaml"
+        config_path.write_text("teams: {}\n")
+        monkeypatch.setattr("utils.team_config.CONFIG_PATH", config_path)
+
+        with pytest.raises(ValueError, match="version"):
+            load_team_config_version()
+
+    def test_unquoted_version_raises(self, tmp_path, monkeypatch, cold_version_cache):
+        """An unquoted YAML version (parsed as float) raises ValueError.
+
+        Floats silently lose trailing zeros (2.10 -> "2.1"), which would
+        mis-stamp lineage; the loader demands a quoted string instead.
+        """
+        config_path = tmp_path / "teams.yaml"
+        config_path.write_text("version: 2.10\nteams: {}\n")
+        monkeypatch.setattr("utils.team_config.CONFIG_PATH", config_path)
+
+        with pytest.raises(ValueError, match="quoted string"):
+            load_team_config_version()

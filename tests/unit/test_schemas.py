@@ -11,6 +11,7 @@ from pipeline.schemas import (
     PLAYERS_SNAPSHOT_COLUMNS,
     ROSTERS_SCHEMA,
     SENTIMENT_SCHEMA,
+    TEAMS_SCHEMA,
     validate_schema,
 )
 
@@ -78,12 +79,41 @@ class TestPlayersContract:
             assert PLAYERS_SCHEMA[col] == ROSTERS_SCHEMA[col]
 
     def test_dashboard_outputs_superset(self):
-        """Verify the output mapping is views + the dimension, and views stay fact-only."""
+        """Verify the output mapping is views + the dimensions, and views stay fact-only."""
         assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
-            "players"
+            "players",
+            "teams",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestTeamsContract:
+    """Contract guards for the Team dimension (teams.parquet)."""
+
+    def test_pins_column_set_and_dtypes(self):
+        """Verify the spec §3 column set with pinned dtypes."""
+        assert TEAMS_SCHEMA == pl.Schema(
+            {
+                "team": pl.String,
+                "abbreviation": pl.String,
+                "conference": pl.String,
+                "team_id": pl.Int64,
+                "logo_url": pl.String,
+            }
+        )
+
+    def test_pk_is_unmarked_team(self):
+        """Verify the dimension's own key is bare `team` — role-marking
+        (roster_team/fan_team) applies to FK columns on fact tables."""
+        assert TEAMS_SCHEMA.names()[0] == "team"
+        assert "fan_team" not in TEAMS_SCHEMA.names()
+
+    def test_joins_outputs_but_not_views(self):
+        """Verify teams ships via DASHBOARD_OUTPUT_SCHEMAS only — a
+        dimension, not a fact rollup; the views mapping stays fact-only."""
+        assert DASHBOARD_OUTPUT_SCHEMAS["teams"] is TEAMS_SCHEMA
+        assert "teams" not in AGGREGATE_VIEW_SCHEMAS
 
 
 class TestRostersContract:

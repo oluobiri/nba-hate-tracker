@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '4.2'
+version: '4.3'
 season: 2025-26
 short_aliases:
 - ad
@@ -147,7 +147,6 @@ short_aliases:
 - ryhard
 - debo
 - k love
-- zach
 - beal
 - snake
 - simmons
@@ -346,7 +345,7 @@ players:
     player_id: 1630217
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630217.png
     aliases:
-    - bane
+    - bane  # kept v4.3 (#79): 87% sentiment_player agreement; brisbane/"bane of" bleed 5.4% of at-risk
     - desmond
     - 3-rex
 
@@ -506,7 +505,7 @@ players:
     - jaylen brown
     - jaylen
     - robin to tatum
-    - jb  # watchlist: post-classification check (~24% Brunson in marked contexts; judge via sentiment_player at #54 assembly)
+    - jb  # kept v4.3 (#79): 73% sentiment_player agreement at-risk; Brunson collision minor (183 named), multi-mention arbitration absorbs the rest
 
   Jalen Brunson:
     team: New York Knicks
@@ -1128,7 +1127,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629637.png
     aliases:
     - jaxson hayes
-    - hayes  # guarded v4.2 (#67): "schayes"/"hayesing" bleed, 74 rows pre-guard
+    - hayes  # guarded v4.2 (#67): "schayes"/"hayesing" bleed, 74 rows pre-guard; kept v4.3 (#79): 77% sentiment_player agreement, Killian/Elvin identity bleed minor
 
   Scoot Henderson:
     team: Portland Trail Blazers
@@ -1430,8 +1429,7 @@ players:
     player_id: 203897
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203897.png
     aliases:
-    - lavine
-    - zach  # watchlist: ~80-90% non-LaVine in alias-only rows (Lowe/Edey/Collins/Zarba); judge via sentiment_player at #54 assembly — drop candidate; LaVine sits at 4,952 without it (bar edge case)
+    - lavine  # 'zach' dropped v4.3 (#79): 57% sentiment_player agreement, named disagreements all other Zachs (Zarba/Randolph/Collins/Edey/Lowe)
 
   Kawhi Leonard:
     team: Los Angeles Clippers
@@ -1705,8 +1703,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629614.png
     aliases:
     - andrew nembhard
-    - nembhard  # watchlist: post-classification check (~32% brother Ryan in marked contexts; judge via sentiment_player at #54 assembly)
-    - nemby  # watchlist: brother-pair nesting — 'baby nemby' contains 'nemby' (double-attributes until #54)
+    - nembhard  # kept v4.3 (#79): 91% sentiment_player agreement; Ryan arrives as full-name multi-mention, arbitrated. 'nemby' dropped same pass: 12% agreement, bare usage splits between brothers
     - nembenyama
     - nembsanity
   Ryan Nembhard:
@@ -1715,12 +1712,12 @@ players:
     player_id: 1642948
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1642948.png
     aliases:
-    - ryan nembhard  # watchlist: brother pair — referent check at #54 assembly alongside Andrew
-    - baby nemby  # watchlist: brother-pair nesting — also fires Andrew's 'nemby'
+    - ryan nembhard  # resolved v4.3 (#79): 161 of 163 Ryan rows arrive via full name
+    - baby nemby  # nesting resolved v4.3 (#79): Andrew's 'nemby' dropped, these rows now attribute to Ryan
     - microhard
     - lil nembo
-    - andrews brother  # watchlist: possessive phrase — could be any Andrew's sibling
-    - andrew's brother  # watchlist: possessive phrase — could be any Andrew's sibling
+    - andrews brother  # 0 v2 corpus hits (#79)
+    - andrew's brother  # 0 v2 corpus hits (#79)
     - ryhard
 
   Aaron Nesmith:
@@ -2198,7 +2195,7 @@ players:
     player_id: 202691
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202691.png
     aliases:
-    - klay
+    - klay  # kept v4.3 (#79): 95% sentiment_player agreement; bricklayer bleed 3.6% of at-risk
     - splash brother
     - game 6 klay
     - china klay

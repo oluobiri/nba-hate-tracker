@@ -157,12 +157,12 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
     }
 )
 
-# View name -> schema for the four aggregate *views* (fact-table rollups).
+# View name -> schema for the aggregate *views* (fact-table rollups).
 # Keys match aggregate_sentiment() return-dict keys and parquet filenames.
-# Deliberately fact-only: the aggregation script keys its JSON
-# record-shaping predicate ("is this a list of records?") off this
-# mapping, so the Player dimension below must NOT live here — it
-# serializes to a nested dict.
+# Deliberately fact-only: dimensions live in DASHBOARD_OUTPUT_SCHEMAS
+# below. Membership here does NOT put a view into aggregates.json — the
+# script freezes that key set separately as a literal (LEGACY_JSON_VIEWS),
+# so future fact views join this mapping without touching the legacy file.
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,

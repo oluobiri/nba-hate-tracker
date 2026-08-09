@@ -110,8 +110,8 @@ class TestTeamsContract:
         assert "fan_team" not in TEAMS_SCHEMA.names()
 
     def test_joins_outputs_but_not_views(self):
-        """Verify teams ships via DASHBOARD_OUTPUT_SCHEMAS only — the script
-        keys its JSON record-shaping predicate off AGGREGATE_VIEW_SCHEMAS."""
+        """Verify teams ships via DASHBOARD_OUTPUT_SCHEMAS only — a
+        dimension, not a fact rollup; the views mapping stays fact-only."""
         assert DASHBOARD_OUTPUT_SCHEMAS["teams"] is TEAMS_SCHEMA
         assert "teams" not in AGGREGATE_VIEW_SCHEMAS
 

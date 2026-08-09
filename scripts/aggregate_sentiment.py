@@ -20,11 +20,7 @@ import sys
 from pathlib import Path
 
 from pipeline.aggregation import aggregate_sentiment, players_to_metadata_dict
-from pipeline.schemas import (
-    AGGREGATE_VIEW_SCHEMAS,
-    DASHBOARD_OUTPUT_SCHEMAS,
-    SCHEMA_VERSION,
-)
+from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.paths import get_dashboard_dir, get_processed_dir
 from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
@@ -48,6 +44,18 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INPUT_FILENAME = "sentiment.parquet"
 DEFAULT_OUTPUT_FILENAME = "aggregates.json"
+
+# The legacy aggregates.json key set, frozen as a literal: exactly the
+# record-shaped views the file carried when it was demoted to legacy.
+# Deliberately NOT keyed off AGGREGATE_VIEW_SCHEMAS — that mapping grows
+# with new fact views, and this list never does. New outputs of any kind
+# are parquet-only; the file retires wholesale.
+LEGACY_JSON_VIEWS = (
+    "player_overall",
+    "player_temporal",
+    "player_team",
+    "team_overall",
+)
 
 
 # -----------------------------------------------------------------------------
@@ -126,16 +134,15 @@ def main() -> None:
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON output — the legacy aggregates.json key set, frozen by
-    # allowlist: the four record-shaped views -> lists of dicts; the
-    # players dimension -> the legacy nested player_metadata dict
-    # (consumer-safe shim); the metadata scalar passes through. Anything
-    # else (the teams dimension, any future output) is parquet-only —
-    # no legacy JSON counterpart, so the key set never grows.
+    # Write JSON output — the LEGACY_JSON_VIEWS literal freezes the key
+    # set: those views -> lists of dicts; the players dimension -> the
+    # legacy nested player_metadata dict (consumer-safe shim); the
+    # metadata scalar passes through. Anything else (the teams
+    # dimension, any future output) is parquet-only.
     # default=str keeps week datetimes serialized exactly as before.
     serializable = {}
     for key, value in result.items():
-        if key in AGGREGATE_VIEW_SCHEMAS:
+        if key in LEGACY_JSON_VIEWS:
             serializable[key] = value.to_dicts()
         elif key == "players":
             serializable["player_metadata"] = players_to_metadata_dict(value)

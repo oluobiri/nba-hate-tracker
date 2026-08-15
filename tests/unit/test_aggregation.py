@@ -12,6 +12,9 @@ import polars as pl
 import pytest
 
 from pipeline.aggregation import (
+    COMMENT_SAMPLES_MAX_BODY_CHARS,
+    COMMENT_SAMPLES_MIN_CONFIDENCE,
+    COMMENT_SAMPLES_TOP_N,
     aggregate_sentiment,
     build_comment_samples,
     build_teams_dimension,
@@ -802,6 +805,48 @@ class TestBuildCommentSamples:
         frame = build_comment_samples(_samples_input(rows))
 
         assert frame["comment_id"].to_list() == ["zz", "aa", "bb"]
+
+    def test_null_score_ranks_last(self):
+        """A null score never wins a cell: nulls sort last, so the true
+        top-upvoted receipt keeps rank 1."""
+        rows = [
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "neg",
+                "comment_id": "nullscore",
+                "body": "washed",
+                "score": None,
+            },
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "neg",
+                "comment_id": "real",
+                "body": "cooked",
+                "score": 12,
+            },
+        ]
+        frame = build_comment_samples(_samples_input(rows))
+
+        assert frame["comment_id"].to_list() == ["real", "nullscore"]
+
+    def test_defaults_are_the_named_constants(self):
+        """The kwarg defaults are the importable module constants, so the
+        manifest can import them rather than retype the rule."""
+        rows = [
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "neg",
+                "comment_id": f"c{k:02d}",
+                "body": f"b{k}",
+                "score": k,
+            }
+            for k in range(COMMENT_SAMPLES_TOP_N + 5, 0, -1)
+        ]
+        frame = build_comment_samples(_samples_input(rows))
+
+        assert frame.height == COMMENT_SAMPLES_TOP_N
+        assert COMMENT_SAMPLES_MIN_CONFIDENCE == 0.9
+        assert COMMENT_SAMPLES_MAX_BODY_CHARS == 500
 
     def test_fan_team_role_marked_and_nullable(self):
         """The fact's team column ships as fan_team; unresolved flair stays null."""

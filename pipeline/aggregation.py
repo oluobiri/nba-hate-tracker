@@ -370,12 +370,22 @@ def build_teams_dimension(team_config: dict[str, dict]) -> pl.DataFrame:
     )
 
 
+# comment_samples selection parameters - the defaults of
+# build_comment_samples(), named so the manifest can import rather than
+# retype them. Finalized on 2025-26 data: every qualified player's cells
+# fill at n=10; the cap removes ~2% of the candidate pool; the floor keeps
+# the classifier's top two confidence buckets on the polar labels.
+COMMENT_SAMPLES_TOP_N = 10
+COMMENT_SAMPLES_MIN_CONFIDENCE = 0.9  # pos/neg only; see build_comment_samples
+COMMENT_SAMPLES_MAX_BODY_CHARS = 500
+
+
 def build_comment_samples(
     df: pl.DataFrame,
     *,
-    n: int = 10,
-    min_confidence: float = 0.9,
-    max_body_chars: int = 500,
+    n: int = COMMENT_SAMPLES_TOP_N,
+    min_confidence: float = COMMENT_SAMPLES_MIN_CONFIDENCE,
+    max_body_chars: int = COMMENT_SAMPLES_MAX_BODY_CHARS,
 ) -> pl.DataFrame:
     """
     Select the comment samples: top-N receipts per player x sentiment.
@@ -384,13 +394,15 @@ def build_comment_samples(
     a body no longer than the cap (a receipt is a quote, not an essay)
     and, for the polar labels (pos/neg), the classifier's confidence at
     or above the floor — a misclassification guard. Neutral rows are
-    exempt: the classifier reports a conventional 0.5 for neu, so a floor
-    there would starve the neutral cells, not guard them. Within each
-    (attributed_player, sentiment) cell, exact-duplicate bodies collapse
-    to their best-ranked copy (copypasta guard), rows rank by score
-    descending — ties broken by confidence descending, then comment_id
-    ascending, so output is deterministic — and the top n are kept. A
-    cell with fewer than n candidates yields fewer rows, never padding.
+    exempt: the prompt gives no confidence guidance and, empirically
+    (2025-26 run), the classifier reports a conventional 0.5 for neu, so
+    a floor there would starve the neutral cells rather than guard them.
+    Within each (attributed_player, sentiment) cell, exact-duplicate
+    bodies collapse to their best-ranked copy (copypasta guard), rows
+    rank by score descending — ties broken by confidence descending, then
+    comment_id ascending, nulls last, so output is deterministic — and
+    the top n are kept. A cell with fewer than n candidates yields fewer
+    rows, never padding.
 
     The fact's fan-role ``team`` column ships as ``fan_team``. Bodies are
     never truncated.
@@ -410,27 +422,30 @@ def build_comment_samples(
     """
     cell = ["attributed_player", "sentiment"]
 
-    above_floor = df.filter(
-        (pl.col("sentiment") == "neu") | (pl.col("confidence") >= min_confidence)
+    passes_floor = (pl.col("sentiment") == "neu") | (
+        pl.col("confidence") >= min_confidence
     )
-    candidates = above_floor.filter(pl.col("body").str.len_chars() <= max_body_chars)
+    within_cap = pl.col("body").str.len_chars() <= max_body_chars
+    candidates = df.filter(passes_floor & within_cap)
     if df.height:
+        below_floor = df.filter(~passes_floor).height
+        over_cap = df.filter(passes_floor & ~within_cap).height
         logger.info(
-            f"comment_samples candidacy: {df.height:,} attributed rows -> "
-            f"{above_floor.height:,} at pos/neg confidence >= {min_confidence} "
-            f"({(df.height - above_floor.height) / df.height:.1%} removed) -> "
-            f"{candidates.height:,} at body <= {max_body_chars} chars "
-            f"({(above_floor.height - candidates.height) / df.height:.1%} removed)"
+            f"comment_samples candidacy: {df.height:,} attributed rows; "
+            f"{below_floor:,} ({below_floor / df.height:.1%}) removed by the "
+            f"pos/neg confidence floor {min_confidence}, "
+            f"{over_cap:,} ({over_cap / df.height:.1%}) removed by the "
+            f"{max_body_chars}-char body cap; {candidates.height:,} candidates"
         )
 
     return (
         candidates.sort(
-            ["score", "confidence", "comment_id"], descending=[True, True, False]
+            ["score", "confidence", "comment_id"],
+            descending=[True, True, False],
+            nulls_last=True,
         )
         .unique(subset=[*cell, "body"], keep="first", maintain_order=True)
-        .with_columns(
-            (pl.int_range(pl.len()).over(cell) + 1).cast(pl.Int64).alias("rank")
-        )
+        .with_columns((pl.int_range(pl.len()).over(cell) + 1).alias("rank"))
         .filter(pl.col("rank") <= n)
         .rename({"team": "fan_team"})
         .select(COMMENT_SAMPLES_SCHEMA.names())
@@ -457,16 +472,15 @@ def _log_comment_samples_diagnostics(
     if not comment_samples.height:
         logger.info("comment_samples: no rows selected")
         return
-    multi = (
-        comment_samples.select("comment_id")
-        .join(
-            df_attributed.select("comment_id", "mentioned_players"),
-            on="comment_id",
-            how="left",
-        )
-        .filter(pl.col("mentioned_players").list.len() > 1)
-        .height
-    )
+    # Semi-join: counts sampled rows whose id has a multi-mention fact
+    # row, and can't fan out if an id were ever duplicated in the fact
+    multi = comment_samples.join(
+        df_attributed.filter(pl.col("mentioned_players").list.len() > 1).select(
+            "comment_id"
+        ),
+        on="comment_id",
+        how="semi",
+    ).height
     logger.info(
         f"comment_samples: {comment_samples.height:,} rows selected; "
         f"{multi:,} multi-mention ({multi / comment_samples.height:.1%})"

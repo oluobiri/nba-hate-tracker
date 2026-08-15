@@ -240,7 +240,8 @@ TEAMS_SCHEMA = pl.Schema(
 # comment_id + link_id give the permalink). fan_team is the fan role of
 # Team, role-marked from birth (docs/data-model.md §2). Deliberately absent:
 # author (usernames don't serve the receipt) and confidence (a selection
-# input, near-constant once the floor is applied).
+# input: pos/neg rows pass a confidence floor, neu rows are exempt from it
+# - the value is not a per-row quality signal to display).
 
 COMMENT_SAMPLES_SCHEMA = pl.Schema(
     {

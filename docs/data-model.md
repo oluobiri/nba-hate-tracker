@@ -36,7 +36,7 @@ erDiagram
 
 The diagram carries **structure only** — entity boxes, the role-playing edges, and each box's grain/key. Full attribute lists live in the entity key below, so the diagram stays readable and so forward-look attributes never appear to already exist.
 
-The pipeline produces three classes of table from this model, none of which is drawn as a box: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced — and the rollups are derived from it; the lineage of all of them is the table in §4.
+The pipeline produces three classes of table from this model, none of which is drawn as a box: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
 
 ---
 

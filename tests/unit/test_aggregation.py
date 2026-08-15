@@ -656,6 +656,31 @@ class TestBuildCommentSamples:
         assert frame["comment_id"].to_list() == ["solid"]
         assert frame["rank"].to_list() == [1]
 
+    def test_confidence_floor_exempts_neutral(self):
+        """The floor guards the polar labels only: a neu row at the
+        classifier's conventional 0.5 is still a candidate."""
+        rows = [
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "neu",
+                "comment_id": "neutral",
+                "body": "LeBron had 28 tonight",
+                "score": 40,
+                "confidence": 0.5,
+            },
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "pos",
+                "comment_id": "hedged",
+                "body": "decent game I guess",
+                "score": 40,
+                "confidence": 0.5,
+            },
+        ]
+        frame = build_comment_samples(_samples_input(rows), min_confidence=0.9)
+
+        assert frame["comment_id"].to_list() == ["neutral"]
+
     def test_body_length_cap_excludes_long_bodies(self):
         """A high-score essay over the cap is not a candidate at all."""
         rows = [

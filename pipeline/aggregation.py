@@ -381,8 +381,11 @@ def build_comment_samples(
     Select the comment samples: top-N receipts per player x sentiment.
 
     A verbatim fact subset, selected not aggregated. Candidacy requires
-    the classifier's confidence at or above the floor and a body no
-    longer than the cap (a receipt is a quote, not an essay). Within each
+    a body no longer than the cap (a receipt is a quote, not an essay)
+    and, for the polar labels (pos/neg), the classifier's confidence at
+    or above the floor — a misclassification guard. Neutral rows are
+    exempt: the classifier reports a conventional 0.5 for neu, so a floor
+    there would starve the neutral cells, not guard them. Within each
     (attributed_player, sentiment) cell, exact-duplicate bodies collapse
     to their best-ranked copy (copypasta guard), rows rank by score
     descending — ties broken by confidence descending, then comment_id
@@ -397,7 +400,8 @@ def build_comment_samples(
             sentiment, comment_id, link_id, body, score, confidence,
             created_utc, team.
         n: Maximum rows per (attributed_player, sentiment) cell.
-        min_confidence: Candidacy floor on the classifier's confidence.
+        min_confidence: Candidacy floor on the classifier's confidence,
+            applied to pos/neg rows only.
         max_body_chars: Candidacy cap on body length, in characters.
 
     Returns:
@@ -406,12 +410,14 @@ def build_comment_samples(
     """
     cell = ["attributed_player", "sentiment"]
 
-    above_floor = df.filter(pl.col("confidence") >= min_confidence)
+    above_floor = df.filter(
+        (pl.col("sentiment") == "neu") | (pl.col("confidence") >= min_confidence)
+    )
     candidates = above_floor.filter(pl.col("body").str.len_chars() <= max_body_chars)
     if df.height:
         logger.info(
             f"comment_samples candidacy: {df.height:,} attributed rows -> "
-            f"{above_floor.height:,} at confidence >= {min_confidence} "
+            f"{above_floor.height:,} at pos/neg confidence >= {min_confidence} "
             f"({(df.height - above_floor.height) / df.height:.1%} removed) -> "
             f"{candidates.height:,} at body <= {max_body_chars} chars "
             f"({(above_floor.height - candidates.height) / df.height:.1%} removed)"

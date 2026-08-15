@@ -16,6 +16,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - PLAYERS_SCHEMA describes the Player dimension (players.parquet),
   config curation joined with snapshot facts; enforced in
   aggregate_sentiment() via the unified DASHBOARD_OUTPUT_SCHEMAS loop.
+- COMMENT_SAMPLES_SCHEMA describes the comment-samples fact subset
+  (comment_samples.parquet): verbatim rows of the fact, selected not
+  aggregated; enforced via the same unified loop.
 
 This module must not import from other pipeline modules (it is imported
 by them).
@@ -224,6 +227,32 @@ TEAMS_SCHEMA = pl.Schema(
         "conference": pl.String,
         "team_id": pl.Int64,
         "logo_url": pl.String,
+    }
+)
+
+# --- Comment samples: fact subset (enforced in pipeline/aggregation.py) ------
+# One row per sampled comment — verbatim rows of the ClassifiedComment fact
+# at its own grain, selected not aggregated: the top-N per player x sentiment
+# by score, under a confidence floor and a body-length cap. Logical PK is
+# (attributed_player, sentiment, rank), rank 1..N within each cell. Not a
+# rollup: there are no measures, so the non-additive guardrail doesn't
+# apply — the one rule is that body is never truncated (it is the receipt;
+# comment_id + link_id give the permalink). fan_team is the fan role of
+# Team, role-marked from birth (docs/data-model.md §2). Deliberately absent:
+# author (usernames don't serve the receipt) and confidence (a selection
+# input, near-constant once the floor is applied).
+
+COMMENT_SAMPLES_SCHEMA = pl.Schema(
+    {
+        "attributed_player": pl.String,  # FK -> players.parquet
+        "sentiment": pl.String,  # "pos" | "neg" | "neu", as the fact
+        "rank": pl.Int64,  # 1..N within (attributed_player, sentiment)
+        "comment_id": pl.String,  # provenance back to the fact
+        "link_id": pl.String,  # -> Reddit permalink, with comment_id
+        "body": pl.String,  # the receipt, verbatim
+        "score": pl.Int64,
+        "created_utc": pl.Int64,  # epoch seconds, as the fact
+        "fan_team": pl.String,  # nullable: flair may not resolve
     }
 )
 

@@ -23,6 +23,11 @@ from pipeline.schemas import (
     TEAMS_SCHEMA,
     validate_schema,
 )
+from utils.constants import (
+    COMMENT_SAMPLES_MAX_BODY_CHARS,
+    COMMENT_SAMPLES_MIN_CONFIDENCE,
+    COMMENT_SAMPLES_TOP_N,
+)
 from utils.paths import get_reference_dir
 from utils.player_config import (
     build_alias_to_player_map,
@@ -368,16 +373,6 @@ def build_teams_dimension(team_config: dict[str, dict]) -> pl.DataFrame:
         },
         schema=TEAMS_SCHEMA,
     )
-
-
-# comment_samples selection parameters - the defaults of
-# build_comment_samples(), named so the manifest can import rather than
-# retype them. Finalized on 2025-26 data: every qualified player's cells
-# fill at n=10; the cap removes ~2% of the candidate pool; the floor keeps
-# the classifier's top two confidence buckets on the polar labels.
-COMMENT_SAMPLES_TOP_N = 10
-COMMENT_SAMPLES_MIN_CONFIDENCE = 0.9  # pos/neg only; see build_comment_samples
-COMMENT_SAMPLES_MAX_BODY_CHARS = 500
 
 
 def build_comment_samples(

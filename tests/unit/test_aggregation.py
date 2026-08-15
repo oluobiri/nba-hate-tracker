@@ -12,9 +12,6 @@ import polars as pl
 import pytest
 
 from pipeline.aggregation import (
-    COMMENT_SAMPLES_MAX_BODY_CHARS,
-    COMMENT_SAMPLES_MIN_CONFIDENCE,
-    COMMENT_SAMPLES_TOP_N,
     aggregate_sentiment,
     build_comment_samples,
     build_teams_dimension,
@@ -34,6 +31,11 @@ from pipeline.schemas import (
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
     TEAMS_SCHEMA,
+)
+from utils.constants import (
+    COMMENT_SAMPLES_MAX_BODY_CHARS,
+    COMMENT_SAMPLES_MIN_CONFIDENCE,
+    COMMENT_SAMPLES_TOP_N,
 )
 from utils.player_config import load_player_config_version, load_player_metadata
 from utils.season_config import get_active_season

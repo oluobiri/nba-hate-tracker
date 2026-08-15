@@ -4,9 +4,9 @@ Aggregate sentiment data into dashboard-ready outputs.
 Reads classified sentiment parquet, computes player rankings,
 flair segmentation, and temporal trends. Writes the nested
 aggregates.json for the Streamlit dashboard plus one parquet per
-produced table (the four fact views and the players and teams
-dimensions) alongside it for ad-hoc DuckDB queries and the v2
-frontend.
+produced table (the four fact views, the players and teams
+dimensions, and the comment_samples fact subset) alongside it for
+ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -153,10 +153,11 @@ def main() -> None:
 
     logger.info(f"Wrote aggregates to {output_path}")
 
-    # Write one parquet per produced table (four views + the players and
-    # teams dimensions). Each dimension carries the config-version stamp
-    # pre-flighted above, so fact<->dimension drift is checkable (same
-    # mechanism as sentiment.parquet's stamp in collect_results).
+    # Write one parquet per produced table (four views, the players and
+    # teams dimensions, comment_samples). Each dimension carries the
+    # config-version stamp pre-flighted above, so fact<->dimension drift
+    # is checkable (same mechanism as sentiment.parquet's stamp in
+    # collect_results); the other outputs carry none.
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_path.parent / f"{name}.parquet"
         result[name].write_parquet(parquet_path, metadata=stamps.get(name))

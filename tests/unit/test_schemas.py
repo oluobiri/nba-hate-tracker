@@ -80,10 +80,12 @@ class TestPlayersContract:
             assert PLAYERS_SCHEMA[col] == ROSTERS_SCHEMA[col]
 
     def test_dashboard_outputs_superset(self):
-        """Verify the output mapping is views + the dimensions, and views stay fact-only."""
+        """Verify the output mapping is the rollups + the dimensions + the
+        comment-samples fact subset, and the rollup mapping stays rollup-only."""
         assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
             "players",
             "teams",
+            "comment_samples",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
@@ -146,6 +148,13 @@ class TestCommentSamplesContract:
         """Verify decided-out columns stay out (author, confidence)."""
         for col in ("author", "confidence"):
             assert col not in COMMENT_SAMPLES_SCHEMA.names()
+
+    def test_joins_outputs_but_not_views(self):
+        """Verify comment_samples ships via DASHBOARD_OUTPUT_SCHEMAS only — a
+        fact subset (no measures), not a rollup; the rollup mapping stays
+        rollup-only."""
+        assert DASHBOARD_OUTPUT_SCHEMAS["comment_samples"] is COMMENT_SAMPLES_SCHEMA
+        assert "comment_samples" not in AGGREGATE_VIEW_SCHEMAS
 
     def test_fact_side_dtypes_derive_from_sentiment(self):
         """Verify every column carried verbatim from the fact keeps the

@@ -256,14 +256,16 @@ COMMENT_SAMPLES_SCHEMA = pl.Schema(
     }
 )
 
-# Every table the aggregation stage produces -> its schema: the four fact
-# views plus the Player and Team dimensions. Single source for
-# aggregate_sentiment()'s unified validation loop and the script's parquet
-# write loop (<name>.parquet).
+# Every table the aggregation stage produces -> its schema, across the three
+# classes of produced table: the four fact rollups (AGGREGATE_VIEW_SCHEMAS),
+# the Player and Team dimensions, and the comment-samples fact subset.
+# Single source for aggregate_sentiment()'s unified validation loop and the
+# script's parquet write loop (<name>.parquet).
 DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     **AGGREGATE_VIEW_SCHEMAS,
     "players": PLAYERS_SCHEMA,
     "teams": TEAMS_SCHEMA,
+    "comment_samples": COMMENT_SAMPLES_SCHEMA,
 }
 
 

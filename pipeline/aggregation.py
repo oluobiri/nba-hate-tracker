@@ -12,6 +12,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.schemas import (
+    COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
@@ -165,10 +166,10 @@ def aggregate_sentiment(input_path: Path) -> dict:
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
-        team_overall, players, and teams hold pl.DataFrames conforming
-        to DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy
-        player_metadata dict is reconstructed at serialization time via
-        players_to_metadata_dict().
+        team_overall, players, teams, and comment_samples hold
+        pl.DataFrames conforming to DASHBOARD_OUTPUT_SCHEMAS; metadata is
+        a dict. The legacy player_metadata dict is reconstructed at
+        serialization time via players_to_metadata_dict().
 
     Raises:
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
@@ -312,9 +313,16 @@ def aggregate_sentiment(input_path: Path) -> dict:
     attributed_players = set(player_overall.get_column("attributed_player").to_list())
     players = _build_players_dimension(player_metadata, attributed_players)
 
+    # Comment samples: the receipts - a verbatim fact subset, top-N per
+    # player x sentiment by score under the candidacy gates
+    logger.info("Selecting comment_samples...")
+    comment_samples = build_comment_samples(df_attributed)
+    _log_comment_samples_diagnostics(df_attributed, comment_samples)
+
     logger.info(
         f"Aggregation complete: {unique_players} players, "
-        f"{unique_teams} teams, {unique_weeks} weeks"
+        f"{unique_teams} teams, {unique_weeks} weeks, "
+        f"{comment_samples.height:,} comment samples"
     )
 
     outputs = {
@@ -324,6 +332,7 @@ def aggregate_sentiment(input_path: Path) -> dict:
         "team_overall": team_overall,
         "players": players,
         "teams": teams,
+        "comment_samples": comment_samples,
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
         validate_schema(outputs[name], schema, name)
@@ -358,6 +367,103 @@ def build_teams_dimension(team_config: dict[str, dict]) -> pl.DataFrame:
             "logo_url": [info["logo_url"] for info in team_config.values()],
         },
         schema=TEAMS_SCHEMA,
+    )
+
+
+def build_comment_samples(
+    df: pl.DataFrame,
+    *,
+    n: int = 10,
+    min_confidence: float = 0.9,
+    max_body_chars: int = 500,
+) -> pl.DataFrame:
+    """
+    Select the comment samples: top-N receipts per player x sentiment.
+
+    A verbatim fact subset, selected not aggregated. Candidacy requires
+    the classifier's confidence at or above the floor and a body no
+    longer than the cap (a receipt is a quote, not an essay). Within each
+    (attributed_player, sentiment) cell, exact-duplicate bodies collapse
+    to their best-ranked copy (copypasta guard), rows rank by score
+    descending — ties broken by confidence descending, then comment_id
+    ascending, so output is deterministic — and the top n are kept. A
+    cell with fewer than n candidates yields fewer rows, never padding.
+
+    The fact's fan-role ``team`` column ships as ``fan_team``. Bodies are
+    never truncated.
+
+    Args:
+        df: Attributed, flair-resolved frame: attributed_player,
+            sentiment, comment_id, link_id, body, score, confidence,
+            created_utc, team.
+        n: Maximum rows per (attributed_player, sentiment) cell.
+        min_confidence: Candidacy floor on the classifier's confidence.
+        max_body_chars: Candidacy cap on body length, in characters.
+
+    Returns:
+        Frame conforming to COMMENT_SAMPLES_SCHEMA, sorted by
+        (attributed_player, sentiment, rank).
+    """
+    cell = ["attributed_player", "sentiment"]
+
+    above_floor = df.filter(pl.col("confidence") >= min_confidence)
+    candidates = above_floor.filter(pl.col("body").str.len_chars() <= max_body_chars)
+    if df.height:
+        logger.info(
+            f"comment_samples candidacy: {df.height:,} attributed rows -> "
+            f"{above_floor.height:,} at confidence >= {min_confidence} "
+            f"({(df.height - above_floor.height) / df.height:.1%} removed) -> "
+            f"{candidates.height:,} at body <= {max_body_chars} chars "
+            f"({(above_floor.height - candidates.height) / df.height:.1%} removed)"
+        )
+
+    return (
+        candidates.sort(
+            ["score", "confidence", "comment_id"], descending=[True, True, False]
+        )
+        .unique(subset=[*cell, "body"], keep="first", maintain_order=True)
+        .with_columns(
+            (pl.int_range(pl.len()).over(cell) + 1).cast(pl.Int64).alias("rank")
+        )
+        .filter(pl.col("rank") <= n)
+        .rename({"team": "fan_team"})
+        .select(COMMENT_SAMPLES_SCHEMA.names())
+        .sort([*cell, "rank"])
+    )
+
+
+def _log_comment_samples_diagnostics(
+    df_attributed: pl.DataFrame, comment_samples: pl.DataFrame
+) -> None:
+    """
+    Log the multi-mention share of the sampled rows.
+
+    A multi-mention comment is attributed via the classifier's explicit
+    sentiment_player, so its receipt always names a stated target — but
+    a two-name comment can still read ambiguously under one player's
+    card. Logged so the share is visible on every run; the reading
+    quality of those rows is a review-time judgment, not a code check.
+
+    Args:
+        df_attributed: The attributed frame (carries mentioned_players).
+        comment_samples: The selected samples (COMMENT_SAMPLES_SCHEMA).
+    """
+    if not comment_samples.height:
+        logger.info("comment_samples: no rows selected")
+        return
+    multi = (
+        comment_samples.select("comment_id")
+        .join(
+            df_attributed.select("comment_id", "mentioned_players"),
+            on="comment_id",
+            how="left",
+        )
+        .filter(pl.col("mentioned_players").list.len() > 1)
+        .height
+    )
+    logger.info(
+        f"comment_samples: {comment_samples.height:,} rows selected; "
+        f"{multi:,} multi-mention ({multi / comment_samples.height:.1%})"
     )
 
 

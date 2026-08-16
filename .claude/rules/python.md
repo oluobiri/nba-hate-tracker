@@ -53,6 +53,32 @@ def has_valid_body(comment: dict) -> dict | None:
 
 Skip docstrings only for obvious one-liners where the name says it all.
 
+## Comments
+
+Code explains itself; a comment carries the *why* the code can't. Keep them
+short — a contract or section comment is a few lines, not a paragraph.
+
+- **No links to doc sections.** `see docs/data-model.md §2` is a staleness
+  time-bomb: sections move, get renumbered, or stop being about the thing.
+  If the reasoning matters at the call site, state it in a sentence; if it's
+  conceptual, the doc is where a reader goes anyway.
+- **Ticket references only when the why is too long to summarize** — `(#84)`
+  next to a value whose derivation lives in a ticket is fine; a ticket number
+  as a substitute for saying what the code does is not.
+- **Decisions and rejected alternatives live in tickets, not comments.** The
+  comment says what the code does and the one non-obvious reason; the ticket
+  keeps the debate.
+
+```python
+# Good
+COMMENT_SAMPLES_MIN_CONFIDENCE = 0.9  # pos/neg only; neu is exempt
+
+# Avoid
+# The floor applies to pos/neg only. Neutral rows sit at a conventional
+# 0.5 (see docs/data-model.md §1 and ticket #84's amendment of 2026-08-15,
+# which considered and rejected a uniform 0.85 floor because ...)
+```
+
 ## Testing
 
 See `.claude/rules/testing.md` for testing conventions and TDD workflow.

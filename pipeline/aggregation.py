@@ -318,8 +318,6 @@ def aggregate_sentiment(input_path: Path) -> dict:
     attributed_players = set(player_overall.get_column("attributed_player").to_list())
     players = _build_players_dimension(player_metadata, attributed_players)
 
-    # Comment samples: the receipts - a verbatim fact subset, top-N per
-    # player x sentiment by score under the candidacy gates
     logger.info("Selecting comment_samples...")
     comment_samples = build_comment_samples(df_attributed)
     _log_comment_samples_diagnostics(df_attributed, comment_samples)
@@ -385,30 +383,21 @@ def build_comment_samples(
     """
     Select the comment samples: top-N receipts per player x sentiment.
 
-    A verbatim fact subset, selected not aggregated. Candidacy requires
-    a body no longer than the cap (a receipt is a quote, not an essay)
-    and, for the polar labels (pos/neg), the classifier's confidence at
-    or above the floor — a misclassification guard. Neutral rows are
-    exempt: the prompt gives no confidence guidance and, empirically
-    (2025-26 run), the classifier reports a conventional 0.5 for neu, so
-    a floor there would starve the neutral cells rather than guard them.
-    Within each (attributed_player, sentiment) cell, exact-duplicate
-    bodies collapse to their best-ranked copy (copypasta guard), rows
-    rank by score descending — ties broken by confidence descending, then
-    comment_id ascending, nulls last, so output is deterministic — and
-    the top n are kept. A cell with fewer than n candidates yields fewer
-    rows, never padding.
-
-    The fact's fan-role ``team`` column ships as ``fan_team``. Bodies are
-    never truncated.
+    Candidacy: body no longer than max_body_chars and, for pos/neg,
+    confidence at or above min_confidence. Neutral rows are exempt from
+    the floor - the classifier reports a conventional 0.5 for neu, so a
+    floor there would starve the cells rather than guard them. Within
+    each (attributed_player, sentiment) cell, duplicate bodies collapse
+    to the best-ranked copy, rows rank by score desc (ties: confidence
+    desc, comment_id asc, nulls last) and the top n are kept; thin cells
+    are never padded. Bodies are verbatim.
 
     Args:
-        df: Attributed, flair-resolved frame: attributed_player,
+        df: Attributed, flair-resolved frame with attributed_player,
             sentiment, comment_id, link_id, body, score, confidence,
             created_utc, team.
         n: Maximum rows per (attributed_player, sentiment) cell.
-        min_confidence: Candidacy floor on the classifier's confidence,
-            applied to pos/neg rows only.
+        min_confidence: Candidacy floor on confidence, pos/neg rows only.
         max_body_chars: Candidacy cap on body length, in characters.
 
     Returns:
@@ -454,11 +443,8 @@ def _log_comment_samples_diagnostics(
     """
     Log the multi-mention share of the sampled rows.
 
-    A multi-mention comment is attributed via the classifier's explicit
-    sentiment_player, so its receipt always names a stated target — but
-    a two-name comment can still read ambiguously under one player's
-    card. Logged so the share is visible on every run; the reading
-    quality of those rows is a review-time judgment, not a code check.
+    A two-name receipt can read ambiguously under one player's card;
+    the share is logged every run so it stays visible.
 
     Args:
         df_attributed: The attributed frame (carries mentioned_players).
@@ -467,8 +453,7 @@ def _log_comment_samples_diagnostics(
     if not comment_samples.height:
         logger.info("comment_samples: no rows selected")
         return
-    # Semi-join: counts sampled rows whose id has a multi-mention fact
-    # row, and can't fan out if an id were ever duplicated in the fact
+    # Semi-join: can't fan out if a comment_id were ever duplicated
     multi = comment_samples.join(
         df_attributed.filter(pl.col("mentioned_players").list.len() > 1).select(
             "comment_id"

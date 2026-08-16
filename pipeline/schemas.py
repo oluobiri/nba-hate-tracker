@@ -231,18 +231,9 @@ TEAMS_SCHEMA = pl.Schema(
 )
 
 # --- Comment samples: fact subset (enforced in pipeline/aggregation.py) ------
-# One row per sampled comment — verbatim rows of the ClassifiedComment fact
-# at its own grain, selected not aggregated: the top-N per player x sentiment
-# by score, under a confidence floor and a body-length cap. Logical PK is
-# (attributed_player, sentiment, rank), rank 1..N within each cell. Not a
-# rollup: there are no measures, so the non-additive guardrail doesn't
-# apply — the one rule is that body is never truncated (it is the receipt;
-# comment_id + link_id give the permalink). fan_team is the fan role of
-# Team, role-marked from birth (docs/data-model.md §2). Deliberately absent:
-# author (usernames don't serve the receipt) and confidence (a selection
-# input: pos/neg rows pass a confidence floor, neu rows are exempt from it
-# - the value is not a per-row quality signal to display).
-
+# One row per sampled comment: verbatim fact rows, top-N per player x
+# sentiment by score (see build_comment_samples). PK (attributed_player,
+# sentiment, rank). body is never truncated. No author, no confidence.
 COMMENT_SAMPLES_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,  # FK -> players.parquet
@@ -253,7 +244,7 @@ COMMENT_SAMPLES_SCHEMA = pl.Schema(
         "body": pl.String,  # the receipt, verbatim
         "score": pl.Int64,
         "created_utc": pl.Int64,  # epoch seconds, as the fact
-        "fan_team": pl.String,  # nullable: flair may not resolve
+        "fan_team": pl.String,  # nullable; fan role of Team, role-marked
     }
 )
 

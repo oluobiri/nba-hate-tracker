@@ -107,14 +107,11 @@ NBA_STATS_RETRY_BACKOFF = 2.0
 # =============================================================================
 # AGGREGATION - comment_samples selection (pipeline/aggregation.py)
 # =============================================================================
-# The keyword defaults of build_comment_samples(), named so the manifest can
-# import rather than retype the rule. Finalized on 2025-26 data: every
-# qualified player's cells fill at n=10; the cap removes ~2% of the candidate
-# pool; the floor keeps the classifier's top two confidence buckets on the
-# polar labels (pos/neg only - neu sits at a conventional 0.5 and is exempt).
+# Keyword defaults of build_comment_samples(); named so the manifest can
+# import them. Finalized on 2025-26 data (#84).
 
 COMMENT_SAMPLES_TOP_N = 10
-COMMENT_SAMPLES_MIN_CONFIDENCE = 0.9
+COMMENT_SAMPLES_MIN_CONFIDENCE = 0.9  # pos/neg only; neu is exempt
 COMMENT_SAMPLES_MAX_BODY_CHARS = 500
 
 # =============================================================================

@@ -105,6 +105,16 @@ NBA_STATS_RETRY_BACKOFF = 2.0
 
 
 # =============================================================================
+# AGGREGATION - comment_samples selection (pipeline/aggregation.py)
+# =============================================================================
+# Keyword defaults of build_comment_samples(); named so the manifest can
+# import them. Finalized on 2025-26 data (#84).
+
+COMMENT_SAMPLES_TOP_N = 10
+COMMENT_SAMPLES_MIN_CONFIDENCE = 0.9  # pos/neg only; neu is exempt
+COMMENT_SAMPLES_MAX_BODY_CHARS = 500
+
+# =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)
 # =============================================================================
 

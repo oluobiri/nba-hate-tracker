@@ -16,6 +16,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - PLAYERS_SCHEMA describes the Player dimension (players.parquet),
   config curation joined with snapshot facts; enforced in
   aggregate_sentiment() via the unified DASHBOARD_OUTPUT_SCHEMAS loop.
+- COMMENT_SAMPLES_SCHEMA describes the comment-samples fact subset
+  (comment_samples.parquet): verbatim rows of the fact, selected not
+  aggregated; enforced via the same unified loop.
 
 This module must not import from other pipeline modules (it is imported
 by them).
@@ -227,14 +230,34 @@ TEAMS_SCHEMA = pl.Schema(
     }
 )
 
-# Every table the aggregation stage produces -> its schema: the four fact
-# views plus the Player and Team dimensions. Single source for
-# aggregate_sentiment()'s unified validation loop and the script's parquet
-# write loop (<name>.parquet).
+# --- Comment samples: fact subset (enforced in pipeline/aggregation.py) ------
+# One row per sampled comment: verbatim fact rows, top-N per player x
+# sentiment by score (see build_comment_samples). PK (attributed_player,
+# sentiment, rank). body is never truncated. No author, no confidence.
+COMMENT_SAMPLES_SCHEMA = pl.Schema(
+    {
+        "attributed_player": pl.String,  # FK -> players.parquet
+        "sentiment": pl.String,  # "pos" | "neg" | "neu", as the fact
+        "rank": pl.Int64,  # 1..N within (attributed_player, sentiment)
+        "comment_id": pl.String,  # provenance back to the fact
+        "link_id": pl.String,  # -> Reddit permalink, with comment_id
+        "body": pl.String,  # the receipt, verbatim
+        "score": pl.Int64,
+        "created_utc": pl.Int64,  # epoch seconds, as the fact
+        "fan_team": pl.String,  # nullable; fan role of Team, role-marked
+    }
+)
+
+# Every table the aggregation stage produces -> its schema, across the three
+# classes of produced table: the four fact rollups (AGGREGATE_VIEW_SCHEMAS),
+# the Player and Team dimensions, and the comment-samples fact subset.
+# Single source for aggregate_sentiment()'s unified validation loop and the
+# script's parquet write loop (<name>.parquet).
 DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     **AGGREGATE_VIEW_SCHEMAS,
     "players": PLAYERS_SCHEMA,
     "teams": TEAMS_SCHEMA,
+    "comment_samples": COMMENT_SAMPLES_SCHEMA,
 }
 
 

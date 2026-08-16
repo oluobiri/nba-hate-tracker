@@ -36,7 +36,7 @@ erDiagram
 
 The diagram carries **structure only** — entity boxes, the role-playing edges, and each box's grain/key. Full attribute lists live in the entity key below, so the diagram stays readable and so forward-look attributes never appear to already exist.
 
-The four aggregate views (`player_overall`, `player_temporal`, `player_team`, `team_overall`) are **rollups of the `ClassifiedComment` fact** and are not drawn as boxes; their lineage is the table in §4.
+The pipeline produces three classes of table from this model, none of which is drawn as a box: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
 
 ---
 
@@ -123,8 +123,9 @@ The atomic fact stays at `created_utc` (seconds) and serves the replay directly;
 | `player_metadata.team` (legacy JSON only) | `roster_team` |
 | `player_team.team` | `fan_team` |
 | `team_overall.team` | `fan_team` |
+| `comment_samples.fan_team` | `fan_team` (role-marked physical name) |
 
-The fan-team columns still carry the unmarked physical name `team`; their rename is a **pending follow-up** (a separate ticket), not planned here. This doc records the concept and the mapping so the model and the code don't read as contradictory in the meantime.
+The fan-team columns in the two existing views still carry the unmarked physical name `team`; their rename is a **pending follow-up** (a separate ticket), not planned here. New produced files carry the role-marked name from birth. This doc records the concept and the mapping so the model and the code don't read as contradictory in the meantime.
 
 ---
 
@@ -138,20 +139,23 @@ The `Player → Team (roster)` edge carries a fidelity ceiling worth stating pla
 
 ## 4. View lineage — cheap, needs-a-join, expensive
 
-All four views are **fact tables** (rollups of `ClassifiedComment`); `Player` and `Team` are the **dimensions** joined in.
+Three classes of produced table: the four views are **rollups** of `ClassifiedComment` (fact tables with measures at a coarser grain); `Player` and `Team` are the **dimensions** joined in; `comment_samples` is a **fact subset** — verbatim rows of `ClassifiedComment` at its own grain, selected (top-N per player × sentiment by score, under candidacy gates) rather than aggregated.
 
-| View (parquet) | Grain | Derives from | Cheap question it already answers |
+| Table (parquet) | Grain | Derives from | Cheap question it already answers |
 |---|---|---|---|
 | `player_overall` | Player | fact → Player | "Draymond's overall hate" |
 | `player_temporal` | Player × Week | fact → Player, Date(`week`) | "Draymond week over week" |
 | `player_team` | Player × `fan_team` | fact → Player, Team(fan) | "Lakers fans about Draymond" |
 | `team_overall` | `fan_team` | fact → Team(fan) | "Which fanbase is saltiest" |
+| `comment_samples` | Player × sentiment × rank | fact → Player, Team(fan) | "The receipts: what a Lakers fan actually said about Draymond" |
+
+The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me every comment"* deliberately **expensive** — the atomic fact is not a shipped table; a full drill is a separate engine (v3), not a view.
 
 **Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school).
 
 **Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
 
-> **Non-additive measures guardrail:** the rate measures (`neg_rate`, `pos_rate`, `net_sentiment`, `polarization`) are **non-additive** — re-aggregate them from the counts (`neg_count` / `comment_count`), never by averaging rates across rows. (This is the salt-index lesson: a fanbase's true negativity is `sum(neg) / sum(total)`, not the mean of per-player rates.)
+> **Non-additive measures guardrail:** the rate measures (`neg_rate`, `pos_rate`, `net_sentiment`, `polarization`) are **non-additive** — re-aggregate them from the counts (`neg_count` / `comment_count`), never by averaging rates across rows. (This is the salt-index lesson: a fanbase's true negativity is `sum(neg) / sum(total)`, not the mean of per-player rates.) The guardrail has no purchase on the fact subset — it carries no measures, nothing to re-aggregate; its one rule is that `body` is never truncated (a receipt is verbatim or it isn't a receipt).
 
 > **Known seam:** the *qualified-player* threshold (min 5,000 comments) is a business rule applied at read time and currently restated across the dashboard, notebooks, and the launch post rather than defined once. It's a metric-definition concern, not strictly entity-relationship — but it's a real semantic-layer gap: the model has no single place that says "qualified."
 

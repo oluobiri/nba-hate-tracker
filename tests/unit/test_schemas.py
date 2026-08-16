@@ -6,6 +6,7 @@ import pytest
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     COMMENT_INPUT_SCHEMA,
+    COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
@@ -79,10 +80,12 @@ class TestPlayersContract:
             assert PLAYERS_SCHEMA[col] == ROSTERS_SCHEMA[col]
 
     def test_dashboard_outputs_superset(self):
-        """Verify the output mapping is views + the dimensions, and views stay fact-only."""
+        """Verify the output mapping is the rollups + the dimensions + the
+        comment-samples fact subset, and the rollup mapping stays rollup-only."""
         assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
             "players",
             "teams",
+            "comment_samples",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
@@ -114,6 +117,50 @@ class TestTeamsContract:
         dimension, not a fact rollup; the views mapping stays fact-only."""
         assert DASHBOARD_OUTPUT_SCHEMAS["teams"] is TEAMS_SCHEMA
         assert "teams" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestCommentSamplesContract:
+    """Contract guards for the comment-samples fact subset (comment_samples.parquet)."""
+
+    def test_pins_column_set_and_dtypes(self):
+        """Verify the decided column set with pinned dtypes, in order."""
+        assert COMMENT_SAMPLES_SCHEMA == pl.Schema(
+            {
+                "attributed_player": pl.String,
+                "sentiment": pl.String,
+                "rank": pl.Int64,
+                "comment_id": pl.String,
+                "link_id": pl.String,
+                "body": pl.String,
+                "score": pl.Int64,
+                "created_utc": pl.Int64,
+                "fan_team": pl.String,
+            }
+        )
+
+    def test_fan_team_is_role_marked(self):
+        """Verify the fan-role Team FK is role-marked from birth — no
+        unmarked `team` column on a new produced file."""
+        assert "fan_team" in COMMENT_SAMPLES_SCHEMA.names()
+        assert "team" not in COMMENT_SAMPLES_SCHEMA.names()
+
+    def test_excludes_rejected_columns(self):
+        """Verify decided-out columns stay out (author, confidence)."""
+        for col in ("author", "confidence"):
+            assert col not in COMMENT_SAMPLES_SCHEMA.names()
+
+    def test_joins_outputs_but_not_views(self):
+        """Verify comment_samples ships via DASHBOARD_OUTPUT_SCHEMAS only — a
+        fact subset (no measures), not a rollup; the rollup mapping stays
+        rollup-only."""
+        assert DASHBOARD_OUTPUT_SCHEMAS["comment_samples"] is COMMENT_SAMPLES_SCHEMA
+        assert "comment_samples" not in AGGREGATE_VIEW_SCHEMAS
+
+    def test_fact_side_dtypes_derive_from_sentiment(self):
+        """Verify every column carried verbatim from the fact keeps the
+        fact's dtype (no drift between the subset and its source)."""
+        for col in ("comment_id", "link_id", "body", "score", "created_utc"):
+            assert COMMENT_SAMPLES_SCHEMA[col] == SENTIMENT_SCHEMA[col]
 
 
 class TestRostersContract:

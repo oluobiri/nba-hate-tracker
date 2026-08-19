@@ -24,6 +24,7 @@ The override is process-local module state: spawn-based worker processes
 """
 
 import re
+from collections.abc import Callable
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -82,7 +83,9 @@ def load_season_pointer() -> dict:
         config = yaml.safe_load(f) or {}
 
     if "season" not in config:
-        raise ValueError(f"season.yaml missing required key 'season': {POINTER_PATH}")
+        raise ValueError(
+            f"season pointer file missing required key 'season': {POINTER_PATH}"
+        )
 
     pointers = {
         "season": config["season"],
@@ -93,7 +96,7 @@ def load_season_pointer() -> dict:
             continue
         if not isinstance(value, str) or not SEASON_FORMAT.fullmatch(value):
             raise ValueError(
-                f"season.yaml {key!r} must be a quoted YYYY-YY string, got "
+                f"season pointer {key!r} must be a quoted YYYY-YY string, got "
                 f"{value!r} in {POINTER_PATH}"
             )
     return pointers
@@ -128,16 +131,16 @@ def load_season_config() -> dict:
 
     missing = REQUIRED_KEYS - set(config)
     if missing:
-        raise ValueError(f"season.yaml missing required keys: {missing} in {path}")
+        raise ValueError(f"season facts missing required keys: {missing} in {path}")
 
     if config["season"] != season:
         raise ValueError(
-            f"season.yaml 'season' is {config['season']!r} but the file is "
+            f"season facts 'season' is {config['season']!r} but the file is "
             f"config/{season}/season.yaml"
         )
 
     if not config["subreddits"]:
-        raise ValueError(f"season.yaml 'subreddits' must not be empty: {path}")
+        raise ValueError(f"season facts 'subreddits' must not be empty: {path}")
 
     config["version"] = require_version_string(
         config, path, f"season.yaml for season {season!r}"
@@ -158,7 +161,7 @@ def load_season_config() -> dict:
 def _validated_block(
     block: dict | None,
     keys: tuple[str, ...],
-    check,
+    check: Callable[[object], None],
     label: str,
     path: Path,
 ) -> MappingProxyType:
@@ -180,10 +183,10 @@ def _validated_block(
             `keys`, or a non-null value fails `check`.
     """
     if not isinstance(block, dict):
-        raise ValueError(f"season.yaml missing '{label}' block: {path}")
+        raise ValueError(f"season facts missing '{label}' block: {path}")
     if set(block) != set(keys):
         raise ValueError(
-            f"season.yaml '{label}' keys must be exactly {sorted(keys)}, "
+            f"season facts '{label}' keys must be exactly {sorted(keys)}, "
             f"got {sorted(block)} in {path}"
         )
     for key in keys:
@@ -194,7 +197,7 @@ def _validated_block(
             check(value)
         except (TypeError, ValueError) as e:
             raise ValueError(
-                f"season.yaml {label}.{key} is malformed ({value!r}) in {path}: {e}"
+                f"season facts {label}.{key} is malformed ({value!r}) in {path}: {e}"
             ) from e
     return MappingProxyType({key: block[key] for key in keys})
 

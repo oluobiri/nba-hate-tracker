@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from utils.config_version import require_version_string
+
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "teams.yaml"
 
@@ -60,15 +62,7 @@ def load_team_config_version() -> str:
     with open(CONFIG_PATH) as f:
         config = yaml.safe_load(f)
 
-    version = config.get("version")
-    if version is None:
-        raise ValueError(f"teams.yaml has no 'version' key: {CONFIG_PATH}")
-    if not isinstance(version, str):
-        raise ValueError(
-            f"teams.yaml version must be a quoted string, got "
-            f"{version!r} ({type(version).__name__}) in {CONFIG_PATH}"
-        )
-    return version
+    return require_version_string(config, CONFIG_PATH, "teams.yaml")
 
 
 @lru_cache(maxsize=1)

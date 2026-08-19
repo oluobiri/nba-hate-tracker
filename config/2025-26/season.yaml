@@ -1,0 +1,42 @@
+# Season facts — 2025-26 (v2 season)
+#
+# version: MAJOR = key-set change, MINOR = value fill. Values fill when they
+# become knowable (season flip: preseason-published dates; bracket
+# resolution: finals_start/finals_end; gate PASS: corpus) and are never
+# revised once set — an unknown value is null, not a guess.
+#
+# start_date/end_date are the OPERATIONAL DOWNLOAD WINDOW, not the league
+# season: the corpus brackets the season (preseason and post-Finals
+# discourse are in it), it isn't the season. League dates live in
+# `calendar`, so the two vocabularies can't be confused.
+#
+# calendar admission test — a key belongs here only if the event is
+#   recurring (exists every season), crisp (one league-published date,
+#   fillable with zero judgment), and consumable (a consumer can distinguish
+#   on it as a phase boundary or annotation). One-off storylines are
+#   editorial and stay out. `all_star` is the All-Star Game date (the
+#   Sunday), not the weekend's start.
+# corpus — gate-time facts no shipped table can derive (the aggregate stage
+#   never sees raw). Recorded once from the corpus-baseline notebook.
+
+version: "1.0"
+season: "2025-26"
+
+start_date: "2025-10-01"
+end_date: "2026-06-30"
+subreddits:
+  - nba
+
+calendar:
+  opening_night: "2025-10-21"
+  nba_cup_final: "2025-12-16"
+  christmas: "2025-12-25"
+  trade_deadline: "2026-02-05"
+  all_star: "2026-02-15"
+  play_in_start: "2026-04-14"
+  playoffs_start: "2026-04-18"
+  finals_start: "2026-06-03"
+  finals_end: "2026-06-13"
+
+corpus:
+  raw_comments: 7283478

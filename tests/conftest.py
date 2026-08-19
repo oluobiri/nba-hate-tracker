@@ -551,7 +551,7 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
     Set a process-level season override with cold caches; restores after.
 
     Yields a callable — season_override("2024-25") — that clears the
-    season-derived player-config caches (the override's warm-cache guard
+    season-derived config caches (the override's warm-cache guard
     would otherwise trip on caches populated by earlier tests) and sets
     the override. Teardown clears both the override and the caches so
     later tests see the on-disk active season again.
@@ -563,10 +563,15 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
         load_player_config_version,
         load_player_metadata,
     )
-    from utils.season_config import clear_season_override, set_season_override
+    from utils.season_config import (
+        clear_season_override,
+        load_season_config,
+        set_season_override,
+    )
 
     def _clear_caches() -> None:
         for fn in (
+            load_season_config,
             load_player_config,
             build_alias_to_player_map,
             load_player_metadata,

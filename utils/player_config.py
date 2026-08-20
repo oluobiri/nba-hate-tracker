@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 
+from utils.config_version import require_version_string
 from utils.season_config import get_active_season
 
 
@@ -95,9 +96,7 @@ def _normalize_player_name(name: str) -> str:
     return " ".join(name.lower().replace(".", "").split())
 
 
-def resolve_sentiment_player(
-    name: str | None, alias_map: dict[str, str]
-) -> str | None:
+def resolve_sentiment_player(name: str | None, alias_map: dict[str, str]) -> str | None:
     """
     Resolve a classifier sentiment_player value to a canonical player name.
 
@@ -143,18 +142,9 @@ def load_player_config_version() -> str:
     with open(path) as f:
         config = yaml.safe_load(f)
 
-    version = config.get("version")
-    if version is None:
-        raise ValueError(
-            f"players.yaml for season {get_active_season()!r} has no "
-            f"'version' key: {path}"
-        )
-    if not isinstance(version, str):
-        raise ValueError(
-            f"players.yaml version must be a quoted string, got "
-            f"{version!r} ({type(version).__name__}) in {path}"
-        )
-    return version
+    return require_version_string(
+        config, path, f"players.yaml for season {get_active_season()!r}"
+    )
 
 
 @lru_cache(maxsize=1)

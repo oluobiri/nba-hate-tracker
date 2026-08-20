@@ -1,0 +1,35 @@
+# Season facts — 2024-25 (v1 season). Values fill when knowable (season
+# flip: dates; bracket resolution: finals_start/finals_end; gate PASS:
+# corpus) and are never revised once set — unknown means null, not a guess.
+# version: MAJOR = key-set change, MINOR = value fill.
+#
+# start_date/end_date are the operational download window, not the league
+# season — league dates live in `calendar`.
+#
+# calendar admission test: recurring (exists every season), crisp (one
+# league-published date, zero judgment), consumable (a phase boundary or
+# annotation). One-off storylines stay out. `all_star` is the All-Star
+# Game date (the Sunday), not the weekend's start.
+# corpus: gate-time facts no shipped table can derive.
+
+version: "1.0"
+season: "2024-25"
+
+start_date: "2024-10-01"
+end_date: "2025-06-30"
+subreddits:
+  - nba
+
+calendar:
+  opening_night: "2024-10-22"
+  nba_cup_final: "2024-12-17"
+  christmas: "2024-12-25"
+  trade_deadline: "2025-02-06"
+  all_star: "2025-02-16"
+  play_in_start: "2025-04-15"
+  playoffs_start: "2025-04-19"
+  finals_start: "2025-06-05"
+  finals_end: "2025-06-22"
+
+corpus:
+  raw_comments: 7041235

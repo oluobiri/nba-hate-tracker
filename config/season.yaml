@@ -1,9 +1,13 @@
+# Season pointers — which season the code operates on. Nothing else lives
+# here: a season's facts (download window, subreddits, league calendar,
+# corpus figures) are in config/<season>/season.yaml, so moving a pointer
+# never overwrites another season's record.
+
+# The pipeline's operational pointer: data paths, players.yaml, and the
+# per-season facts file all resolve through it (or the --season override).
 season: "2025-26"
-# What the deployed dashboard serves — decoupled from `season` (the pipeline's
-# operational pointer) so a season flip for pipeline work cannot take the
-# public app down. Flipping this line IS the v2 dashboard launch.
+
+# What the deployed dashboard serves — decoupled from `season` so a season
+# flip for pipeline work cannot take the public app down. Flipping this
+# line IS the v2 dashboard launch.
 published_season: "2024-25"
-start_date: "2025-10-01"
-end_date: "2026-06-30"
-subreddits:
-  - nba

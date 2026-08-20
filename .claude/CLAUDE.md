@@ -11,7 +11,7 @@
 scripts/          → CLI entry points (download, filter, batch, aggregate)
 pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
-config/           → YAML configs (2024-25/players.yaml, teams.yaml; season.yaml planned)
+config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts; teams.yaml)
 app/              → Streamlit dashboard
 tests/            → pytest (unit/, conftest.py)
 notebooks/        → EDA and exploration, season-scoped (2024-25/, 2025-26/)

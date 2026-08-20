@@ -17,7 +17,8 @@ def require_version_string(config: dict | None, path: Path, label: str) -> str:
     Args:
         config: Parsed YAML document (None when the file is empty).
         path: Path the config was read from, for the error message.
-        label: Human name of the config file, e.g. "players.yaml".
+        label: How to refer to the config in error messages, e.g.
+            "players.yaml for season '2025-26'".
 
     Returns:
         The version string, e.g. "4.2".

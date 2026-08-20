@@ -1,23 +1,16 @@
-# Season facts — 2024-25 (v1 season)
+# Season facts — 2024-25 (v1 season). Values fill when knowable (season
+# flip: dates; bracket resolution: finals_start/finals_end; gate PASS:
+# corpus) and are never revised once set — unknown means null, not a guess.
+# version: MAJOR = key-set change, MINOR = value fill.
 #
-# version: MAJOR = key-set change, MINOR = value fill. Values fill when they
-# become knowable (season flip: preseason-published dates; bracket
-# resolution: finals_start/finals_end; gate PASS: corpus) and are never
-# revised once set — an unknown value is null, not a guess.
+# start_date/end_date are the operational download window, not the league
+# season — league dates live in `calendar`.
 #
-# start_date/end_date are the OPERATIONAL DOWNLOAD WINDOW, not the league
-# season: the corpus brackets the season (preseason and post-Finals
-# discourse are in it), it isn't the season. League dates live in
-# `calendar`, so the two vocabularies can't be confused.
-#
-# calendar admission test — a key belongs here only if the event is
-#   recurring (exists every season), crisp (one league-published date,
-#   fillable with zero judgment), and consumable (a consumer can distinguish
-#   on it as a phase boundary or annotation). One-off storylines are
-#   editorial and stay out. `all_star` is the All-Star Game date (the
-#   Sunday), not the weekend's start.
-# corpus — gate-time facts no shipped table can derive (the aggregate stage
-#   never sees raw). Recorded once from the corpus-baseline notebook.
+# calendar admission test: recurring (exists every season), crisp (one
+# league-published date, zero judgment), consumable (a phase boundary or
+# annotation). One-off storylines stay out. `all_star` is the All-Star
+# Game date (the Sunday), not the weekend's start.
+# corpus: gate-time facts no shipped table can derive.
 
 version: "1.0"
 season: "2024-25"

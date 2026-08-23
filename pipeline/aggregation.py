@@ -388,11 +388,11 @@ def build_comment_samples(
     Neutral rows are exempt from both polar gates - the classifier
     reports a conventional 0.5 for neu and routinely omits the target on
     neutral comments; a polar row with no stated target is the ambiguity
-    class a receipt can't carry. Within each
-    (attributed_player, sentiment) cell, duplicate bodies collapse
-    to the best-ranked copy, rows rank by score desc (ties: confidence
-    desc, comment_id asc, nulls last) and the top n are kept; thin cells
-    are never padded. Bodies are verbatim.
+    class a receipt can't carry. Within each (attributed_player,
+    sentiment) cell, duplicate bodies collapse to the best-ranked copy,
+    rows rank by score desc (ties: confidence desc, comment_id asc,
+    nulls last) and the top n are kept; thin cells are never padded.
+    Bodies are verbatim.
 
     Args:
         df: Attributed, flair-resolved frame with attributed_player,

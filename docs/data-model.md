@@ -139,7 +139,7 @@ The `Player → Team (roster)` edge carries a fidelity ceiling worth stating pla
 
 ## 4. View lineage — cheap, needs-a-join, expensive
 
-Three classes of produced table: the four views are **rollups** of `ClassifiedComment` (fact tables with measures at a coarser grain); `Player` and `Team` are the **dimensions** joined in; `comment_samples` is a **fact subset** — verbatim rows of `ClassifiedComment` at its own grain, selected (top-N per player × sentiment by score, under candidacy gates) rather than aggregated.
+Three classes of produced table: the four views are **rollups** of `ClassifiedComment` (fact tables with measures at a coarser grain); `Player` and `Team` are the **dimensions** joined in; `comment_samples` is a **fact subset** — verbatim rows of `ClassifiedComment` at its own grain, selected (top-N per player × sentiment by score, under candidacy gates; a pos/neg receipt additionally requires the classifier's stated target, `sentiment_player`) rather than aggregated. Attribution counts every resolved comment; a receipt held up as *what was said about this player* holds the stricter bar.
 
 | Table (parquet) | Grain | Derives from | Cheap question it already answers |
 |---|---|---|---|

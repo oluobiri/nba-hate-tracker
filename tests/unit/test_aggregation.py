@@ -548,6 +548,7 @@ _SAMPLES_INPUT_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,
         "sentiment": pl.String,
+        "sentiment_player": pl.String,
         "comment_id": pl.String,
         "link_id": pl.String,
         "body": pl.String,
@@ -561,7 +562,9 @@ _SAMPLES_INPUT_SCHEMA = pl.Schema(
 
 def _samples_input(rows: list[dict]) -> pl.DataFrame:
     """Build a build_comment_samples input frame from row dicts, filling
-    the columns a test doesn't care about with stable defaults."""
+    the columns a test doesn't care about with stable defaults.
+    sentiment_player defaults to the row's attributed_player (a named
+    target), so only the target-gate tests set it explicitly."""
     defaults = {
         "link_id": "t3_post1",
         "confidence": 0.95,
@@ -569,7 +572,15 @@ def _samples_input(rows: list[dict]) -> pl.DataFrame:
         "team": None,
     }
     return pl.DataFrame(
-        [{**defaults, **row} for row in rows], schema=_SAMPLES_INPUT_SCHEMA
+        [
+            {
+                "sentiment_player": row["attributed_player"],
+                **defaults,
+                **row,
+            }
+            for row in rows
+        ],
+        schema=_SAMPLES_INPUT_SCHEMA,
     )
 
 
@@ -685,6 +696,75 @@ class TestBuildCommentSamples:
         frame = build_comment_samples(_samples_input(rows), min_confidence=0.9)
 
         assert frame["comment_id"].to_list() == ["neutral"]
+
+    def test_target_gate_excludes_polar_rows_without_target(self):
+        """A polar row where the classifier declined to name a target is
+        not a candidate, whatever its score; the next-best named-target
+        row takes its rank."""
+        rows = [
+            {
+                "attributed_player": "Rudy Gobert",
+                "sentiment": "neg",
+                "sentiment_player": None,
+                "comment_id": "bystander",
+                "body": "You were fouling Wemby all game",
+                "score": 5000,
+            },
+            {
+                "attributed_player": "Rudy Gobert",
+                "sentiment": "neg",
+                "comment_id": "named",
+                "body": "classic Gobert defense",
+                "score": 10,
+            },
+        ]
+        frame = build_comment_samples(_samples_input(rows))
+
+        assert frame["comment_id"].to_list() == ["named"]
+        assert frame["rank"].to_list() == [1]
+
+    def test_target_gate_exempts_neutral(self):
+        """The gate guards the polar labels only: the classifier routinely
+        omits the target on neutral comments, so a null-target neu row is
+        still a candidate."""
+        rows = [
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "neu",
+                "sentiment_player": None,
+                "comment_id": "neutral",
+                "body": "LeBron had 28 tonight",
+                "score": 40,
+            },
+        ]
+        frame = build_comment_samples(_samples_input(rows))
+
+        assert frame["comment_id"].to_list() == ["neutral"]
+
+    def test_candidacy_log_reports_target_gate(self, caplog):
+        """The candidacy line reports the target gate's removals alongside
+        the floor and cap."""
+        rows = [
+            {
+                "attributed_player": "Rudy Gobert",
+                "sentiment": "neg",
+                "sentiment_player": None,
+                "comment_id": "bystander",
+                "body": "You were fouling Wemby all game",
+                "score": 5000,
+            },
+            {
+                "attributed_player": "Rudy Gobert",
+                "sentiment": "neg",
+                "comment_id": "named",
+                "body": "classic Gobert defense",
+                "score": 10,
+            },
+        ]
+        with caplog.at_level(logging.INFO, logger="pipeline.aggregation"):
+            build_comment_samples(_samples_input(rows))
+
+        assert "1 (50.0%) removed by the pos/neg target gate" in caplog.text
 
     def test_body_length_cap_excludes_long_bodies(self):
         """A high-score essay over the cap is not a candidate at all."""
@@ -1233,12 +1313,14 @@ class TestAggregateViews:
 
         neg_rates by player: Giannis 1.0, Kevin Durant 0.5, LeBron James 0.5
         (tie with Durant), Stephen Curry 0.0 — exercises the player_overall
-        sort and its tiebreaker.
+        sort and its tiebreaker. c7 is a Giannis neg with no stated target
+        (sentiment_player null): attributed by the single-mention rule
+        (Giannis stays 1.0), gated out of the receipts despite the top score.
         """
         return _make_test_parquet(
             tmp_path,
             {
-                "comment_id": ["c1", "c2", "c3", "c4", "c5", "c6"],
+                "comment_id": ["c1", "c2", "c3", "c4", "c5", "c6", "c7"],
                 "body": [
                     "Giannis traveled again",
                     "KD is a snake",
@@ -1246,14 +1328,16 @@ class TestAggregateViews:
                     "LeBron is washed",
                     "LeBron is the GOAT",
                     "Curry never misses",
+                    "You were fouling Giannis all game",
                 ],
-                "author": ["u1", "u2", "u3", "u4", "u5", "u6"],
+                "author": ["u1", "u2", "u3", "u4", "u5", "u6", "u7"],
                 "author_flair_text": [
                     ":lal-1: Lakers",
                     ":bos-1: Celtics",
                     ":lal-1: Lakers",
                     ":bos-1: Celtics",
                     ":lal-1: Lakers",
+                    ":bos-1: Celtics",
                     ":bos-1: Celtics",
                 ],
                 "author_flair_css_class": [
@@ -1263,6 +1347,7 @@ class TestAggregateViews:
                     "celtics",
                     "lakers",
                     "celtics",
+                    "celtics",
                 ],
                 "created_utc": [
                     1704067200,
@@ -1271,8 +1356,9 @@ class TestAggregateViews:
                     1704672000,
                     1704672000,
                     1704672000,  # week of 2024-01-08
+                    1704067200,  # week of 2024-01-01
                 ],
-                "score": [10, 5, 8, 3, 12, 7],
+                "score": [10, 5, 8, 3, 12, 7, 100],
                 "link_id": [
                     "t3_game1",
                     "t3_game1",
@@ -1280,6 +1366,7 @@ class TestAggregateViews:
                     "t3_game2",
                     "t3_game2",
                     "t3_game2",
+                    "t3_game1",
                 ],
                 "mentioned_players": [
                     ["Giannis Antetokounmpo"],
@@ -1288,9 +1375,10 @@ class TestAggregateViews:
                     ["LeBron James"],
                     ["LeBron James"],
                     ["Stephen Curry"],
+                    ["Giannis Antetokounmpo"],
                 ],
-                "sentiment": ["neg", "neg", "pos", "neg", "pos", "pos"],
-                "confidence": [0.9, 0.8, 0.9, 0.85, 0.95, 0.9],
+                "sentiment": ["neg", "neg", "pos", "neg", "pos", "pos", "neg"],
+                "confidence": [0.9, 0.8, 0.9, 0.85, 0.95, 0.9, 0.95],
                 "sentiment_player": [
                     "Giannis Antetokounmpo",
                     "Kevin Durant",
@@ -1298,9 +1386,10 @@ class TestAggregateViews:
                     "LeBron James",
                     "LeBron James",
                     "Stephen Curry",
+                    None,
                 ],
-                "input_tokens": [100, 100, 100, 100, 100, 100],
-                "output_tokens": [20, 20, 20, 20, 20, 20],
+                "input_tokens": [100, 100, 100, 100, 100, 100, 100],
+                "output_tokens": [20, 20, 20, 20, 20, 20, 20],
             },
         )
 
@@ -1337,6 +1426,23 @@ class TestAggregateViews:
         assert lebron["body"][0] == "LeBron is the GOAT"
         assert lebron["fan_team"][0] == "Los Angeles Lakers"
         assert "c4" not in samples["comment_id"].to_list()
+
+    def test_target_gate_diverges_from_attribution(self, views_parquet):
+        """Both sides of the receipts/aggregate divergence: c7 (polar,
+        null sentiment_player) is counted in player_overall — attribution
+        is untouched by the gate — yet never appears in comment_samples,
+        where c1, the named-target Giannis neg it out-scores, keeps
+        rank 1."""
+        result = aggregate_sentiment(views_parquet)
+
+        giannis = result["player_overall"].filter(
+            pl.col("attributed_player") == "Giannis Antetokounmpo"
+        )
+        assert giannis["comment_count"][0] == 2
+        assert giannis["neg_count"][0] == 2
+        sampled_ids = result["comment_samples"]["comment_id"].to_list()
+        assert "c7" not in sampled_ids
+        assert "c1" in sampled_ids
 
     def test_player_overall_sorted_by_neg_rate_desc_then_player_asc(
         self, views_parquet

@@ -36,13 +36,25 @@ BACKOFF_BASE_SECONDS = 2.0
 BACKOFF_CAP_SECONDS = 60.0
 
 
+# Frozen v2 prompt (notebooks/2025-26/06_prompt_experiments): the eval
+# floors and known_miss flags in tests/eval/cases.yaml are pinned to this
+# exact text. Any edit is a new classifier: bump PROMPT_VERSION, re-pin
+# the hash test, re-baseline the eval suite.
+PROMPT_VERSION = "v2-production+s-hint"
+PROMPT_TEMPLATE = """Classify sentiment toward NBA players.
+Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative, GOAT=positive.
+A trailing "/s" tags the comment as sarcasm.
+
+Comment: {comment_body}
+
+Respond ONLY with JSON: {{"s":"pos|neg|neu","c":0.0-1.0,"p":"Player Name"|null}}"""
+
+
 def build_prompt(comment_body: str) -> str:
     """
     Build minimal prompt for sentiment classification.
 
-    Frozen v2 prompt (notebooks/2025-26/06_prompt_experiments): the eval
-    floors and known_miss flags in tests/eval/cases.yaml are pinned to this
-    exact text — any edit here requires a re-baselined eval suite.
+    Renders PROMPT_TEMPLATE, the frozen prompt labeled PROMPT_VERSION.
 
     Args:
         comment_body: The raw Reddit comment text.
@@ -50,13 +62,7 @@ def build_prompt(comment_body: str) -> str:
     Returns:
         The formatted prompt for the model.
     """
-    return f"""Classify sentiment toward NBA players.
-Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative, GOAT=positive.
-A trailing "/s" tags the comment as sarcasm.
-
-Comment: {comment_body}
-
-Respond ONLY with JSON: {{"s":"pos|neg|neu","c":0.0-1.0,"p":"Player Name"|null}}"""
+    return PROMPT_TEMPLATE.format(comment_body=comment_body)
 
 
 def parse_response(text: str) -> dict:

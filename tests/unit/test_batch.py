@@ -1,5 +1,6 @@
 """Tests for pipeline.batch module."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from pipeline.batch import (
     DEFAULT_MAX_RETRIES,
     MAX_TOKENS,
     MODEL,
+    PROMPT_TEMPLATE,
+    PROMPT_VERSION,
     TEMPERATURE,
     backoff_delay,
     build_prompt,
@@ -93,6 +96,43 @@ class TestBuildPrompt:
 
         assert "Classify sentiment" in result
         assert "Comment:" in result
+
+
+class TestPromptVersionPin:
+    """Tests pinning PROMPT_VERSION to the frozen template text."""
+
+    def test_template_hash_matches_labeled_version(self):
+        """Verify the template's sha256 matches the pin for PROMPT_VERSION.
+
+        Any template edit is a new classifier: it requires a new
+        PROMPT_VERSION label, a new pinned hash, and a re-baselined
+        eval suite (tests/eval/cases.yaml floors are pinned to this text).
+        """
+        assert PROMPT_VERSION == "v2-production+s-hint"
+        assert (
+            hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest()
+            == "2ae50c6125a9eb177967edf5fbddd07bc0f3b6431972686756408d82d29fd0ed"
+        )
+
+    def test_build_prompt_renders_template_exactly(self):
+        """Verify build_prompt output is byte-identical to the frozen render.
+
+        Guards the template-extraction refactor: the rendered prompt must
+        match what the pre-extraction f-string produced, byte for byte.
+        """
+        expected = (
+            "Classify sentiment toward NBA players.\n"
+            "Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative,"
+            " GOAT=positive.\n"
+            'A trailing "/s" tags the comment as sarcasm.\n'
+            "\n"
+            "Comment: test body\n"
+            "\n"
+            'Respond ONLY with JSON: {"s":"pos|neg|neu","c":0.0-1.0,'
+            '"p":"Player Name"|null}'
+        )
+
+        assert build_prompt("test body") == expected
 
 
 class TestParseResponse:

@@ -449,12 +449,16 @@ def new_batch_entry(
         estimated_cost_usd: Pre-submission cost estimate for this batch.
 
     Returns:
-        Batch entry dict with retry tracking and cost fields initialized.
+        Batch entry dict with retry tracking, cost fields, and classifier
+        identity (model + prompt_version, recorded at submission time)
+        initialized.
     """
     return {
         "batch_num": batch_num,
         "batch_id": submit_result["batch_id"],
         "request_file": request_file,
+        "model": MODEL,
+        "prompt_version": PROMPT_VERSION,
         "status": submit_result["processing_status"],
         "submitted_at": submitted_at,
         "ended_at": submit_result["ended_at"],
@@ -496,6 +500,8 @@ def new_failed_entry(
         "batch_num": batch_num,
         "batch_id": None,
         "request_file": request_file,
+        "model": MODEL,
+        "prompt_version": PROMPT_VERSION,
         "status": "failed",
         "submitted_at": attempted_at,
         "ended_at": None,
@@ -761,6 +767,7 @@ def download_results(batch_id: str) -> list[dict]:
         - content: str - Model response text (if succeeded)
         - input_tokens: int - Input token count (if succeeded)
         - output_tokens: int - Output token count (if succeeded)
+        - model: str - Model that served the request (if succeeded)
         - error: str - Error message (if errored)
 
     Raises:
@@ -782,6 +789,7 @@ def download_results(batch_id: str) -> list[dict]:
                     result["content"] = message.content[0].text
                     result["input_tokens"] = message.usage.input_tokens
                     result["output_tokens"] = message.usage.output_tokens
+                    result["model"] = message.model
             elif entry.result.type == "errored":
                 error_response = entry.result.error
                 result["error"] = f"{error_response.error.type}: {error_response.error.message}"

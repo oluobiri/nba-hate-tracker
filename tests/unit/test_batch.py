@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -17,6 +18,7 @@ from pipeline.batch import (
     build_prompt,
     calculate_cost,
     compute_run_totals,
+    download_results,
     format_batch_request,
     get_downloadable_batches,
     get_exhausted_batches,
@@ -833,6 +835,8 @@ class TestNewBatchEntry:
         assert entry["actual_input_tokens"] == 0
         assert entry["actual_output_tokens"] == 0
         assert entry["actual_cost_usd"] == 0.0
+        assert entry["model"] == MODEL
+        assert entry["prompt_version"] == PROMPT_VERSION
 
 
 class TestNewFailedEntry:
@@ -851,6 +855,8 @@ class TestNewFailedEntry:
         assert entry["status"] == "failed"
         assert entry["failed"] is True
         assert entry["retry_count"] == 3
+        assert entry["model"] == MODEL
+        assert entry["prompt_version"] == PROMPT_VERSION
 
     def test_terminal_entry_is_exhausted_not_pending(self):
         """Verify the entry trips fail-fast and never enters the poll loop."""
@@ -912,6 +918,32 @@ class TestRecordRetryAttempt:
         batch["request_counts"] = _ended_counts(succeeded=100)
         assert get_retryable_batches(state, max_retries=3) == []
         assert [b["batch_num"] for b in get_downloadable_batches(state)] == [1]
+
+    def test_preserves_classifier_identity(self):
+        """Verify a resubmission never re-stamps model/prompt_version.
+
+        A retry replays the same request file, so the classifier identity
+        recorded at first submission still describes what runs.
+        """
+        batch = new_batch_entry(
+            batch_num=1,
+            request_file="batch_001.jsonl",
+            submit_result=_submit_result("msgbatch_old"),
+            submitted_at="2026-07-08T00:00:00+00:00",
+            estimated_cost_usd=1.25,
+        )
+        batch["model"] = "some-earlier-model"
+        batch["prompt_version"] = "some-earlier-label"
+
+        record_retry_attempt(
+            batch,
+            submit_result=_submit_result("msgbatch_retry"),
+            submitted_at="2026-07-08T01:00:00+00:00",
+            estimated_cost_usd=1.25,
+        )
+
+        assert batch["model"] == "some-earlier-model"
+        assert batch["prompt_version"] == "some-earlier-label"
 
     def test_terminal_failure_after_max_retries(self):
         """Verify a batch failing every retry becomes exhausted, not retryable.
@@ -1234,3 +1266,70 @@ class TestSaveState:
             loaded = json.load(f)
 
         assert loaded["total_input_tokens"] == 9999
+
+
+class TestDownloadResults:
+    """Tests for download_results result projection."""
+
+    @staticmethod
+    def _succeeded_entry(custom_id: str = "abc123") -> Mock:
+        """Build a mocked succeeded batch-result entry."""
+        message = Mock()
+        message.content = [Mock(text='{"s":"neg","c":0.9,"p":"Draymond Green"}')]
+        message.usage = Mock(input_tokens=60, output_tokens=20)
+        message.model = "claude-haiku-4-5-20251001"
+
+        entry = Mock()
+        entry.custom_id = custom_id
+        entry.result = Mock(type="succeeded", message=message)
+        return entry
+
+    @staticmethod
+    def _errored_entry(custom_id: str = "def456") -> Mock:
+        """Build a mocked errored batch-result entry."""
+        entry = Mock()
+        entry.custom_id = custom_id
+        entry.result = Mock(
+            type="errored",
+            error=Mock(error=Mock(type="invalid_request", message="bad input")),
+        )
+        return entry
+
+    def test_succeeded_projection_retains_model(self):
+        """Verify the succeeded projection keeps message.model.
+
+        The response-side model echo is the on-disk cross-check for the
+        classifier identity recorded in state at submission (#90).
+        """
+        with patch("pipeline.batch.anthropic.Anthropic") as mock_client:
+            mock_client.return_value.messages.batches.results.return_value = iter(
+                [self._succeeded_entry()]
+            )
+            results = download_results("msgbatch_test")
+
+        assert results == [
+            {
+                "custom_id": "abc123",
+                "result_type": "succeeded",
+                "content": '{"s":"neg","c":0.9,"p":"Draymond Green"}',
+                "input_tokens": 60,
+                "output_tokens": 20,
+                "model": "claude-haiku-4-5-20251001",
+            }
+        ]
+
+    def test_errored_projection_carries_error_only(self):
+        """Verify errored rows keep the error string and no usage fields."""
+        with patch("pipeline.batch.anthropic.Anthropic") as mock_client:
+            mock_client.return_value.messages.batches.results.return_value = iter(
+                [self._errored_entry()]
+            )
+            results = download_results("msgbatch_test")
+
+        assert results == [
+            {
+                "custom_id": "def456",
+                "result_type": "errored",
+                "error": "invalid_request: bad input",
+            }
+        ]

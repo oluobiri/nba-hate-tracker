@@ -23,6 +23,53 @@ from pipeline.schemas import (
 logger = logging.getLogger(__name__)
 
 
+def check_response_models(responses_dir: Path, expected_model: str) -> None:
+    """
+    Cross-check on-disk response model echoes against the recorded identity.
+
+    Reads each results file up to its first model-bearing line (a batch is
+    served by one model, so one echo per file suffices), capped at 1000
+    lines so files that never carry the field stay cheap to skip —
+    responses downloaded before the field was retained don't have it.
+    A file whose first 1000 lines all lack the field (all-errored head)
+    is skipped exactly like a field-free legacy file; the cap trades that
+    unlikely miss for not re-reading full files.
+
+    Args:
+        responses_dir: Directory containing batch_NNN_results.jsonl files.
+        expected_model: Model recorded in state at submission.
+
+    Raises:
+        RuntimeError: If any response's model differs from expected_model.
+        ValueError: If a scanned line is not valid JSON.
+    """
+    checked = 0
+    for results_file in sorted(responses_dir.glob("batch_*_results.jsonl")):
+        with open(results_file) as f:
+            for line_num, line in enumerate(f):
+                if line_num >= 1000:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    model = json.loads(line).get("model")
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Malformed JSON in {results_file.name}: {e}"
+                    ) from e
+                if model is None:
+                    continue
+                if model != expected_model:
+                    raise RuntimeError(
+                        f"{results_file.name}: response model {model!r} does not "
+                        f"match the identity recorded in state {expected_model!r}"
+                    )
+                checked += 1
+                break
+    if checked:
+        logger.info(f"Response model cross-check passed for {checked} file(s)")
+
+
 def build_sentiment_dataframe(
     responses_dir: Path, filtered_path: Path
 ) -> tuple[pl.DataFrame, list[dict]]:

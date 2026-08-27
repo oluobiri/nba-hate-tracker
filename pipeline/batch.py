@@ -553,6 +553,37 @@ def record_retry_attempt(
     batch["actual_cost_usd"] = 0.0
 
 
+def get_classifier_identity(state: dict) -> dict[str, str] | None:
+    """
+    Read the classifier identity recorded in state at submission.
+
+    The identity is a birth certificate for the frozen classification
+    layer: assembly stamps it into sentiment.parquet unchanged, never
+    re-deriving it from live code.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        {"model": ..., "prompt_version": ...} when every batch entry
+        carries the same identity; None when no entry carries one
+        (state recorded before the fields existed).
+
+    Raises:
+        ValueError: If entries disagree, or only some carry an identity.
+    """
+    pairs = {
+        (b.get("model"), b.get("prompt_version")) for b in state.get("batches", [])
+    }
+    if not pairs or pairs == {(None, None)}:
+        return None
+    if len(pairs) > 1 or None in next(iter(pairs)):
+        raise ValueError(f"Inconsistent classifier identity in state: {pairs!r}")
+
+    model, prompt_version = next(iter(pairs))
+    return {"model": model, "prompt_version": prompt_version}
+
+
 def summarize_actual_usage(results: list[dict]) -> dict:
     """
     Sum actual token usage over a batch's downloaded results.

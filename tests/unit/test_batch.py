@@ -20,6 +20,7 @@ from pipeline.batch import (
     compute_run_totals,
     download_results,
     format_batch_request,
+    get_classifier_identity,
     get_downloadable_batches,
     get_exhausted_batches,
     get_missing_results,
@@ -1333,3 +1334,63 @@ class TestDownloadResults:
                 "error": "invalid_request: bad input",
             }
         ]
+
+
+class TestGetClassifierIdentity:
+    """Tests for get_classifier_identity state reads."""
+
+    @staticmethod
+    def _entry(model: str | None, prompt_version: str | None) -> dict:
+        """Build a minimal state entry with optional identity fields."""
+        entry = {"batch_num": 1, "request_file": "batch_001.jsonl"}
+        if model is not None:
+            entry["model"] = model
+        if prompt_version is not None:
+            entry["prompt_version"] = prompt_version
+        return entry
+
+    def test_uniform_identity_returned(self):
+        """Verify a uniformly stamped state yields the identity pair."""
+        state = init_state()
+        state["batches"] = [
+            self._entry(MODEL, PROMPT_VERSION),
+            self._entry(MODEL, PROMPT_VERSION),
+        ]
+
+        assert get_classifier_identity(state) == {
+            "model": MODEL,
+            "prompt_version": PROMPT_VERSION,
+        }
+
+    def test_absent_everywhere_returns_none(self):
+        """Verify pre-#90 state (no identity fields at all) yields None."""
+        state = init_state()
+        state["batches"] = [self._entry(None, None), self._entry(None, None)]
+
+        assert get_classifier_identity(state) is None
+
+    def test_empty_state_returns_none(self):
+        """Verify a state with no batches yields None."""
+        assert get_classifier_identity(init_state()) is None
+
+    def test_mixed_models_raise(self):
+        """Verify two distinct recorded models are rejected loudly."""
+        state = init_state()
+        state["batches"] = [
+            self._entry("model-a", PROMPT_VERSION),
+            self._entry("model-b", PROMPT_VERSION),
+        ]
+
+        with pytest.raises(ValueError, match="[Ii]nconsistent"):
+            get_classifier_identity(state)
+
+    def test_partial_presence_raises(self):
+        """Verify some-stamped/some-not state is rejected, not guessed at."""
+        state = init_state()
+        state["batches"] = [
+            self._entry(MODEL, PROMPT_VERSION),
+            self._entry(None, None),
+        ]
+
+        with pytest.raises(ValueError, match="[Ii]nconsistent"):
+            get_classifier_identity(state)

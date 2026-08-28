@@ -1843,3 +1843,60 @@ class TestAggregateMetadata:
         result = aggregate_sentiment(path)
 
         assert result["metadata"]["season"] == "2024-25"
+
+
+class TestClassifierLineage:
+    """Tests for the classifier identity stamp readback (#90)."""
+
+    ROWS = TestConfigVersionLineage.ROWS
+
+    def _classifier_warnings(self, caplog) -> list[str]:
+        """Extract WARNING messages about the classifier identity stamp."""
+        return [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and "classifier identity" in record.message
+        ]
+
+    def test_stamped_parquet_emits_no_warning(self, tmp_path, caplog):
+        """A parquet carrying both classifier keys stays silent."""
+        # Arrange
+        path = _make_test_parquet(
+            tmp_path,
+            self.ROWS,
+            metadata={
+                "players_config_version": load_player_config_version(),
+                "classifier_sentiment_model": "claude-haiku-4-5-20251001",
+                "classifier_sentiment_prompt_version": "v2-production+s-hint",
+            },
+        )
+
+        # Act
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        # Assert
+        assert self._classifier_warnings(caplog) == []
+
+    def test_absent_stamp_warns(self, tmp_path, caplog):
+        """A parquet with no classifier identity warns once.
+
+        A birth certificate has nothing live to drift against, so
+        absence is the only warnable condition — no drift variant.
+        """
+        # Arrange
+        path = _make_test_parquet(
+            tmp_path,
+            self.ROWS,
+            metadata={"players_config_version": load_player_config_version()},
+        )
+
+        # Act
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        # Assert
+        warnings = self._classifier_warnings(caplog)
+        assert len(warnings) == 1
+        assert "no classifier identity" in warnings[0]

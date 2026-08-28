@@ -36,13 +36,25 @@ BACKOFF_BASE_SECONDS = 2.0
 BACKOFF_CAP_SECONDS = 60.0
 
 
+# Frozen v2 prompt (notebooks/2025-26/06_prompt_experiments): the eval
+# floors and known_miss flags in tests/eval/cases.yaml are pinned to this
+# exact text. Any edit is a new classifier: bump PROMPT_VERSION, re-pin
+# the hash test, re-baseline the eval suite.
+PROMPT_VERSION = "v2-production+s-hint"
+PROMPT_TEMPLATE = """Classify sentiment toward NBA players.
+Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative, GOAT=positive.
+A trailing "/s" tags the comment as sarcasm.
+
+Comment: {comment_body}
+
+Respond ONLY with JSON: {{"s":"pos|neg|neu","c":0.0-1.0,"p":"Player Name"|null}}"""
+
+
 def build_prompt(comment_body: str) -> str:
     """
     Build minimal prompt for sentiment classification.
 
-    Frozen v2 prompt (notebooks/2025-26/06_prompt_experiments): the eval
-    floors and known_miss flags in tests/eval/cases.yaml are pinned to this
-    exact text — any edit here requires a re-baselined eval suite.
+    Renders PROMPT_TEMPLATE, the frozen prompt labeled PROMPT_VERSION.
 
     Args:
         comment_body: The raw Reddit comment text.
@@ -50,13 +62,7 @@ def build_prompt(comment_body: str) -> str:
     Returns:
         The formatted prompt for the model.
     """
-    return f"""Classify sentiment toward NBA players.
-Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative, GOAT=positive.
-A trailing "/s" tags the comment as sarcasm.
-
-Comment: {comment_body}
-
-Respond ONLY with JSON: {{"s":"pos|neg|neu","c":0.0-1.0,"p":"Player Name"|null}}"""
+    return PROMPT_TEMPLATE.format(comment_body=comment_body)
 
 
 def parse_response(text: str) -> dict:
@@ -443,12 +449,16 @@ def new_batch_entry(
         estimated_cost_usd: Pre-submission cost estimate for this batch.
 
     Returns:
-        Batch entry dict with retry tracking and cost fields initialized.
+        Batch entry dict with retry tracking, cost fields, and classifier
+        identity (model + prompt_version, recorded at submission time)
+        initialized.
     """
     return {
         "batch_num": batch_num,
         "batch_id": submit_result["batch_id"],
         "request_file": request_file,
+        "model": MODEL,
+        "prompt_version": PROMPT_VERSION,
         "status": submit_result["processing_status"],
         "submitted_at": submitted_at,
         "ended_at": submit_result["ended_at"],
@@ -490,6 +500,8 @@ def new_failed_entry(
         "batch_num": batch_num,
         "batch_id": None,
         "request_file": request_file,
+        "model": MODEL,
+        "prompt_version": PROMPT_VERSION,
         "status": "failed",
         "submitted_at": attempted_at,
         "ended_at": None,
@@ -539,6 +551,37 @@ def record_retry_attempt(
     batch["actual_input_tokens"] = 0
     batch["actual_output_tokens"] = 0
     batch["actual_cost_usd"] = 0.0
+
+
+def get_classifier_identity(state: dict) -> dict[str, str] | None:
+    """
+    Read the classifier identity recorded in state at submission.
+
+    The identity is a birth certificate for the frozen classification
+    layer: assembly stamps it into sentiment.parquet unchanged, never
+    re-deriving it from live code.
+
+    Args:
+        state: Current state dict.
+
+    Returns:
+        {"model": ..., "prompt_version": ...} when every batch entry
+        carries the same identity; None when no entry carries one
+        (state recorded before the fields existed).
+
+    Raises:
+        ValueError: If entries disagree, or only some carry an identity.
+    """
+    pairs = {
+        (b.get("model"), b.get("prompt_version")) for b in state.get("batches", [])
+    }
+    if not pairs or pairs == {(None, None)}:
+        return None
+    if len(pairs) > 1 or None in next(iter(pairs)):
+        raise ValueError(f"Inconsistent classifier identity in state: {pairs!r}")
+
+    model, prompt_version = next(iter(pairs))
+    return {"model": model, "prompt_version": prompt_version}
 
 
 def summarize_actual_usage(results: list[dict]) -> dict:
@@ -755,6 +798,7 @@ def download_results(batch_id: str) -> list[dict]:
         - content: str - Model response text (if succeeded)
         - input_tokens: int - Input token count (if succeeded)
         - output_tokens: int - Output token count (if succeeded)
+        - model: str - Model that served the request (if succeeded)
         - error: str - Error message (if errored)
 
     Raises:
@@ -776,6 +820,7 @@ def download_results(batch_id: str) -> list[dict]:
                     result["content"] = message.content[0].text
                     result["input_tokens"] = message.usage.input_tokens
                     result["output_tokens"] = message.usage.output_tokens
+                    result["model"] = message.model
             elif entry.result.type == "errored":
                 error_response = entry.result.error
                 result["error"] = f"{error_response.error.type}: {error_response.error.message}"

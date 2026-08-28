@@ -37,6 +37,7 @@ from pipeline.batch import (
     compute_run_totals,
     download_results,
     get_batch_status,
+    get_classifier_identity,
     get_downloadable_batches,
     get_missing_results,
     get_pending_batches,
@@ -46,7 +47,7 @@ from pipeline.batch import (
     save_state,
     summarize_actual_usage,
 )
-from pipeline.results import build_sentiment_dataframe
+from pipeline.results import build_sentiment_dataframe, check_response_models
 from pipeline.schemas import SCHEMA_VERSION
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
 from utils.player_config import load_player_config_version
@@ -386,6 +387,26 @@ def main() -> None:
     logger.info("=" * 60)
 
     try:
+        # Classifier identity (#90): recorded in state at submission,
+        # carried through every re-assembly unchanged. Cross-check and
+        # metadata are settled before the expensive join to fail fast.
+        metadata = {
+            "players_config_version": load_player_config_version(),
+            "schema_version": str(SCHEMA_VERSION),
+        }
+        identity = get_classifier_identity(state)
+        if identity is None:
+            logger.warning(
+                "state.json carries no classifier identity - sentiment.parquet "
+                "will have no classifier lineage stamp"
+            )
+        else:
+            check_response_models(responses_dir, identity["model"])
+            metadata["classifier_sentiment_model"] = identity["model"]
+            metadata["classifier_sentiment_prompt_version"] = identity[
+                "prompt_version"
+            ]
+
         sentiment_df, failed_requests = build_sentiment_dataframe(
             responses_dir, filtered_path
         )
@@ -393,13 +414,7 @@ def main() -> None:
         # Save parquet with config-lineage stamp (#54): mentioned_players
         # was re-derived under this config version at assembly
         processed_dir.mkdir(parents=True, exist_ok=True)
-        sentiment_df.write_parquet(
-            output_path,
-            metadata={
-                "players_config_version": load_player_config_version(),
-                "schema_version": str(SCHEMA_VERSION),
-            },
-        )
+        sentiment_df.write_parquet(output_path, metadata=metadata)
         logger.info(f"Wrote {len(sentiment_df)} rows to {output_path}")
 
         # Save failed requests

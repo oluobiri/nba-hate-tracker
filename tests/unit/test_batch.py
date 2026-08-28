@@ -1,7 +1,9 @@
 """Tests for pipeline.batch module."""
 
+import hashlib
 import json
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -9,12 +11,16 @@ from pipeline.batch import (
     DEFAULT_MAX_RETRIES,
     MAX_TOKENS,
     MODEL,
+    PROMPT_TEMPLATE,
+    PROMPT_VERSION,
     TEMPERATURE,
     backoff_delay,
     build_prompt,
     calculate_cost,
     compute_run_totals,
+    download_results,
     format_batch_request,
+    get_classifier_identity,
     get_downloadable_batches,
     get_exhausted_batches,
     get_missing_results,
@@ -93,6 +99,43 @@ class TestBuildPrompt:
 
         assert "Classify sentiment" in result
         assert "Comment:" in result
+
+
+class TestPromptVersionPin:
+    """Tests pinning PROMPT_VERSION to the frozen template text."""
+
+    def test_template_hash_matches_labeled_version(self):
+        """Verify the template's sha256 matches the pin for PROMPT_VERSION.
+
+        Any template edit is a new classifier: it requires a new
+        PROMPT_VERSION label, a new pinned hash, and a re-baselined
+        eval suite (tests/eval/cases.yaml floors are pinned to this text).
+        """
+        assert PROMPT_VERSION == "v2-production+s-hint"
+        assert (
+            hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest()
+            == "2ae50c6125a9eb177967edf5fbddd07bc0f3b6431972686756408d82d29fd0ed"
+        )
+
+    def test_build_prompt_renders_template_exactly(self):
+        """Verify build_prompt output is byte-identical to the frozen render.
+
+        Guards the template-extraction refactor: the rendered prompt must
+        match what the pre-extraction f-string produced, byte for byte.
+        """
+        expected = (
+            "Classify sentiment toward NBA players.\n"
+            "Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative,"
+            " GOAT=positive.\n"
+            'A trailing "/s" tags the comment as sarcasm.\n'
+            "\n"
+            "Comment: test body\n"
+            "\n"
+            'Respond ONLY with JSON: {"s":"pos|neg|neu","c":0.0-1.0,'
+            '"p":"Player Name"|null}'
+        )
+
+        assert build_prompt("test body") == expected
 
 
 class TestParseResponse:
@@ -793,6 +836,8 @@ class TestNewBatchEntry:
         assert entry["actual_input_tokens"] == 0
         assert entry["actual_output_tokens"] == 0
         assert entry["actual_cost_usd"] == 0.0
+        assert entry["model"] == MODEL
+        assert entry["prompt_version"] == PROMPT_VERSION
 
 
 class TestNewFailedEntry:
@@ -811,6 +856,8 @@ class TestNewFailedEntry:
         assert entry["status"] == "failed"
         assert entry["failed"] is True
         assert entry["retry_count"] == 3
+        assert entry["model"] == MODEL
+        assert entry["prompt_version"] == PROMPT_VERSION
 
     def test_terminal_entry_is_exhausted_not_pending(self):
         """Verify the entry trips fail-fast and never enters the poll loop."""
@@ -872,6 +919,32 @@ class TestRecordRetryAttempt:
         batch["request_counts"] = _ended_counts(succeeded=100)
         assert get_retryable_batches(state, max_retries=3) == []
         assert [b["batch_num"] for b in get_downloadable_batches(state)] == [1]
+
+    def test_preserves_classifier_identity(self):
+        """Verify a resubmission never re-stamps model/prompt_version.
+
+        A retry replays the same request file, so the classifier identity
+        recorded at first submission still describes what runs.
+        """
+        batch = new_batch_entry(
+            batch_num=1,
+            request_file="batch_001.jsonl",
+            submit_result=_submit_result("msgbatch_old"),
+            submitted_at="2026-07-08T00:00:00+00:00",
+            estimated_cost_usd=1.25,
+        )
+        batch["model"] = "some-earlier-model"
+        batch["prompt_version"] = "some-earlier-label"
+
+        record_retry_attempt(
+            batch,
+            submit_result=_submit_result("msgbatch_retry"),
+            submitted_at="2026-07-08T01:00:00+00:00",
+            estimated_cost_usd=1.25,
+        )
+
+        assert batch["model"] == "some-earlier-model"
+        assert batch["prompt_version"] == "some-earlier-label"
 
     def test_terminal_failure_after_max_retries(self):
         """Verify a batch failing every retry becomes exhausted, not retryable.
@@ -1194,3 +1267,130 @@ class TestSaveState:
             loaded = json.load(f)
 
         assert loaded["total_input_tokens"] == 9999
+
+
+class TestDownloadResults:
+    """Tests for download_results result projection."""
+
+    @staticmethod
+    def _succeeded_entry(custom_id: str = "abc123") -> Mock:
+        """Build a mocked succeeded batch-result entry."""
+        message = Mock()
+        message.content = [Mock(text='{"s":"neg","c":0.9,"p":"Draymond Green"}')]
+        message.usage = Mock(input_tokens=60, output_tokens=20)
+        message.model = "claude-haiku-4-5-20251001"
+
+        entry = Mock()
+        entry.custom_id = custom_id
+        entry.result = Mock(type="succeeded", message=message)
+        return entry
+
+    @staticmethod
+    def _errored_entry(custom_id: str = "def456") -> Mock:
+        """Build a mocked errored batch-result entry."""
+        entry = Mock()
+        entry.custom_id = custom_id
+        entry.result = Mock(
+            type="errored",
+            error=Mock(error=Mock(type="invalid_request", message="bad input")),
+        )
+        return entry
+
+    def test_succeeded_projection_retains_model(self):
+        """Verify the succeeded projection keeps message.model.
+
+        The response-side model echo is the on-disk cross-check for the
+        classifier identity recorded in state at submission (#90).
+        """
+        with patch("pipeline.batch.anthropic.Anthropic") as mock_client:
+            mock_client.return_value.messages.batches.results.return_value = iter(
+                [self._succeeded_entry()]
+            )
+            results = download_results("msgbatch_test")
+
+        assert results == [
+            {
+                "custom_id": "abc123",
+                "result_type": "succeeded",
+                "content": '{"s":"neg","c":0.9,"p":"Draymond Green"}',
+                "input_tokens": 60,
+                "output_tokens": 20,
+                "model": "claude-haiku-4-5-20251001",
+            }
+        ]
+
+    def test_errored_projection_carries_error_only(self):
+        """Verify errored rows keep the error string and no usage fields."""
+        with patch("pipeline.batch.anthropic.Anthropic") as mock_client:
+            mock_client.return_value.messages.batches.results.return_value = iter(
+                [self._errored_entry()]
+            )
+            results = download_results("msgbatch_test")
+
+        assert results == [
+            {
+                "custom_id": "def456",
+                "result_type": "errored",
+                "error": "invalid_request: bad input",
+            }
+        ]
+
+
+class TestGetClassifierIdentity:
+    """Tests for get_classifier_identity state reads."""
+
+    @staticmethod
+    def _entry(model: str | None, prompt_version: str | None) -> dict:
+        """Build a minimal state entry with optional identity fields."""
+        entry = {"batch_num": 1, "request_file": "batch_001.jsonl"}
+        if model is not None:
+            entry["model"] = model
+        if prompt_version is not None:
+            entry["prompt_version"] = prompt_version
+        return entry
+
+    def test_uniform_identity_returned(self):
+        """Verify a uniformly stamped state yields the identity pair."""
+        state = init_state()
+        state["batches"] = [
+            self._entry(MODEL, PROMPT_VERSION),
+            self._entry(MODEL, PROMPT_VERSION),
+        ]
+
+        assert get_classifier_identity(state) == {
+            "model": MODEL,
+            "prompt_version": PROMPT_VERSION,
+        }
+
+    def test_absent_everywhere_returns_none(self):
+        """Verify pre-#90 state (no identity fields at all) yields None."""
+        state = init_state()
+        state["batches"] = [self._entry(None, None), self._entry(None, None)]
+
+        assert get_classifier_identity(state) is None
+
+    def test_empty_state_returns_none(self):
+        """Verify a state with no batches yields None."""
+        assert get_classifier_identity(init_state()) is None
+
+    def test_mixed_models_raise(self):
+        """Verify two distinct recorded models are rejected loudly."""
+        state = init_state()
+        state["batches"] = [
+            self._entry("model-a", PROMPT_VERSION),
+            self._entry("model-b", PROMPT_VERSION),
+        ]
+
+        with pytest.raises(ValueError, match="[Ii]nconsistent"):
+            get_classifier_identity(state)
+
+    def test_partial_presence_raises(self):
+        """Verify some-stamped/some-not state is rejected, not guessed at."""
+        state = init_state()
+        state["batches"] = [
+            self._entry(MODEL, PROMPT_VERSION),
+            self._entry(None, None),
+        ]
+
+        with pytest.raises(ValueError, match="[Ii]nconsistent"):
+            get_classifier_identity(state)

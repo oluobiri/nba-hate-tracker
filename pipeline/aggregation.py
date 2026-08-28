@@ -187,7 +187,8 @@ def aggregate_sentiment(input_path: Path) -> dict:
     # Config-lineage check (#54): mentioned_players in the parquet reflects
     # the players.yaml it was assembled under; stale attribution is
     # legitimate to read, just not silently.
-    stamped = pl.read_parquet_metadata(input_path).get("players_config_version")
+    parquet_metadata = pl.read_parquet_metadata(input_path)
+    stamped = parquet_metadata.get("players_config_version")
     active = load_player_config_version()
     if stamped is None:
         logger.warning(
@@ -199,6 +200,17 @@ def aggregate_sentiment(input_path: Path) -> dict:
             f"{input_path}: players_config_version drift - parquet assembled "
             f"with config {stamped!r} but active config is {active!r}; "
             f"mentioned_players may not reflect the current players.yaml"
+        )
+
+    # Classifier lineage (#90): a birth certificate, not a cache stamp -
+    # nothing live to drift against, so only absence is warnable.
+    if (
+        parquet_metadata.get("classifier_sentiment_model") is None
+        or parquet_metadata.get("classifier_sentiment_prompt_version") is None
+    ):
+        logger.warning(
+            f"{input_path} carries no classifier identity stamp - "
+            f"classifier lineage cannot be verified"
         )
 
     total_rows = len(df)

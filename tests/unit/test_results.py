@@ -7,21 +7,31 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from pipeline.results import build_sentiment_dataframe
+from pipeline.results import build_sentiment_dataframe, check_response_models
 from pipeline.schemas import COMMENT_INPUT_SCHEMA, SENTIMENT_SCHEMA
 
 
 def _succeeded(
-    custom_id: str, content: str, input_tokens: int = 100, output_tokens: int = 20
+    custom_id: str,
+    content: str,
+    input_tokens: int = 100,
+    output_tokens: int = 20,
+    model: str | None = None,
 ) -> dict:
-    """Build a succeeded entry shaped like download_results output."""
-    return {
+    """Build a succeeded entry shaped like download_results output.
+
+    model is optional: responses downloaded before #90 never persisted it.
+    """
+    entry = {
         "custom_id": custom_id,
         "result_type": "succeeded",
         "content": content,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
     }
+    if model is not None:
+        entry["model"] = model
+    return entry
 
 
 def _errored(custom_id: str) -> dict:
@@ -33,10 +43,12 @@ def _errored(custom_id: str) -> dict:
     }
 
 
-def _write_results_file(responses_dir: Path, entries: list[dict]) -> None:
+def _write_results_file(
+    responses_dir: Path, entries: list[dict], batch_num: int = 1
+) -> None:
     """Write entries as a batch results JSONL file."""
     responses_dir.mkdir(exist_ok=True)
-    path = responses_dir / "batch_001_results.jsonl"
+    path = responses_dir / f"batch_{batch_num:03d}_results.jsonl"
     path.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
 
 
@@ -369,3 +381,82 @@ class TestBuildSentimentDataframe:
         with pytest.raises(ValueError, match="sentiment.parquet") as exc:
             build_sentiment_dataframe(responses_dir, filtered_comments_file)
         assert "score" in str(exc.value)
+
+
+class TestCheckResponseModels:
+    """Tests for the response-side classifier identity cross-check."""
+
+    def test_matching_model_passes(self, tmp_path):
+        """Verify a model-bearing results file matching state is accepted."""
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [
+                _errored("aaa111"),
+                _succeeded("abc123", '{"s":"pos","c":0.9,"p":null}', model="model-x"),
+            ],
+        )
+
+        check_response_models(directory, "model-x")
+
+    def test_mismatched_model_raises_naming_both(self, tmp_path):
+        """Verify a response model differing from state fails loudly."""
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [_succeeded("abc123", '{"s":"pos","c":0.9,"p":null}', model="model-y")],
+        )
+
+        with pytest.raises(RuntimeError, match="model-y.*model-x"):
+            check_response_models(directory, "model-x")
+
+    def test_model_free_file_is_skipped(self, tmp_path):
+        """Verify pre-#90 responses (no model field anywhere) pass untouched."""
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [_succeeded("abc123", '{"s":"pos","c":0.9,"p":null}'), _errored("def456")],
+        )
+
+        check_response_models(directory, "model-x")
+
+    def test_mismatch_in_later_file_raises(self, tmp_path):
+        """Verify every file is checked, not just the first."""
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [_succeeded("abc123", '{"s":"pos","c":0.9,"p":null}', model="model-x")],
+            batch_num=1,
+        )
+        _write_results_file(
+            directory,
+            [_succeeded("def456", '{"s":"neu","c":0.5,"p":null}', model="model-y")],
+            batch_num=2,
+        )
+
+        with pytest.raises(RuntimeError, match="batch_002.*model-y"):
+            check_response_models(directory, "model-x")
+
+    def test_mismatch_past_line_cap_is_skipped(self, tmp_path):
+        """Pin the 1000-line cap: a model echo past it is never scanned.
+
+        The cap keeps field-free legacy files cheap to skip; this test
+        locks the trade-off in so a refactor can't silently change it.
+        """
+        directory = tmp_path / "responses"
+        entries = [_errored(f"e{i}") for i in range(1000)]
+        entries.append(
+            _succeeded("abc123", '{"s":"pos","c":0.9,"p":null}', model="model-y")
+        )
+        _write_results_file(directory, entries)
+
+        check_response_models(directory, "model-x")
+
+    def test_malformed_line_raises_with_filename(self, tmp_path):
+        """Verify a malformed scanned line fails with file context."""
+        directory = tmp_path / "responses"
+        directory.mkdir()
+        (directory / "batch_001_results.jsonl").write_text("not json\n")
+
+        with pytest.raises(ValueError, match="Malformed JSON in batch_001"):
+            check_response_models(directory, "model-x")

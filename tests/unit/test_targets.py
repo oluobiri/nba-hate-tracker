@@ -2,19 +2,33 @@
 
 import hashlib
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import yaml
 
 from pipeline.targets import (
     TARGET_CATEGORIES,
+    TARGET_MAX_TOKENS,
+    TARGET_MODEL,
     TARGET_PROMPT_TEMPLATE,
     TARGET_PROMPT_VERSION,
+    TARGET_TEMPERATURE,
     build_target_prompt,
+    classify_target_cases,
     load_target_cases,
     load_target_floors,
     parse_target_response,
+    target_accuracy_by_category,
+    verdict_correct,
 )
+
+ALIAS_MAP = {
+    "ad": "Anthony Davis",
+    "anthony davis": "Anthony Davis",
+    "luka": "Luka Doncic",
+    "luka doncic": "Luka Doncic",
+}
 
 
 def make_target_case(**overrides) -> dict:
@@ -310,3 +324,172 @@ class TestParseTargetResponse:
         assert result["valid"] is False
         assert result["t"] is None
         assert result["raw"] == text
+
+
+class TestClassifyTargetCases:
+    def make_client(self, response_text: str) -> Mock:
+        """Build a mock Anthropic client returning fixed response text."""
+        client = Mock()
+        client.messages.create.return_value = Mock(content=[Mock(text=response_text)])
+        return client
+
+    def load_two_cases(self, tmp_path) -> list:
+        """Two valid cases for keyed-results assertions."""
+        path = write_target_cases_file(
+            tmp_path,
+            [
+                make_target_case(),
+                make_target_case(
+                    id="true-01",
+                    text="AD showed up to collect a check and dip",
+                    attributed_player="Anthony Davis",
+                    expected_target="Anthony Davis",
+                    category="true_toward",
+                ),
+            ],
+            floors={"sympathetic_subject": 0.0, "true_toward": 0.0},
+        )
+        return load_target_cases(path)
+
+    def test_returns_results_keyed_by_case_id(self, tmp_path):
+        """Each case id maps to its parsed verdict."""
+        cases = self.load_two_cases(tmp_path)
+        client = self.make_client('{"t": null, "c": 0.9}')
+
+        results = classify_target_cases(cases, client=client)
+
+        assert set(results) == {"sympathetic-01", "true-01"}
+        assert results["sympathetic-01"] == {"t": None, "c": 0.9, "valid": True}
+
+    def test_uses_verifier_model_params(self, tmp_path):
+        """Requests go out with the verifier's own model parameters."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client('{"t": null, "c": 0.9}')
+
+        classify_target_cases(cases, client=client)
+
+        kwargs = client.messages.create.call_args.kwargs
+        assert kwargs["model"] == TARGET_MODEL
+        assert kwargs["temperature"] == TARGET_TEMPERATURE
+        assert kwargs["max_tokens"] == TARGET_MAX_TOKENS
+
+    def test_default_prompt_carries_case_sentiment(self, tmp_path):
+        """The production prompt is built from the case's body and label."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client('{"t": null, "c": 0.9}')
+
+        classify_target_cases(cases, client=client)
+
+        kwargs = client.messages.create.call_args.kwargs
+        assert kwargs["messages"] == [
+            {
+                "role": "user",
+                "content": build_target_prompt(
+                    "They traded Luka for Marvin Bagley", "neg"
+                ),
+            }
+        ]
+
+    def test_uses_prompt_builder(self, tmp_path):
+        """The prompt_builder callable receives body and sentiment."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client('{"t": null, "c": 0.9}')
+
+        classify_target_cases(
+            cases,
+            prompt_builder=lambda body, sentiment: f"VARIANT[{sentiment}]: {body}",
+            client=client,
+        )
+
+        kwargs = client.messages.create.call_args.kwargs
+        assert kwargs["messages"] == [
+            {
+                "role": "user",
+                "content": "VARIANT[neg]: They traded Luka for Marvin Bagley",
+            }
+        ]
+
+    def test_malformed_response_yields_invalid(self, tmp_path):
+        """Unparseable model output surfaces as an invalid verdict."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client("not json at all")
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["sympathetic-01"]["valid"] is False
+
+
+class TestVerdictCorrect:
+    @pytest.mark.parametrize(
+        "result,expected_target,correct",
+        [
+            ({"t": "AD", "c": 0.9, "valid": True}, "Anthony Davis", True),
+            ({"t": "Anthony Davis", "c": 0.9, "valid": True}, "Anthony Davis", True),
+            ({"t": "Luka", "c": 0.9, "valid": True}, "Anthony Davis", False),
+            ({"t": None, "c": 0.9, "valid": True}, None, True),
+            ({"t": "Nico Harrison", "c": 0.9, "valid": True}, None, True),
+            ({"t": None, "c": 0.9, "valid": True}, "Anthony Davis", False),
+            ({"t": "AD", "c": 0.9, "valid": True}, None, False),
+        ],
+    )
+    def test_resolves_through_alias_map(
+        self, result: dict, expected_target: str | None, correct: bool
+    ):
+        """The verdict resolves as production would; untracked names are null."""
+        assert verdict_correct(result, expected_target, ALIAS_MAP) is correct
+
+    def test_invalid_never_matches_null(self):
+        """A parse failure is not a null verdict, even when null is expected."""
+        result = {"t": None, "c": 0.0, "valid": False, "raw": "?"}
+
+        assert verdict_correct(result, None, ALIAS_MAP) is False
+
+
+class TestTargetAccuracyByCategory:
+    def test_counts_correct_per_category(self, tmp_path):
+        """Correct/total tallies are grouped by case category."""
+        path = write_target_cases_file(
+            tmp_path,
+            [
+                make_target_case(),
+                make_target_case(id="sympathetic-02", text="Luka got robbed"),
+                make_target_case(
+                    id="true-01",
+                    text="AD showed up to collect a check and dip",
+                    attributed_player="Anthony Davis",
+                    expected_target="Anthony Davis",
+                    category="true_toward",
+                ),
+            ],
+            floors={"sympathetic_subject": 0.0, "true_toward": 0.0},
+        )
+        cases = load_target_cases(path)
+        results = {
+            "sympathetic-01": {"t": None, "c": 0.9, "valid": True},
+            "sympathetic-02": {"t": "Luka", "c": 0.8, "valid": True},
+            "true-01": {"t": "AD", "c": 0.9, "valid": True},
+        }
+
+        accuracy = target_accuracy_by_category(cases, results, ALIAS_MAP)
+
+        assert accuracy == {"sympathetic_subject": (1, 2), "true_toward": (1, 1)}
+
+    def test_invalid_results_count_incorrect(self, tmp_path):
+        """Parse failures count against accuracy, not as null verdicts."""
+        path = write_target_cases_file(tmp_path, [make_target_case()])
+        cases = load_target_cases(path)
+        results = {"sympathetic-01": {"t": None, "c": 0.0, "valid": False, "raw": "?"}}
+
+        accuracy = target_accuracy_by_category(cases, results, ALIAS_MAP)
+
+        assert accuracy == {"sympathetic_subject": (0, 1)}
+
+    def test_includes_known_miss_cases(self, tmp_path):
+        """known_miss cases stay in the totals - floors price them in."""
+        path = write_target_cases_file(tmp_path, [make_target_case(known_miss=True)])
+        cases = load_target_cases(path)
+        results = {"sympathetic-01": {"t": "Luka", "c": 0.9, "valid": True}}
+
+        accuracy = target_accuracy_by_category(cases, results, ALIAS_MAP)
+
+        assert accuracy == {"sympathetic_subject": (0, 1)}

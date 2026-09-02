@@ -14,12 +14,14 @@ file; both classifiers keep their own {model, prompt} identity.
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import anthropic
 import yaml
 
-from pipeline.evaluation import VALID_SOURCES
+from pipeline.evaluation import VALID_SOURCES, attribution_match
 
 logger = logging.getLogger(__name__)
 
@@ -324,3 +326,97 @@ def load_target_floors(path: Path = DEFAULT_TARGET_CASES_PATH) -> dict[str, floa
         raise ValueError(f"Floors defined for categories with no cases: {unused}")
 
     return {category: float(floor) for category, floor in floors.items()}
+
+
+def classify_target_cases(
+    cases: list[TargetCase],
+    prompt_builder: Callable[[str, str], str] = build_target_prompt,
+    client: anthropic.Anthropic | None = None,
+) -> dict[str, dict]:
+    """
+    Run each case through the verifier via the synchronous Messages API.
+
+    Uses the verifier's own model parameters and parser, so results
+    measure exactly what a batch run would produce for the same prompt.
+    Synchronous by design: a ~100-case eval must finish in seconds.
+
+    Args:
+        cases: Cases to verify.
+        prompt_builder: Builds the user message from (body, sentiment).
+            Defaults to the labeled prompt; pass a variant for experiments.
+        client: Anthropic client. Defaults to a fresh client reading
+            ANTHROPIC_API_KEY from the environment.
+
+    Returns:
+        Mapping of case id to parsed verdict (parse_target_response shape).
+    """
+    if client is None:
+        client = anthropic.Anthropic()
+
+    results: dict[str, dict] = {}
+    for case in cases:
+        response = client.messages.create(
+            model=TARGET_MODEL,
+            max_tokens=TARGET_MAX_TOKENS,
+            temperature=TARGET_TEMPERATURE,
+            messages=[
+                {"role": "user", "content": prompt_builder(case.text, case.sentiment)}
+            ],
+        )
+        results[case.id] = parse_target_response(response.content[0].text)
+        logger.debug("Verified %s: %s", case.id, results[case.id]["t"])
+
+    return results
+
+
+def verdict_correct(
+    result: dict, expected_target: str | None, alias_map: dict[str, str]
+) -> bool:
+    """
+    Judge a verdict the way the pipeline would consume it.
+
+    The named target resolves through the alias map exactly as
+    resolve_player() does, so nickname output ("AD") counts when it
+    resolves to the expected canonical player and an untracked name
+    (a GM, a referee) counts as no target. An invalid parse is never
+    correct - not even against an expected null.
+
+    Args:
+        result: A parse_target_response dict.
+        expected_target: Ground-truth canonical player, or None.
+        alias_map: Lowercase alias -> canonical name, as returned by
+            build_alias_to_player_map().
+
+    Returns:
+        True if the verdict is valid and resolves to the expected target.
+    """
+    if not result["valid"]:
+        return False
+    return attribution_match(result["t"], expected_target, alias_map)
+
+
+def target_accuracy_by_category(
+    cases: list[TargetCase], results: dict[str, dict], alias_map: dict[str, str]
+) -> dict[str, tuple[int, int]]:
+    """
+    Tally verdict accuracy per case category.
+
+    Known-miss cases are included in the totals; category floors are set
+    with them priced in.
+
+    Args:
+        cases: The cases that were verified.
+        results: Mapping of case id to verdict (classify_target_cases shape).
+        alias_map: Lowercase alias -> canonical name.
+
+    Returns:
+        Mapping of category to (correct, total) counts.
+    """
+    tallies: dict[str, tuple[int, int]] = {}
+    for case in cases:
+        correct, total = tallies.get(case.category, (0, 0))
+        if verdict_correct(results[case.id], case.expected_target, alias_map):
+            correct += 1
+        tallies[case.category] = (correct, total + 1)
+
+    return tallies

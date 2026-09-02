@@ -12,6 +12,7 @@ target_cases.yaml). Its prompt, parser, and runner follow in the same
 file; both classifiers keep their own {model, prompt} identity.
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,114 @@ from pipeline.evaluation import VALID_SOURCES
 logger = logging.getLogger(__name__)
 
 POLAR_SENTIMENTS = ("pos", "neg")
+_SENTIMENT_WORDS = {"pos": "positive", "neg": "negative"}
+
+# Verifier identity. Starts on the sentiment classifier's model; the target
+# eval suite decides whether it stays there.
+TARGET_MODEL = "claude-haiku-4-5-20251001"
+TARGET_TEMPERATURE = 0.0
+TARGET_MAX_TOKENS = 75
+
+# Draft toward-prompt (#91). The attributed player is deliberately absent:
+# the verdict is a freely re-derived target so a misfiled receipt is
+# recoverable under its true target. Any edit is a new verifier: bump
+# TARGET_PROMPT_VERSION and re-pin the hash test.
+TARGET_PROMPT_VERSION = "v0-draft"
+TARGET_PROMPT_TEMPLATE = """This r/NBA comment was labeled {sentiment_word}. Name the NBA player that {sentiment_word} sentiment is directed at.
+The target is the player being praised or criticized - not a player who is merely mentioned, sympathized with, or the subject of someone else's decision.
+If the sentiment is directed at a non-player (front office, coach, referees, fans, media) or at no one in particular, answer null.
+
+Comment: {comment_body}
+
+Respond ONLY with JSON: {{"t":"Player Name"|null,"c":0.0-1.0}}"""
+
+
+def build_target_prompt(comment_body: str, sentiment: str) -> str:
+    """
+    Build the target-verification prompt for a polar comment.
+
+    Renders TARGET_PROMPT_TEMPLATE, the prompt labeled TARGET_PROMPT_VERSION.
+
+    Args:
+        comment_body: The raw Reddit comment text.
+        sentiment: The pass-1 polar label ("pos" | "neg").
+
+    Returns:
+        The formatted prompt for the model.
+
+    Raises:
+        ValueError: If sentiment is not polar.
+    """
+    if sentiment not in _SENTIMENT_WORDS:
+        raise ValueError(
+            f"Target prompt is defined for polar sentiment only, got {sentiment!r}"
+        )
+    return TARGET_PROMPT_TEMPLATE.format(
+        sentiment_word=_SENTIMENT_WORDS[sentiment], comment_body=comment_body
+    )
+
+
+def _invalid(text: str) -> dict:
+    """The parse-failure result: never a null verdict, always flagged."""
+    return {"t": None, "c": 0.0, "valid": False, "raw": text}
+
+
+def parse_target_response(text: str) -> dict:
+    """
+    Parse the verifier's response into a structured dict.
+
+    Handles bare JSON, JSON in a markdown fence, a list-wrapped object
+    (first element), and malformed output. A parse failure is flagged
+    rather than read as a null verdict - "no target" is a valid answer
+    the verifier must actually give.
+
+    Args:
+        text: Raw text response from the model.
+
+    Returns:
+        Success: {"t": str|None, "c": float, "valid": True}. A list-valued
+        "t" is normalized (single-string list unwraps, anything else
+        becomes None) with the original kept under "t_raw".
+        Failure: {"t": None, "c": 0.0, "valid": False, "raw": str}.
+    """
+    if not text or not text.strip():
+        return _invalid(text)
+
+    cleaned = text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    try:
+        result = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return _invalid(text)
+
+    if isinstance(result, list):
+        if not result:
+            return _invalid(text)
+        result = result[0]
+
+    if not isinstance(result, dict) or "t" not in result:
+        return _invalid(text)
+
+    target = result["t"]
+    parsed: dict = {"t": target, "c": float(result.get("c", 0.0)), "valid": True}
+
+    if isinstance(target, list):
+        parsed["t_raw"] = target
+        parsed["t"] = (
+            target[0] if len(target) == 1 and isinstance(target[0], str) else None
+        )
+    elif target is not None and not isinstance(target, str):
+        return _invalid(text)
+
+    return parsed
+
 
 # Three misdirected-sentiment failure families plus two controls: without
 # true_toward an always-null verifier scores perfectly; readmit_affirm is

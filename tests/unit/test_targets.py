@@ -1,5 +1,6 @@
 """Unit tests for pipeline/targets.py — all offline, no API calls."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -7,8 +8,12 @@ import yaml
 
 from pipeline.targets import (
     TARGET_CATEGORIES,
+    TARGET_PROMPT_TEMPLATE,
+    TARGET_PROMPT_VERSION,
+    build_target_prompt,
     load_target_cases,
     load_target_floors,
+    parse_target_response,
 )
 
 
@@ -206,3 +211,102 @@ class TestRealTargetCasesFile:
         floors = load_target_floors()
 
         assert set(floors) <= set(TARGET_CATEGORIES)
+
+
+class TestBuildTargetPrompt:
+    def test_renders_body_and_sentiment_word(self):
+        """The prompt carries the comment verbatim and the spelled-out label."""
+        prompt = build_target_prompt("They traded Luka for Marvin Bagley", "neg")
+
+        assert "Comment: They traded Luka for Marvin Bagley" in prompt
+        assert "negative" in prompt
+        assert "positive" not in prompt
+
+    def test_positive_label_spelled_out(self):
+        """A pos label renders as 'positive'."""
+        prompt = build_target_prompt("Really cool from Giannis", "pos")
+
+        assert "positive" in prompt
+        assert "negative" not in prompt
+
+    def test_rejects_non_polar_sentiment(self):
+        """The verifier is defined over polar rows only."""
+        with pytest.raises(ValueError, match="neu"):
+            build_target_prompt("some comment", "neu")
+
+    def test_renders_template_exactly(self):
+        """Rendering is byte-identical to the frozen template with fields filled."""
+        expected = TARGET_PROMPT_TEMPLATE.format(
+            sentiment_word="negative", comment_body="test body"
+        )
+
+        assert build_target_prompt("test body", "neg") == expected
+
+
+class TestTargetPromptVersionPin:
+    def test_template_hash_matches_labeled_version(self):
+        """The template's sha256 matches the pin for TARGET_PROMPT_VERSION.
+
+        Any template edit is a new verifier: it requires a new label, a new
+        pinned hash, and a re-baselined target eval suite.
+        """
+        assert TARGET_PROMPT_VERSION == "v0-draft"
+        assert (
+            hashlib.sha256(TARGET_PROMPT_TEMPLATE.encode()).hexdigest()
+            == "e9f23d42e2f59c63e120dd73caeff36ff154d83a5f6eb12560a0cebdfa9d6aa0"
+        )
+
+
+class TestParseTargetResponse:
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ('{"t": "Luka Doncic", "c": 0.9}', {"t": "Luka Doncic", "c": 0.9}),
+            ('{"t": null, "c": 0.8}', {"t": None, "c": 0.8}),
+            ('```json\n{"t": "AD", "c": 0.7}\n```', {"t": "AD", "c": 0.7}),
+            ('{"t": "Nikola Jokic"}', {"t": "Nikola Jokic", "c": 0.0}),
+            ('[{"t": "Jokic", "c": 0.6}]', {"t": "Jokic", "c": 0.6}),
+        ],
+    )
+    def test_valid_responses(self, text: str, expected: dict):
+        """Well-formed JSON (bare, fenced, or list-wrapped) parses as valid."""
+        assert parse_target_response(text) == {**expected, "valid": True}
+
+    def test_single_string_list_target_unwraps(self):
+        """A one-element list target is normalized to its string, raw kept."""
+        result = parse_target_response('{"t": ["Luka Doncic"], "c": 0.9}')
+
+        assert result["t"] == "Luka Doncic"
+        assert result["t_raw"] == ["Luka Doncic"]
+        assert result["valid"] is True
+
+    def test_multi_string_list_target_becomes_none(self):
+        """A multi-element list target has no single answer and becomes None."""
+        result = parse_target_response('{"t": ["Luka", "AD"], "c": 0.9}')
+
+        assert result["t"] is None
+        assert result["t_raw"] == ["Luka", "AD"]
+        assert result["valid"] is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "",
+            "   ",
+            "not json at all",
+            '{"c": 0.9}',
+            '{"t": 42, "c": 0.9}',
+            "[]",
+        ],
+    )
+    def test_invalid_responses(self, text: str):
+        """Malformed output is flagged invalid with a None target, raw kept.
+
+        Invalid must never read as a null verdict: a parse failure is not
+        evidence that the sentiment has no target.
+        """
+        result = parse_target_response(text)
+
+        assert result["valid"] is False
+        assert result["t"] is None
+        assert result["raw"] == text

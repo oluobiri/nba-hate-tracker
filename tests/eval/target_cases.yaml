@@ -7,7 +7,7 @@
 # it is recorded so the control categories can be judged.
 #
 # Per-case schema (loader: pipeline/targets.py):
-#   id                 unique, category-prefixed
+#   id                 unique, source-prefixed (receipt- | nullp- | random-)
 #   text               comment body sent to the verifier
 #   sentiment          pos | neg  (the pass-1 label fed to the prompt)
 #   attributed_player  canonical player the pipeline attributed the row to

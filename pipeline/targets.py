@@ -1,15 +1,8 @@
 """The sentiment-target verifier: the receipts second pass.
 
-Where the sentiment classifier (pipeline/batch.py) labels a comment's tone
-and names the player it is about, this verifier answers a narrower
-question over polar comments: toward whom is that sentiment directed?
-The verdict is a freely re-derived target (player or None) - the
-attributed player is deliberately not in the prompt, so a misfiled
-receipt is recoverable under its true target.
-
-This module holds the verifier's eval-case contract (tests/eval/
-target_cases.yaml). Its prompt, parser, and runner follow in the same
-file; both classifiers keep their own {model, prompt} identity.
+Answers, for a polar comment, "toward whom is this sentiment directed?"
+The verdict is a re-derived target (player or None); the attributed
+player is not an input. Eval-case contract, prompt, parser, and runner.
 """
 
 import json
@@ -25,19 +18,36 @@ from pipeline.evaluation import VALID_SOURCES, attribution_match
 
 logger = logging.getLogger(__name__)
 
-POLAR_SENTIMENTS = ("pos", "neg")
-_SENTIMENT_WORDS = {"pos": "positive", "neg": "negative"}
-
-# Verifier identity. Starts on the sentiment classifier's model; the target
-# eval suite decides whether it stays there.
+# Verifier identity
 TARGET_MODEL = "claude-haiku-4-5-20251001"
 TARGET_TEMPERATURE = 0.0
 TARGET_MAX_TOKENS = 75
 
-# Draft toward-prompt (#91). The attributed player is deliberately absent:
-# the verdict is a freely re-derived target so a misfiled receipt is
-# recoverable under its true target. Any edit is a new verifier: bump
-# TARGET_PROMPT_VERSION and re-pin the hash test.
+# Eval-case contract
+POLAR_SENTIMENTS = ("pos", "neg")
+TARGET_CATEGORIES = (
+    "wrong_player",
+    "non_player",
+    "sympathetic_subject",
+    "true_toward",  # control: sentiment does land on the attributed player
+    "readmit_affirm",  # control: gate-dropped NULL-target row the verifier recovers
+)
+REQUIRED_TARGET_KEYS = (
+    "id",
+    "text",
+    "sentiment",
+    "attributed_player",
+    "expected_target",
+    "category",
+    "source",
+)
+DEFAULT_TARGET_CASES_PATH = (
+    Path(__file__).resolve().parent.parent / "tests" / "eval" / "target_cases.yaml"
+)
+
+_SENTIMENT_WORDS = {"pos": "positive", "neg": "negative"}
+
+# Any template edit is a new verifier: bump the version, re-pin the hash test.
 TARGET_PROMPT_VERSION = "v0-draft"
 TARGET_PROMPT_TEMPLATE = """This r/NBA comment was labeled {sentiment_word}. Name the NBA player that {sentiment_word} sentiment is directed at.
 The target is the player being praised or criticized - not a player who is merely mentioned, sympathized with, or the subject of someone else's decision.
@@ -133,32 +143,6 @@ def parse_target_response(text: str) -> dict:
         return _invalid(text)
 
     return parsed
-
-
-# Three misdirected-sentiment failure families plus two controls: without
-# true_toward an always-null verifier scores perfectly; readmit_affirm is
-# the gate-dropped NULL-target row the verifier must recover.
-TARGET_CATEGORIES = (
-    "wrong_player",
-    "non_player",
-    "sympathetic_subject",
-    "true_toward",
-    "readmit_affirm",
-)
-
-REQUIRED_TARGET_KEYS = (
-    "id",
-    "text",
-    "sentiment",
-    "attributed_player",
-    "expected_target",
-    "category",
-    "source",
-)
-
-DEFAULT_TARGET_CASES_PATH = (
-    Path(__file__).resolve().parent.parent / "tests" / "eval" / "target_cases.yaml"
-)
 
 
 @dataclass(frozen=True)

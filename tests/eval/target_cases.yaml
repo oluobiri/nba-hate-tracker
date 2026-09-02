@@ -1,0 +1,32 @@
+# Ground-truth cases for the sentiment-target verifier eval suite (issue #91).
+#
+# The verifier answers, for a polar comment, "toward whom is this sentiment
+# directed?" - a player or null. Cases are mined from the 2025-26 receipts
+# (notebooks/2025-26/07_target_case_mining.ipynb), owner-labeled, and
+# nba-superfan-verified. The attributed player is NOT sent to the verifier;
+# it is recorded so the control categories can be judged.
+#
+# Per-case schema (loader: pipeline/targets.py):
+#   id                 unique, category-prefixed
+#   text               comment body sent to the verifier
+#   sentiment          pos | neg  (the pass-1 label fed to the prompt)
+#   attributed_player  canonical player the pipeline attributed the row to
+#   expected_target    canonical player the sentiment is directed at, or null
+#   category           wrong_player | non_player | sympathetic_subject |
+#                      true_toward | readmit_affirm
+#   source             synthetic | mined-v1 | mined-v2
+#   comment_id         (optional) Reddit comment id for mined cases
+#   note               (optional) context, e.g. why a case is a known miss
+#   known_miss         (optional) test is xfail at current baseline
+#
+# Labeling rubric: a named player is the target if any of the comment's
+# sentiment is directed at them, even when a decision-maker is also mocked;
+# pure sympathy (player as victim or standard of excellence) is null.
+#
+# meta.category_floors are minimum accuracy fractions per category, pinned
+# from the baseline run against the labeled prompt version.
+
+meta:
+  category_floors: {}
+
+cases: []

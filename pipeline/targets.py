@@ -132,12 +132,11 @@ def parse_target_response(text: str) -> dict:
         return _invalid(text)
 
     target = result["t"]
-    confidence = result.get("c")
-    parsed: dict = {
-        "t": target,
-        "c": float(confidence) if confidence is not None else 0.0,
-        "valid": True,
-    }
+    try:
+        confidence = float(result.get("c") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    parsed: dict = {"t": target, "c": confidence, "valid": True}
 
     if isinstance(target, list):
         parsed["t_raw"] = target

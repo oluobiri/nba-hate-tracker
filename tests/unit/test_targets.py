@@ -400,6 +400,13 @@ class TestParseTargetResponse:
         """
         assert parse_target_response(text) == {**expected, "valid": True}
 
+    @pytest.mark.parametrize("raw_c", ['"high"', "[0.9]", '{"x": 1}', '"0.9abc"'])
+    def test_non_numeric_confidence_degrades_to_zero(self, raw_c: str):
+        """A non-numeric confidence never raises; the verdict stays valid at c=0.0."""
+        result = parse_target_response(f'{{"t": "LeBron James", "c": {raw_c}}}')
+
+        assert result == {"t": "LeBron James", "c": 0.0, "valid": True}
+
     def test_prose_without_json_is_invalid(self):
         """Explanation with no JSON object anywhere is a parse failure."""
         result = parse_target_response(

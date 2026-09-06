@@ -375,7 +375,9 @@ def classify_target_cases(
             ANTHROPIC_API_KEY from the environment.
 
     Returns:
-        Mapping of case id to parsed verdict (parse_target_response shape).
+        Mapping of case id to parsed verdict (parse_target_response shape)
+        plus "raw" (the full response text) and "stop_reason", so output
+        format and truncation can be measured alongside accuracy.
     """
     if client is None:
         client = anthropic.Anthropic()
@@ -390,7 +392,12 @@ def classify_target_cases(
                 {"role": "user", "content": prompt_builder(case.text, case.sentiment)}
             ],
         )
-        results[case.id] = parse_target_response(response.content[0].text)
+        text = response.content[0].text
+        results[case.id] = {
+            **parse_target_response(text),
+            "raw": text,
+            "stop_reason": response.stop_reason,
+        }
         logger.debug("Verified %s: %s", case.id, results[case.id]["t"])
 
     return results

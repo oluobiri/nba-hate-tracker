@@ -459,7 +459,9 @@ class TestClassifyTargetCases:
     def make_client(self, response_text: str) -> Mock:
         """Build a mock Anthropic client returning fixed response text."""
         client = Mock()
-        client.messages.create.return_value = Mock(content=[Mock(text=response_text)])
+        client.messages.create.return_value = Mock(
+            content=[Mock(text=response_text)], stop_reason="end_turn"
+        )
         return client
 
     def load_two_cases(self, tmp_path) -> list:
@@ -488,7 +490,27 @@ class TestClassifyTargetCases:
         results = classify_target_cases(cases, client=client)
 
         assert set(results) == {"subject-01", "true-01"}
-        assert results["subject-01"] == {"t": None, "c": 0.9, "valid": True}
+        assert results["subject-01"] == {
+            "t": None,
+            "c": 0.9,
+            "valid": True,
+            "raw": '{"t": null, "c": 0.9}',
+            "stop_reason": "end_turn",
+        }
+
+    def test_keeps_raw_text_and_stop_reason(self, tmp_path):
+        """Format hygiene is measured on the response, not just the verdict."""
+        cases = self.load_two_cases(tmp_path)
+        text = '```json\n{"t": null, "c": 0.9}\n```\nThe target is the front office'
+        client = self.make_client(text)
+        client.messages.create.return_value.stop_reason = "max_tokens"
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["subject-01"]["t"] is None
+        assert results["subject-01"]["valid"] is True
+        assert results["subject-01"]["raw"] == text
+        assert results["subject-01"]["stop_reason"] == "max_tokens"
 
     def test_uses_verifier_model_params(self, tmp_path):
         """Requests go out with the verifier's own model parameters."""

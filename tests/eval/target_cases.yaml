@@ -286,8 +286,7 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: o5xi15s
-  known_miss: true
-  note: 'alias gap: model echoes the comment''s misspelling ''Deni Avidja'''
+  note: model echoes the corpus misspelling 'Deni Avidja'; resolves since config v4.5
 - id: receipt-m30
   text: 'OP was spam posting Deni Avidjas stat line in the all star game until it got kept up (on like 2 shot attempts or something)
 
@@ -299,7 +298,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: o5xegh5
-  note: Negativity at OP and the bigot; Deni is the victim.
+  known_miss: true
+  note: Negativity at OP and the bigot; Deni is the victim. Baseline names 'Deni Avidja' - mention read as target, masked until config v4.5 resolved the misspelling
 - id: receipt-m33
   text: Brooks is such a loser. Blatantly intentional.
   sentiment: neg
@@ -850,8 +850,7 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: nw0p8d7
-  known_miss: true
-  note: 'alias gap: ''Luguentz Dort'' not in players.yaml'
+  note: model formalizes to 'Luguentz Dort'; resolves since config v4.5
 - id: random-m03
   text: Ah, he’s mad that she’s seeing a boy he doesn’t like, so naturally he beats the shit out of his 15 year old sister, instead of the boy. what an absolute stain on society. Fuck Pat bev
   sentiment: neg
@@ -860,8 +859,7 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: npivjb4
-  known_miss: true
-  note: 'alias gap: ''Pat Beverley'' not in players.yaml'
+  note: model answers 'Pat Beverley'; resolves since config v4.5
 - id: random-m04
   text: I LOVE AJAY MITCHELL
   sentiment: pos

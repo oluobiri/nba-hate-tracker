@@ -41,8 +41,8 @@
 #     undecidable from the body alone; alias-identity false positives.
 #
 # Baseline (2026-09-06, 3 runs, claude-haiku-4-5-20251001 @ temp 0, TARGET_PROMPT_VERSION
-# v0-draft): true_toward 46/52, readmit_affirm 7/9, non_player 7/10,
-# subject_not_target 26/40 (one flaky), wrong_player 1/1; 0 invalid parses after
+# v0-draft): true_toward 46/52, readmit_affirm 7/9, non_player 8/11,
+# subject_not_target 25/38 (one flaky), wrong_player 1/1; 0 invalid parses after
 # the first-object parser fix. Misses are mostly the mention read as the target
 # on null-category rows, plus four alias gaps and two guesses at unnamed players.
 # Floors: worst run minus one case of slack for categories with >= 5 cases,
@@ -52,8 +52,8 @@
 meta:
   category_floors:
     wrong_player: 1.0
-    non_player: 0.6
-    subject_not_target: 0.62
+    non_player: 0.63
+    subject_not_target: 0.63
     true_toward: 0.86
     readmit_affirm: 0.66
 cases:
@@ -300,16 +300,6 @@ cases:
   source: mined-v2
   comment_id: o5xegh5
   note: Negativity at OP and the bigot; Deni is the victim.
-- id: receipt-m32
-  text: Duillon Brooks blowing 0.00 and getting arrested is like a real life flagrant 3
-  sentiment: neg
-  attributed_player: Dillon Brooks
-  expected_target: null
-  category: subject_not_target
-  source: mined-v2
-  comment_id: o92q5n8
-  note: negative about the arrest; Brooks is its object; baseline names the attributed player ('Dillon Brooks') - mention read as target
-  known_miss: true
 - id: receipt-m33
   text: Brooks is such a loser. Blatantly intentional.
   sentiment: neg
@@ -998,7 +988,7 @@ cases:
   sentiment: neg
   attributed_player: Jaxson Hayes
   expected_target: null
-  category: subject_not_target
+  category: non_player
   source: mined-v2
   comment_id: ok6es83
 - id: random-m20

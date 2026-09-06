@@ -34,12 +34,12 @@ ALIAS_MAP = {
 def make_target_case(**overrides) -> dict:
     """Build a valid target case dict, with optional field overrides."""
     case = {
-        "id": "sympathetic-01",
+        "id": "subject-01",
         "text": "They traded Luka for Marvin Bagley",
         "sentiment": "neg",
         "attributed_player": "Luka Doncic",
         "expected_target": None,
-        "category": "sympathetic_subject",
+        "category": "subject_not_target",
         "source": "mined-v2",
     }
     case.update(overrides)
@@ -53,7 +53,7 @@ def write_target_cases_file(
 ) -> Path:
     """Write a target-cases YAML file into tmp_path and return its path."""
     if floors is None:
-        floors = {"sympathetic_subject": 0.0}
+        floors = {"subject_not_target": 0.0}
     payload = {"meta": {"category_floors": floors}, "cases": cases}
     path = tmp_path / "target_cases.yaml"
     path.write_text(yaml.safe_dump(payload))
@@ -75,13 +75,13 @@ class TestLoadTargetCases:
                     category="wrong_player",
                 ),
             ],
-            floors={"sympathetic_subject": 0.0, "wrong_player": 0.0},
+            floors={"subject_not_target": 0.0, "wrong_player": 0.0},
         )
 
         cases = load_target_cases(path)
 
         assert len(cases) == 2
-        assert cases[0].id == "sympathetic-01"
+        assert cases[0].id == "subject-01"
         assert cases[0].sentiment == "neg"
         assert cases[0].attributed_player == "Luka Doncic"
         assert cases[0].expected_target is None
@@ -121,14 +121,14 @@ class TestLoadTargetCases:
             tmp_path, [make_target_case(), make_target_case()]
         )
 
-        with pytest.raises(ValueError, match="sympathetic-01"):
+        with pytest.raises(ValueError, match="subject-01"):
             load_target_cases(path)
 
     def test_rejects_neutral_sentiment(self, tmp_path):
         """The verifier runs on polar rows only; neu is not a valid input."""
         path = write_target_cases_file(tmp_path, [make_target_case(sentiment="neu")])
 
-        with pytest.raises(ValueError, match="sympathetic-01"):
+        with pytest.raises(ValueError, match="subject-01"):
             load_target_cases(path)
 
     def test_rejects_invalid_source(self, tmp_path):
@@ -137,7 +137,7 @@ class TestLoadTargetCases:
             tmp_path, [make_target_case(source="handwritten")]
         )
 
-        with pytest.raises(ValueError, match="sympathetic-01"):
+        with pytest.raises(ValueError, match="subject-01"):
             load_target_cases(path)
 
     def test_rejects_missing_required_key(self, tmp_path):
@@ -146,7 +146,7 @@ class TestLoadTargetCases:
         del case["attributed_player"]
         path = write_target_cases_file(tmp_path, [case])
 
-        with pytest.raises(ValueError, match="sympathetic-01"):
+        with pytest.raises(ValueError, match="subject-01"):
             load_target_cases(path)
 
     def test_rejects_unlabeled_candidate(self, tmp_path):
@@ -174,31 +174,118 @@ class TestLoadTargetCases:
         path = write_target_cases_file(
             tmp_path,
             [make_target_case(id="wrong-01", category="wrong_player")],
-            floors={"sympathetic_subject": 0.0},
+            floors={"subject_not_target": 0.0},
         )
 
         with pytest.raises(ValueError, match="wrong-01"):
             load_target_cases(path)
 
 
+class TestLoadTargetCasesConsistency:
+    """Each category pins expected_target's relationship to attributed_player."""
+
+    def test_null_category_rejects_named_target(self, tmp_path):
+        """A subject_not_target / non_player case must have a null target."""
+        path = write_target_cases_file(
+            tmp_path, [make_target_case(expected_target="Luka Doncic")]
+        )
+
+        with pytest.raises(ValueError, match="subject-01"):
+            load_target_cases(path)
+
+    def test_control_category_rejects_other_target(self, tmp_path):
+        """A true_toward / readmit_affirm case must target the attributed player."""
+        path = write_target_cases_file(
+            tmp_path,
+            [
+                make_target_case(
+                    id="true-01",
+                    category="true_toward",
+                    expected_target="Anthony Davis",
+                )
+            ],
+            floors={"true_toward": 0.0},
+        )
+
+        with pytest.raises(ValueError, match="true-01"):
+            load_target_cases(path)
+
+    def test_control_category_rejects_null_target(self, tmp_path):
+        """A readmit_affirm case with a null target is a labeling slip."""
+        path = write_target_cases_file(
+            tmp_path,
+            [make_target_case(id="readmit-01", category="readmit_affirm")],
+            floors={"readmit_affirm": 0.0},
+        )
+
+        with pytest.raises(ValueError, match="readmit-01"):
+            load_target_cases(path)
+
+    @pytest.mark.parametrize("expected_target", [None, "Luka Doncic"])
+    def test_wrong_player_requires_a_different_player(
+        self, tmp_path, expected_target: str | None
+    ):
+        """A wrong_player case names a tracked player other than the attributed one."""
+        path = write_target_cases_file(
+            tmp_path,
+            [
+                make_target_case(
+                    id="wrong-01",
+                    category="wrong_player",
+                    expected_target=expected_target,
+                )
+            ],
+            floors={"wrong_player": 0.0},
+        )
+
+        with pytest.raises(ValueError, match="wrong-01"):
+            load_target_cases(path)
+
+    def test_accepts_consistent_cases(self, tmp_path):
+        """One consistent case per category loads cleanly."""
+        path = write_target_cases_file(
+            tmp_path,
+            [
+                make_target_case(),
+                make_target_case(id="non-01", category="non_player"),
+                make_target_case(
+                    id="wrong-01",
+                    category="wrong_player",
+                    expected_target="Anthony Davis",
+                ),
+                make_target_case(
+                    id="true-01", category="true_toward", expected_target="Luka Doncic"
+                ),
+                make_target_case(
+                    id="readmit-01",
+                    category="readmit_affirm",
+                    expected_target="Luka Doncic",
+                ),
+            ],
+            floors={c: 0.0 for c in TARGET_CATEGORIES},
+        )
+
+        assert len(load_target_cases(path)) == 5
+
+
 class TestLoadTargetFloors:
     def test_loads_floors(self, tmp_path):
         """Floors are returned as a category -> fraction mapping."""
         path = write_target_cases_file(
-            tmp_path, [make_target_case()], floors={"sympathetic_subject": 0.8}
+            tmp_path, [make_target_case()], floors={"subject_not_target": 0.8}
         )
 
         floors = load_target_floors(path)
 
-        assert floors == {"sympathetic_subject": 0.8}
+        assert floors == {"subject_not_target": 0.8}
 
     def test_rejects_floor_out_of_range(self, tmp_path):
         """A floor outside [0, 1] raises ValueError naming the category."""
         path = write_target_cases_file(
-            tmp_path, [make_target_case()], floors={"sympathetic_subject": 1.5}
+            tmp_path, [make_target_case()], floors={"subject_not_target": 1.5}
         )
 
-        with pytest.raises(ValueError, match="sympathetic_subject"):
+        with pytest.raises(ValueError, match="subject_not_target"):
             load_target_floors(path)
 
     def test_rejects_floor_without_cases(self, tmp_path):
@@ -206,7 +293,7 @@ class TestLoadTargetFloors:
         path = write_target_cases_file(
             tmp_path,
             [make_target_case()],
-            floors={"sympathetic_subject": 0.0, "wrong_player": 0.5},
+            floors={"subject_not_target": 0.0, "wrong_player": 0.5},
         )
 
         with pytest.raises(ValueError, match="wrong_player"):
@@ -347,7 +434,7 @@ class TestClassifyTargetCases:
                     category="true_toward",
                 ),
             ],
-            floors={"sympathetic_subject": 0.0, "true_toward": 0.0},
+            floors={"subject_not_target": 0.0, "true_toward": 0.0},
         )
         return load_target_cases(path)
 
@@ -358,8 +445,8 @@ class TestClassifyTargetCases:
 
         results = classify_target_cases(cases, client=client)
 
-        assert set(results) == {"sympathetic-01", "true-01"}
-        assert results["sympathetic-01"] == {"t": None, "c": 0.9, "valid": True}
+        assert set(results) == {"subject-01", "true-01"}
+        assert results["subject-01"] == {"t": None, "c": 0.9, "valid": True}
 
     def test_uses_verifier_model_params(self, tmp_path):
         """Requests go out with the verifier's own model parameters."""
@@ -416,7 +503,7 @@ class TestClassifyTargetCases:
 
         results = classify_target_cases(cases, client=client)
 
-        assert results["sympathetic-01"]["valid"] is False
+        assert results["subject-01"]["valid"] is False
 
 
 class TestVerdictCorrect:
@@ -452,7 +539,7 @@ class TestTargetAccuracyByCategory:
             tmp_path,
             [
                 make_target_case(),
-                make_target_case(id="sympathetic-02", text="Luka got robbed"),
+                make_target_case(id="subject-02", text="Luka got robbed"),
                 make_target_case(
                     id="true-01",
                     text="AD showed up to collect a check and dip",
@@ -461,35 +548,35 @@ class TestTargetAccuracyByCategory:
                     category="true_toward",
                 ),
             ],
-            floors={"sympathetic_subject": 0.0, "true_toward": 0.0},
+            floors={"subject_not_target": 0.0, "true_toward": 0.0},
         )
         cases = load_target_cases(path)
         results = {
-            "sympathetic-01": {"t": None, "c": 0.9, "valid": True},
-            "sympathetic-02": {"t": "Luka", "c": 0.8, "valid": True},
+            "subject-01": {"t": None, "c": 0.9, "valid": True},
+            "subject-02": {"t": "Luka", "c": 0.8, "valid": True},
             "true-01": {"t": "AD", "c": 0.9, "valid": True},
         }
 
         accuracy = target_accuracy_by_category(cases, results, ALIAS_MAP)
 
-        assert accuracy == {"sympathetic_subject": (1, 2), "true_toward": (1, 1)}
+        assert accuracy == {"subject_not_target": (1, 2), "true_toward": (1, 1)}
 
     def test_invalid_results_count_incorrect(self, tmp_path):
         """Parse failures count against accuracy, not as null verdicts."""
         path = write_target_cases_file(tmp_path, [make_target_case()])
         cases = load_target_cases(path)
-        results = {"sympathetic-01": {"t": None, "c": 0.0, "valid": False, "raw": "?"}}
+        results = {"subject-01": {"t": None, "c": 0.0, "valid": False, "raw": "?"}}
 
         accuracy = target_accuracy_by_category(cases, results, ALIAS_MAP)
 
-        assert accuracy == {"sympathetic_subject": (0, 1)}
+        assert accuracy == {"subject_not_target": (0, 1)}
 
     def test_includes_known_miss_cases(self, tmp_path):
         """known_miss cases stay in the totals - floors price them in."""
         path = write_target_cases_file(tmp_path, [make_target_case(known_miss=True)])
         cases = load_target_cases(path)
-        results = {"sympathetic-01": {"t": "Luka", "c": 0.9, "valid": True}}
+        results = {"subject-01": {"t": "Luka", "c": 0.9, "valid": True}}
 
         accuracy = target_accuracy_by_category(cases, results, ALIAS_MAP)
 
-        assert accuracy == {"sympathetic_subject": (0, 1)}
+        assert accuracy == {"subject_not_target": (0, 1)}

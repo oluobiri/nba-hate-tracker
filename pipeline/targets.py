@@ -28,7 +28,7 @@ POLAR_SENTIMENTS = ("pos", "neg")
 TARGET_CATEGORIES = (
     "wrong_player",
     "non_player",
-    "sympathetic_subject",
+    "subject_not_target",
     "true_toward",  # control: sentiment does land on the attributed player
     "readmit_affirm",  # control: gate-dropped NULL-target row the verifier recovers
 )
@@ -150,7 +150,7 @@ class TargetCase:
     """A single ground-truth target-verification case.
 
     Attributes:
-        id: Unique, category-prefixed identifier (e.g. "sympathetic-01").
+        id: Unique, source-prefixed identifier (e.g. "receipt-m01").
         text: Comment body sent to the verifier.
         sentiment: The pass-1 polar label ("pos" | "neg") fed to the prompt.
         attributed_player: Who the pipeline attributed the comment to. Not
@@ -205,6 +205,40 @@ def _read_target_cases_file(path: Path) -> tuple[dict[str, float], list[dict]]:
         raise ValueError(f"Target cases file {path} is missing a 'cases' list")
 
     return floors, cases
+
+
+def _check_target_consistency(case_label: str, raw: dict) -> None:
+    """
+    Enforce the category's contract on expected_target.
+
+    Null categories (non_player, subject_not_target) require a null target;
+    the controls (true_toward, readmit_affirm) require the attributed
+    player; wrong_player requires a different named player.
+
+    Args:
+        case_label: The case id, for the error message.
+        raw: The raw case dict (category, expected_target, attributed_player).
+
+    Raises:
+        ValueError: If the target contradicts the category.
+    """
+    category, target = raw["category"], raw["expected_target"]
+    attributed = raw["attributed_player"]
+
+    if category in ("non_player", "subject_not_target") and target is not None:
+        raise ValueError(
+            f"Target case {case_label!r} is {category} but names a target {target!r}"
+        )
+    if category in ("true_toward", "readmit_affirm") and target != attributed:
+        raise ValueError(
+            f"Target case {case_label!r} is {category} but its target {target!r} "
+            f"is not the attributed player {attributed!r}"
+        )
+    if category == "wrong_player" and (target is None or target == attributed):
+        raise ValueError(
+            f"Target case {case_label!r} is wrong_player but its target {target!r} "
+            f"is not a different player from {attributed!r}"
+        )
 
 
 def load_target_cases(path: Path = DEFAULT_TARGET_CASES_PATH) -> list[TargetCase]:
@@ -263,6 +297,8 @@ def load_target_cases(path: Path = DEFAULT_TARGET_CASES_PATH) -> list[TargetCase
                 f"Target case {case_label!r} has category {raw['category']!r} "
                 "with no entry in meta.category_floors"
             )
+
+        _check_target_consistency(case_label, raw)
 
         cases.append(
             TargetCase(

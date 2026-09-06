@@ -41,8 +41,8 @@
 #     undecidable from the body alone; alias-identity false positives.
 #
 # Baseline (2026-09-06, 3 runs, claude-haiku-4-5-20251001 @ temp 0, TARGET_PROMPT_VERSION
-# v0-draft): true_toward 46/52, readmit_affirm 6/8, non_player 7/10,
-# subject_not_target 26/41 (one flaky), wrong_player 1/1; 0 invalid parses after
+# v0-draft): true_toward 46/52, readmit_affirm 7/9, non_player 7/10,
+# subject_not_target 26/40 (one flaky), wrong_player 1/1; 0 invalid parses after
 # the first-object parser fix. Misses are mostly the mention read as the target
 # on null-category rows, plus four alias gaps and two guesses at unnamed players.
 # Floors: worst run minus one case of slack for categories with >= 5 cases,
@@ -53,9 +53,9 @@ meta:
   category_floors:
     wrong_player: 1.0
     non_player: 0.6
-    subject_not_target: 0.6
+    subject_not_target: 0.62
     true_toward: 0.86
-    readmit_affirm: 0.62
+    readmit_affirm: 0.66
 cases:
 - id: receipt-m01
   text: Caruso has gone from feel good story to little bitch real quick
@@ -807,12 +807,11 @@ cases:
     Bronny with more points than Smart and Laravia combined. GOAT.'
   sentiment: pos
   attributed_player: Bronny James
-  expected_target: null
-  category: subject_not_target
+  expected_target: Bronny James
+  category: readmit_affirm
   source: mined-v2
   comment_id: nzay5pm
-  note: Kings fan mocking Smart/LaRavia; Bronny is the yardstick, the GOAT is ironic; baseline names the attributed player ('Bronny James') - mention read as target
-  known_miss: true
+  note: 'owner call: the GOAT lands on Bronny, ironic or not'
 - id: nullp-m34
   text: They could never make me hate you, Zion
   sentiment: pos

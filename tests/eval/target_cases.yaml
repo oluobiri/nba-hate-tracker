@@ -12,21 +12,1032 @@
 #   sentiment          pos | neg  (the pass-1 label fed to the prompt)
 #   attributed_player  canonical player the pipeline attributed the row to
 #   expected_target    canonical player the sentiment is directed at, or null
-#   category           wrong_player | non_player | sympathetic_subject |
-#                      true_toward | readmit_affirm
+#   category           see below; the loader enforces its contract on expected_target
 #   source             synthetic | mined-v1 | mined-v2
 #   comment_id         (optional) Reddit comment id for mined cases
 #   note               (optional) context, e.g. why a case is a known miss
 #   known_miss         (optional) test is xfail at current baseline
 #
-# Labeling rubric: a named player is the target if any of the comment's
-# sentiment is directed at them, even when a decision-maker is also mocked;
-# pure sympathy (player as victim or standard of excellence) is null.
+# Categories:
+#   wrong_player        a different tracked player, identifiable in-text
+#   non_player          target is not a tracked player (front office, coach,
+#                       refs, media, fans, untracked or retired player) -> null
+#   subject_not_target  the attributed player is in the scene as victim, foil,
+#                       standard of excellence, beneficiary or bystander, not
+#                       as the target -> null
+#   true_toward         control: target == attributed_player (classifier named them)
+#   readmit_affirm      control: target == attributed_player on a row where the
+#                       classifier declined a target (gate-dropped)
+#
+# Labeling rubric:
+#   - A player is the target only if identifiable from the text itself (named,
+#     or unambiguously described); an unnamed "him" is null - the verifier must
+#     not guess.
+#   - A named player is the target if any of the comment's sentiment lands on
+#     them, even when a decision-maker is also mocked.
+#   - Rejected, not labeled: rows whose pass-1 sentiment the labeler would
+#     relabel (sarcasm, banter, neutral report - the target question is
+#     undefined; cases.yaml candidates instead); rows whose target is
+#     undecidable from the body alone; alias-identity false positives.
 #
 # meta.category_floors are minimum accuracy fractions per category, pinned
 # from the baseline run against the labeled prompt version.
 
 meta:
-  category_floors: {}
+  category_floors:
+    wrong_player: 0.0
+    non_player: 0.0
+    subject_not_target: 0.0
+    true_toward: 0.0
+    readmit_affirm: 0.0
+cases:
+- id: receipt-m01
+  text: Caruso has gone from feel good story to little bitch real quick
+  sentiment: neg
+  attributed_player: Alex Caruso
+  expected_target: Alex Caruso
+  category: true_toward
+  source: mined-v2
+  comment_id: ompfv81
+  note: accurate result on Alex Caruso hate
+- id: receipt-m02
+  text: FUCK CARUSO GO HOME YOU BALD FUCK
+  sentiment: neg
+  attributed_player: Alex Caruso
+  expected_target: Alex Caruso
+  category: true_toward
+  source: mined-v2
+  comment_id: oown4as
+  note: accurate result on Alex Caruso hate
+- id: receipt-m03
+  text: Dumont is feeding mcmohan this information, to take the blame and heat of himself and shift it to Nico. By acting like he’s the more reasonable person that doesn’t want AD to play. That entitled dumbass literally enjoyed the WCF trophy and traded away the best player because he was embarrassed and sad to lose the finals like he did anything lol. Fuck Nico fuck dumont
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: no3suqj
+  note: Pure frustration about the front office not directed at the players
+- id: receipt-m04
+  text: 'Rich: “AD wAntS tO gO To A tEAm tHaT wIlL oFfEr hIm a LoNgteRm ExTenSioN”
 
-cases: []
+
+    Nobody cares Rich. The Mavs didnt care and the Wizards don’t either. Play out the remaining 2.5 years on your overpriced salary. Nobody going to offer Street Clothes a long term after averaging an injury for every 1.5 games played for Dallas'
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: o50s4cb
+  note: Not non-player because there is legitimate hate towards Anthony Davis
+- id: receipt-m05
+  text: At least it allows us to tank in peace, I’m done talking AD. He’s not playing anymore this season, and Rich Paul can fucking take his max extension plea and shove it.
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: nyo5ufb
+  note: Anthony Davis doesn't feel like the subject and the negativity is towards Rich Paul
+- id: receipt-m06
+  text: Nico has a case for worst gm in sports history dude traded a generational talent who took Dallas to a finals appearance for aging injury riddled Anthony Davis. At least the mavs fans got cooper Flagg to fall back on.
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: nowd4nw
+- id: receipt-m07
+  text: Dude really showed up just to collect a check and dip lmao. AD's "career" with the Mavs was basically a long weekend
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: np3qdzi
+- id: receipt-m08
+  text: "So he basically completely screwed AD who was genuinely happy to be in Dallas. \n\nWhat a piece of shit. I know r/NBA doesn't have many AD fans but don't forget, he did absolutely nothing to deserve what happened to his career."
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nod84mh
+- id: receipt-m09
+  text: 'Nico was probably trying to rush AD back early so Mavs could win some games and “save his job”
+
+
+    What a sniveling little weasel, doesn’t care if AD gets reinjured as long as he can save his career'
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: noikpym
+  note: This is Nico hate. One could argue that AD is a subject_not_target here, but I think this fits
+- id: receipt-m12
+  text: Dear AD, here in Washington we love grift, gridlock and showmanship. But what we love more than that is losing. If you stay unhealthy you will fit right in.
+  sentiment: neg
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: of6fitn
+- id: receipt-m13
+  text: AD looked like a child against him. Legitimately insane
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nkwhe5q
+  note: '''him'' is not identifiable from the text; AD is the foil'
+- id: receipt-m14
+  text: AD is beloved by the Lakers' fans and he should be. He did nothing wrong during the trade, he played through several injuries and brought a title to the city.
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: nrbnqb3
+- id: receipt-m15
+  text: Love you AD!
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: nrbnazp
+- id: receipt-m16
+  text: AD has been playing good defense, too. Not much you can do against a basketball alien.
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: nkw7by5
+- id: receipt-m17
+  text: Spurs need to do whatever it takes in these next 3 years there’s no way a human should be this mobile. He’s prime Anthony Davis with 8 extra inches lol
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: Victor Wembanyama
+  category: wrong_player
+  source: mined-v2
+  comment_id: oavrvvv
+  note: classifier originally returned the right player—Victor Wembanyama—despite no mention of him in the comment.
+- id: receipt-m18
+  text: '/r/nbawww
+
+
+    AD, you are forever loved by the entire Lakers fanbase.'
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: nrcbn80
+- id: receipt-m19
+  text: Just bitched AD for an easy layup this is actually the future GOAT
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nkw4chc
+- id: receipt-m20
+  text: Will always love AD, his buzzer beater over the Nugs in the bubble is still an unforgettable moment for me
+  sentiment: pos
+  attributed_player: Anthony Davis
+  expected_target: Anthony Davis
+  category: true_toward
+  source: mined-v2
+  comment_id: ny6q4xx
+- id: receipt-m23
+  text: Too fat and lazy to chase greatness. Bam would never do that
+  sentiment: neg
+  attributed_player: Bam Adebayo
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: oa6atek
+  note: Bam is the standard of excellence; the target is unnamed
+- id: receipt-m24
+  text: Out of respect for Kobe’s legacy, Bam greeted a girl at his hotel in Colorado and proceeded to go about his business without raping anybody.
+  sentiment: neg
+  attributed_player: Bam Adebayo
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: oaqkkth
+  note: target -> Kobe Bryant (untracked)
+- id: receipt-m25
+  text: '#THEY REALLY GAVE CHET THE MAX 🤣🤣🤣
+
+
+    Type of guy to shoot 2 shots in a Game 7. Fucking embarrassing.'
+  sentiment: neg
+  attributed_player: Chet Holmgren
+  expected_target: Chet Holmgren
+  category: true_toward
+  source: mined-v2
+  comment_id: ooviaeg
+- id: receipt-m26
+  text: Chet fucking stinks, Ozempic Abraham Lincoln doesn't show up again
+  sentiment: neg
+  attributed_player: Chet Holmgren
+  expected_target: Chet Holmgren
+  category: true_toward
+  source: mined-v2
+  comment_id: oovirqm
+- id: receipt-m27
+  text: Fox should be ejaculated immediately
+  sentiment: neg
+  attributed_player: De'Aaron Fox
+  expected_target: De'Aaron Fox
+  category: true_toward
+  source: mined-v2
+  comment_id: onpa85w
+- id: receipt-m28
+  text: The game where the spurs lost the series. All time chokejob. Fox sold it.
+  sentiment: neg
+  attributed_player: De'Aaron Fox
+  expected_target: De'Aaron Fox
+  category: true_toward
+  source: mined-v2
+  comment_id: oqyv99t
+- id: receipt-m29
+  text: The holocaust was real. The genocide and apartheid of Palestinians by Israel is real. Deni supports IDF and the actions of Israel against Palestinians. Deni needs to be called out too.
+  sentiment: neg
+  attributed_player: Deni Avdija
+  expected_target: Deni Avdija
+  category: true_toward
+  source: mined-v2
+  comment_id: o5xi15s
+- id: receipt-m30
+  text: 'OP was spam posting Deni Avidjas stat line in the all star game until it got kept up (on like 2 shot attempts or something)
+
+
+    It’s very clear what his motivation is, posting this holocaust denying bigot making a vague statement that can be construed in other ways.'
+  sentiment: neg
+  attributed_player: Deni Avdija
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o5xegh5
+  note: Negativity at OP and the bigot; Deni is the victim.
+- id: receipt-m32
+  text: Duillon Brooks blowing 0.00 and getting arrested is like a real life flagrant 3
+  sentiment: neg
+  attributed_player: Dillon Brooks
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o92q5n8
+  note: negative about the arrest; Brooks is its object
+- id: receipt-m33
+  text: Brooks is such a loser. Blatantly intentional.
+  sentiment: neg
+  attributed_player: Dillon Brooks
+  expected_target: Dillon Brooks
+  category: true_toward
+  source: mined-v2
+  comment_id: nuvdf98
+  note: Negative about the arrest; Brooks is its object. Same shape as the Luka rows.
+- id: receipt-m34
+  text: That was FILTHY!  Mitchell is such a crazy athlete, this team is so much fun to watch
+  sentiment: pos
+  attributed_player: Donovan Mitchell
+  expected_target: Donovan Mitchell
+  category: true_toward
+  source: mined-v2
+  comment_id: o6c7aqi
+- id: receipt-m35
+  text: Evan Mobley and Jarrett Allen just got thoroughly outplayed by a starting frontcourt of Josh Minott and Neemias Queta
+  sentiment: neg
+  attributed_player: Evan Mobley
+  expected_target: Evan Mobley
+  category: true_toward
+  source: mined-v2
+  comment_id: nm49f24
+- id: receipt-m36
+  text: 36 minutes and 1 rebound for Mobley is borderline criminal
+  sentiment: neg
+  attributed_player: Evan Mobley
+  expected_target: Evan Mobley
+  category: true_toward
+  source: mined-v2
+  comment_id: okk5fcx
+- id: receipt-m37
+  text: Hartenstein is so pathetic.
+  sentiment: neg
+  attributed_player: Isaiah Hartenstein
+  expected_target: Isaiah Hartenstein
+  category: true_toward
+  source: mined-v2
+  comment_id: omzfp9y
+- id: receipt-m38
+  text: I cut IHart for 5'9 Chris Clemons, too. I can't fucking forgive him.
+  sentiment: neg
+  attributed_player: Isaiah Hartenstein
+  expected_target: Isaiah Hartenstein
+  category: true_toward
+  source: mined-v2
+  comment_id: ond999u
+- id: receipt-m39
+  text: Duren was dead in the water, he proceeded to get three clutch consecutive dunks and then game sealing blocks.
+  sentiment: pos
+  attributed_player: Jalen Duren
+  expected_target: Jalen Duren
+  category: true_toward
+  source: mined-v2
+  comment_id: ok65zpj
+- id: receipt-m40
+  text: Jamal Murray starting off a season playing well? League fucked
+  sentiment: pos
+  attributed_player: Jamal Murray
+  expected_target: Jamal Murray
+  category: true_toward
+  source: mined-v2
+  comment_id: nlerszc
+- id: receipt-m41
+  text: At one point in a scrimmage, sources said, Butler turned to GM Scott Layden and screamed, "You (bleeping) need me. You can't win without me." Butler left teammates and coaches largely speechless. He dominated the gym in every way. Jimmy's back.
+  sentiment: pos
+  attributed_player: Jimmy Butler
+  expected_target: Jimmy Butler
+  category: true_toward
+  source: mined-v2
+  comment_id: ort9a94
+  note: The quote is pasted admiringly
+- id: receipt-m42
+  text: Embiid first person to do the LeBron shades down 3-1 gimmick and come through, beast mode
+  sentiment: pos
+  attributed_player: Joel Embiid
+  expected_target: Joel Embiid
+  category: true_toward
+  source: mined-v2
+  comment_id: ojlyuwt
+- id: receipt-m45
+  text: klay like fuck this is the reason why i came to dallas
+  sentiment: pos
+  attributed_player: Klay Thompson
+  expected_target: Klay Thompson
+  category: true_toward
+  source: mined-v2
+  comment_id: nrbru6k
+- id: receipt-m48
+  text: They traded Luka for Marvin Bagley
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o3ksoqr
+- id: receipt-m49
+  text: Yeah the Mavs window closed when they traded Luka, it’s arguably the dumbest decision in sports history.
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nnlkk0s
+- id: receipt-m50
+  text: The return Dallas gets for AD is going to cement the Luka trade as the worst in the history of professional sports.
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nogn7co
+- id: receipt-m51
+  text: You cannot possibly understate how bad of a trade the AD for Luka one was.
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nl9c80u
+- id: receipt-m52
+  text: So Mavs traded 26 year old Luka for 3 firsts and Max Christie
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o3ksy05
+- id: receipt-m53
+  text: The funniest thing about this is that we traded Luka because he was fat and didn’t play defense, for AD who is now also fat doesn’t play defense. Magnificent business Mr Adelson 👏🏽
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nl9ct85
+- id: receipt-m54
+  text: Traded Luka for 10 cents on the dollar and then within a year will trade the prize of that trade for 10 cents on the dollar. What a disaster.
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: noj2fsb
+- id: receipt-m55
+  text: Pissed me off all over again about how bad the Luka trade was. Fuck
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: ot9ijml
+- id: receipt-m58
+  text: Luka’s torching them right now
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: ob8w396
+- id: receipt-m59
+  text: Of course Luka hits the most ridiculous fadeaway three possible in a clutch situation LMAO
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: ny4uglg
+- id: receipt-m60
+  text: I watched a 14 years old Luka destroy my team with a 50 pt triple double (or similar) from the bench, in a youth tournament held in Hungary. It was U19, so every other kid was 18-19.
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: nxk5dxe
+- id: receipt-m61
+  text: Swinging directly from the strong side corner to the weak side corner is such a cheat code. And guys like Luka and Jokic do it while waking up in the morning.
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: nmvw2mt
+- id: receipt-m62
+  text: 'Luka down the stretch:
+
+
+    -Deep step back three against Amen Thompson
+
+
+    -Double team split for a Rui alley hoop
+
+
+    -Another Alley hoop to Lebron this time
+
+
+    -Step back dagger to ice the game.'
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: ob8xc2d
+- id: receipt-m63
+  text: Even people who don’t like Luka have to admit it’s objectively insane he dropped 2 spots after winning 12 of 13 games while averaging like 40 ppg
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: ocwnk25
+- id: receipt-m64
+  text: '5 steal is so fire
+
+
+    Luka was already good in the passing lanes even when his defense was sluggiesh earlier in the season because of his elite anticipation, now he''s an actual demon in the passing lanes'
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: obf38hf
+- id: receipt-m65
+  text: Skinny Luka, fat Luka, bodybuilder Luka.. whatever version of Luka you have you don’t trade him you figure it out. And if for some godforsaken reason you do trade him.. you better get every pick and every swap and whatever young ascending star you can get.
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: no8xeyi
+- id: receipt-m66
+  text: 'Luka is the best player on the planet rn
+
+
+    Fucking unguardable. A 60 pc on the second leg of a b2b is crazy'
+  sentiment: pos
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: true_toward
+  source: mined-v2
+  comment_id: obf32go
+- id: receipt-m68
+  text: Steph night nighted an entire country you can’t beat that
+  sentiment: pos
+  attributed_player: Stephen Curry
+  expected_target: Stephen Curry
+  category: true_toward
+  source: mined-v2
+  comment_id: ni2s0bc
+- id: receipt-m69
+  text: I love Tyrese Maxey and wish him nothing but the best, seems like such a good vibe and has surpassed everybody's expectations of him as a player
+  sentiment: pos
+  attributed_player: Tyrese Maxey
+  expected_target: Tyrese Maxey
+  category: true_toward
+  source: mined-v2
+  comment_id: o3t5bl5
+- id: receipt-m70
+  text: Man zion is the most exciting player to watch when he’s playing. He’s a like a truck with 1000 bhp. Dude defies physics.
+  sentiment: pos
+  attributed_player: Zion Williamson
+  expected_target: Zion Williamson
+  category: true_toward
+  source: mined-v2
+  comment_id: njkaluf
+  note: genuine zion praise
+- id: nullp-m01
+  text: He’s basically Jokic if Jokic was weaker, shorter, less physical, less efficient, less touch around the rim, can’t shoot as well, and can’t generate as much good look for his teammate
+  sentiment: neg
+  attributed_player: Nikola Jokic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o7zw075
+- id: nullp-m04
+  text: AR interrupts a teammate’s interview, insults his lack of play, chucks an object at a fan, interrupts and shoves another teammate mid interview, all before running off.
+  sentiment: neg
+  attributed_player: Austin Reaves
+  expected_target: Austin Reaves
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: nrc7wa5
+  note: a list of Reaves' own antics; the sentiment lands on him
+- id: nullp-m05
+  text: "One of the most coddled players in the league.    \n\nThinks he's an MVP caliber superstar, but bricked all the shots in the clutch after looking off open guys.    \n\nWhines about fouls, despite being a flopper and foul baiter who gets tons of free throws.   \n\nCommits offensive fouls like that pushoff on Maxey and doesn't get called.   \n\nAnd he still ends up losing."
+  sentiment: neg
+  attributed_player: Tyrese Maxey
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: ojlzifi
+- id: nullp-m07
+  text: 'How does he think this face-to-face apology is going to go 😂
+
+
+    "Hey Scottie, sorry for saying you have Downs Syndrome. I didn''t realize everyone already thought you had it"'
+  sentiment: neg
+  attributed_player: Scottie Barnes
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nv3b4o2
+- id: nullp-m08
+  text: 'What in the actual fucking privileged bullshit.
+
+
+    You were fouling Wemby all fucking game.'
+  sentiment: neg
+  attributed_player: Victor Wembanyama
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nty0ju0
+- id: nullp-m10
+  text: OR WHEN HE TACKLED HALI AWAY FROM A LOOSE BALL WHEN THE PACERS WERE DOWN 2 WITH MINUTES LEFT IN THAT SAME GAME?
+  sentiment: neg
+  attributed_player: Tyrese Haliburton
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nvxqbhf
+- id: nullp-m11
+  text: I bet it eats him alive that he's never won anything with Steph Curry leading the team, and that over time his legacy is going to move in the Carmelo direction, an all-time great scorer but a team cancer that could never actually lead a team and properly fit the big-boy shoes they've been given.
+  sentiment: neg
+  attributed_player: Stephen Curry
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: osxvt8o
+- id: nullp-m12
+  text: This is not acceptable they were clearly going at McCain with the intent to injure
+  sentiment: neg
+  attributed_player: Jared McCain
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: oo3s2gh
+- id: nullp-m13
+  text: Legitimately basketball terrorism. Why are you going up against OG Anunoby for a layup when you have the LEAD AND THE BALL??? Just hold the ball and get to the free throw line. Generational bad play from him
+  sentiment: neg
+  attributed_player: OG Anunoby
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: oqyvtfh
+- id: nullp-m14
+  text: He tackled AG (in his second game back from a long absence) on a rebound attempt. Hate this guy.
+  sentiment: neg
+  attributed_player: Aaron Gordon
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o9lkgxp
+- id: nullp-m15
+  text: Hornets were straight up spitroasting that boy out here. Melo, Miller, Bridges and Kon were all walking past him like he wasn't even there 👻
+  sentiment: neg
+  attributed_player: Kon Knueppel
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o2vcjp4
+- id: nullp-m17
+  text: Even your own fans booing at you, makes it really look bad for brooks
+  sentiment: neg
+  attributed_player: Dillon Brooks
+  expected_target: Dillon Brooks
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: nuvgi2u
+- id: nullp-m18
+  text: "you mean to tell me that this idiot had an injured knee ALL SEASON that he was playing on because JESUS healed his knee? \n\nthis ignoramus put his entire career and future in jeopardy because he neglected a treatable knee injury because of his goofy religious beliefs? \n\nno wonder he was playing like shit all year. He had an injured knee. \n\nEven kyrie wasn't so stupid that he would let his wacko beliefs interfere with his athletic health."
+  sentiment: neg
+  attributed_player: Kyrie Irving
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: odpjyvv
+- id: nullp-m19
+  text: This guy a couple days ago was dragging Klay’s gf online and starting up some women hating narratives. Degenerate behaviour, mad how many boys backed up his bs too.
+  sentiment: neg
+  attributed_player: Klay Thompson
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: novxpnr
+- id: nullp-m21
+  text: Yeah and he clearly moved his hands to trip Bam. Thats intentional and dirty as fuck.
+  sentiment: neg
+  attributed_player: Bam Adebayo
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: og9ejoh
+- id: nullp-m22
+  text: Not even just gave up, stood pretty much still slowly walking back in the middle of the court which allowed Steph to use him as a screen. So beyond giving up he basically made it a 6 on 4 lol
+  sentiment: neg
+  attributed_player: Stephen Curry
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nl4njtw
+- id: nullp-m24
+  text: Is this not one of the dirtiest plays of the season? Literally watch his eyes, he sees Naz and lines up an elbow, that’s dangerous. You’d probably prefer a punch.
+  sentiment: neg
+  attributed_player: Naz Reid
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: ol3ei4j
+- id: nullp-m25
+  text: 'Yep they’re garbage.  By the time Flagg is a reliable allstar, the others will have all aged out, if they haven’t already.
+
+
+    Good job Nico!
+
+
+    The best hope for Mavs fans is the league gave them the same deal they gave the Cavs, multiple 1st picks if their team remains garbage.'
+  sentiment: neg
+  attributed_player: Cooper Flagg
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: nnllsnb
+- id: nullp-m26
+  text: 'Thunder org comes off as so great
+
+
+    in the McCain vlog McCain''s parents get flown out with him in a private jet to OKC (McCain''s dad said its the first time he''s ever ridden one, and immediately says the Thunder are the best organization lol), it''s late at night but Sam Presti and his wife both greet McCain, OKC sets up balloons spelling out his name in his hotel room for him to see when he walks in, etc.'
+  sentiment: pos
+  attributed_player: Jared McCain
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: o4uvdy7
+- id: nullp-m27
+  text: Dunk of the Year!!! Dude Superman flew over Westbrook! One of the craziest most impressive dunks I’ve ever seen.
+  sentiment: pos
+  attributed_player: Russell Westbrook
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nv5kuyq
+- id: nullp-m28
+  text: He cocked that shit back and exploded on Hartenstein damn
+  sentiment: pos
+  attributed_player: Isaiah Hartenstein
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: omz1o0y
+- id: nullp-m30
+  text: He is so much better than I ever anticipated. I liked Maxey in the draft, but even by his second year he was better than I expected him to be. And he's gotten like exponentially better since lol. What a great story
+  sentiment: pos
+  attributed_player: Tyrese Maxey
+  expected_target: Tyrese Maxey
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: npyp357
+- id: nullp-m32
+  text: He is the ultimate basketball genius. That pass to Ayton was also sublime
+  sentiment: pos
+  attributed_player: Deandre Ayton
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: npmjfpo
+- id: nullp-m33
+  text: 'My beloved 10 win Kings exposing fraud contenders on back to back nights. Light the beam 😭
+
+
+    Bronny with more points than Smart and Laravia combined. GOAT.'
+  sentiment: pos
+  attributed_player: Bronny James
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: nzay5pm
+  note: Kings fan mocking Smart/LaRavia; Bronny is the yardstick, the GOAT is ironic
+- id: nullp-m34
+  text: They could never make me hate you, Zion
+  sentiment: pos
+  attributed_player: Zion Williamson
+  expected_target: Zion Williamson
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: o7dpz2d
+- id: nullp-m35
+  text: 'Thibs has:
+
+
+    * Created a 2x 1st seed Bulls team around Derrick Rose
+
+    * Built Jimmy Butler into an allstar and rebuilt the Bulls around Butler and Noah post-Rose ACL tear
+
+    * Broke Minnesota’s century long playoff drought.
+
+    * Made the Knicks a 50+ win playoff threat.
+
+
+    Definitely a great coach. He probably is a championship coach if not for the Rose injury.'
+  sentiment: pos
+  attributed_player: Jimmy Butler
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: nkil3yo
+  note: This is about Thibs
+- id: random-m01
+  text: Idk how people say this wasn't on purpose, you can clearly see dort purposefully extend his leg absolutely unnecessarily to intentionally trip booker. Fuck lu dort
+  sentiment: neg
+  attributed_player: Lu Dort
+  expected_target: Lu Dort
+  category: true_toward
+  source: mined-v2
+  comment_id: oi9nqoz
+- id: random-m02
+  text: 'Dirty Dort.  Make the name stick. Dude should be ashamed of himself and that should be his legacy in the league
+
+
+    Fuck the Thunder, will do everything besides actually play fucking basketball'
+  sentiment: neg
+  attributed_player: Lu Dort
+  expected_target: Lu Dort
+  category: true_toward
+  source: mined-v2
+  comment_id: nw0p8d7
+- id: random-m03
+  text: Ah, he’s mad that she’s seeing a boy he doesn’t like, so naturally he beats the shit out of his 15 year old sister, instead of the boy. what an absolute stain on society. Fuck Pat bev
+  sentiment: neg
+  attributed_player: Patrick Beverley
+  expected_target: Patrick Beverley
+  category: true_toward
+  source: mined-v2
+  comment_id: npivjb4
+- id: random-m04
+  text: I LOVE AJAY MITCHELL
+  sentiment: pos
+  attributed_player: Ajay Mitchell
+  expected_target: Ajay Mitchell
+  category: true_toward
+  source: mined-v2
+  comment_id: nl2i8em
+- id: random-m05
+  text: Cade and Mitchell are doing their hardest to lose their teams their games.
+  sentiment: neg
+  attributed_player: Cade Cunningham
+  expected_target: Cade Cunningham
+  category: true_toward
+  source: mined-v2
+  comment_id: okw576a
+- id: random-m06
+  text: DONTEEEEEE WHAT A FUCKING GUY
+  sentiment: pos
+  attributed_player: Donte DiVincenzo
+  expected_target: Donte DiVincenzo
+  category: true_toward
+  source: mined-v2
+  comment_id: ohxwcn8
+- id: random-m07
+  text: Brunson has been awful
+  sentiment: neg
+  attributed_player: Jalen Brunson
+  expected_target: Jalen Brunson
+  category: true_toward
+  source: mined-v2
+  comment_id: oq1013z
+- id: random-m08
+  text: The Shaolin monks Took Wemby over the summer and unlocked his full potential. The finished product is going to wreck the NBA for the next decade, he’s utterly unstoppable.
+  sentiment: pos
+  attributed_player: Victor Wembanyama
+  expected_target: Victor Wembanyama
+  category: true_toward
+  source: mined-v2
+  comment_id: nkwopj1
+- id: random-m09
+  text: If NY gets bounced in the 1st round, Brunson ain’t shit and deserves no praise until he proves otherwise
+  sentiment: neg
+  attributed_player: Jalen Brunson
+  expected_target: Jalen Brunson
+  category: true_toward
+  source: mined-v2
+  comment_id: ohxc95r
+- id: random-m10
+  text: 3rd quarter SGA and game 4 SGA are the most lethal players in the league rn
+  sentiment: pos
+  attributed_player: Shai Gilgeous-Alexander
+  expected_target: Shai Gilgeous-Alexander
+  category: true_toward
+  source: mined-v2
+  comment_id: no102sh
+- id: random-m11
+  text: To be fair, this is a special rookie. CMB is a monster!
+  sentiment: pos
+  attributed_player: Collin Murray-Boyles
+  expected_target: Collin Murray-Boyles
+  category: true_toward
+  source: mined-v2
+  comment_id: oi3xt8t
+- id: random-m12
+  text: Get fucked lu dort
+  sentiment: neg
+  attributed_player: Lu Dort
+  expected_target: Lu Dort
+  category: true_toward
+  source: mined-v2
+  comment_id: omzakew
+- id: random-m13
+  text: We literally have a 21 year old LeBron James dude.
+  sentiment: pos
+  attributed_player: LeBron James
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: oow4khf
+  note: praise for an unnamed player measured against LeBron, the standard
+- id: random-m14
+  text: Kawhi already has 36 points on 12-15 shooting at 22 mins
+  sentiment: pos
+  attributed_player: Kawhi Leonard
+  expected_target: Kawhi Leonard
+  category: true_toward
+  source: mined-v2
+  comment_id: o9zdtdj
+- id: random-m15
+  text: "If I'm looking for a guy who's always going to get his and perform both ends then I'm taking Giannis, if I'm building something new and want to elevate the team I'll take Jokic.  \nIn a championship driven league that gives Giannis the edge to me but I can't fault people for thinking Jokic deserves to be 1a/1b with Giannis."
+  sentiment: pos
+  attributed_player: Giannis Antetokounmpo
+  expected_target: Giannis Antetokounmpo
+  category: true_toward
+  source: mined-v2
+  comment_id: nl9znj2
+- id: random-m16
+  text: 'Shouldn’t have even been an all star either
+
+
+    The Wiggins revisionist history on this sub is wild. Hes been a disappointment his whole career outside of about half a season'
+  sentiment: neg
+  attributed_player: Andrew Wiggins
+  expected_target: Andrew Wiggins
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: o6s26xo
+- id: random-m18
+  text: He was the direct replacement to Curry and couldn't win even one game. He just needed to outperform what Steph would have done for ONE game it would have been okay. But his offense is mid and his defense is atrocious.
+  sentiment: neg
+  attributed_player: Stephen Curry
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o9ktin7
+- id: random-m19
+  text: After the missed foul, if they now turn this over and give Hayes the foul... Bruh.....fuck these cunts
+  sentiment: neg
+  attributed_player: Jaxson Hayes
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: ok6es83
+- id: random-m20
+  text: 'Score 129, shoot 52% from 2, 40% from 3… lose by 20+
+
+
+    Oh, and get 83 hung on you by Bam and Spo 😂😂'
+  sentiment: neg
+  attributed_player: Bam Adebayo
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o9sc9u8
+- id: random-m21
+  text: 'Spurs: The Admiral, Duncan, Wemby'
+  sentiment: pos
+  attributed_player: Victor Wembanyama
+  expected_target: Victor Wembanyama
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: o53omkn
+- id: random-m22
+  text: You hes a grade A FATASS who will put the weight back on. Fluka Flopbitch is a fat flopping whiny shot chucker who would warm the benches on the Guangdong tigers
+  sentiment: neg
+  attributed_player: Luka Doncic
+  expected_target: Luka Doncic
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: nkbor2v
+- id: random-m23
+  text: Honestly his potential's as scary to me as Wemby's. This dude's poise is ridiculous for a first year there's like no sense that he's lacking much mentally or skill wise in any way. Man's already a complete player at 20
+  sentiment: pos
+  attributed_player: Victor Wembanyama
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: orjwesz
+- id: random-m24
+  text: Brick fox
+  sentiment: neg
+  attributed_player: De'Aaron Fox
+  expected_target: De'Aaron Fox
+  category: readmit_affirm
+  source: mined-v2
+  comment_id: oriqbuv
+- id: random-m25
+  text: He injured ANT. He must pay.
+  sentiment: neg
+  attributed_player: Anthony Edwards
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: oj9890l
+- id: random-m26
+  text: 'Lol looks like some petty revenge for getting called for the intentional trip and elbow he did last time. This dude is literally the trashiest player in the league at this pt. Such a bum and loser.
+
+
+    He just spinning back elbowed Jokic in the face.'
+  sentiment: neg
+  attributed_player: Nikola Jokic
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: o9lwclv
+- id: random-m27
+  text: He went for book last series it’s inevitable. Fuck that dude
+  sentiment: neg
+  attributed_player: Devin Booker
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: okkipq1
+- id: random-m28
+  text: OKC just got their wemby killer holy shit
+  sentiment: pos
+  attributed_player: Victor Wembanyama
+  expected_target: null
+  category: subject_not_target
+  source: mined-v2
+  comment_id: oth2knq
+- id: random-m29
+  text: Until the day I fucking die and the day that fucking lottery happened I will always be mad the nba for gifting the spurs Harper. Bullshit
+  sentiment: neg
+  attributed_player: Dylan Harper
+  expected_target: null
+  category: non_player
+  source: mined-v2
+  comment_id: oi5eok1

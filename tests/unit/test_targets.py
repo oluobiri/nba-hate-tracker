@@ -373,6 +373,41 @@ class TestParseTargetResponse:
         """Well-formed JSON (bare, fenced, or list-wrapped) parses as valid."""
         assert parse_target_response(text) == {**expected, "valid": True}
 
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            (
+                '```json\n{"t": null, "c": 0.8}\n```\n\nThe sentiment is directed at the GM.',
+                {"t": None, "c": 0.8},
+            ),
+            (
+                '{"t":"Nico Harrison","c":0.9}\n\nWait, let me reconsider. ```json\n{"t":null,"c":0.',
+                {"t": "Nico Harrison", "c": 0.9},
+            ),
+            ('```json\n{"t":"null","c":0.8}\n```', {"t": None, "c": 0.8}),
+            ('{"t": "None", "c": 0.8}', {"t": None, "c": 0.8}),
+            ('{"t": "", "c": 0.8}', {"t": None, "c": 0.8}),
+            ('{"t": "Luka Doncic", "c": null}', {"t": "Luka Doncic", "c": 0.0}),
+        ],
+    )
+    def test_extracts_first_object_and_normalizes_null_spellings(
+        self, text: str, expected: dict
+    ):
+        """Prose after the JSON, a spelled-out null, or a null confidence still parse.
+
+        The model's explanation is not part of the contract; the first JSON
+        object is the verdict. A null spelled as a string is a null verdict.
+        """
+        assert parse_target_response(text) == {**expected, "valid": True}
+
+    def test_prose_without_json_is_invalid(self):
+        """Explanation with no JSON object anywhere is a parse failure."""
+        result = parse_target_response(
+            "The sentiment is directed at the GM, not a player."
+        )
+
+        assert result["valid"] is False
+
     def test_single_string_list_target_unwraps(self):
         """A one-element list target is normalized to its string, raw kept."""
         result = parse_target_response('{"t": ["Luka Doncic"], "c": 0.9}')

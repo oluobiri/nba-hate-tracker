@@ -7,6 +7,7 @@ player is not an input. Eval-case contract, prompt, parser, and runner.
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,9 @@ DEFAULT_TARGET_CASES_PATH = (
 )
 
 _SENTIMENT_WORDS = {"pos": "positive", "neg": "negative"}
+_JSON_START_RE = re.compile(r"[\[{]")
+_JSON_DECODER = json.JSONDecoder()
+_NULL_SPELLINGS = {"", "null", "none"}
 
 # Any template edit is a new verifier: bump the version, re-pin the hash test.
 TARGET_PROMPT_VERSION = "v0-draft"
@@ -109,17 +113,13 @@ def parse_target_response(text: str) -> dict:
     if not text or not text.strip():
         return _invalid(text)
 
-    cleaned = text.strip()
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:]
-    elif cleaned.startswith("```"):
-        cleaned = cleaned[3:]
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-    cleaned = cleaned.strip()
-
+    # The first JSON object (or array) is the verdict; fences and any
+    # explanation the model appends are not part of the contract.
+    match = _JSON_START_RE.search(text)
+    if match is None:
+        return _invalid(text)
     try:
-        result = json.loads(cleaned)
+        result, _ = _JSON_DECODER.raw_decode(text, match.start())
     except json.JSONDecodeError:
         return _invalid(text)
 
@@ -132,14 +132,22 @@ def parse_target_response(text: str) -> dict:
         return _invalid(text)
 
     target = result["t"]
-    parsed: dict = {"t": target, "c": float(result.get("c", 0.0)), "valid": True}
+    confidence = result.get("c")
+    parsed: dict = {
+        "t": target,
+        "c": float(confidence) if confidence is not None else 0.0,
+        "valid": True,
+    }
 
     if isinstance(target, list):
         parsed["t_raw"] = target
         parsed["t"] = (
             target[0] if len(target) == 1 and isinstance(target[0], str) else None
         )
-    elif target is not None and not isinstance(target, str):
+    elif isinstance(target, str):
+        if target.strip().lower() in _NULL_SPELLINGS:
+            parsed["t"] = None
+    elif target is not None:
         return _invalid(text)
 
     return parsed

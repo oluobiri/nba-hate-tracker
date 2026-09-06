@@ -302,7 +302,6 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: nuvdf98
-  note: Negative about the arrest; Brooks is its object. Same shape as the Luka rows.
 - id: receipt-m34
   text: That was FILTHY!  Mitchell is such a crazy athlete, this team is so much fun to watch
   sentiment: pos
@@ -429,9 +428,10 @@ cases:
   sentiment: neg
   attributed_player: Luka Doncic
   expected_target: null
-  category: subject_not_target
+  category: non_player
   source: mined-v2
   comment_id: nl9ct85
+  note: names the governor explicitly
 - id: receipt-m54
   text: Traded Luka for 10 cents on the dollar and then within a year will trade the prize of that trade for 10 cents on the dollar. What a disaster.
   sentiment: neg

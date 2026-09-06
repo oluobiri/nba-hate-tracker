@@ -40,16 +40,22 @@
 #     undefined; cases.yaml candidates instead); rows whose target is
 #     undecidable from the body alone; alias-identity false positives.
 #
-# meta.category_floors are minimum accuracy fractions per category, pinned
-# from the baseline run against the labeled prompt version.
+# Baseline (2026-09-06, 3 runs, claude-haiku-4-5-20251001 @ temp 0, TARGET_PROMPT_VERSION
+# v0-draft): true_toward 46/52, readmit_affirm 6/8, non_player 7/10,
+# subject_not_target 26/41 (one flaky), wrong_player 1/1; 0 invalid parses after
+# the first-object parser fix. Misses are mostly the mention read as the target
+# on null-category rows, plus four alias gaps and two guesses at unnamed players.
+# Floors: worst run minus one case of slack for categories with >= 5 cases,
+# exact otherwise.
+# meta.category_floors are minimum accuracy fractions per category.
 
 meta:
   category_floors:
-    wrong_player: 0.0
-    non_player: 0.0
-    subject_not_target: 0.0
-    true_toward: 0.0
-    readmit_affirm: 0.0
+    wrong_player: 1.0
+    non_player: 0.6
+    subject_not_target: 0.6
+    true_toward: 0.86
+    readmit_affirm: 0.62
 cases:
 - id: receipt-m01
   text: Caruso has gone from feel good story to little bitch real quick
@@ -98,7 +104,8 @@ cases:
   category: non_player
   source: mined-v2
   comment_id: nyo5ufb
-  note: Anthony Davis doesn't feel like the subject and the negativity is towards Rich Paul
+  note: Anthony Davis doesn't feel like the subject and the negativity is towards Rich Paul; baseline names the attributed player ('Anthony Davis') - mention read as target
+  known_miss: true
 - id: receipt-m06
   text: Nico has a case for worst gm in sports history dude traded a generational talent who took Dallas to a finals appearance for aging injury riddled Anthony Davis. At least the mavs fans got cooper Flagg to fall back on.
   sentiment: neg
@@ -123,6 +130,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: nod84mh
+  known_miss: true
+  note: baseline verdict 'Luka Doncic'
 - id: receipt-m09
   text: 'Nico was probably trying to rush AD back early so Mavs could win some games and “save his job”
 
@@ -204,6 +213,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: nkw4chc
+  known_miss: true
+  note: baseline names the attributed player ('Anthony Davis') - mention read as target
 - id: receipt-m20
   text: Will always love AD, his buzzer beater over the Nugs in the bubble is still an unforgettable moment for me
   sentiment: pos
@@ -220,7 +231,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: oa6atek
-  note: Bam is the standard of excellence; the target is unnamed
+  note: Bam is the standard of excellence; the target is unnamed; unstable across 3 runs; baseline verdict None
+  known_miss: true
 - id: receipt-m24
   text: Out of respect for Kobe’s legacy, Bam greeted a girl at his hotel in Colorado and proceeded to go about his business without raping anybody.
   sentiment: neg
@@ -229,7 +241,8 @@ cases:
   category: non_player
   source: mined-v2
   comment_id: oaqkkth
-  note: target -> Kobe Bryant (untracked)
+  note: target -> Kobe Bryant (untracked); baseline names the attributed player ('Bam Adebayo') - mention read as target
+  known_miss: true
 - id: receipt-m25
   text: '#THEY REALLY GAVE CHET THE MAX 🤣🤣🤣
 
@@ -273,6 +286,8 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: o5xi15s
+  known_miss: true
+  note: 'alias gap: model echoes the comment''s misspelling ''Deni Avidja'''
 - id: receipt-m30
   text: 'OP was spam posting Deni Avidjas stat line in the all star game until it got kept up (on like 2 shot attempts or something)
 
@@ -293,7 +308,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: o92q5n8
-  note: negative about the arrest; Brooks is its object
+  note: negative about the arrest; Brooks is its object; baseline names the attributed player ('Dillon Brooks') - mention read as target
+  known_miss: true
 - id: receipt-m33
   text: Brooks is such a loser. Blatantly intentional.
   sentiment: neg
@@ -302,6 +318,8 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: nuvdf98
+  known_miss: true
+  note: baseline verdict 'Scottie Brooks'
 - id: receipt-m34
   text: That was FILTHY!  Mitchell is such a crazy athlete, this team is so much fun to watch
   sentiment: pos
@@ -391,6 +409,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: o3ksoqr
+  known_miss: true
+  note: baseline verdict 'Marvin Bagley'
 - id: receipt-m49
   text: Yeah the Mavs window closed when they traded Luka, it’s arguably the dumbest decision in sports history.
   sentiment: neg
@@ -407,6 +427,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: nogn7co
+  known_miss: true
+  note: baseline names the attributed player ('Luka Doncic') - mention read as target
 - id: receipt-m51
   text: You cannot possibly understate how bad of a trade the AD for Luka one was.
   sentiment: neg
@@ -423,6 +445,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: o3ksy05
+  known_miss: true
+  note: baseline names the attributed player ('Luka Doncic') - mention read as target
 - id: receipt-m53
   text: The funniest thing about this is that we traded Luka because he was fat and didn’t play defense, for AD who is now also fat doesn’t play defense. Magnificent business Mr Adelson 👏🏽
   sentiment: neg
@@ -431,7 +455,8 @@ cases:
   category: non_player
   source: mined-v2
   comment_id: nl9ct85
-  note: names the governor explicitly
+  note: names the governor explicitly; baseline verdict 'Anthony Davis'
+  known_miss: true
 - id: receipt-m54
   text: Traded Luka for 10 cents on the dollar and then within a year will trade the prize of that trade for 10 cents on the dollar. What a disaster.
   sentiment: neg
@@ -599,6 +624,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: nv3b4o2
+  known_miss: true
+  note: baseline names the attributed player ('Scottie Barnes') - mention read as target
 - id: nullp-m08
   text: 'What in the actual fucking privileged bullshit.
 
@@ -626,6 +653,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: osxvt8o
+  known_miss: true
+  note: baseline verdict 'Klay Thompson'
 - id: nullp-m12
   text: This is not acceptable they were clearly going at McCain with the intent to injure
   sentiment: neg
@@ -666,6 +695,8 @@ cases:
   category: readmit_affirm
   source: mined-v2
   comment_id: nuvgi2u
+  known_miss: true
+  note: baseline verdict 'Scottie Barnes'
 - id: nullp-m18
   text: "you mean to tell me that this idiot had an injured knee ALL SEASON that he was playing on because JESUS healed his knee? \n\nthis ignoramus put his entire career and future in jeopardy because he neglected a treatable knee injury because of his goofy religious beliefs? \n\nno wonder he was playing like shit all year. He had an injured knee. \n\nEven kyrie wasn't so stupid that he would let his wacko beliefs interfere with his athletic health."
   sentiment: neg
@@ -674,6 +705,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: odpjyvv
+  known_miss: true
+  note: baseline names the attributed player ('Kyrie Irving') - mention read as target
 - id: nullp-m19
   text: This guy a couple days ago was dragging Klay’s gf online and starting up some women hating narratives. Degenerate behaviour, mad how many boys backed up his bs too.
   sentiment: neg
@@ -747,6 +780,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: omz1o0y
+  known_miss: true
+  note: baseline names the attributed player ('Hartenstein') - mention read as target
 - id: nullp-m30
   text: He is so much better than I ever anticipated. I liked Maxey in the draft, but even by his second year he was better than I expected him to be. And he's gotten like exponentially better since lol. What a great story
   sentiment: pos
@@ -763,6 +798,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: npmjfpo
+  known_miss: true
+  note: model guesses the unnamed passer (Jokic)
 - id: nullp-m33
   text: 'My beloved 10 win Kings exposing fraud contenders on back to back nights. Light the beam 😭
 
@@ -774,7 +811,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: nzay5pm
-  note: Kings fan mocking Smart/LaRavia; Bronny is the yardstick, the GOAT is ironic
+  note: Kings fan mocking Smart/LaRavia; Bronny is the yardstick, the GOAT is ironic; baseline names the attributed player ('Bronny James') - mention read as target
+  known_miss: true
 - id: nullp-m34
   text: They could never make me hate you, Zion
   sentiment: pos
@@ -823,6 +861,8 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: nw0p8d7
+  known_miss: true
+  note: 'alias gap: ''Luguentz Dort'' not in players.yaml'
 - id: random-m03
   text: Ah, he’s mad that she’s seeing a boy he doesn’t like, so naturally he beats the shit out of his 15 year old sister, instead of the boy. what an absolute stain on society. Fuck Pat bev
   sentiment: neg
@@ -831,6 +871,8 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: npivjb4
+  known_miss: true
+  note: 'alias gap: ''Pat Beverley'' not in players.yaml'
 - id: random-m04
   text: I LOVE AJAY MITCHELL
   sentiment: pos
@@ -847,6 +889,8 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: okw576a
+  known_miss: true
+  note: two targets named; model returns null - single-target contract question
 - id: random-m06
   text: DONTEEEEEE WHAT A FUCKING GUY
   sentiment: pos
@@ -895,6 +939,8 @@ cases:
   category: true_toward
   source: mined-v2
   comment_id: oi3xt8t
+  known_miss: true
+  note: 'nickname: model expands CMB to Donovan Clingan'
 - id: random-m12
   text: Get fucked lu dort
   sentiment: neg
@@ -911,7 +957,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: oow4khf
-  note: praise for an unnamed player measured against LeBron, the standard
+  note: praise for an unnamed player measured against LeBron, the standard; baseline names the attributed player ('LeBron James') - mention read as target
+  known_miss: true
 - id: random-m14
   text: Kawhi already has 36 points on 12-15 shooting at 22 mins
   sentiment: pos
@@ -998,6 +1045,8 @@ cases:
   category: readmit_affirm
   source: mined-v2
   comment_id: oriqbuv
+  known_miss: true
+  note: 'short slang: model cannot resolve ''fox'''
 - id: random-m25
   text: He injured ANT. He must pay.
   sentiment: neg
@@ -1033,6 +1082,8 @@ cases:
   category: subject_not_target
   source: mined-v2
   comment_id: oth2knq
+  known_miss: true
+  note: model guesses the unnamed 'wemby killer' (Shai)
 - id: random-m29
   text: Until the day I fucking die and the day that fucking lottery happened I will always be mad the nba for gifting the spurs Harper. Bullshit
   sentiment: neg

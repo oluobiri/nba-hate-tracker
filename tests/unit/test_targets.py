@@ -538,6 +538,19 @@ class TestClassifyTargetCases:
 
         assert results["subject-01"]["t"] == "AD"
 
+    def test_no_text_block_yields_invalid(self, tmp_path):
+        """A response without a text block is a flagged parse failure, not an exception."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client("ignored")
+        client.messages.create.return_value.content = [
+            Mock(type="thinking", thinking="")
+        ]
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["subject-01"]["valid"] is False
+        assert results["subject-01"]["t"] is None
+
     def test_default_prompt_carries_case_sentiment(self, tmp_path):
         """The production prompt is built from the case's body and label."""
         cases = self.load_two_cases(tmp_path)[:1]

@@ -393,7 +393,7 @@ def classify_target_cases(
                 {"role": "user", "content": prompt_builder(case.text, case.sentiment)}
             ],
         )
-        text = next(block.text for block in response.content if block.type == "text")
+        text = next((b.text for b in response.content if b.type == "text"), "")
         results[case.id] = {
             **parse_target_response(text),
             "raw": text,

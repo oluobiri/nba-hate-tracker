@@ -13,7 +13,7 @@ from pipeline.targets import (
     TARGET_MODEL,
     TARGET_PROMPT_TEMPLATE,
     TARGET_PROMPT_VERSION,
-    TARGET_TEMPERATURE,
+    TARGET_THINKING,
     build_target_prompt,
     classify_target_cases,
     load_target_cases,
@@ -351,10 +351,10 @@ class TestTargetPromptVersionPin:
         Any template edit is a new verifier: it requires a new label, a new
         pinned hash, and a re-baselined target eval suite.
         """
-        assert TARGET_PROMPT_VERSION == "v0-draft"
+        assert TARGET_PROMPT_VERSION == "v1"
         assert (
             hashlib.sha256(TARGET_PROMPT_TEMPLATE.encode()).hexdigest()
-            == "e9f23d42e2f59c63e120dd73caeff36ff154d83a5f6eb12560a0cebdfa9d6aa0"
+            == "3a115038086d782750b2eb692af0fc8496d67a270df87afc4e2d5a930a03c13c"
         )
 
 
@@ -460,7 +460,7 @@ class TestClassifyTargetCases:
         """Build a mock Anthropic client returning fixed response text."""
         client = Mock()
         client.messages.create.return_value = Mock(
-            content=[Mock(text=response_text)], stop_reason="end_turn"
+            content=[Mock(type="text", text=response_text)], stop_reason="end_turn"
         )
         return client
 
@@ -521,8 +521,22 @@ class TestClassifyTargetCases:
 
         kwargs = client.messages.create.call_args.kwargs
         assert kwargs["model"] == TARGET_MODEL
-        assert kwargs["temperature"] == TARGET_TEMPERATURE
+        assert kwargs["thinking"] == TARGET_THINKING
         assert kwargs["max_tokens"] == TARGET_MAX_TOKENS
+        assert "temperature" not in kwargs  # Sonnet 5 rejects sampling params
+
+    def test_reads_the_text_block(self, tmp_path):
+        """The verdict is read from the text block, wherever it sits in content."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client("ignored")
+        client.messages.create.return_value.content = [
+            Mock(type="thinking", thinking=""),
+            Mock(type="text", text='{"t": "AD", "c": 0.9}'),
+        ]
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["subject-01"]["t"] == "AD"
 
     def test_default_prompt_carries_case_sentiment(self, tmp_path):
         """The production prompt is built from the case's body and label."""

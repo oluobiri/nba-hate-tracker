@@ -19,9 +19,10 @@ from pipeline.evaluation import VALID_SOURCES, attribution_match
 
 logger = logging.getLogger(__name__)
 
-# Verifier identity
-TARGET_MODEL = "claude-haiku-4-5-20251001"
-TARGET_TEMPERATURE = 0.0
+# Verifier identity. Sonnet 5 rejects sampling params, so determinism
+# comes from thinking-off + the 3-run pin, not temperature.
+TARGET_MODEL = "claude-sonnet-5"
+TARGET_THINKING = {"type": "disabled"}
 TARGET_MAX_TOKENS = 75
 
 # Eval-case contract
@@ -52,10 +53,10 @@ _JSON_DECODER = json.JSONDecoder()
 _NULL_SPELLINGS = {"", "null", "none"}
 
 # Any template edit is a new verifier: bump the version, re-pin the hash test.
-TARGET_PROMPT_VERSION = "v0-draft"
-TARGET_PROMPT_TEMPLATE = """This r/NBA comment was labeled {sentiment_word}. Name the NBA player that {sentiment_word} sentiment is directed at.
+TARGET_PROMPT_VERSION = "v1"
+TARGET_PROMPT_TEMPLATE = """This r/NBA comment was labeled {sentiment_word}. Is that {sentiment_word} sentiment aimed at an NBA player, or at a team, front office, coach, referees, a decision, or a play? If at a player, name them; otherwise answer null.
 The target is the player being praised or criticized - not a player who is merely mentioned, sympathized with, or the subject of someone else's decision.
-If the sentiment is directed at a non-player (front office, coach, referees, fans, media) or at no one in particular, answer null.
+Never name a player who does not appear in the comment.
 
 Comment: {comment_body}
 
@@ -375,7 +376,9 @@ def classify_target_cases(
             ANTHROPIC_API_KEY from the environment.
 
     Returns:
-        Mapping of case id to parsed verdict (parse_target_response shape).
+        Mapping of case id to parsed verdict (parse_target_response shape)
+        plus "raw" (the full response text) and "stop_reason", so output
+        format and truncation can be measured alongside accuracy.
     """
     if client is None:
         client = anthropic.Anthropic()
@@ -385,12 +388,17 @@ def classify_target_cases(
         response = client.messages.create(
             model=TARGET_MODEL,
             max_tokens=TARGET_MAX_TOKENS,
-            temperature=TARGET_TEMPERATURE,
+            thinking=TARGET_THINKING,
             messages=[
                 {"role": "user", "content": prompt_builder(case.text, case.sentiment)}
             ],
         )
-        results[case.id] = parse_target_response(response.content[0].text)
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        results[case.id] = {
+            **parse_target_response(text),
+            "raw": text,
+            "stop_reason": response.stop_reason,
+        }
         logger.debug("Verified %s: %s", case.id, results[case.id]["t"])
 
     return results

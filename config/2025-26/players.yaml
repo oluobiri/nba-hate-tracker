@@ -3,7 +3,7 @@
 # Carry-overs verbatim (+ §1.4 gaps); 108 new players: full-name + diacritic
 # floor + collision-safe surname. Flagged surnames -> Step 3 nba-superfan round.
 
-version: '4.4'
+version: '4.5'
 season: 2025-26
 short_aliases:
 - ad
@@ -274,6 +274,7 @@ players:
     - avdija
     - denicide
     - denigod
+    - deni avidja  # corpus misspelling the classifier echoes; not a name
 
   Deandre Ayton:
     team: Los Angeles Lakers
@@ -413,6 +414,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201976.png
     aliases:
     - beverley
+    - pat beverley
     - pat bev
     - patbev
 
@@ -781,6 +783,7 @@ players:
     headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629652.png
     aliases:
     - lu dort
+    - luguentz dort
     - dort
     - luguentz
     - lu

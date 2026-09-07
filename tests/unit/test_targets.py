@@ -13,7 +13,7 @@ from pipeline.targets import (
     TARGET_MODEL,
     TARGET_PROMPT_TEMPLATE,
     TARGET_PROMPT_VERSION,
-    TARGET_TEMPERATURE,
+    TARGET_THINKING,
     build_target_prompt,
     classify_target_cases,
     load_target_cases,
@@ -351,10 +351,10 @@ class TestTargetPromptVersionPin:
         Any template edit is a new verifier: it requires a new label, a new
         pinned hash, and a re-baselined target eval suite.
         """
-        assert TARGET_PROMPT_VERSION == "v0-draft"
+        assert TARGET_PROMPT_VERSION == "v1"
         assert (
             hashlib.sha256(TARGET_PROMPT_TEMPLATE.encode()).hexdigest()
-            == "e9f23d42e2f59c63e120dd73caeff36ff154d83a5f6eb12560a0cebdfa9d6aa0"
+            == "3a115038086d782750b2eb692af0fc8496d67a270df87afc4e2d5a930a03c13c"
         )
 
 
@@ -459,7 +459,9 @@ class TestClassifyTargetCases:
     def make_client(self, response_text: str) -> Mock:
         """Build a mock Anthropic client returning fixed response text."""
         client = Mock()
-        client.messages.create.return_value = Mock(content=[Mock(text=response_text)])
+        client.messages.create.return_value = Mock(
+            content=[Mock(type="text", text=response_text)], stop_reason="end_turn"
+        )
         return client
 
     def load_two_cases(self, tmp_path) -> list:
@@ -488,7 +490,27 @@ class TestClassifyTargetCases:
         results = classify_target_cases(cases, client=client)
 
         assert set(results) == {"subject-01", "true-01"}
-        assert results["subject-01"] == {"t": None, "c": 0.9, "valid": True}
+        assert results["subject-01"] == {
+            "t": None,
+            "c": 0.9,
+            "valid": True,
+            "raw": '{"t": null, "c": 0.9}',
+            "stop_reason": "end_turn",
+        }
+
+    def test_keeps_raw_text_and_stop_reason(self, tmp_path):
+        """Format hygiene is measured on the response, not just the verdict."""
+        cases = self.load_two_cases(tmp_path)
+        text = '```json\n{"t": null, "c": 0.9}\n```\nThe target is the front office'
+        client = self.make_client(text)
+        client.messages.create.return_value.stop_reason = "max_tokens"
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["subject-01"]["t"] is None
+        assert results["subject-01"]["valid"] is True
+        assert results["subject-01"]["raw"] == text
+        assert results["subject-01"]["stop_reason"] == "max_tokens"
 
     def test_uses_verifier_model_params(self, tmp_path):
         """Requests go out with the verifier's own model parameters."""
@@ -499,8 +521,35 @@ class TestClassifyTargetCases:
 
         kwargs = client.messages.create.call_args.kwargs
         assert kwargs["model"] == TARGET_MODEL
-        assert kwargs["temperature"] == TARGET_TEMPERATURE
+        assert kwargs["thinking"] == TARGET_THINKING
         assert kwargs["max_tokens"] == TARGET_MAX_TOKENS
+        assert "temperature" not in kwargs  # Sonnet 5 rejects sampling params
+
+    def test_reads_the_text_block(self, tmp_path):
+        """The verdict is read from the text block, wherever it sits in content."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client("ignored")
+        client.messages.create.return_value.content = [
+            Mock(type="thinking", thinking=""),
+            Mock(type="text", text='{"t": "AD", "c": 0.9}'),
+        ]
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["subject-01"]["t"] == "AD"
+
+    def test_no_text_block_yields_invalid(self, tmp_path):
+        """A response without a text block is a flagged parse failure, not an exception."""
+        cases = self.load_two_cases(tmp_path)[:1]
+        client = self.make_client("ignored")
+        client.messages.create.return_value.content = [
+            Mock(type="thinking", thinking="")
+        ]
+
+        results = classify_target_cases(cases, client=client)
+
+        assert results["subject-01"]["valid"] is False
+        assert results["subject-01"]["t"] is None
 
     def test_default_prompt_carries_case_sentiment(self, tmp_path):
         """The production prompt is built from the case's body and label."""

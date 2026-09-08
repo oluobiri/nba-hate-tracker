@@ -800,7 +800,7 @@ class TestBuildCommentSamples:
                 "score": 10,
             },
         ]
-        with caplog.at_level(logging.INFO, logger="pipeline.aggregation"):
+        with caplog.at_level(logging.INFO, logger="pipeline.receipts"):
             build_comment_samples(_samples_input(rows))
 
         assert "1 (50.0%) removed by the pos/neg target gate" in caplog.text

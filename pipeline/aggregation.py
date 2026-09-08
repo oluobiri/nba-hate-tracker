@@ -11,6 +11,7 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.receipts import select_receipt_candidates
 from pipeline.schemas import (
     COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
@@ -423,15 +424,11 @@ def build_comment_samples(
     """
     Select the comment samples: top-N receipts per player x sentiment.
 
-    Candidacy: body no longer than max_body_chars and, for pos/neg,
-    confidence at or above min_confidence and a named sentiment_player.
-    Neutral rows are exempt from both polar gates - the classifier
-    reports a conventional 0.5 for neu and routinely omits the target on
-    neutral comments; a polar row with no stated target is the ambiguity
-    class a receipt can't carry. Within each (attributed_player,
-    sentiment) cell, duplicate bodies collapse to the best-ranked copy,
-    rows rank by score desc (ties: confidence desc, comment_id asc,
-    nulls last) and the top n are kept; thin cells are never padded.
+    Candidacy and ranking are select_receipt_candidates with the target
+    gate on: a polar row with no stated target is the ambiguity class a
+    receipt can't carry, while neutral rows are exempt from both polar
+    gates (the classifier reports a conventional 0.5 for neu and
+    routinely omits the target there). Thin cells are never padded.
     Bodies are verbatim.
 
     Args:
@@ -447,38 +444,10 @@ def build_comment_samples(
         (attributed_player, sentiment, rank).
     """
     cell = ["attributed_player", "sentiment"]
-
-    passes_floor = (pl.col("sentiment") == "neu") | (
-        pl.col("confidence") >= min_confidence
-    )
-    has_target = (pl.col("sentiment") == "neu") | pl.col(
-        "sentiment_player"
-    ).is_not_null()
-    within_cap = pl.col("body").str.len_chars() <= max_body_chars
-    candidates = df.filter(passes_floor & has_target & within_cap)
-    if df.height:
-        below_floor = df.filter(~passes_floor).height
-        no_target = df.filter(passes_floor & ~has_target).height
-        over_cap = df.filter(passes_floor & has_target & ~within_cap).height
-        logger.info(
-            f"comment_samples candidacy: {df.height:,} attributed rows; "
-            f"{below_floor:,} ({below_floor / df.height:.1%}) removed by the "
-            f"pos/neg confidence floor {min_confidence}, "
-            f"{no_target:,} ({no_target / df.height:.1%}) removed by the "
-            f"pos/neg target gate, "
-            f"{over_cap:,} ({over_cap / df.height:.1%}) removed by the "
-            f"{max_body_chars}-char body cap; {candidates.height:,} candidates"
-        )
-
     return (
-        candidates.sort(
-            ["score", "confidence", "comment_id"],
-            descending=[True, True, False],
-            nulls_last=True,
+        select_receipt_candidates(
+            df, n=n, min_confidence=min_confidence, max_body_chars=max_body_chars
         )
-        .unique(subset=[*cell, "body"], keep="first", maintain_order=True)
-        .with_columns((pl.int_range(pl.len()).over(cell) + 1).alias("rank"))
-        .filter(pl.col("rank") <= n)
         .rename({"team": "fan_team"})
         .select(COMMENT_SAMPLES_SCHEMA.names())
         .sort([*cell, "rank"])

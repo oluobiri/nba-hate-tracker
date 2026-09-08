@@ -16,6 +16,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - PLAYERS_SCHEMA describes the Player dimension (players.parquet),
   config curation joined with snapshot facts; enforced in
   aggregate_sentiment() via the unified DASHBOARD_OUTPUT_SCHEMAS loop.
+- TARGET_POOL_SCHEMA / SENTIMENT_TARGETS_SCHEMA describe the target
+  verifier's pool and its verdict sidecar (pipeline/receipts.py,
+  pipeline/results.py).
 - COMMENT_SAMPLES_SCHEMA describes the comment-samples fact subset
   (comment_samples.parquet): verbatim rows of the fact, selected not
   aggregated; enforced via the same unified loop.
@@ -245,6 +248,34 @@ COMMENT_SAMPLES_SCHEMA = pl.Schema(
         "score": pl.Int64,
         "created_utc": pl.Int64,  # epoch seconds, as the fact
         "fan_team": pl.String,  # nullable; fan role of Team, role-marked
+    }
+)
+
+# The target-verifier pool (data/<season>/batches/<stage>/pool.parquet):
+# which comments were sent to the verifier and why. attributed_player and
+# rank are pool-time snapshots under the config the pool was built with.
+TARGET_POOL_SCHEMA = pl.Schema(
+    {
+        "comment_id": pl.String,  # FK -> sentiment.parquet; the request custom_id
+        "attributed_player": pl.String,  # at pool time
+        "sentiment": pl.String,  # "pos" | "neg", the prompt input
+        "stratum": pl.String,  # candidate | random_named | random_null
+        "rank": pl.Int64,  # candidate rank within the cell; null for strata rows
+    }
+)
+
+# The verifier's verdicts (data/<season>/processed/sentiment_targets.parquet):
+# the pool joined to the model's response, one row per verified comment.
+# target_raw is the model's string, frozen; resolution to a canonical
+# player is config-derived and happens at aggregation.
+SENTIMENT_TARGETS_SCHEMA = pl.Schema(
+    {
+        **TARGET_POOL_SCHEMA,
+        "target_raw": pl.String,  # nullable: null = no player target
+        "target_confidence": pl.Float64,
+        "valid": pl.Boolean,  # False = the response did not parse
+        "input_tokens": pl.Int64,
+        "output_tokens": pl.Int64,
     }
 )
 

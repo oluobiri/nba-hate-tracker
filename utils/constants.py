@@ -116,6 +116,7 @@ COMMENT_SAMPLES_MAX_BODY_CHARS = 500
 
 # The target-verifier pool (pipeline/receipts.py): the candidates the
 # verifier screens, plus two random strata carried as evidence only.
+TARGET_POOL_K = 50  # candidate depth per cell; provisional until the dry run sizes it
 TARGET_POOL_STRATA = ("candidate", "random_named", "random_null")
 TARGET_POOL_STRATUM_N = 500  # rows per random stratum
 TARGET_POOL_SEED = 7

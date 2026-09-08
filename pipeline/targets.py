@@ -16,6 +16,7 @@ import anthropic
 import yaml
 
 from pipeline.evaluation import VALID_SOURCES, attribution_match
+from pipeline.stage import ClassifierStage
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,12 @@ logger = logging.getLogger(__name__)
 TARGET_MODEL = "claude-sonnet-5"
 TARGET_THINKING = {"type": "disabled"}
 TARGET_MAX_TOKENS = 75
+
+# Batch API pricing for Sonnet 5 (50% discount applied); mean input
+# tokens measured over the eval suite with count_tokens (2026-09-08).
+TARGET_INPUT_COST_PER_MTOK = 1.00
+TARGET_OUTPUT_COST_PER_MTOK = 5.00
+TARGET_AVG_INPUT_TOKENS = 228
 
 # Eval-case contract
 POLAR_SENTIMENTS = ("pos", "neg")
@@ -151,6 +158,21 @@ def parse_target_response(text: str) -> dict:
         return _invalid(text)
 
     return parsed
+
+
+TARGET_STAGE = ClassifierStage(
+    name="target",
+    model=TARGET_MODEL,
+    max_tokens=TARGET_MAX_TOKENS,
+    sampling_params={"thinking": TARGET_THINKING},
+    prompt_version=TARGET_PROMPT_VERSION,
+    prompt_template=TARGET_PROMPT_TEMPLATE,
+    build_prompt=build_target_prompt,
+    parse_response=parse_target_response,
+    input_cost_per_mtok=TARGET_INPUT_COST_PER_MTOK,
+    output_cost_per_mtok=TARGET_OUTPUT_COST_PER_MTOK,
+    avg_input_tokens=TARGET_AVG_INPUT_TOKENS,
+)
 
 
 @dataclass(frozen=True)

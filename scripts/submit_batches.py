@@ -32,9 +32,6 @@ from dotenv import load_dotenv
 
 from pipeline.batch import (
     DEFAULT_MAX_RETRIES,
-    INPUT_COST_PER_MTOK,
-    MAX_TOKENS,
-    OUTPUT_COST_PER_MTOK,
     REQUESTS_SUBDIR,
     RESPONSES_SUBDIR,
     STATE_FILENAME,
@@ -50,6 +47,7 @@ from pipeline.batch import (
     save_state,
     submit_batch_with_retry,
 )
+from pipeline.sentiment import INPUT_COST_PER_MTOK, MAX_TOKENS, OUTPUT_COST_PER_MTOK
 from utils.paths import get_batches_dir
 from utils.season_config import set_season_override
 

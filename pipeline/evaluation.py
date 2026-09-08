@@ -1,7 +1,7 @@
 """Eval harness for the LLM sentiment classifier.
 
 Loads ground-truth cases from a YAML file and runs them through the
-production prompt/parse path (pipeline.batch.build_prompt +
+production prompt/parse path (pipeline.sentiment.build_prompt +
 parse_response) with production model parameters.
 
 Cases are classified via the synchronous Messages API rather than the
@@ -23,7 +23,13 @@ from pathlib import Path
 import anthropic
 import yaml
 
-from pipeline.batch import MAX_TOKENS, MODEL, TEMPERATURE, build_prompt, parse_response
+from pipeline.sentiment import (
+    MAX_TOKENS,
+    MODEL,
+    TEMPERATURE,
+    build_prompt,
+    parse_response,
+)
 from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)

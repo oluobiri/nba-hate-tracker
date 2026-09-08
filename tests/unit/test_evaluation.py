@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from pipeline.batch import MAX_TOKENS, MODEL, TEMPERATURE
+from pipeline.sentiment import MAX_TOKENS, MODEL, TEMPERATURE
 from pipeline.evaluation import (
     accuracy_by_category,
     attribution_match,

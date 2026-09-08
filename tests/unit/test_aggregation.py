@@ -12,6 +12,7 @@ import polars as pl
 import pytest
 
 from pipeline.aggregation import (
+    load_attributed_frame,
     aggregate_sentiment,
     build_comment_samples,
     build_teams_dimension,
@@ -303,6 +304,44 @@ def pinned_snapshot(monkeypatch, tmp_path, lebron_roster_row):
     monkeypatch.setattr("pipeline.aggregation.get_reference_dir", lambda: ref_dir)
     _write_snapshot(ref_dir, [lebron_roster_row])
     return ref_dir
+
+
+def _lebron_rows_with_error() -> dict:
+    """_lebron_rows plus one error-sentiment row aggregation must exclude."""
+    rows = _lebron_rows()
+    extra = {
+        **{k: v[0] for k, v in rows.items()},
+        "comment_id": "err01",
+        "sentiment": "error",
+    }
+    return {k: v + [extra[k]] for k, v in rows.items()}
+
+
+class TestLoadAttributedFrame:
+    """Tests for load_attributed_frame, the model's shared starting frame."""
+
+    def test_adds_derived_columns_and_drops_error_rows(self, tmp_path):
+        """Verify the frame gains attributed_player, team, and week; errors are excluded."""
+        path = _make_test_parquet(tmp_path, _lebron_rows_with_error())
+
+        df, excluded = load_attributed_frame(path)
+
+        assert excluded == 1
+        assert df.height == 2
+        assert {"attributed_player", "team", "week"} <= set(df.columns)
+        assert "error" not in df["sentiment"].to_list()
+        assert df["attributed_player"].to_list() == ["LeBron James"] * df.height
+
+    def test_aggregate_sentiment_counts_match_the_frame(self, tmp_path):
+        """Verify aggregate_sentiment's metadata counts derive from the same frame."""
+        path = _make_test_parquet(tmp_path, _lebron_rows_with_error())
+
+        df, excluded = load_attributed_frame(path)
+        meta = aggregate_sentiment(path)["metadata"]
+
+        assert meta["excluded_comments"] == excluded
+        assert meta["usable_comments"] == df.height
+        assert meta["total_comments"] == df.height + excluded
 
 
 class TestAggregatePlayers:

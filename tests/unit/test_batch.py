@@ -12,6 +12,7 @@ from pipeline.batch import (
     calculate_cost,
     compute_run_totals,
     download_results,
+    estimate_batch_cost,
     format_batch_request,
     get_classifier_identity,
     get_downloadable_batches,
@@ -30,7 +31,14 @@ from pipeline.batch import (
     save_state,
     summarize_actual_usage,
 )
-from pipeline.sentiment import MAX_TOKENS, MODEL, PROMPT_VERSION, TEMPERATURE
+from pipeline.sentiment import (
+    MAX_TOKENS,
+    MODEL,
+    PROMPT_VERSION,
+    SENTIMENT_STAGE,
+    TEMPERATURE,
+)
+from pipeline.targets import TARGET_STAGE
 
 
 def _submit_result(batch_id: str = "msgbatch_abc") -> dict:
@@ -67,29 +75,31 @@ class TestCalculateCost:
     def test_one_million_tokens_each(self):
         """Verify cost for 1M input + 1M output tokens."""
         # $0.50/M input + $2.50/M output = $3.00
-        cost = calculate_cost(input_tokens=1_000_000, output_tokens=1_000_000)
+        cost = calculate_cost(
+            SENTIMENT_STAGE, input_tokens=1_000_000, output_tokens=1_000_000
+        )
         assert cost == pytest.approx(3.00)
 
     def test_realistic_single_request(self):
         """Verify cost for a realistic single request (~150 in, ~30 out)."""
-        cost = calculate_cost(input_tokens=150, output_tokens=30)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=150, output_tokens=30)
 
         expected = (150 / 1_000_000) * 0.50 + (30 / 1_000_000) * 2.50
         assert cost == pytest.approx(expected)
 
     def test_zero_tokens(self):
         """Verify zero tokens returns zero cost."""
-        cost = calculate_cost(input_tokens=0, output_tokens=0)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=0, output_tokens=0)
         assert cost == 0.0
 
     def test_only_input(self):
         """Verify cost with only input tokens."""
-        cost = calculate_cost(input_tokens=1_000_000, output_tokens=0)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=1_000_000, output_tokens=0)
         assert cost == pytest.approx(0.50)
 
     def test_only_output(self):
         """Verify cost with only output tokens."""
-        cost = calculate_cost(input_tokens=0, output_tokens=1_000_000)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=0, output_tokens=1_000_000)
         assert cost == pytest.approx(2.50)
 
 
@@ -98,7 +108,11 @@ class TestFormatBatchRequest:
 
     def test_returns_correct_structure(self, valid_nba_comment: dict):
         """Verify output has custom_id and params keys."""
-        result = format_batch_request(valid_nba_comment)
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
 
         assert "custom_id" in result
         assert "params" in result
@@ -106,7 +120,11 @@ class TestFormatBatchRequest:
 
     def test_params_has_required_fields(self, valid_nba_comment: dict):
         """Verify params contains model, max_tokens, temperature, messages."""
-        result = format_batch_request(valid_nba_comment)
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
         params = result["params"]
 
         assert params["model"] == MODEL
@@ -116,12 +134,66 @@ class TestFormatBatchRequest:
 
     def test_messages_contains_prompt(self, valid_nba_comment: dict):
         """Verify messages array has user role with prompt."""
-        result = format_batch_request(valid_nba_comment)
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
         messages = result["params"]["messages"]
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
         assert valid_nba_comment["body"] in messages[0]["content"]
+
+    def test_params_key_order_matches_on_disk_request_lines(
+        self, valid_nba_comment: dict
+    ):
+        """Verify the sentiment params serialize in the frozen on-disk order."""
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
+
+        assert list(result["params"]) == [
+            "model",
+            "max_tokens",
+            "temperature",
+            "messages",
+        ]
+
+    def test_target_stage_uses_its_own_sampling_contract(self):
+        """Verify a target request carries thinking-off and no temperature."""
+        result = format_batch_request(
+            TARGET_STAGE, "abc123", comment_body="Luka is washed", sentiment="neg"
+        )
+        params = result["params"]
+
+        assert params["model"] == TARGET_STAGE.model
+        assert params["thinking"] == {"type": "disabled"}
+        assert "temperature" not in params
+        assert "labeled negative" in params["messages"][0]["content"]
+
+
+class TestEstimateBatchCost:
+    """Tests for estimate_batch_cost function."""
+
+    def test_uses_stage_mean_input_and_max_output(self):
+        """Verify the estimate is request_count x (avg input + max output) at stage prices."""
+        cost = estimate_batch_cost(SENTIMENT_STAGE, 1_000)
+
+        expected = calculate_cost(
+            SENTIMENT_STAGE,
+            1_000 * SENTIMENT_STAGE.avg_input_tokens,
+            1_000 * SENTIMENT_STAGE.max_tokens,
+        )
+        assert cost == pytest.approx(expected)
+
+    def test_stages_price_differently(self):
+        """Verify the same request count costs more on the Sonnet-backed target stage."""
+        assert estimate_batch_cost(TARGET_STAGE, 1_000) > estimate_batch_cost(
+            SENTIMENT_STAGE, 1_000
+        )
 
 
 class TestInitState:
@@ -376,6 +448,7 @@ class TestGetMissingResults:
         state = init_state()
         state["batches"] = [
             new_failed_entry(
+                SENTIMENT_STAGE,
                 batch_num=1,
                 request_file="batch_001.jsonl",
                 attempted_at="2026-07-08T00:00:00+00:00",
@@ -654,6 +727,7 @@ class TestNewBatchEntry:
     def test_builds_entry_with_retry_and_cost_fields(self):
         """Verify a fresh entry carries the full v2 schema."""
         entry = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_new"),
@@ -683,6 +757,7 @@ class TestNewFailedEntry:
     def test_builds_terminal_entry(self):
         """Verify a submission-never-succeeded entry is terminal."""
         entry = new_failed_entry(
+            SENTIMENT_STAGE,
             batch_num=2,
             request_file="batch_002.jsonl",
             attempted_at="2026-07-08T00:00:00+00:00",
@@ -701,6 +776,7 @@ class TestNewFailedEntry:
         state = init_state()
         state["batches"] = [
             new_failed_entry(
+                SENTIMENT_STAGE,
                 batch_num=2,
                 request_file="batch_002.jsonl",
                 attempted_at="2026-07-08T00:00:00+00:00",
@@ -723,6 +799,7 @@ class TestRecordRetryAttempt:
         """
         # Arrange: first attempt ended with zero successes
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_old"),
@@ -764,6 +841,7 @@ class TestRecordRetryAttempt:
         recorded at first submission still describes what runs.
         """
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_old"),
@@ -789,6 +867,7 @@ class TestRecordRetryAttempt:
         Issue #29 required scenario: retries exhausted, batch marked failed.
         """
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_0"),
@@ -827,6 +906,7 @@ class TestRecordRetryAttempt:
     def test_resets_actual_cost_fields(self):
         """Verify a retry zeroes any actuals from the superseded attempt."""
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_old"),
@@ -895,11 +975,13 @@ class TestSummarizeActualUsage:
             },
         ]
 
-        usage = summarize_actual_usage(results)
+        usage = summarize_actual_usage(SENTIMENT_STAGE, results)
 
         assert usage["actual_input_tokens"] == 180
         assert usage["actual_output_tokens"] == 35
-        assert usage["actual_cost_usd"] == pytest.approx(calculate_cost(180, 35))
+        assert usage["actual_cost_usd"] == pytest.approx(
+            calculate_cost(SENTIMENT_STAGE, 180, 35)
+        )
 
     def test_errored_rows_contribute_zero(self):
         """Verify non-succeeded rows are excluded from actual usage."""
@@ -914,14 +996,14 @@ class TestSummarizeActualUsage:
             {"custom_id": "c", "result_type": "expired", "error": "expired"},
         ]
 
-        usage = summarize_actual_usage(results)
+        usage = summarize_actual_usage(SENTIMENT_STAGE, results)
 
         assert usage["actual_input_tokens"] == 100
         assert usage["actual_output_tokens"] == 20
 
     def test_empty_results_yield_zeros(self):
         """Verify no results produce zero usage and zero cost."""
-        usage = summarize_actual_usage([])
+        usage = summarize_actual_usage(SENTIMENT_STAGE, [])
 
         assert usage == {
             "actual_input_tokens": 0,
@@ -1063,9 +1145,7 @@ class TestSaveState:
             "total_input_tokens": 5000,
             "total_output_tokens": 2500,
             "estimated_cost_usd": 3.75,
-            "batches": [
-                {"batch_id": "msgbatch_abc", "status": "in_progress"}
-            ],
+            "batches": [{"batch_id": "msgbatch_abc", "status": "in_progress"}],
         }
 
         save_state(state, state_path)

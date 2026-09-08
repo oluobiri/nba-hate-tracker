@@ -28,6 +28,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from pipeline.batch import format_batch_request, REQUESTS_PER_BATCH
+from pipeline.sentiment import SENTIMENT_STAGE
 from utils.formatting import format_duration
 from utils.paths import get_batches_dir, get_filtered_dir
 from utils.season_config import set_season_override
@@ -150,7 +151,9 @@ def process_file(
                 stats["malformed"] += 1
                 continue
 
-            request = format_batch_request(comment)
+            request = format_batch_request(
+                SENTIMENT_STAGE, comment["id"], comment_body=comment["body"]
+            )
             current_batch.append(request)
             stats["total"] += 1
 

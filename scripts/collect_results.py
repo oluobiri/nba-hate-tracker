@@ -49,6 +49,7 @@ from pipeline.batch import (
 )
 from pipeline.results import build_sentiment_dataframe, check_response_models
 from pipeline.schemas import SCHEMA_VERSION
+from pipeline.sentiment import SENTIMENT_STAGE
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
 from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
@@ -156,7 +157,7 @@ def download_batch_results(batch: dict, responses_dir: Path) -> Path:
     )
 
     # Reconcile actual token usage into the batch entry
-    batch.update(summarize_actual_usage(results))
+    batch.update(summarize_actual_usage(SENTIMENT_STAGE, results))
     logger.info(
         f"  -> Actual cost: ${batch['actual_cost_usd']:.2f} "
         f"(estimated: ${batch.get('estimated_cost_usd', 0.0):.2f})"

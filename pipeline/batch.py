@@ -14,15 +14,7 @@ from pathlib import Path
 
 import anthropic
 
-from pipeline.sentiment import (
-    INPUT_COST_PER_MTOK,
-    MAX_TOKENS,
-    MODEL,
-    OUTPUT_COST_PER_MTOK,
-    PROMPT_VERSION,
-    TEMPERATURE,
-    build_prompt,
-)
+from pipeline.stage import ClassifierStage
 
 logger = logging.getLogger(__name__)
 
@@ -38,39 +30,70 @@ BACKOFF_BASE_SECONDS = 2.0
 BACKOFF_CAP_SECONDS = 60.0
 
 
-def calculate_cost(input_tokens: int, output_tokens: int) -> float:
+def calculate_cost(stage: ClassifierStage, input_tokens: int, output_tokens: int) -> float:
     """
-    Calculate the USD cost for a batch API request.
+    Calculate the USD cost of token usage at a stage's Batch API prices.
 
     Args:
+        stage: The classifier stage whose pricing applies.
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
 
     Returns:
         Total cost in USD.
     """
-    input_cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MTOK
-    output_cost = (output_tokens / 1_000_000) * OUTPUT_COST_PER_MTOK
+    input_cost = (input_tokens / 1_000_000) * stage.input_cost_per_mtok
+    output_cost = (output_tokens / 1_000_000) * stage.output_cost_per_mtok
     return input_cost + output_cost
 
 
-def format_batch_request(comment: dict) -> dict:
+def estimate_batch_cost(stage: ClassifierStage, request_count: int) -> float:
     """
-    Format a comment into an Anthropic Batch API request.
+    Estimate a batch's cost before submission.
+
+    Assumes the stage's measured mean input tokens and its max_tokens of
+    output per request, so the estimate is an upper bound on output.
 
     Args:
-        comment: Comment dict with 'id' and 'body' fields.
+        stage: The classifier stage the requests belong to.
+        request_count: Number of requests in the batch.
+
+    Returns:
+        Estimated cost in USD.
+    """
+    return calculate_cost(
+        stage, request_count * stage.avg_input_tokens, request_count * stage.max_tokens
+    )
+
+
+def format_batch_request(
+    stage: ClassifierStage, custom_id: str, **prompt_kwargs: str
+) -> dict:
+    """
+    Format one prompt into an Anthropic Batch API request for a stage.
+
+    Params carry the stage's model, output cap, and sampling contract; the
+    key order (model, max_tokens, sampling, messages) is the on-disk
+    request-line order and must stay byte-identical for existing runs.
+
+    Args:
+        stage: The classifier stage issuing the request.
+        custom_id: Request id echoed back in the result (the comment id).
+        **prompt_kwargs: Arguments for stage.build_prompt (e.g.
+            comment_body, and sentiment for the target stage).
 
     Returns:
         Batch request dict with custom_id and params.
     """
     return {
-        "custom_id": comment["id"],
+        "custom_id": custom_id,
         "params": {
-            "model": MODEL,
-            "max_tokens": MAX_TOKENS,
-            "temperature": TEMPERATURE,
-            "messages": [{"role": "user", "content": build_prompt(comment["body"])}],
+            "model": stage.model,
+            "max_tokens": stage.max_tokens,
+            **stage.sampling_params,
+            "messages": [
+                {"role": "user", "content": stage.build_prompt(**prompt_kwargs)}
+            ],
         },
     }
 
@@ -329,6 +352,7 @@ def mark_batch_failed(batch: dict) -> None:
 
 
 def new_batch_entry(
+    stage: ClassifierStage,
     batch_num: int,
     request_file: str,
     submit_result: dict,
@@ -339,6 +363,7 @@ def new_batch_entry(
     Build a state entry for a freshly submitted batch.
 
     Args:
+        stage: The classifier stage submitted; its identity is recorded.
         batch_num: Batch number extracted from the request filename.
         request_file: Name of the request JSONL file.
         submit_result: Dict returned by submit_batch.
@@ -354,8 +379,8 @@ def new_batch_entry(
         "batch_num": batch_num,
         "batch_id": submit_result["batch_id"],
         "request_file": request_file,
-        "model": MODEL,
-        "prompt_version": PROMPT_VERSION,
+        "model": stage.model,
+        "prompt_version": stage.prompt_version,
         "status": submit_result["processing_status"],
         "submitted_at": submitted_at,
         "ended_at": submit_result["ended_at"],
@@ -373,6 +398,7 @@ def new_batch_entry(
 
 
 def new_failed_entry(
+    stage: ClassifierStage,
     batch_num: int,
     request_file: str,
     attempted_at: str,
@@ -385,6 +411,7 @@ def new_failed_entry(
     fail-fast gate on the next run instead of being silently reattempted.
 
     Args:
+        stage: The classifier stage attempted; its identity is recorded.
         batch_num: Batch number extracted from the request filename.
         request_file: Name of the request JSONL file.
         attempted_at: ISO 8601 timestamp of the final failed attempt.
@@ -397,8 +424,8 @@ def new_failed_entry(
         "batch_num": batch_num,
         "batch_id": None,
         "request_file": request_file,
-        "model": MODEL,
-        "prompt_version": PROMPT_VERSION,
+        "model": stage.model,
+        "prompt_version": stage.prompt_version,
         "status": "failed",
         "submitted_at": attempted_at,
         "ended_at": None,
@@ -481,7 +508,7 @@ def get_classifier_identity(state: dict) -> dict[str, str] | None:
     return {"model": model, "prompt_version": prompt_version}
 
 
-def summarize_actual_usage(results: list[dict]) -> dict:
+def summarize_actual_usage(stage: ClassifierStage, results: list[dict]) -> dict:
     """
     Sum actual token usage over a batch's downloaded results.
 
@@ -489,6 +516,7 @@ def summarize_actual_usage(results: list[dict]) -> dict:
     contribute zero, so actual cost reflects only paid-for results.
 
     Args:
+        stage: The classifier stage whose pricing applies.
         results: Result dicts as returned by download_results.
 
     Returns:
@@ -504,7 +532,7 @@ def summarize_actual_usage(results: list[dict]) -> dict:
     return {
         "actual_input_tokens": input_tokens,
         "actual_output_tokens": output_tokens,
-        "actual_cost_usd": calculate_cost(input_tokens, output_tokens),
+        "actual_cost_usd": calculate_cost(stage, input_tokens, output_tokens),
     }
 
 

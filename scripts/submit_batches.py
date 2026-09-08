@@ -35,8 +35,8 @@ from pipeline.batch import (
     REQUESTS_SUBDIR,
     RESPONSES_SUBDIR,
     STATE_FILENAME,
-    calculate_cost,
     compute_run_totals,
+    estimate_batch_cost,
     get_exhausted_batches,
     get_retryable_batches,
     load_state,
@@ -47,7 +47,7 @@ from pipeline.batch import (
     save_state,
     submit_batch_with_retry,
 )
-from pipeline.sentiment import INPUT_COST_PER_MTOK, MAX_TOKENS, OUTPUT_COST_PER_MTOK
+from pipeline.sentiment import SENTIMENT_STAGE
 from utils.paths import get_batches_dir
 from utils.season_config import set_season_override
 
@@ -67,7 +67,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # -----------------------------------------------------------------------------
 
-AVG_INPUT_TOKENS = 60  # From notebook cost analysis
 
 
 # -----------------------------------------------------------------------------
@@ -156,23 +155,6 @@ def validate_batch_file(batch_file: Path) -> tuple[bool, str]:
         return False, f"Cannot read file: {e}"
 
 
-def estimate_batch_cost(request_count: int) -> float:
-    """
-    Estimate cost for a batch based on request count.
-
-    Uses average input tokens from notebook analysis and MAX_TOKENS for output.
-
-    Args:
-        request_count: Number of requests in the batch.
-
-    Returns:
-        Estimated cost in USD.
-    """
-    total_input = request_count * AVG_INPUT_TOKENS
-    total_output = request_count * MAX_TOKENS
-    return calculate_cost(total_input, total_output)
-
-
 def extract_batch_num(filename: str) -> int:
     """
     Extract batch number from filename like 'batch_001.jsonl'.
@@ -230,7 +212,7 @@ def dry_run(
 
         # Count and estimate
         request_count = count_requests(batch_file)
-        estimated_cost = estimate_batch_cost(request_count)
+        estimated_cost = estimate_batch_cost(SENTIMENT_STAGE, request_count)
 
         logger.info(
             f"  {filename}: {request_count:,} requests, "
@@ -264,11 +246,12 @@ def dry_run(
     logger.info(f"Total requests:       {total_requests:,}")
     logger.info(f"Estimated cost:       ${total_cost:.2f}")
     logger.info("")
-    logger.info("Cost calculation assumptions:")
-    logger.info(f"  - Input tokens/request:  {AVG_INPUT_TOKENS}")
-    logger.info(f"  - Output tokens/request: {MAX_TOKENS} (max)")
-    logger.info(f"  - Input cost:  ${INPUT_COST_PER_MTOK}/M tokens")
-    logger.info(f"  - Output cost: ${OUTPUT_COST_PER_MTOK}/M tokens")
+    stage = SENTIMENT_STAGE
+    logger.info(f"Cost calculation assumptions ({stage.name}: {stage.model}):")
+    logger.info(f"  - Input tokens/request:  {stage.avg_input_tokens}")
+    logger.info(f"  - Output tokens/request: {stage.max_tokens} (max)")
+    logger.info(f"  - Input cost:  ${stage.input_cost_per_mtok}/M tokens")
+    logger.info(f"  - Output cost: ${stage.output_cost_per_mtok}/M tokens")
 
 
 # -----------------------------------------------------------------------------
@@ -368,7 +351,9 @@ def resubmit_batch(
         batch,
         submit_result=result,
         submitted_at=datetime.now(timezone.utc).isoformat(),
-        estimated_cost_usd=estimate_batch_cost(count_requests(batch_file)),
+        estimated_cost_usd=estimate_batch_cost(
+            SENTIMENT_STAGE, count_requests(batch_file)
+        ),
     )
     state.update(compute_run_totals(state))
     save_state(state, state_path)
@@ -452,6 +437,7 @@ def submit_batches(
             # Record a terminal entry so fail-fast trips on the next run
             state["batches"].append(
                 new_failed_entry(
+                    SENTIMENT_STAGE,
                     batch_num=batch_num,
                     request_file=filename,
                     attempted_at=datetime.now(timezone.utc).isoformat(),
@@ -465,11 +451,12 @@ def submit_batches(
 
         state["batches"].append(
             new_batch_entry(
+                SENTIMENT_STAGE,
                 batch_num=batch_num,
                 request_file=filename,
                 submit_result=result,
                 submitted_at=datetime.now(timezone.utc).isoformat(),
-                estimated_cost_usd=estimate_batch_cost(request_count),
+                estimated_cost_usd=estimate_batch_cost(SENTIMENT_STAGE, request_count),
             )
         )
         state.update(compute_run_totals(state))

@@ -19,7 +19,7 @@ data/             → Not committed
   ├── 2024-25/    → V1 season data
   │   ├── raw/        → Arctic Shift downloads
   │   ├── filtered/   → Player-mention filtered JSONL
-  │   ├── batches/    → Batch API requests/responses
+  │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
   │   └── dashboard/  → aggregates.json + per-table Parquet files
   └── 2025-26/    → V2 season data (same structure)
@@ -61,8 +61,8 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 - `data/2024-25/raw/*.jsonl` (12+ GB)
 - `data/2024-25/filtered/*.jsonl` (2+ GB)
 - `data/2024-25/processed/sentiment.parquet` (1.93M rows)
-- `data/2024-25/batches/requests/*.jsonl`
-- `data/2024-25/batches/responses/*.jsonl`
+- `data/2024-25/batches/<stage>/requests/*.jsonl`
+- `data/2024-25/batches/<stage>/responses/*.jsonl`
 
 **Dashboard input:**
 - `data/2024-25/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load

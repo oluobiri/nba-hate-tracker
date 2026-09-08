@@ -80,11 +80,17 @@ class TestLeafPathFunctions:
         assert result.parent.name == pinned_season
         assert result.name == "filtered"
 
-    def test_batches_dir_is_season_scoped(self, pinned_season):
-        """Batches dir is under the season directory."""
-        result = get_batches_dir()
-        assert result.parent.name == pinned_season
-        assert result.name == "batches"
+    def test_batches_dir_is_season_and_stage_scoped(self, pinned_season):
+        """Batches dir is one stage subdirectory under the season's batches/."""
+        result = get_batches_dir("target")
+        assert result.parent.parent.name == pinned_season
+        assert result.parent.name == "batches"
+        assert result.name == "target"
+
+    def test_batches_dir_defaults_to_sentiment_stage(self, pinned_season):
+        """The stage defaults to sentiment so existing callers resolve the v1/v2 runs."""
+        assert get_batches_dir() == get_batches_dir("sentiment")
+        assert get_batches_dir().name == "sentiment"
 
     def test_processed_dir_is_season_scoped(self, pinned_season):
         """Processed dir is under the season directory."""

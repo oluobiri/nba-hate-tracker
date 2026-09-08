@@ -15,7 +15,7 @@ Usage:
     uv run python -m scripts.prepare_batches --limit 1000
 
 Input: Filtered JSONL from filter_player_mentions.py
-Output: data/batches/requests/batch_NNN.jsonl files
+Output: data/<season>/batches/<stage>/requests/batch_NNN.jsonl files
 """
 
 import argparse
@@ -28,7 +28,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from pipeline.batch import format_batch_request, REQUESTS_PER_BATCH
-from pipeline.sentiment import SENTIMENT_STAGE
+from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.formatting import format_duration
 from utils.paths import get_batches_dir, get_filtered_dir
 from utils.season_config import set_season_override
@@ -94,14 +94,16 @@ def write_batch(output_dir: Path, batch_num: int, requests: list[dict]) -> None:
 def process_file(
     input_path: Path,
     output_dir: Path,
+    stage: ClassifierStage,
     limit: int | None = None,
     skip_line_count: bool = False,
 ) -> tuple[dict[str, int], float]:
     """
-    Transform filtered comments into batch request files.
+    Transform filtered comments into batch request files for a stage.
 
     Args:
         input_path: Path to input JSONL file.
+        stage: Classifier stage the requests are built for.
         output_dir: Directory to write batch request files.
         limit: Optional max comments to process (for testing).
         skip_line_count: Skip counting lines (faster start, no progress %).
@@ -152,7 +154,7 @@ def process_file(
                 continue
 
             request = format_batch_request(
-                SENTIMENT_STAGE, comment["id"], comment_body=comment["body"]
+                stage, comment["id"], comment_body=comment["body"]
             )
             current_batch.append(request)
             stats["total"] += 1
@@ -196,7 +198,14 @@ def main() -> None:
         type=Path,
         default=None,
         help="Directory to write batch files "
-        f"(default: data/<season>/batches/{REQUESTS_SUBDIR})",
+        f"(default: data/<season>/batches/<stage>/{REQUESTS_SUBDIR})",
+    )
+    parser.add_argument(
+        "--stage",
+        choices=STAGE_NAMES,
+        default="sentiment",
+        help="Classifier stage to run (default: sentiment); selects the "
+        "model, prompt, pricing, and data/<season>/batches/<stage>/",
     )
     parser.add_argument(
         "--limit",
@@ -226,7 +235,7 @@ def main() -> None:
     if args.input is None:
         args.input = get_filtered_dir() / DEFAULT_INPUT_FILENAME
     if args.output is None:
-        args.output = get_batches_dir() / REQUESTS_SUBDIR
+        args.output = get_batches_dir(args.stage) / REQUESTS_SUBDIR
 
     # Validate input exists
     if not args.input.exists():
@@ -237,6 +246,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Prepare Batch Requests")
     logger.info("=" * 60)
+    logger.info(f"Stage:  {args.stage}")
     logger.info(f"Input:  {args.input}")
     logger.info(f"Output: {args.output}/")
     logger.info(f"Max requests per batch: {REQUESTS_PER_BATCH:,}")
@@ -248,6 +258,7 @@ def main() -> None:
     stats, elapsed = process_file(
         input_path=args.input,
         output_dir=args.output,
+        stage=get_stage(args.stage),
         limit=args.limit,
         skip_line_count=args.skip_line_count,
     )

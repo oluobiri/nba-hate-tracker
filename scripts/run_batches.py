@@ -14,7 +14,7 @@ Usage:
     # Faster cadence, explicit season
     uv run python -m scripts.run_batches --season 2025-26 --sleep-interval 600
 
-Input: data/<season>/batches/requests/batch_NNN.jsonl, state.json
+Input: data/<season>/batches/<stage>/requests/batch_NNN.jsonl, state.json
 Output: exit 0 when all batches complete (final collect builds
     sentiment.parquet); exit 1 when a batch fails terminally.
 """
@@ -38,6 +38,7 @@ from pipeline.batch import (
     get_unsubmitted_request_files,
     load_state,
 )
+from pipeline.stage import STAGE_NAMES
 from utils.paths import get_batches_dir
 from utils.season_config import set_season_override
 
@@ -58,19 +59,20 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 
-def run_step(module: str, extra_args: list[str], season: str | None) -> int:
+def run_step(module: str, extra_args: list[str], season: str | None, stage: str) -> int:
     """
-    Run a pipeline script as a subprocess, forwarding the season override.
+    Run a pipeline script as a subprocess, forwarding season and stage.
 
     Args:
         module: Module path for python -m (e.g. "scripts.collect_results").
         extra_args: Additional CLI arguments for the script.
         season: Season override to forward, or None for the active season.
+        stage: Classifier stage name to forward.
 
     Returns:
         The subprocess's exit code.
     """
-    cmd = [sys.executable, "-m", module, *extra_args]
+    cmd = [sys.executable, "-m", module, *extra_args, "--stage", stage]
     if season:
         cmd += ["--season", season]
     logger.info(f"Running: {' '.join(cmd[2:])}")
@@ -86,6 +88,7 @@ def run_loop(
     state_path: Path,
     requests_dir: Path,
     season: str | None,
+    stage: str,
     sleep_interval: int,
     max_retries: int,
     retry_enabled: bool,
@@ -100,6 +103,7 @@ def run_loop(
         state_path: Path to the batch state file.
         requests_dir: Directory containing batch_NNN.jsonl request files.
         season: Season override to forward to subprocesses.
+        stage: Classifier stage name to forward to subprocesses.
         sleep_interval: Seconds to wait between iterations.
         max_retries: Retry cap forwarded to submit_batches.
         retry_enabled: If False, forward --no-retry to submit_batches.
@@ -122,7 +126,7 @@ def run_loop(
         # Refresh statuses and download completed batches
         if state.get("batches"):
             returncode = run_step(
-                "scripts.collect_results", ["--no-wait"], season
+                "scripts.collect_results", ["--no-wait"], season, stage
             )
             if returncode != 0:
                 # Safe mid-run: with --no-wait, collect only exits nonzero on
@@ -152,7 +156,7 @@ def run_loop(
                 )
                 return 1
 
-            returncode = run_step("scripts.submit_batches", submit_args, season)
+            returncode = run_step("scripts.submit_batches", submit_args, season, stage)
             if returncode != 0:
                 logger.error(
                     f"submit_batches exited {returncode} - stopping the loop"
@@ -202,6 +206,13 @@ def main() -> None:
         help="Forward --no-retry to submit_batches",
     )
     parser.add_argument(
+        "--stage",
+        choices=STAGE_NAMES,
+        default="sentiment",
+        help="Classifier stage to drive (default: sentiment); forwarded to "
+        "all subprocess steps",
+    )
+    parser.add_argument(
         "--season",
         default=None,
         metavar="YYYY-YY",
@@ -213,13 +224,14 @@ def main() -> None:
     if args.season:
         set_season_override(args.season)
 
-    batches_dir = get_batches_dir()
+    batches_dir = get_batches_dir(args.stage)
     state_path = batches_dir / STATE_FILENAME
     requests_dir = batches_dir / REQUESTS_SUBDIR
 
     logger.info("=" * 60)
     logger.info("Batch Run Orchestrator")
     logger.info("=" * 60)
+    logger.info(f"Stage:          {args.stage}")
     logger.info(f"Requests dir:   {requests_dir}")
     logger.info(f"State file:     {state_path}")
     logger.info(f"Sleep interval: {args.sleep_interval}s")
@@ -230,6 +242,7 @@ def main() -> None:
             state_path=state_path,
             requests_dir=requests_dir,
             season=args.season,
+            stage=args.stage,
             sleep_interval=args.sleep_interval,
             max_retries=args.max_retries,
             retry_enabled=not args.no_retry,

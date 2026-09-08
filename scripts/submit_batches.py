@@ -17,8 +17,8 @@ Usage:
     # Resume after interruption (automatically skips submitted batches)
     uv run python -m scripts.submit_batches
 
-Input: data/batches/requests/batch_NNN.jsonl files
-Output: data/batches/state.json tracking file
+Input: data/<season>/batches/<stage>/requests/batch_NNN.jsonl files
+Output: data/<season>/batches/<stage>/state.json tracking file
 """
 
 import argparse
@@ -32,14 +32,11 @@ from dotenv import load_dotenv
 
 from pipeline.batch import (
     DEFAULT_MAX_RETRIES,
-    INPUT_COST_PER_MTOK,
-    MAX_TOKENS,
-    OUTPUT_COST_PER_MTOK,
     REQUESTS_SUBDIR,
     RESPONSES_SUBDIR,
     STATE_FILENAME,
-    calculate_cost,
     compute_run_totals,
+    estimate_batch_cost,
     get_exhausted_batches,
     get_retryable_batches,
     load_state,
@@ -50,6 +47,7 @@ from pipeline.batch import (
     save_state,
     submit_batch_with_retry,
 )
+from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.paths import get_batches_dir
 from utils.season_config import set_season_override
 
@@ -69,7 +67,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # -----------------------------------------------------------------------------
 
-AVG_INPUT_TOKENS = 60  # From notebook cost analysis
 
 
 # -----------------------------------------------------------------------------
@@ -158,23 +155,6 @@ def validate_batch_file(batch_file: Path) -> tuple[bool, str]:
         return False, f"Cannot read file: {e}"
 
 
-def estimate_batch_cost(request_count: int) -> float:
-    """
-    Estimate cost for a batch based on request count.
-
-    Uses average input tokens from notebook analysis and MAX_TOKENS for output.
-
-    Args:
-        request_count: Number of requests in the batch.
-
-    Returns:
-        Estimated cost in USD.
-    """
-    total_input = request_count * AVG_INPUT_TOKENS
-    total_output = request_count * MAX_TOKENS
-    return calculate_cost(total_input, total_output)
-
-
 def extract_batch_num(filename: str) -> int:
     """
     Extract batch number from filename like 'batch_001.jsonl'.
@@ -199,6 +179,7 @@ def extract_batch_num(filename: str) -> int:
 def dry_run(
     batch_files: list[Path],
     state: dict,
+    stage: ClassifierStage,
     max_retries: int = DEFAULT_MAX_RETRIES,
 ) -> None:
     """
@@ -207,6 +188,7 @@ def dry_run(
     Args:
         batch_files: List of batch file paths.
         state: Current state dict.
+        stage: Classifier stage whose pricing the estimate uses.
         max_retries: Maximum resubmission attempts per batch.
     """
     logger.info("DRY RUN MODE - No API calls will be made")
@@ -232,7 +214,7 @@ def dry_run(
 
         # Count and estimate
         request_count = count_requests(batch_file)
-        estimated_cost = estimate_batch_cost(request_count)
+        estimated_cost = estimate_batch_cost(stage, request_count)
 
         logger.info(
             f"  {filename}: {request_count:,} requests, "
@@ -266,11 +248,11 @@ def dry_run(
     logger.info(f"Total requests:       {total_requests:,}")
     logger.info(f"Estimated cost:       ${total_cost:.2f}")
     logger.info("")
-    logger.info("Cost calculation assumptions:")
-    logger.info(f"  - Input tokens/request:  {AVG_INPUT_TOKENS}")
-    logger.info(f"  - Output tokens/request: {MAX_TOKENS} (max)")
-    logger.info(f"  - Input cost:  ${INPUT_COST_PER_MTOK}/M tokens")
-    logger.info(f"  - Output cost: ${OUTPUT_COST_PER_MTOK}/M tokens")
+    logger.info(f"Cost calculation assumptions ({stage.name}: {stage.model}):")
+    logger.info(f"  - Input tokens/request:  {stage.avg_input_tokens}")
+    logger.info(f"  - Output tokens/request: {stage.max_tokens} (max)")
+    logger.info(f"  - Input cost:  ${stage.input_cost_per_mtok}/M tokens")
+    logger.info(f"  - Output cost: ${stage.output_cost_per_mtok}/M tokens")
 
 
 # -----------------------------------------------------------------------------
@@ -323,6 +305,7 @@ def resubmit_batch(
     responses_dir: Path,
     state: dict,
     state_path: Path,
+    stage: ClassifierStage,
     max_retries: int,
 ) -> None:
     """
@@ -370,7 +353,7 @@ def resubmit_batch(
         batch,
         submit_result=result,
         submitted_at=datetime.now(timezone.utc).isoformat(),
-        estimated_cost_usd=estimate_batch_cost(count_requests(batch_file)),
+        estimated_cost_usd=estimate_batch_cost(stage, count_requests(batch_file)),
     )
     state.update(compute_run_totals(state))
     save_state(state, state_path)
@@ -384,6 +367,7 @@ def submit_batches(
     state_path: Path,
     requests_dir: Path,
     responses_dir: Path,
+    stage: ClassifierStage,
     max_batches: int | None = None,
     max_retries: int = DEFAULT_MAX_RETRIES,
     retry_enabled: bool = True,
@@ -401,6 +385,7 @@ def submit_batches(
         state_path: Path to save state file.
         requests_dir: Directory containing batch request files.
         responses_dir: Directory containing downloaded results files.
+        stage: Classifier stage being submitted; recorded in every entry.
         max_batches: Maximum number of batches to submit (None = all).
         max_retries: Maximum resubmission attempts per batch.
         retry_enabled: If False, skip resubmission of failed batches.
@@ -421,7 +406,13 @@ def submit_batches(
                 break
             try:
                 resubmit_batch(
-                    batch, requests_dir, responses_dir, state, state_path, max_retries
+                    batch,
+                    requests_dir,
+                    responses_dir,
+                    state,
+                    state_path,
+                    stage,
+                    max_retries,
                 )
             except KeyboardInterrupt:
                 logger.warning("Interrupted! Saving state...")
@@ -454,6 +445,7 @@ def submit_batches(
             # Record a terminal entry so fail-fast trips on the next run
             state["batches"].append(
                 new_failed_entry(
+                    stage,
                     batch_num=batch_num,
                     request_file=filename,
                     attempted_at=datetime.now(timezone.utc).isoformat(),
@@ -467,11 +459,12 @@ def submit_batches(
 
         state["batches"].append(
             new_batch_entry(
+                stage,
                 batch_num=batch_num,
                 request_file=filename,
                 submit_result=result,
                 submitted_at=datetime.now(timezone.utc).isoformat(),
-                estimated_cost_usd=estimate_batch_cost(request_count),
+                estimated_cost_usd=estimate_batch_cost(stage, request_count),
             )
         )
         state.update(compute_run_totals(state))
@@ -534,6 +527,13 @@ def main() -> None:
         "the fail-fast gate on exhausted batches still applies",
     )
     parser.add_argument(
+        "--stage",
+        choices=STAGE_NAMES,
+        default="sentiment",
+        help="Classifier stage to run (default: sentiment); selects the "
+        "model, prompt, pricing, and data/<season>/batches/<stage>/",
+    )
+    parser.add_argument(
         "--season",
         default=None,
         metavar="YYYY-YY",
@@ -545,8 +545,9 @@ def main() -> None:
     if args.season:
         set_season_override(args.season)
 
+    stage = get_stage(args.stage)
     # Apply defaults (after the season override so paths resolve to it)
-    batches_dir = get_batches_dir()
+    batches_dir = get_batches_dir(stage.name)
     requests_dir = args.requests_dir or batches_dir / REQUESTS_SUBDIR
     responses_dir = batches_dir / RESPONSES_SUBDIR
     state_path = batches_dir / STATE_FILENAME
@@ -561,6 +562,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Submit Batches to Anthropic API")
     logger.info("=" * 60)
+    logger.info(f"Stage:        {stage.name} ({stage.model}, {stage.prompt_version})")
     logger.info(f"Requests dir: {requests_dir}")
     logger.info(f"State file:   {state_path}")
     logger.info(f"Found:        {len(batch_files)} batch file(s)")
@@ -573,7 +575,7 @@ def main() -> None:
         logger.info(f"Resuming: {submitted_count} batch(es) already submitted")
 
     if args.dry_run:
-        dry_run(batch_files, state, max_retries=args.max_retries)
+        dry_run(batch_files, state, stage, max_retries=args.max_retries)
     else:
         submit_batches(
             batch_files,
@@ -581,6 +583,7 @@ def main() -> None:
             state_path,
             requests_dir=requests_dir,
             responses_dir=responses_dir,
+            stage=stage,
             max_batches=args.batches,
             max_retries=args.max_retries,
             retry_enabled=not args.no_retry,

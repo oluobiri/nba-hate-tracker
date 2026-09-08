@@ -14,11 +14,14 @@ Usage:
     # Custom poll settings
     uv run python -m scripts.collect_results --poll-interval 120 --max-wait 3600
 
-Input: data/batches/state.json, data/batches/requests/batch_NNN.jsonl
+Input: data/<season>/batches/<stage>/state.json and requests/batch_NNN.jsonl
 Output:
-    - data/batches/responses/batch_NNN_results.jsonl (per batch)
+    - data/<season>/batches/<stage>/responses/batch_NNN_results.jsonl (per batch)
     - data/processed/sentiment.parquet (final joined output)
-    - data/batches/failed_requests.jsonl (if any failures)
+    - data/<season>/batches/<stage>/failed_requests.jsonl (if any failures)
+
+Only the sentiment stage has an assembly step; other stages stop after
+downloading (their sidecar builders land with their tickets).
 """
 
 import argparse
@@ -49,6 +52,7 @@ from pipeline.batch import (
 )
 from pipeline.results import build_sentiment_dataframe, check_response_models
 from pipeline.schemas import SCHEMA_VERSION
+from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
 from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
@@ -125,13 +129,16 @@ def poll_batch_statuses(state: dict) -> int:
     return newly_completed
 
 
-def download_batch_results(batch: dict, responses_dir: Path) -> Path:
+def download_batch_results(
+    batch: dict, responses_dir: Path, stage: ClassifierStage
+) -> Path:
     """
     Download and save results for a single batch.
 
     Args:
         batch: Batch entry dict from state.
         responses_dir: Directory to save results.
+        stage: Classifier stage whose pricing reconciles actual cost.
 
     Returns:
         Path to the saved results file.
@@ -156,7 +163,7 @@ def download_batch_results(batch: dict, responses_dir: Path) -> Path:
     )
 
     # Reconcile actual token usage into the batch entry
-    batch.update(summarize_actual_usage(results))
+    batch.update(summarize_actual_usage(stage, results))
     logger.info(
         f"  -> Actual cost: ${batch['actual_cost_usd']:.2f} "
         f"(estimated: ${batch.get('estimated_cost_usd', 0.0):.2f})"
@@ -169,6 +176,7 @@ def poll_until_complete(
     state: dict,
     state_path: Path,
     responses_dir: Path,
+    stage: ClassifierStage,
     poll_interval: int,
     max_wait: int,
 ) -> bool:
@@ -181,6 +189,7 @@ def poll_until_complete(
         state: Current state dict (modified in place).
         state_path: Path to save state file.
         responses_dir: Directory to save results.
+        stage: Classifier stage being collected.
         poll_interval: Seconds between status checks.
         max_wait: Maximum wait time in seconds.
 
@@ -199,7 +208,7 @@ def poll_until_complete(
         downloadable = get_downloadable_batches(state)
         for batch in downloadable:
             try:
-                download_batch_results(batch, responses_dir)
+                download_batch_results(batch, responses_dir, stage)
                 batch["results_downloaded"] = True
                 state.update(compute_run_totals(state))
                 save_state(state, state_path)
@@ -262,6 +271,13 @@ def main() -> None:
         help="Check once, download completed batches, and exit",
     )
     parser.add_argument(
+        "--stage",
+        choices=STAGE_NAMES,
+        default="sentiment",
+        help="Classifier stage to collect (default: sentiment); selects the "
+        "pricing and data/<season>/batches/<stage>/",
+    )
+    parser.add_argument(
         "--season",
         default=None,
         metavar="YYYY-YY",
@@ -273,8 +289,9 @@ def main() -> None:
     if args.season:
         set_season_override(args.season)
 
+    stage = get_stage(args.stage)
     # Setup paths
-    batches_dir = get_batches_dir()
+    batches_dir = get_batches_dir(stage.name)
     state_path = batches_dir / STATE_FILENAME
     requests_dir = batches_dir / REQUESTS_SUBDIR
     responses_dir = batches_dir / RESPONSES_SUBDIR
@@ -286,6 +303,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Collect Batch Results")
     logger.info("=" * 60)
+    logger.info(f"Stage:         {stage.name} ({stage.model}, {stage.prompt_version})")
     logger.info(f"State file:    {state_path}")
     logger.info(f"Responses dir: {responses_dir}")
     logger.info(f"Output file:   {output_path}")
@@ -321,7 +339,7 @@ def main() -> None:
         downloadable = get_downloadable_batches(state)
         for batch in downloadable:
             try:
-                download_batch_results(batch, responses_dir)
+                download_batch_results(batch, responses_dir, stage)
                 batch["results_downloaded"] = True
                 state.update(compute_run_totals(state))
                 save_state(state, state_path)
@@ -341,7 +359,7 @@ def main() -> None:
         # Poll until complete or timeout
         logger.info(f"Polling every {args.poll_interval}s (max {args.max_wait}s)...")
         completed = poll_until_complete(
-            state, state_path, responses_dir, args.poll_interval, args.max_wait
+            state, state_path, responses_dir, stage, args.poll_interval, args.max_wait
         )
         if not completed:
             logger.warning("Exiting with pending batches due to timeout")
@@ -353,6 +371,13 @@ def main() -> None:
         logger.info(
             f"{total - len(unsubmitted)}/{total} request files submitted - "
             f"downloading available results, skipping parquet build"
+        )
+        sys.exit(0)
+
+    if stage.name != "sentiment":
+        logger.info(
+            f"No assembly step for stage {stage.name!r} in this version; "
+            f"its sidecar builder lands with its ticket (#91)"
         )
         sys.exit(0)
 

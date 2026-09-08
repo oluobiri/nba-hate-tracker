@@ -1,6 +1,5 @@
-"""Tests for pipeline.batch module."""
+"""Tests for pipeline.batch (the Batch API transport)."""
 
-import hashlib
 import json
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -9,16 +8,11 @@ import pytest
 
 from pipeline.batch import (
     DEFAULT_MAX_RETRIES,
-    MAX_TOKENS,
-    MODEL,
-    PROMPT_TEMPLATE,
-    PROMPT_VERSION,
-    TEMPERATURE,
     backoff_delay,
-    build_prompt,
     calculate_cost,
     compute_run_totals,
     download_results,
+    estimate_batch_cost,
     format_batch_request,
     get_classifier_identity,
     get_downloadable_batches,
@@ -33,11 +27,18 @@ from pipeline.batch import (
     mark_batch_failed,
     new_batch_entry,
     new_failed_entry,
-    parse_response,
     record_retry_attempt,
     save_state,
     summarize_actual_usage,
 )
+from pipeline.sentiment import (
+    MAX_TOKENS,
+    MODEL,
+    PROMPT_VERSION,
+    SENTIMENT_STAGE,
+    TEMPERATURE,
+)
+from pipeline.targets import TARGET_STAGE
 
 
 def _submit_result(batch_id: str = "msgbatch_abc") -> dict:
@@ -68,204 +69,37 @@ def _ended_counts(succeeded: int, errored: int = 0, expired: int = 0) -> dict:
     }
 
 
-class TestBuildPrompt:
-    """Tests for build_prompt function."""
-
-    def test_format_contains_required_elements(self, valid_nba_comment: dict):
-        """Verify prompt contains classification instruction and JSON format."""
-        result = build_prompt(valid_nba_comment["body"])
-
-        assert "Classify sentiment" in result
-        assert "Comment:" in result
-        assert '"s":"pos|neg|neu"' in result
-
-    def test_preserves_comment_body(self, valid_nba_comment: dict):
-        """Verify comment body appears unchanged in output."""
-        body = valid_nba_comment["body"]
-        result = build_prompt(body)
-
-        assert body in result
-
-    def test_handles_special_characters(self):
-        """Verify special characters in comment are preserved."""
-        comment = 'Curry 3pt% is "insane" & he\'s cooking!'
-        result = build_prompt(comment)
-
-        assert comment in result
-
-    def test_handles_empty_string(self):
-        """Verify empty comment still produces valid prompt."""
-        result = build_prompt("")
-
-        assert "Classify sentiment" in result
-        assert "Comment:" in result
-
-
-class TestPromptVersionPin:
-    """Tests pinning PROMPT_VERSION to the frozen template text."""
-
-    def test_template_hash_matches_labeled_version(self):
-        """Verify the template's sha256 matches the pin for PROMPT_VERSION.
-
-        Any template edit is a new classifier: it requires a new
-        PROMPT_VERSION label, a new pinned hash, and a re-baselined
-        eval suite (tests/eval/cases.yaml floors are pinned to this text).
-        """
-        assert PROMPT_VERSION == "v2-production+s-hint"
-        assert (
-            hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest()
-            == "2ae50c6125a9eb177967edf5fbddd07bc0f3b6431972686756408d82d29fd0ed"
-        )
-
-    def test_build_prompt_renders_template_exactly(self):
-        """Verify build_prompt output is byte-identical to the frozen render.
-
-        Guards the template-extraction refactor: the rendered prompt must
-        match what the pre-extraction f-string produced, byte for byte.
-        """
-        expected = (
-            "Classify sentiment toward NBA players.\n"
-            "Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative,"
-            " GOAT=positive.\n"
-            'A trailing "/s" tags the comment as sarcasm.\n'
-            "\n"
-            "Comment: test body\n"
-            "\n"
-            'Respond ONLY with JSON: {"s":"pos|neg|neu","c":0.0-1.0,'
-            '"p":"Player Name"|null}'
-        )
-
-        assert build_prompt("test body") == expected
-
-
-class TestParseResponse:
-    """Tests for parse_response function."""
-
-    def test_valid_json(self, valid_sentiment_responses: list[tuple[str, dict]]):
-        """Verify valid JSON responses are parsed correctly."""
-        for raw_response, expected in valid_sentiment_responses:
-            result = parse_response(raw_response)
-            assert result == expected
-
-    def test_markdown_wrapped(
-        self, markdown_wrapped_responses: list[tuple[str, str, str | None]]
-    ):
-        """Verify markdown-wrapped JSON is handled correctly."""
-        for raw_response, expected_s, expected_p in markdown_wrapped_responses:
-            result = parse_response(raw_response)
-
-            assert result["s"] == expected_s
-            assert result["p"] == expected_p
-
-    def test_malformed_returns_error(self, malformed_responses: list[str]):
-        """Verify malformed responses return error dict with raw field."""
-        for raw_response in malformed_responses:
-            result = parse_response(raw_response)
-
-            assert result["s"] == "error"
-            assert result["c"] == 0.0
-            assert result["p"] is None
-            assert result["raw"] == raw_response
-
-    def test_empty_string(self):
-        """Verify empty string returns error dict."""
-        result = parse_response("")
-
-        assert result["s"] == "error"
-        assert result["c"] == 0.0
-        assert result["p"] is None
-        assert "raw" in result
-
-    def test_whitespace_only(self):
-        """Verify whitespace-only input returns error dict."""
-        result = parse_response("   \n\t  ")
-
-        assert result["s"] == "error"
-        assert result["c"] == 0.0
-        assert result["p"] is None
-
-    @pytest.mark.parametrize(
-        "raw_response,expected_p,expected_p_raw",
-        [
-            (
-                '{"s": "neg", "c": 0.85, "p": ["Keldon Johnson"]}',
-                "Keldon Johnson",
-                ["Keldon Johnson"],
-            ),
-            (
-                '{"s": "neg", "c": 0.85, "p": ["Julian", "Keldon"]}',
-                None,
-                ["Julian", "Keldon"],
-            ),
-            ('{"s": "neu", "c": 0.5, "p": []}', None, []),
-            ('{"s": "neg", "c": 0.85, "p": [42]}', None, [42]),
-        ],
-    )
-    def test_list_valued_p_normalized(
-        self,
-        raw_response: str,
-        expected_p: str | None,
-        expected_p_raw: list,
-    ):
-        """Verify list-valued p unwraps singleton strings, nulls the rest (#71).
-
-        Every list shape must set p_raw so the caller can log and count
-        the normalization — including unwrapped singletons.
-        """
-        result = parse_response(raw_response)
-
-        assert result["p"] == expected_p
-        assert result["p_raw"] == expected_p_raw
-
-    def test_non_list_p_has_no_p_raw(self):
-        """Verify a normal string p leaves the success dict unmarked."""
-        result = parse_response('{"s": "pos", "c": 0.9, "p": "LeBron James"}')
-
-        assert result == {"s": "pos", "c": 0.9, "p": "LeBron James"}
-
-    @pytest.mark.parametrize(
-        "raw_c",
-        ['"high"', '["0.9"]', '{"value": 0.9}', '"0.9.1"'],
-    )
-    def test_non_numeric_c_reads_zero(self, raw_c: str):
-        """Verify a non-numeric c degrades to 0.0 without invalidating the label (#94).
-
-        A bad confidence must not turn a usable label into an error row.
-        """
-        result = parse_response(f'{{"s": "neg", "c": {raw_c}, "p": "LeBron James"}}')
-
-        assert result == {"s": "neg", "c": 0.0, "p": "LeBron James"}
-
-
 class TestCalculateCost:
     """Tests for calculate_cost function."""
 
     def test_one_million_tokens_each(self):
         """Verify cost for 1M input + 1M output tokens."""
         # $0.50/M input + $2.50/M output = $3.00
-        cost = calculate_cost(input_tokens=1_000_000, output_tokens=1_000_000)
+        cost = calculate_cost(
+            SENTIMENT_STAGE, input_tokens=1_000_000, output_tokens=1_000_000
+        )
         assert cost == pytest.approx(3.00)
 
     def test_realistic_single_request(self):
         """Verify cost for a realistic single request (~150 in, ~30 out)."""
-        cost = calculate_cost(input_tokens=150, output_tokens=30)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=150, output_tokens=30)
 
         expected = (150 / 1_000_000) * 0.50 + (30 / 1_000_000) * 2.50
         assert cost == pytest.approx(expected)
 
     def test_zero_tokens(self):
         """Verify zero tokens returns zero cost."""
-        cost = calculate_cost(input_tokens=0, output_tokens=0)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=0, output_tokens=0)
         assert cost == 0.0
 
     def test_only_input(self):
         """Verify cost with only input tokens."""
-        cost = calculate_cost(input_tokens=1_000_000, output_tokens=0)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=1_000_000, output_tokens=0)
         assert cost == pytest.approx(0.50)
 
     def test_only_output(self):
         """Verify cost with only output tokens."""
-        cost = calculate_cost(input_tokens=0, output_tokens=1_000_000)
+        cost = calculate_cost(SENTIMENT_STAGE, input_tokens=0, output_tokens=1_000_000)
         assert cost == pytest.approx(2.50)
 
 
@@ -274,7 +108,11 @@ class TestFormatBatchRequest:
 
     def test_returns_correct_structure(self, valid_nba_comment: dict):
         """Verify output has custom_id and params keys."""
-        result = format_batch_request(valid_nba_comment)
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
 
         assert "custom_id" in result
         assert "params" in result
@@ -282,7 +120,11 @@ class TestFormatBatchRequest:
 
     def test_params_has_required_fields(self, valid_nba_comment: dict):
         """Verify params contains model, max_tokens, temperature, messages."""
-        result = format_batch_request(valid_nba_comment)
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
         params = result["params"]
 
         assert params["model"] == MODEL
@@ -292,12 +134,66 @@ class TestFormatBatchRequest:
 
     def test_messages_contains_prompt(self, valid_nba_comment: dict):
         """Verify messages array has user role with prompt."""
-        result = format_batch_request(valid_nba_comment)
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
         messages = result["params"]["messages"]
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
         assert valid_nba_comment["body"] in messages[0]["content"]
+
+    def test_params_key_order_matches_on_disk_request_lines(
+        self, valid_nba_comment: dict
+    ):
+        """Verify the sentiment params serialize in the frozen on-disk order."""
+        result = format_batch_request(
+            SENTIMENT_STAGE,
+            valid_nba_comment["id"],
+            comment_body=valid_nba_comment["body"],
+        )
+
+        assert list(result["params"]) == [
+            "model",
+            "max_tokens",
+            "temperature",
+            "messages",
+        ]
+
+    def test_target_stage_uses_its_own_sampling_contract(self):
+        """Verify a target request carries thinking-off and no temperature."""
+        result = format_batch_request(
+            TARGET_STAGE, "abc123", comment_body="Luka is washed", sentiment="neg"
+        )
+        params = result["params"]
+
+        assert params["model"] == TARGET_STAGE.model
+        assert params["thinking"] == {"type": "disabled"}
+        assert "temperature" not in params
+        assert "labeled negative" in params["messages"][0]["content"]
+
+
+class TestEstimateBatchCost:
+    """Tests for estimate_batch_cost function."""
+
+    def test_uses_stage_mean_input_and_max_output(self):
+        """Verify the estimate is request_count x (avg input + max output) at stage prices."""
+        cost = estimate_batch_cost(SENTIMENT_STAGE, 1_000)
+
+        expected = calculate_cost(
+            SENTIMENT_STAGE,
+            1_000 * SENTIMENT_STAGE.avg_input_tokens,
+            1_000 * SENTIMENT_STAGE.max_tokens,
+        )
+        assert cost == pytest.approx(expected)
+
+    def test_stages_price_differently(self):
+        """Verify the same request count costs more on the Sonnet-backed target stage."""
+        assert estimate_batch_cost(TARGET_STAGE, 1_000) > estimate_batch_cost(
+            SENTIMENT_STAGE, 1_000
+        )
 
 
 class TestInitState:
@@ -552,6 +448,7 @@ class TestGetMissingResults:
         state = init_state()
         state["batches"] = [
             new_failed_entry(
+                SENTIMENT_STAGE,
                 batch_num=1,
                 request_file="batch_001.jsonl",
                 attempted_at="2026-07-08T00:00:00+00:00",
@@ -830,6 +727,7 @@ class TestNewBatchEntry:
     def test_builds_entry_with_retry_and_cost_fields(self):
         """Verify a fresh entry carries the full v2 schema."""
         entry = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_new"),
@@ -859,6 +757,7 @@ class TestNewFailedEntry:
     def test_builds_terminal_entry(self):
         """Verify a submission-never-succeeded entry is terminal."""
         entry = new_failed_entry(
+            SENTIMENT_STAGE,
             batch_num=2,
             request_file="batch_002.jsonl",
             attempted_at="2026-07-08T00:00:00+00:00",
@@ -877,6 +776,7 @@ class TestNewFailedEntry:
         state = init_state()
         state["batches"] = [
             new_failed_entry(
+                SENTIMENT_STAGE,
                 batch_num=2,
                 request_file="batch_002.jsonl",
                 attempted_at="2026-07-08T00:00:00+00:00",
@@ -899,6 +799,7 @@ class TestRecordRetryAttempt:
         """
         # Arrange: first attempt ended with zero successes
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_old"),
@@ -940,6 +841,7 @@ class TestRecordRetryAttempt:
         recorded at first submission still describes what runs.
         """
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_old"),
@@ -965,6 +867,7 @@ class TestRecordRetryAttempt:
         Issue #29 required scenario: retries exhausted, batch marked failed.
         """
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_0"),
@@ -1003,6 +906,7 @@ class TestRecordRetryAttempt:
     def test_resets_actual_cost_fields(self):
         """Verify a retry zeroes any actuals from the superseded attempt."""
         batch = new_batch_entry(
+            SENTIMENT_STAGE,
             batch_num=1,
             request_file="batch_001.jsonl",
             submit_result=_submit_result("msgbatch_old"),
@@ -1071,11 +975,13 @@ class TestSummarizeActualUsage:
             },
         ]
 
-        usage = summarize_actual_usage(results)
+        usage = summarize_actual_usage(SENTIMENT_STAGE, results)
 
         assert usage["actual_input_tokens"] == 180
         assert usage["actual_output_tokens"] == 35
-        assert usage["actual_cost_usd"] == pytest.approx(calculate_cost(180, 35))
+        assert usage["actual_cost_usd"] == pytest.approx(
+            calculate_cost(SENTIMENT_STAGE, 180, 35)
+        )
 
     def test_errored_rows_contribute_zero(self):
         """Verify non-succeeded rows are excluded from actual usage."""
@@ -1090,14 +996,14 @@ class TestSummarizeActualUsage:
             {"custom_id": "c", "result_type": "expired", "error": "expired"},
         ]
 
-        usage = summarize_actual_usage(results)
+        usage = summarize_actual_usage(SENTIMENT_STAGE, results)
 
         assert usage["actual_input_tokens"] == 100
         assert usage["actual_output_tokens"] == 20
 
     def test_empty_results_yield_zeros(self):
         """Verify no results produce zero usage and zero cost."""
-        usage = summarize_actual_usage([])
+        usage = summarize_actual_usage(SENTIMENT_STAGE, [])
 
         assert usage == {
             "actual_input_tokens": 0,
@@ -1239,9 +1145,7 @@ class TestSaveState:
             "total_input_tokens": 5000,
             "total_output_tokens": 2500,
             "estimated_cost_usd": 3.75,
-            "batches": [
-                {"batch_id": "msgbatch_abc", "status": "in_progress"}
-            ],
+            "batches": [{"batch_id": "msgbatch_abc", "status": "in_progress"}],
         }
 
         save_state(state, state_path)

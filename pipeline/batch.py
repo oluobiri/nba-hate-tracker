@@ -1,7 +1,8 @@
-"""Core batch processing functions for sentiment classification.
+"""Batch API transport for the classifier stages.
 
-Pure functions for prompt building, response parsing, and cost calculation.
-API submission functions use the Anthropic Batch API.
+State tracking, submission, polling, download, retry, and cost
+accounting. Stage identity (model, prompt, parser) lives in the stage
+modules; this module formats and moves requests for any of them.
 """
 
 import json
@@ -13,19 +14,12 @@ from pathlib import Path
 
 import anthropic
 
+from pipeline.stage import ClassifierStage
+
 logger = logging.getLogger(__name__)
 
-# Model configuration
-MODEL = "claude-haiku-4-5-20251001"
-TEMPERATURE = 0.0
-MAX_TOKENS = 75
-REQUESTS_PER_BATCH = 100_000
-
-# Batch API pricing (50% discount applied)
-INPUT_COST_PER_MTOK = 0.50  # $0.50 per million input tokens
-OUTPUT_COST_PER_MTOK = 2.50  # $2.50 per million output tokens
-
 # State file and batch data layout
+REQUESTS_PER_BATCH = 100_000
 STATE_FILENAME = "state.json"
 REQUESTS_SUBDIR = "requests"
 RESPONSES_SUBDIR = "responses"
@@ -36,146 +30,72 @@ BACKOFF_BASE_SECONDS = 2.0
 BACKOFF_CAP_SECONDS = 60.0
 
 
-# Frozen v2 prompt (notebooks/2025-26/06_prompt_experiments): the eval
-# floors and known_miss flags in tests/eval/cases.yaml are pinned to this
-# exact text. Any edit is a new classifier: bump PROMPT_VERSION, re-pin
-# the hash test, re-baseline the eval suite.
-PROMPT_VERSION = "v2-production+s-hint"
-PROMPT_TEMPLATE = """Classify sentiment toward NBA players.
-Slang: nasty/sick/filthy=positive, washed/brick/fraud/cooked=negative, GOAT=positive.
-A trailing "/s" tags the comment as sarcasm.
-
-Comment: {comment_body}
-
-Respond ONLY with JSON: {{"s":"pos|neg|neu","c":0.0-1.0,"p":"Player Name"|null}}"""
-
-
-def build_prompt(comment_body: str) -> str:
+def calculate_cost(
+    stage: ClassifierStage, input_tokens: int, output_tokens: int
+) -> float:
     """
-    Build minimal prompt for sentiment classification.
-
-    Renders PROMPT_TEMPLATE, the frozen prompt labeled PROMPT_VERSION.
+    Calculate the USD cost of token usage at a stage's Batch API prices.
 
     Args:
-        comment_body: The raw Reddit comment text.
-
-    Returns:
-        The formatted prompt for the model.
-    """
-    return PROMPT_TEMPLATE.format(comment_body=comment_body)
-
-
-def parse_response(text: str) -> dict:
-    """
-    Parse the model response into a structured dict.
-
-    Handles three cases:
-    1. Valid JSON directly
-    2. JSON wrapped in markdown code blocks
-    3. Malformed responses
-
-    Args:
-        text: Raw text response from the model.
-
-    Returns:
-        Success: {"s": "pos|neg|neu", "c": float, "p": str|None}
-        A non-numeric "c" reads 0.0; the label is never invalidated by it.
-        A rare list-valued "p" (#71) is normalized — a single-string list
-        unwraps, anything else becomes None — and the original list is
-        preserved under "p_raw" so callers can log the occurrence.
-        Error: {"s": "error", "c": 0.0, "p": None, "raw": str}
-    """
-    if not text or not text.strip():
-        return {"s": "error", "c": 0.0, "p": None, "raw": text}
-
-    cleaned = text.strip()
-
-    # Handle markdown code blocks
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:]
-    elif cleaned.startswith("```"):
-        cleaned = cleaned[3:]
-
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-
-    cleaned = cleaned.strip()
-
-    try:
-        result = json.loads(cleaned)
-
-        #  Handle array responses (multi-player comments) - take first element
-        if isinstance(result, list):
-            if len(result) == 0:
-                return {"s": "error", "c": 0.0, "p": None, "raw": text}
-            result = result[0]
-
-        # Validate required fields
-        if "s" not in result:
-            return {"s": "error", "c": 0.0, "p": None, "raw": text}
-
-        # Normalize and validate sentiment value
-        sentiment = result.get("s", "")
-        if sentiment not in ("pos", "neg", "neu"):
-            return {"s": "error", "c": 0.0, "p": None, "raw": text}
-
-        # A non-numeric c must not cost the label: degrade to 0.0, keep s/p
-        try:
-            confidence = float(result.get("c", 0.0))
-        except (TypeError, ValueError):
-            confidence = 0.0
-        parsed = {"s": result["s"], "c": confidence, "p": result.get("p")}
-
-        # Normalize rare list-valued player field (#71): unwrap a
-        # single-string list, drop anything else; keep the original
-        # under p_raw so callers can log the occurrence.
-        if isinstance(parsed["p"], list):
-            raw_list = parsed["p"]
-            parsed["p_raw"] = raw_list
-            parsed["p"] = (
-                raw_list[0]
-                if len(raw_list) == 1 and isinstance(raw_list[0], str)
-                else None
-            )
-
-        return parsed
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return {"s": "error", "c": 0.0, "p": None, "raw": text}
-
-
-def calculate_cost(input_tokens: int, output_tokens: int) -> float:
-    """
-    Calculate the USD cost for a batch API request.
-
-    Args:
+        stage: The classifier stage whose pricing applies.
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
 
     Returns:
         Total cost in USD.
     """
-    input_cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MTOK
-    output_cost = (output_tokens / 1_000_000) * OUTPUT_COST_PER_MTOK
+    input_cost = (input_tokens / 1_000_000) * stage.input_cost_per_mtok
+    output_cost = (output_tokens / 1_000_000) * stage.output_cost_per_mtok
     return input_cost + output_cost
 
 
-def format_batch_request(comment: dict) -> dict:
+def estimate_batch_cost(stage: ClassifierStage, request_count: int) -> float:
     """
-    Format a comment into an Anthropic Batch API request.
+    Estimate a batch's cost before submission.
+
+    Assumes the stage's measured mean input tokens and its max_tokens of
+    output per request, so the estimate is an upper bound on output.
 
     Args:
-        comment: Comment dict with 'id' and 'body' fields.
+        stage: The classifier stage the requests belong to.
+        request_count: Number of requests in the batch.
+
+    Returns:
+        Estimated cost in USD.
+    """
+    return calculate_cost(
+        stage, request_count * stage.avg_input_tokens, request_count * stage.max_tokens
+    )
+
+
+def format_batch_request(
+    stage: ClassifierStage, custom_id: str, **prompt_kwargs: str
+) -> dict:
+    """
+    Format one prompt into an Anthropic Batch API request for a stage.
+
+    Params carry the stage's model, output cap, and sampling contract; the
+    key order (model, max_tokens, sampling, messages) is the on-disk
+    request-line order and must stay byte-identical for existing runs.
+
+    Args:
+        stage: The classifier stage issuing the request.
+        custom_id: Request id echoed back in the result (the comment id).
+        **prompt_kwargs: Arguments for stage.build_prompt (e.g.
+            comment_body, and sentiment for the target stage).
 
     Returns:
         Batch request dict with custom_id and params.
     """
     return {
-        "custom_id": comment["id"],
+        "custom_id": custom_id,
         "params": {
-            "model": MODEL,
-            "max_tokens": MAX_TOKENS,
-            "temperature": TEMPERATURE,
-            "messages": [{"role": "user", "content": build_prompt(comment["body"])}],
+            "model": stage.model,
+            "max_tokens": stage.max_tokens,
+            **stage.sampling_params,
+            "messages": [
+                {"role": "user", "content": stage.build_prompt(**prompt_kwargs)}
+            ],
         },
     }
 
@@ -434,6 +354,7 @@ def mark_batch_failed(batch: dict) -> None:
 
 
 def new_batch_entry(
+    stage: ClassifierStage,
     batch_num: int,
     request_file: str,
     submit_result: dict,
@@ -444,6 +365,7 @@ def new_batch_entry(
     Build a state entry for a freshly submitted batch.
 
     Args:
+        stage: The classifier stage submitted; its identity is recorded.
         batch_num: Batch number extracted from the request filename.
         request_file: Name of the request JSONL file.
         submit_result: Dict returned by submit_batch.
@@ -459,8 +381,8 @@ def new_batch_entry(
         "batch_num": batch_num,
         "batch_id": submit_result["batch_id"],
         "request_file": request_file,
-        "model": MODEL,
-        "prompt_version": PROMPT_VERSION,
+        "model": stage.model,
+        "prompt_version": stage.prompt_version,
         "status": submit_result["processing_status"],
         "submitted_at": submitted_at,
         "ended_at": submit_result["ended_at"],
@@ -478,6 +400,7 @@ def new_batch_entry(
 
 
 def new_failed_entry(
+    stage: ClassifierStage,
     batch_num: int,
     request_file: str,
     attempted_at: str,
@@ -490,6 +413,7 @@ def new_failed_entry(
     fail-fast gate on the next run instead of being silently reattempted.
 
     Args:
+        stage: The classifier stage attempted; its identity is recorded.
         batch_num: Batch number extracted from the request filename.
         request_file: Name of the request JSONL file.
         attempted_at: ISO 8601 timestamp of the final failed attempt.
@@ -502,8 +426,8 @@ def new_failed_entry(
         "batch_num": batch_num,
         "batch_id": None,
         "request_file": request_file,
-        "model": MODEL,
-        "prompt_version": PROMPT_VERSION,
+        "model": stage.model,
+        "prompt_version": stage.prompt_version,
         "status": "failed",
         "submitted_at": attempted_at,
         "ended_at": None,
@@ -586,7 +510,7 @@ def get_classifier_identity(state: dict) -> dict[str, str] | None:
     return {"model": model, "prompt_version": prompt_version}
 
 
-def summarize_actual_usage(results: list[dict]) -> dict:
+def summarize_actual_usage(stage: ClassifierStage, results: list[dict]) -> dict:
     """
     Sum actual token usage over a batch's downloaded results.
 
@@ -594,6 +518,7 @@ def summarize_actual_usage(results: list[dict]) -> dict:
     contribute zero, so actual cost reflects only paid-for results.
 
     Args:
+        stage: The classifier stage whose pricing applies.
         results: Result dicts as returned by download_results.
 
     Returns:
@@ -609,7 +534,7 @@ def summarize_actual_usage(results: list[dict]) -> dict:
     return {
         "actual_input_tokens": input_tokens,
         "actual_output_tokens": output_tokens,
-        "actual_cost_usd": calculate_cost(input_tokens, output_tokens),
+        "actual_cost_usd": calculate_cost(stage, input_tokens, output_tokens),
     }
 
 

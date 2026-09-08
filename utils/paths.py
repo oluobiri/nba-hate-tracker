@@ -68,14 +68,18 @@ def get_filtered_dir() -> Path:
     return get_data_dir() / FILTERED_DATA_SUBDIR
 
 
-def get_batches_dir() -> Path:
+def get_batches_dir(stage: str = "sentiment") -> Path:
     """
-    Get batches directory for Anthropic API requests/responses.
+    Get a classifier stage's batches directory (requests, responses, state).
+
+    Args:
+        stage: Classifier stage name; each stage runs in its own directory.
 
     Returns:
-        Path to batches directory (e.g., data/2024-25/batches/).
+        Path to the stage's batches directory
+        (e.g., data/2024-25/batches/sentiment/).
     """
-    return get_data_dir() / BATCHES_DATA_SUBDIR
+    return get_data_dir() / BATCHES_DATA_SUBDIR / stage
 
 
 def get_processed_dir() -> Path:

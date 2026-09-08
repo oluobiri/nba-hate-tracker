@@ -11,7 +11,7 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.batch import parse_response
+from pipeline.sentiment import parse_response
 from pipeline.processors import find_player_mentions
 from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,

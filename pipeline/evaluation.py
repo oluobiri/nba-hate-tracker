@@ -1,29 +1,34 @@
-"""Eval harness for the LLM sentiment classifier.
+"""Eval harness for the LLM classifier stages.
 
-Loads ground-truth cases from a YAML file and runs them through the
-production prompt/parse path (pipeline.batch.build_prompt +
-parse_response) with production model parameters.
+Loads ground-truth cases from a YAML file and runs them through a
+stage's production prompt/parse path with the stage's model parameters.
+The loader, floors, runner, and tally are generic over a ClassifierStage;
+each stage supplies its case type, the per-case checks its contract
+needs, the prompt arguments a case yields, and what "correct" means.
+The sentiment classifier's case type and wrappers live here; the target
+verifier's live in pipeline.targets.
 
 Cases are classified via the synchronous Messages API rather than the
-Batch API used in production: identical model, temperature, and token
-limits — only the transport differs. This is deliberate; a 23-case eval
-must finish in seconds, not hours. Do not "fix" this to use batches.
+Batch API used in production: identical model, sampling, and token
+limits — only the transport differs. This is deliberate; a ~100-case
+eval must finish in seconds, not hours. Do not "fix" this to use batches.
 
-The prompt_builder parameter on classify_cases exists so prompt-variant
-experiments (issue #62 item 3) can reuse this harness against candidate
-prompts without touching the pytest suite, which always measures the
-production prompt.
+The prompt_builder parameter on the runners exists so prompt-variant
+experiments can reuse this harness against candidate prompts without
+touching the pytest suites, which always measure the frozen prompt.
 """
 
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import anthropic
 import yaml
 
-from pipeline.batch import MAX_TOKENS, MODEL, TEMPERATURE, build_prompt, parse_response
+from pipeline.sentiment import SENTIMENT_STAGE, build_prompt
+from pipeline.stage import ClassifierStage
 from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,229 @@ REQUIRED_KEYS = ("id", "text", "expected", "expected_player", "category", "sourc
 DEFAULT_CASES_PATH = (
     Path(__file__).resolve().parent.parent / "tests" / "eval" / "cases.yaml"
 )
+
+
+# ---------------------------------------------------------------------------
+# Generic harness: any stage
+# ---------------------------------------------------------------------------
+
+
+def read_cases_file(
+    path: Path, label: str = "Cases"
+) -> tuple[dict[str, float], list[dict]]:
+    """
+    Read and structurally validate a cases YAML file.
+
+    Args:
+        path: Path to the cases file.
+        label: Noun for error messages (e.g. "Cases", "Target cases").
+
+    Returns:
+        Tuple of (category_floors mapping, raw case dicts).
+
+    Raises:
+        ValueError: If the top-level structure is malformed.
+    """
+    with open(path) as f:
+        payload = yaml.safe_load(f)
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} file {path} is not a mapping")
+
+    floors = payload.get("meta", {}).get("category_floors")
+    if not isinstance(floors, dict):
+        raise ValueError(f"{label} file {path} is missing meta.category_floors")
+
+    cases = payload.get("cases")
+    if not isinstance(cases, list):
+        raise ValueError(f"{label} file {path} is missing a 'cases' list")
+
+    return floors, cases
+
+
+def load_case_file(
+    path: Path,
+    *,
+    required_keys: tuple[str, ...],
+    factory: Callable[[dict], Any],
+    check: Callable[[str, dict], None] | None = None,
+    label: str = "Cases",
+) -> list:
+    """
+    Load and validate cases from a YAML file into a stage's case type.
+
+    Shared checks: required keys, duplicate ids, a valid source, and a
+    category with an entry in meta.category_floors. A stage's own
+    contract (valid labels, category consistency) runs via `check`.
+
+    Args:
+        path: Path to the cases file.
+        required_keys: Keys every raw case must carry.
+        factory: Builds the stage's case object from a validated raw dict.
+        check: Stage-specific validation of (case_label, raw); raises
+            ValueError naming the case. Runs after the shared key/id/source
+            checks and before the floors check.
+        label: Noun for error messages.
+
+    Returns:
+        List of case objects in file order.
+
+    Raises:
+        ValueError: On any failed check; messages name the offending case.
+    """
+    floors, raw_cases = read_cases_file(path, label)
+    noun = label[:-1] if label.endswith("s") else label
+
+    cases: list = []
+    seen_ids: set[str] = set()
+
+    for index, raw in enumerate(raw_cases):
+        case_label = raw.get("id", f"case #{index}")
+
+        missing = [key for key in required_keys if key not in raw]
+        if missing:
+            raise ValueError(f"{noun} {case_label!r} is missing keys: {missing}")
+
+        if raw["id"] in seen_ids:
+            raise ValueError(f"Duplicate {noun.lower()} id: {raw['id']!r}")
+        seen_ids.add(raw["id"])
+
+        if raw["source"] not in VALID_SOURCES:
+            raise ValueError(
+                f"{noun} {case_label!r} has invalid source {raw['source']!r} "
+                f"(must be one of {VALID_SOURCES})"
+            )
+
+        if check is not None:
+            check(case_label, raw)
+
+        if raw["category"] not in floors:
+            raise ValueError(
+                f"{noun} {case_label!r} has category {raw['category']!r} "
+                "with no entry in meta.category_floors"
+            )
+
+        cases.append(factory(raw))
+
+    return cases
+
+
+def load_floors(path: Path, label: str = "Cases") -> dict[str, float]:
+    """
+    Load and validate per-category accuracy floors from a cases file.
+
+    Args:
+        path: Path to the cases file.
+        label: Noun for error messages.
+
+    Returns:
+        Mapping of category name to minimum acceptable accuracy in [0, 1].
+
+    Raises:
+        ValueError: If a floor is outside [0, 1] or names a category with
+            no cases in the file.
+    """
+    floors, raw_cases = read_cases_file(path, label)
+
+    for category, floor in floors.items():
+        if not isinstance(floor, int | float) or not 0.0 <= floor <= 1.0:
+            raise ValueError(
+                f"Floor for category {category!r} must be in [0, 1], got {floor!r}"
+            )
+
+    case_categories = {raw.get("category") for raw in raw_cases}
+    unused = sorted(set(floors) - case_categories)
+    if unused:
+        raise ValueError(f"Floors defined for categories with no cases: {unused}")
+
+    return {category: float(floor) for category, floor in floors.items()}
+
+
+def run_cases(
+    stage: ClassifierStage,
+    cases: list,
+    case_prompt_args: Callable[[Any], tuple],
+    prompt_builder: Callable[..., str] | None = None,
+    client: anthropic.Anthropic | None = None,
+) -> dict[str, dict]:
+    """
+    Run each case through a stage via the synchronous Messages API.
+
+    Uses the stage's model, sampling params, max_tokens, and parser, so
+    results measure exactly what a batch run would produce for the same
+    prompt.
+
+    Args:
+        stage: The classifier stage to run.
+        cases: Case objects with an `id` attribute.
+        case_prompt_args: Yields the positional arguments the prompt
+            builder takes for a case (e.g. (text,) or (text, sentiment)).
+        prompt_builder: Builds the user message. Defaults to the stage's
+            frozen prompt; pass a variant for experiments.
+        client: Anthropic client. Defaults to a fresh client reading
+            ANTHROPIC_API_KEY from the environment.
+
+    Returns:
+        Mapping of case id to the stage's parsed result plus "raw" (the
+        full response text) and "stop_reason", so output format and
+        truncation can be measured alongside accuracy.
+    """
+    if client is None:
+        client = anthropic.Anthropic()
+    if prompt_builder is None:
+        prompt_builder = stage.build_prompt
+
+    results: dict[str, dict] = {}
+    for case in cases:
+        response = client.messages.create(
+            model=stage.model,
+            max_tokens=stage.max_tokens,
+            **stage.sampling_params,
+            messages=[
+                {"role": "user", "content": prompt_builder(*case_prompt_args(case))}
+            ],
+        )
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        results[case.id] = {
+            **stage.parse_response(text),
+            "raw": text,
+            "stop_reason": response.stop_reason,
+        }
+        logger.debug("%s %s: %s", stage.name, case.id, results[case.id])
+
+    return results
+
+
+def tally_by_category(
+    cases: list, results: dict[str, dict], correct: Callable[[Any, dict], bool]
+) -> dict[str, tuple[int, int]]:
+    """
+    Tally per-category accuracy under a stage's notion of correct.
+
+    Known-miss cases are included in the totals; category floors are set
+    with them priced in.
+
+    Args:
+        cases: Case objects with `id` and `category` attributes.
+        results: Mapping of case id to result (run_cases shape).
+        correct: Judges (case, result) -> whether the result is right.
+
+    Returns:
+        Mapping of category to (correct, total) counts.
+    """
+    tallies: dict[str, tuple[int, int]] = {}
+    for case in cases:
+        hits, total = tallies.get(case.category, (0, 0))
+        if correct(case, results[case.id]):
+            hits += 1
+        tallies[case.category] = (hits, total + 1)
+
+    return tallies
+
+
+# ---------------------------------------------------------------------------
+# The sentiment classifier's case type and wrappers
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -66,39 +294,34 @@ class EvalCase:
     known_miss_player: bool = False
 
 
-def _read_cases_file(path: Path) -> tuple[dict[str, float], list[dict]]:
-    """
-    Read and structurally validate the cases YAML file.
+def _check_sentiment_case(case_label: str, raw: dict) -> None:
+    """Enforce the sentiment case contract: a valid expected label."""
+    if raw["expected"] not in VALID_SENTIMENTS:
+        raise ValueError(
+            f"Case {case_label!r} has invalid expected value "
+            f"{raw['expected']!r} (must be one of {VALID_SENTIMENTS})"
+        )
 
-    Args:
-        path: Path to the cases file.
 
-    Returns:
-        Tuple of (category_floors mapping, raw case dicts).
-
-    Raises:
-        ValueError: If the top-level structure is malformed.
-    """
-    with open(path) as f:
-        payload = yaml.safe_load(f)
-
-    if not isinstance(payload, dict):
-        raise ValueError(f"Cases file {path} is not a mapping")
-
-    floors = payload.get("meta", {}).get("category_floors")
-    if not isinstance(floors, dict):
-        raise ValueError(f"Cases file {path} is missing meta.category_floors")
-
-    cases = payload.get("cases")
-    if not isinstance(cases, list):
-        raise ValueError(f"Cases file {path} is missing a 'cases' list")
-
-    return floors, cases
+def _sentiment_case(raw: dict) -> EvalCase:
+    """Build an EvalCase from a validated raw dict."""
+    return EvalCase(
+        id=raw["id"],
+        text=raw["text"],
+        expected=raw["expected"],
+        expected_player=raw["expected_player"],
+        category=raw["category"],
+        source=raw["source"],
+        comment_id=raw.get("comment_id"),
+        note=raw.get("note"),
+        known_miss=raw.get("known_miss", False),
+        known_miss_player=raw.get("known_miss_player", False),
+    )
 
 
 def load_cases(path: Path = DEFAULT_CASES_PATH) -> list[EvalCase]:
     """
-    Load and validate eval cases from a YAML file.
+    Load and validate sentiment eval cases from a YAML file.
 
     Args:
         path: Path to the cases file. Defaults to tests/eval/cases.yaml.
@@ -111,61 +334,17 @@ def load_cases(path: Path = DEFAULT_CASES_PATH) -> list[EvalCase]:
             expected/source values, or a case category that has no entry
             in meta.category_floors. Messages name the offending case.
     """
-    floors, raw_cases = _read_cases_file(path)
-
-    cases: list[EvalCase] = []
-    seen_ids: set[str] = set()
-
-    for index, raw in enumerate(raw_cases):
-        case_label = raw.get("id", f"case #{index}")
-
-        missing = [key for key in REQUIRED_KEYS if key not in raw]
-        if missing:
-            raise ValueError(f"Case {case_label!r} is missing keys: {missing}")
-
-        if raw["id"] in seen_ids:
-            raise ValueError(f"Duplicate case id: {raw['id']!r}")
-        seen_ids.add(raw["id"])
-
-        if raw["expected"] not in VALID_SENTIMENTS:
-            raise ValueError(
-                f"Case {case_label!r} has invalid expected value "
-                f"{raw['expected']!r} (must be one of {VALID_SENTIMENTS})"
-            )
-
-        if raw["source"] not in VALID_SOURCES:
-            raise ValueError(
-                f"Case {case_label!r} has invalid source {raw['source']!r} "
-                f"(must be one of {VALID_SOURCES})"
-            )
-
-        if raw["category"] not in floors:
-            raise ValueError(
-                f"Case {case_label!r} has category {raw['category']!r} "
-                "with no entry in meta.category_floors"
-            )
-
-        cases.append(
-            EvalCase(
-                id=raw["id"],
-                text=raw["text"],
-                expected=raw["expected"],
-                expected_player=raw["expected_player"],
-                category=raw["category"],
-                source=raw["source"],
-                comment_id=raw.get("comment_id"),
-                note=raw.get("note"),
-                known_miss=raw.get("known_miss", False),
-                known_miss_player=raw.get("known_miss_player", False),
-            )
-        )
-
-    return cases
+    return load_case_file(
+        path,
+        required_keys=REQUIRED_KEYS,
+        factory=_sentiment_case,
+        check=_check_sentiment_case,
+    )
 
 
 def load_category_floors(path: Path = DEFAULT_CASES_PATH) -> dict[str, float]:
     """
-    Load and validate per-category accuracy floors.
+    Load and validate the sentiment suite's per-category accuracy floors.
 
     Args:
         path: Path to the cases file. Defaults to tests/eval/cases.yaml.
@@ -177,20 +356,7 @@ def load_category_floors(path: Path = DEFAULT_CASES_PATH) -> dict[str, float]:
         ValueError: If a floor is outside [0, 1] or names a category with
             no cases in the file.
     """
-    floors, raw_cases = _read_cases_file(path)
-
-    for category, floor in floors.items():
-        if not isinstance(floor, int | float) or not 0.0 <= floor <= 1.0:
-            raise ValueError(
-                f"Floor for category {category!r} must be in [0, 1], got {floor!r}"
-            )
-
-    case_categories = {raw.get("category") for raw in raw_cases}
-    unused = sorted(set(floors) - case_categories)
-    if unused:
-        raise ValueError(f"Floors defined for categories with no cases: {unused}")
-
-    return {category: float(floor) for category, floor in floors.items()}
+    return load_floors(path)
 
 
 def classify_cases(
@@ -199,11 +365,7 @@ def classify_cases(
     client: anthropic.Anthropic | None = None,
 ) -> dict[str, dict]:
     """
-    Classify each case via the synchronous Messages API.
-
-    Uses production model parameters (MODEL, TEMPERATURE, MAX_TOKENS) and
-    the production response parser, so results measure exactly what the
-    batch pipeline would produce for the same prompt.
+    Classify each sentiment case via the synchronous Messages API.
 
     Args:
         cases: Cases to classify.
@@ -214,23 +376,39 @@ def classify_cases(
             ANTHROPIC_API_KEY from the environment.
 
     Returns:
-        Mapping of case id to parsed result dict (parse_response shape).
+        Mapping of case id to parsed result (parse_response shape plus
+        "raw" and "stop_reason").
     """
-    if client is None:
-        client = anthropic.Anthropic()
+    return run_cases(
+        SENTIMENT_STAGE,
+        cases,
+        lambda case: (case.text,),
+        prompt_builder=prompt_builder,
+        client=client,
+    )
 
-    results: dict[str, dict] = {}
-    for case in cases:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE,
-            messages=[{"role": "user", "content": prompt_builder(case.text)}],
-        )
-        results[case.id] = parse_response(response.content[0].text)
-        logger.debug("Classified %s: %s", case.id, results[case.id]["s"])
 
-    return results
+def accuracy_by_category(
+    cases: list[EvalCase], results: dict[str, dict]
+) -> dict[str, tuple[int, int]]:
+    """
+    Tally sentiment accuracy per case category.
+
+    Args:
+        cases: The cases that were classified.
+        results: Mapping of case id to parsed result (classify_cases shape).
+
+    Returns:
+        Mapping of category to (correct, total) sentiment counts.
+    """
+    return tally_by_category(
+        cases, results, lambda case, result: result["s"] == case.expected
+    )
+
+
+# ---------------------------------------------------------------------------
+# Attribution comparison helpers
+# ---------------------------------------------------------------------------
 
 
 def normalize_player(name: str | None) -> str | None:
@@ -300,29 +478,3 @@ def attribution_match(
         True if the resolved prediction equals the expected canonical name.
     """
     return resolve_sentiment_player(predicted, alias_map) == expected
-
-
-def accuracy_by_category(
-    cases: list[EvalCase], results: dict[str, dict]
-) -> dict[str, tuple[int, int]]:
-    """
-    Tally sentiment accuracy per case category.
-
-    Known-miss cases are included in the totals; category floors are set
-    with them priced in.
-
-    Args:
-        cases: The cases that were classified.
-        results: Mapping of case id to parsed result (classify_cases shape).
-
-    Returns:
-        Mapping of category to (correct, total) sentiment counts.
-    """
-    tallies: dict[str, tuple[int, int]] = {}
-    for case in cases:
-        correct, total = tallies.get(case.category, (0, 0))
-        if results[case.id]["s"] == case.expected:
-            correct += 1
-        tallies[case.category] = (correct, total + 1)
-
-    return tallies

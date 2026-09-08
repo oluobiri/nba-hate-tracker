@@ -223,6 +223,19 @@ class TestParseResponse:
 
         assert result == {"s": "pos", "c": 0.9, "p": "LeBron James"}
 
+    @pytest.mark.parametrize(
+        "raw_c",
+        ['"high"', '["0.9"]', '{"value": 0.9}', '"0.9.1"'],
+    )
+    def test_non_numeric_c_reads_zero(self, raw_c: str):
+        """Verify a non-numeric c degrades to 0.0 without invalidating the label (#94).
+
+        A bad confidence must not turn a usable label into an error row.
+        """
+        result = parse_response(f'{{"s": "neg", "c": {raw_c}, "p": "LeBron James"}}')
+
+        assert result == {"s": "neg", "c": 0.0, "p": "LeBron James"}
+
 
 class TestCalculateCost:
     """Tests for calculate_cost function."""

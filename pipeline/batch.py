@@ -79,6 +79,7 @@ def parse_response(text: str) -> dict:
 
     Returns:
         Success: {"s": "pos|neg|neu", "c": float, "p": str|None}
+        A non-numeric "c" reads 0.0; the label is never invalidated by it.
         A rare list-valued "p" (#71) is normalized — a single-string list
         unwraps, anything else becomes None — and the original list is
         preserved under "p_raw" so callers can log the occurrence.
@@ -118,11 +119,12 @@ def parse_response(text: str) -> dict:
         if sentiment not in ("pos", "neg", "neu"):
             return {"s": "error", "c": 0.0, "p": None, "raw": text}
 
-        parsed = {
-            "s": result["s"],
-            "c": float(result.get("c", 0.0)),
-            "p": result.get("p"),
-        }
+        # A non-numeric c must not cost the label: degrade to 0.0, keep s/p
+        try:
+            confidence = float(result.get("c", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        parsed = {"s": result["s"], "c": confidence, "p": result.get("p")}
 
         # Normalize rare list-valued player field (#71): unwrap a
         # single-string list, drop anything else; keep the original

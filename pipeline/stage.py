@@ -8,8 +8,13 @@ own instance; this module only defines the shape and the lookup.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 STAGE_NAMES = ("sentiment", "target")
+
+# Request keys the transport and runner set themselves; a stage's
+# sampling params must not shadow them.
+_RESERVED_REQUEST_KEYS = frozenset({"model", "max_tokens", "messages"})
 
 
 @dataclass(frozen=True)
@@ -37,7 +42,7 @@ class ClassifierStage:
     name: str
     model: str
     max_tokens: int
-    sampling_params: dict
+    sampling_params: dict[str, Any]
     prompt_version: str
     prompt_template: str
     build_prompt: Callable[..., str]
@@ -45,6 +50,14 @@ class ClassifierStage:
     input_cost_per_mtok: float
     output_cost_per_mtok: float
     avg_input_tokens: int
+
+    def __post_init__(self) -> None:
+        """Reject sampling params that would clobber the request's own keys."""
+        clash = _RESERVED_REQUEST_KEYS & set(self.sampling_params)
+        if clash:
+            raise ValueError(
+                f"Stage {self.name!r} sampling_params may not set {sorted(clash)}"
+            )
 
 
 def get_stage(name: str) -> ClassifierStage:

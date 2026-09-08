@@ -243,7 +243,9 @@ class TestClassifyCases:
     def make_client(self, response_text: str) -> Mock:
         """Build a mock Anthropic client returning fixed response text."""
         client = Mock()
-        client.messages.create.return_value = Mock(content=[Mock(text=response_text)])
+        client.messages.create.return_value = Mock(
+            content=[Mock(type="text", text=response_text)], stop_reason="end_turn"
+        )
         return client
 
     def load_two_cases(self, tmp_path) -> list:
@@ -262,7 +264,13 @@ class TestClassifyCases:
         results = classify_cases(cases, client=client)
 
         assert set(results) == {"pos-01", "pos-02"}
-        assert results["pos-01"] == {"s": "pos", "c": 0.9, "p": "LeBron James"}
+        assert results["pos-01"] == {
+            "s": "pos",
+            "c": 0.9,
+            "p": "LeBron James",
+            "raw": '{"s": "pos", "c": 0.9, "p": "LeBron James"}',
+            "stop_reason": "end_turn",
+        }
 
     def test_uses_production_model_params(self, tmp_path):
         """Requests go out with production MODEL/TEMPERATURE/MAX_TOKENS."""

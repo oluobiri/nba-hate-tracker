@@ -71,4 +71,6 @@ def get_stage(name: str) -> ClassifierStage:
         from pipeline.targets import TARGET_STAGE
 
         return TARGET_STAGE
-    raise ValueError(f"Unknown classifier stage {name!r} (must be one of {STAGE_NAMES})")
+    raise ValueError(
+        f"Unknown classifier stage {name!r} (must be one of {STAGE_NAMES})"
+    )

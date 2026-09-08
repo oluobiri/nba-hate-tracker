@@ -30,7 +30,9 @@ BACKOFF_BASE_SECONDS = 2.0
 BACKOFF_CAP_SECONDS = 60.0
 
 
-def calculate_cost(stage: ClassifierStage, input_tokens: int, output_tokens: int) -> float:
+def calculate_cost(
+    stage: ClassifierStage, input_tokens: int, output_tokens: int
+) -> float:
     """
     Calculate the USD cost of token usage at a stage's Batch API prices.
 

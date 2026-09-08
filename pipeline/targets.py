@@ -2,23 +2,26 @@
 
 Answers, for a polar comment, "toward whom is this sentiment directed?"
 The verdict is a re-derived target (player or None); the attributed
-player is not an input. Eval-case contract, prompt, parser, and runner.
+player is not an input. Identity, prompt, parser, the stage instance, and
+the eval-case contract; the harness itself lives in pipeline.evaluation.
 """
 
 import json
-import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import anthropic
-import yaml
 
-from pipeline.evaluation import VALID_SOURCES, attribution_match
+from pipeline.evaluation import (
+    attribution_match,
+    load_case_file,
+    load_floors,
+    run_cases,
+    tally_by_category,
+)
 from pipeline.stage import ClassifierStage
-
-logger = logging.getLogger(__name__)
 
 # Verifier identity. Sonnet 5 rejects sampling params, so determinism
 # comes from thinking-off + the 3-run pin, not temperature.
@@ -27,7 +30,7 @@ TARGET_THINKING = {"type": "disabled"}
 TARGET_MAX_TOKENS = 75
 
 # Batch API pricing for Sonnet 5 (50% discount applied); mean input
-# tokens measured over the eval suite with count_tokens (2026-09-08).
+# tokens measured over the eval suite with count_tokens.
 TARGET_INPUT_COST_PER_MTOK = 1.00
 TARGET_OUTPUT_COST_PER_MTOK = 5.00
 TARGET_AVG_INPUT_TOKENS = 228
@@ -207,36 +210,6 @@ class TargetCase:
     known_miss: bool = False
 
 
-def _read_target_cases_file(path: Path) -> tuple[dict[str, float], list[dict]]:
-    """
-    Read and structurally validate the target-cases YAML file.
-
-    Args:
-        path: Path to the cases file.
-
-    Returns:
-        Tuple of (category_floors mapping, raw case dicts).
-
-    Raises:
-        ValueError: If the top-level structure is malformed.
-    """
-    with open(path) as f:
-        payload = yaml.safe_load(f)
-
-    if not isinstance(payload, dict):
-        raise ValueError(f"Target cases file {path} is not a mapping")
-
-    floors = payload.get("meta", {}).get("category_floors")
-    if not isinstance(floors, dict):
-        raise ValueError(f"Target cases file {path} is missing meta.category_floors")
-
-    cases = payload.get("cases")
-    if not isinstance(cases, list):
-        raise ValueError(f"Target cases file {path} is missing a 'cases' list")
-
-    return floors, cases
-
-
 def _check_target_consistency(case_label: str, raw: dict) -> None:
     """
     Enforce the category's contract on expected_target.
@@ -271,6 +244,48 @@ def _check_target_consistency(case_label: str, raw: dict) -> None:
         )
 
 
+def _check_target_case(case_label: str, raw: dict) -> None:
+    """
+    Enforce the target case contract: polar sentiment, a known category,
+    and a target consistent with that category.
+
+    Args:
+        case_label: The case id, for the error message.
+        raw: The raw case dict.
+
+    Raises:
+        ValueError: On a non-polar sentiment, a category outside
+            TARGET_CATEGORIES, or a target contradicting the category.
+    """
+    if raw["sentiment"] not in POLAR_SENTIMENTS:
+        raise ValueError(
+            f"Target case {case_label!r} has sentiment {raw['sentiment']!r} "
+            f"(must be one of {POLAR_SENTIMENTS})"
+        )
+    if raw["category"] not in TARGET_CATEGORIES:
+        raise ValueError(
+            f"Target case {case_label!r} has category {raw['category']!r} "
+            f"(must be one of {TARGET_CATEGORIES})"
+        )
+    _check_target_consistency(case_label, raw)
+
+
+def _target_case(raw: dict) -> TargetCase:
+    """Build a TargetCase from a validated raw dict."""
+    return TargetCase(
+        id=raw["id"],
+        text=raw["text"],
+        sentiment=raw["sentiment"],
+        attributed_player=raw["attributed_player"],
+        expected_target=raw["expected_target"],
+        category=raw["category"],
+        source=raw["source"],
+        comment_id=raw.get("comment_id"),
+        note=raw.get("note"),
+        known_miss=raw.get("known_miss", False),
+    )
+
+
 def load_target_cases(path: Path = DEFAULT_TARGET_CASES_PATH) -> list[TargetCase]:
     """
     Load and validate target-verification cases from a YAML file.
@@ -288,64 +303,13 @@ def load_target_cases(path: Path = DEFAULT_TARGET_CASES_PATH) -> list[TargetCase
             category with no entry in meta.category_floors. Messages name
             the offending case.
     """
-    floors, raw_cases = _read_target_cases_file(path)
-
-    cases: list[TargetCase] = []
-    seen_ids: set[str] = set()
-
-    for index, raw in enumerate(raw_cases):
-        case_label = raw.get("id", f"case #{index}")
-
-        missing = [key for key in REQUIRED_TARGET_KEYS if key not in raw]
-        if missing:
-            raise ValueError(f"Target case {case_label!r} is missing keys: {missing}")
-
-        if raw["id"] in seen_ids:
-            raise ValueError(f"Duplicate target case id: {raw['id']!r}")
-        seen_ids.add(raw["id"])
-
-        if raw["sentiment"] not in POLAR_SENTIMENTS:
-            raise ValueError(
-                f"Target case {case_label!r} has sentiment {raw['sentiment']!r} "
-                f"(must be one of {POLAR_SENTIMENTS})"
-            )
-
-        if raw["source"] not in VALID_SOURCES:
-            raise ValueError(
-                f"Target case {case_label!r} has invalid source {raw['source']!r} "
-                f"(must be one of {VALID_SOURCES})"
-            )
-
-        if raw["category"] not in TARGET_CATEGORIES:
-            raise ValueError(
-                f"Target case {case_label!r} has category {raw['category']!r} "
-                f"(must be one of {TARGET_CATEGORIES})"
-            )
-
-        if raw["category"] not in floors:
-            raise ValueError(
-                f"Target case {case_label!r} has category {raw['category']!r} "
-                "with no entry in meta.category_floors"
-            )
-
-        _check_target_consistency(case_label, raw)
-
-        cases.append(
-            TargetCase(
-                id=raw["id"],
-                text=raw["text"],
-                sentiment=raw["sentiment"],
-                attributed_player=raw["attributed_player"],
-                expected_target=raw["expected_target"],
-                category=raw["category"],
-                source=raw["source"],
-                comment_id=raw.get("comment_id"),
-                note=raw.get("note"),
-                known_miss=raw.get("known_miss", False),
-            )
-        )
-
-    return cases
+    return load_case_file(
+        path,
+        required_keys=REQUIRED_TARGET_KEYS,
+        factory=_target_case,
+        check=_check_target_case,
+        label="Target cases",
+    )
 
 
 def load_target_floors(path: Path = DEFAULT_TARGET_CASES_PATH) -> dict[str, float]:
@@ -362,20 +326,7 @@ def load_target_floors(path: Path = DEFAULT_TARGET_CASES_PATH) -> dict[str, floa
         ValueError: If a floor is outside [0, 1] or names a category with
             no cases in the file.
     """
-    floors, raw_cases = _read_target_cases_file(path)
-
-    for category, floor in floors.items():
-        if not isinstance(floor, int | float) or not 0.0 <= floor <= 1.0:
-            raise ValueError(
-                f"Floor for category {category!r} must be in [0, 1], got {floor!r}"
-            )
-
-    case_categories = {raw.get("category") for raw in raw_cases}
-    unused = sorted(set(floors) - case_categories)
-    if unused:
-        raise ValueError(f"Floors defined for categories with no cases: {unused}")
-
-    return {category: float(floor) for category, floor in floors.items()}
+    return load_floors(path, label="Target cases")
 
 
 def classify_target_cases(
@@ -385,10 +336,6 @@ def classify_target_cases(
 ) -> dict[str, dict]:
     """
     Run each case through the verifier via the synchronous Messages API.
-
-    Uses the verifier's own model parameters and parser, so results
-    measure exactly what a batch run would produce for the same prompt.
-    Synchronous by design: a ~100-case eval must finish in seconds.
 
     Args:
         cases: Cases to verify.
@@ -402,28 +349,13 @@ def classify_target_cases(
         plus "raw" (the full response text) and "stop_reason", so output
         format and truncation can be measured alongside accuracy.
     """
-    if client is None:
-        client = anthropic.Anthropic()
-
-    results: dict[str, dict] = {}
-    for case in cases:
-        response = client.messages.create(
-            model=TARGET_MODEL,
-            max_tokens=TARGET_MAX_TOKENS,
-            thinking=TARGET_THINKING,
-            messages=[
-                {"role": "user", "content": prompt_builder(case.text, case.sentiment)}
-            ],
-        )
-        text = next((b.text for b in response.content if b.type == "text"), "")
-        results[case.id] = {
-            **parse_target_response(text),
-            "raw": text,
-            "stop_reason": response.stop_reason,
-        }
-        logger.debug("Verified %s: %s", case.id, results[case.id]["t"])
-
-    return results
+    return run_cases(
+        TARGET_STAGE,
+        cases,
+        lambda case: (case.text, case.sentiment),
+        prompt_builder=prompt_builder,
+        client=client,
+    )
 
 
 def verdict_correct(
@@ -458,9 +390,6 @@ def target_accuracy_by_category(
     """
     Tally verdict accuracy per case category.
 
-    Known-miss cases are included in the totals; category floors are set
-    with them priced in.
-
     Args:
         cases: The cases that were verified.
         results: Mapping of case id to verdict (classify_target_cases shape).
@@ -469,11 +398,8 @@ def target_accuracy_by_category(
     Returns:
         Mapping of category to (correct, total) counts.
     """
-    tallies: dict[str, tuple[int, int]] = {}
-    for case in cases:
-        correct, total = tallies.get(case.category, (0, 0))
-        if verdict_correct(results[case.id], case.expected_target, alias_map):
-            correct += 1
-        tallies[case.category] = (correct, total + 1)
-
-    return tallies
+    return tally_by_category(
+        cases,
+        results,
+        lambda case, result: verdict_correct(result, case.expected_target, alias_map),
+    )

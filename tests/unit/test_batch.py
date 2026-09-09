@@ -30,6 +30,7 @@ from pipeline.batch import (
     record_retry_attempt,
     save_state,
     summarize_actual_usage,
+    write_request_file,
 )
 from pipeline.sentiment import (
     MAX_TOKENS,
@@ -1311,3 +1312,21 @@ class TestGetClassifierIdentity:
 
         with pytest.raises(ValueError, match="[Ii]nconsistent"):
             get_classifier_identity(state)
+
+
+class TestWriteRequestFile:
+    """Tests for write_request_file."""
+
+    def test_writes_one_json_line_per_request_and_names_by_batch_num(self, tmp_path):
+        """Verify the file is batch_NNN.jsonl with one compact JSON object per line."""
+        requests = [
+            format_batch_request(SENTIMENT_STAGE, "a", comment_body="x"),
+            format_batch_request(TARGET_STAGE, "b", comment_body="y", sentiment="neg"),
+        ]
+
+        path = write_request_file(tmp_path / "requests", 7, requests)
+
+        assert path.name == "batch_007.jsonl"
+        lines = path.read_text().splitlines()
+        assert [json.loads(line) for line in lines] == requests
+        assert lines[0] == json.dumps(requests[0])

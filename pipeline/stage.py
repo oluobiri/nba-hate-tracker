@@ -51,6 +51,14 @@ class ClassifierStage:
     output_cost_per_mtok: float
     avg_input_tokens: int
 
+    @property
+    def stamp_keys(self) -> tuple[str, str]:
+        """Parquet metadata keys for this stage's model and prompt_version."""
+        return (
+            f"classifier_{self.name}_model",
+            f"classifier_{self.name}_prompt_version",
+        )
+
     def __post_init__(self) -> None:
         """Reject sampling params that would clobber the request's own keys."""
         clash = _RESERVED_REQUEST_KEYS & set(self.sampling_params)

@@ -1,4 +1,4 @@
-"""Tests for pipeline/results.py sentiment frame assembly."""
+"""Tests for pipeline/results.py: sentiment and target frame assembly."""
 
 import json
 import logging
@@ -7,8 +7,17 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from pipeline.results import build_sentiment_dataframe, check_response_models
-from pipeline.schemas import COMMENT_INPUT_SCHEMA, SENTIMENT_SCHEMA
+from pipeline.results import (
+    build_sentiment_dataframe,
+    build_targets_dataframe,
+    check_response_models,
+)
+from pipeline.schemas import (
+    COMMENT_INPUT_SCHEMA,
+    SENTIMENT_SCHEMA,
+    SENTIMENT_TARGETS_SCHEMA,
+    TARGET_POOL_SCHEMA,
+)
 
 
 def _succeeded(
@@ -460,3 +469,127 @@ class TestCheckResponseModels:
 
         with pytest.raises(ValueError, match="Malformed JSON in batch_001"):
             check_response_models(directory, "model-x")
+
+
+def _write_pool(tmp_path: Path, rows: list[dict]) -> Path:
+    """Write a TARGET_POOL_SCHEMA parquet from row dicts, defaults filled."""
+    defaults = {
+        "attributed_player": "Luka Doncic",
+        "sentiment": "neg",
+        "stratum": "candidate",
+        "rank": 1,
+    }
+    path = tmp_path / "pool.parquet"
+    pl.DataFrame(
+        [{**defaults, **row} for row in rows], schema=TARGET_POOL_SCHEMA
+    ).write_parquet(path)
+    return path
+
+
+class TestBuildTargetsDataframe:
+    """Tests for build_targets_dataframe, the verdict sidecar assembly."""
+
+    def test_joins_verdicts_to_pool_in_pool_order(self, tmp_path):
+        """Verify each pool row gains the parsed verdict and the frame conforms."""
+        pool = _write_pool(
+            tmp_path,
+            [
+                {"comment_id": "a", "rank": 1},
+                {"comment_id": "b", "rank": 2},
+                {"comment_id": "c", "stratum": "random_null", "rank": None},
+            ],
+        )
+        responses = tmp_path / "responses"
+        _write_results_file(
+            responses,
+            [
+                _succeeded("b", '{"t": null, "c": 0.8}'),
+                _succeeded(
+                    "a",
+                    '{"t": "Luka Doncic", "c": 0.95}',
+                    input_tokens=210,
+                    output_tokens=12,
+                ),
+                _succeeded("c", '{"t": "Nico Harrison", "c": 0.7}'),
+            ],
+        )
+
+        targets, failed = build_targets_dataframe(responses, pool)
+
+        assert targets.schema == SENTIMENT_TARGETS_SCHEMA
+        assert failed == []
+        assert targets["comment_id"].to_list() == ["a", "b", "c"]
+        assert targets["target_raw"].to_list() == ["Luka Doncic", None, "Nico Harrison"]
+        assert targets["valid"].to_list() == [True, True, True]
+        assert targets.row(0, named=True)["input_tokens"] == 210
+
+    def test_parse_failure_kept_as_invalid_row(self, tmp_path):
+        """Verify unparseable output is a valid=False row, not a null verdict."""
+        pool = _write_pool(tmp_path, [{"comment_id": "a"}])
+        responses = tmp_path / "responses"
+        _write_results_file(responses, [_succeeded("a", "no json here")])
+
+        targets, _ = build_targets_dataframe(responses, pool)
+
+        row = targets.row(0, named=True)
+        assert row["valid"] is False
+        assert row["target_raw"] is None
+        assert row["target_confidence"] == 0.0
+
+    def test_failed_request_absent_from_sidecar(self, tmp_path):
+        """Verify an errored request is returned as failed and missing from the frame."""
+        pool = _write_pool(
+            tmp_path, [{"comment_id": "a"}, {"comment_id": "b", "rank": 2}]
+        )
+        responses = tmp_path / "responses"
+        _write_results_file(
+            responses,
+            [
+                _succeeded("a", '{"t": null, "c": 0.9}'),
+                _errored("b"),
+            ],
+        )
+
+        targets, failed = build_targets_dataframe(responses, pool)
+
+        assert targets["comment_id"].to_list() == ["a"]
+        assert [f["custom_id"] for f in failed] == ["b"]
+
+    def test_duplicate_verdict_raises(self, tmp_path):
+        """Verify a comment answered twice across results files fails loudly."""
+        pool = _write_pool(tmp_path, [{"comment_id": "a"}])
+        responses = tmp_path / "responses"
+        _write_results_file(responses, [_succeeded("a", '{"t": null, "c": 0.9}')], 1)
+        _write_results_file(responses, [_succeeded("a", '{"t": null, "c": 0.9}')], 2)
+
+        with pytest.raises(ValueError, match="duplicate"):
+            build_targets_dataframe(responses, pool)
+
+    def test_verdict_without_pool_row_raises(self, tmp_path):
+        """Verify a response the pool never sent fails loudly."""
+        pool = _write_pool(tmp_path, [{"comment_id": "a"}])
+        responses = tmp_path / "responses"
+        _write_results_file(
+            responses,
+            [
+                _succeeded("a", '{"t": null, "c": 0.9}'),
+                _succeeded("ghost", '{"t": null, "c": 0.9}'),
+            ],
+        )
+
+        with pytest.raises(ValueError, match="ghost"):
+            build_targets_dataframe(responses, pool)
+
+    def test_list_valued_target_normalized_and_logged(self, tmp_path, caplog):
+        """Verify a single-string list t unwraps and the normalization is logged."""
+        pool = _write_pool(tmp_path, [{"comment_id": "a"}])
+        responses = tmp_path / "responses"
+        _write_results_file(
+            responses, [_succeeded("a", '{"t": ["Luka Doncic"], "c": 0.9}')]
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.results"):
+            targets, _ = build_targets_dataframe(responses, pool)
+
+        assert targets["target_raw"].to_list() == ["Luka Doncic"]
+        assert "Normalized list-valued t" in caplog.text

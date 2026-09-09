@@ -1,8 +1,10 @@
 """
-Assemble batch classification results into the sentiment DataFrame.
+Assemble batch classification results into produced frames.
 
-Joins parsed Batch API results with filtered comment metadata and
-enforces SENTIMENT_SCHEMA at the sentiment.parquet write boundary.
+The sentiment stage joins parsed results with filtered comment metadata
+(sentiment.parquet, SENTIMENT_SCHEMA); the target stage joins parsed
+verdicts with the pool that was sent (sentiment_targets.parquet,
+SENTIMENT_TARGETS_SCHEMA). Both enforce their schema at the write boundary.
 """
 
 import json
@@ -11,14 +13,17 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.sentiment import parse_response
 from pipeline.processors import find_player_mentions
 from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,
     RESULTS_SCHEMA,
     SENTIMENT_SCHEMA,
+    SENTIMENT_TARGETS_SCHEMA,
+    TARGET_POOL_SCHEMA,
     validate_schema,
 )
+from pipeline.sentiment import parse_response
+from pipeline.targets import parse_target_response
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +75,38 @@ def check_response_models(responses_dir: Path, expected_model: str) -> None:
         logger.info(f"Response model cross-check passed for {checked} file(s)")
 
 
+def _iter_results(responses_dir: Path):
+    """
+    Yield every downloaded result dict across a stage's results files.
+
+    Args:
+        responses_dir: Directory containing batch_NNN_results.jsonl files.
+
+    Yields:
+        Result dicts as written by download_results.
+
+    Raises:
+        FileNotFoundError: If no results files exist in responses_dir.
+        ValueError: If a results file contains malformed JSON.
+    """
+    results_files = sorted(responses_dir.glob("batch_*_results.jsonl"))
+    if not results_files:
+        raise FileNotFoundError(f"No results files found in {responses_dir}")
+
+    logger.info(f"Loading results from {len(results_files)} files...")
+    for results_file in results_files:
+        with open(results_file) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Malformed JSON in {results_file.name}: {e}"
+                    ) from e
+
+
 def build_sentiment_dataframe(
     responses_dir: Path, filtered_path: Path
 ) -> tuple[pl.DataFrame, list[dict]]:
@@ -100,49 +137,31 @@ def build_sentiment_dataframe(
         ValueError: If a results file contains malformed JSON, or the
             assembled frame does not match SENTIMENT_SCHEMA.
     """
-    # Load all results
-    results_files = sorted(responses_dir.glob("batch_*_results.jsonl"))
-    if not results_files:
-        raise FileNotFoundError(f"No results files found in {responses_dir}")
-
-    logger.info(f"Loading results from {len(results_files)} files...")
-
     all_results = []
     failed_requests = []
     normalized_count = 0
 
-    for results_file in results_files:
-        with open(results_file) as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    result = json.loads(line)
-                except json.JSONDecodeError as e:
-                    raise ValueError(
-                        f"Malformed JSON in {results_file.name}: {e}"
-                    ) from e
-
-                if result["result_type"] == "succeeded":
-                    parsed = parse_response(result["content"])
-                    if "p_raw" in parsed:
-                        normalized_count += 1
-                        logger.warning(
-                            f"Normalized list-valued p {parsed['p_raw']!r} -> "
-                            f"{parsed['p']!r} for {result['custom_id']}"
-                        )
-                    all_results.append(
-                        {
-                            "id": result["custom_id"],
-                            "sentiment": parsed["s"],
-                            "confidence": parsed["c"],
-                            "sentiment_player": parsed.get("p"),
-                            "input_tokens": result["input_tokens"],
-                            "output_tokens": result["output_tokens"],
-                        }
-                    )
-                else:
-                    failed_requests.append(result)
+    for result in _iter_results(responses_dir):
+        if result["result_type"] != "succeeded":
+            failed_requests.append(result)
+            continue
+        parsed = parse_response(result["content"])
+        if "p_raw" in parsed:
+            normalized_count += 1
+            logger.warning(
+                f"Normalized list-valued p {parsed['p_raw']!r} -> "
+                f"{parsed['p']!r} for {result['custom_id']}"
+            )
+        all_results.append(
+            {
+                "id": result["custom_id"],
+                "sentiment": parsed["s"],
+                "confidence": parsed["c"],
+                "sentiment_player": parsed.get("p"),
+                "input_tokens": result["input_tokens"],
+                "output_tokens": result["output_tokens"],
+            }
+        )
 
     logger.info(f"Loaded {len(all_results)} successful results")
     if normalized_count:
@@ -186,3 +205,107 @@ def build_sentiment_dataframe(
     validate_schema(joined_df, SENTIMENT_SCHEMA, "sentiment.parquet")
 
     return joined_df, failed_requests
+
+
+def build_targets_dataframe(
+    responses_dir: Path, pool_path: Path
+) -> tuple[pl.DataFrame, list[dict]]:
+    """
+    Build the verdict sidecar by joining parsed verdicts to the pool.
+
+    The pool records what was sent and why; each succeeded response
+    contributes the model's raw target string, confidence, and parse
+    validity. A parse failure is kept as a row with valid=False, never
+    read as a null verdict. Pool rows whose request did not succeed are
+    absent from the sidecar (they are the failed requests).
+
+    Args:
+        responses_dir: Directory containing batch_NNN_results.jsonl files.
+        pool_path: Path to the pool parquet written at prepare time.
+
+    Returns:
+        Tuple of (frame conforming to SENTIMENT_TARGETS_SCHEMA, sorted as
+        the pool; list of failed request results).
+
+    Raises:
+        FileNotFoundError: If no results files exist in responses_dir.
+        ValueError: If a results file contains malformed JSON, the pool
+            does not match TARGET_POOL_SCHEMA, or the assembled frame does
+            not match SENTIMENT_TARGETS_SCHEMA.
+    """
+    pool = pl.read_parquet(pool_path)
+    validate_schema(pool, TARGET_POOL_SCHEMA, str(pool_path))
+
+    verdicts = []
+    failed_requests = []
+    invalid_count = 0
+    normalized_count = 0
+    for result in _iter_results(responses_dir):
+        if result["result_type"] != "succeeded":
+            failed_requests.append(result)
+            continue
+        parsed = parse_target_response(result["content"])
+        if not parsed["valid"]:
+            invalid_count += 1
+        if "t_raw" in parsed:
+            normalized_count += 1
+            logger.warning(
+                f"Normalized list-valued t {parsed['t_raw']!r} -> "
+                f"{parsed['t']!r} for {result['custom_id']}"
+            )
+        verdicts.append(
+            {
+                "comment_id": result["custom_id"],
+                "target_raw": parsed["t"],
+                "target_confidence": parsed["c"],
+                "valid": parsed["valid"],
+                "input_tokens": result["input_tokens"],
+                "output_tokens": result["output_tokens"],
+            }
+        )
+
+    logger.info(f"Loaded {len(verdicts)} verdicts")
+    if invalid_count:
+        logger.warning(f"{invalid_count} verdict(s) did not parse (valid=False)")
+    if normalized_count:
+        logger.warning(f"Normalized {normalized_count} list-valued t field(s)")
+    if failed_requests:
+        logger.warning(f"Found {len(failed_requests)} failed requests")
+
+    verdict_columns = [
+        c for c in SENTIMENT_TARGETS_SCHEMA.names() if c not in pool.columns
+    ]
+    verdicts_df = pl.DataFrame(
+        verdicts,
+        schema={
+            c: SENTIMENT_TARGETS_SCHEMA[c] for c in ["comment_id", *verdict_columns]
+        },
+    )
+
+    duplicates = verdicts_df.height - verdicts_df["comment_id"].n_unique()
+    if duplicates:
+        raise ValueError(
+            f"{duplicates} duplicate verdict(s) across the results files; the "
+            f"sidecar's grain is one row per comment"
+        )
+    unknown = verdicts_df.join(pool.select("comment_id"), on="comment_id", how="anti")
+    if unknown.height:
+        raise ValueError(
+            f"{unknown.height} verdict(s) have no pool row (responses and pool "
+            f"disagree): {unknown['comment_id'].head(5).to_list()}"
+        )
+
+    targets = pool.join(
+        verdicts_df, on="comment_id", how="inner", maintain_order="left"
+    ).select(SENTIMENT_TARGETS_SCHEMA.names())
+    missing = pool.height - targets.height
+    if missing:
+        logger.warning(
+            f"{missing} pool row(s) have no verdict "
+            f"({missing / pool.height:.1%} of the pool)"
+        )
+    logger.info(f"Final sidecar: {targets.height} rows")
+
+    validate_schema(targets, SENTIMENT_TARGETS_SCHEMA, "sentiment_targets.parquet")
+
+    return targets, failed_requests

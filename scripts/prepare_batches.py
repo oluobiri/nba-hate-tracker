@@ -27,7 +27,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from pipeline.batch import format_batch_request, REQUESTS_PER_BATCH
+from pipeline.batch import REQUESTS_PER_BATCH, format_batch_request, write_request_file
 from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.formatting import format_duration
 from utils.paths import get_batches_dir, get_filtered_dir
@@ -74,21 +74,6 @@ def count_lines(filepath: Path) -> int:
         for _ in f:
             count += 1
     return count
-
-
-def write_batch(output_dir: Path, batch_num: int, requests: list[dict]) -> None:
-    """
-    Write a batch of requests to a JSONL file.
-
-    Args:
-        output_dir: Directory to write the batch file.
-        batch_num: Batch number for filename.
-        requests: List of batch request dicts to write.
-    """
-    batch_path = output_dir / f"batch_{batch_num:03d}.jsonl"
-    with open(batch_path, "w") as f:
-        for request in requests:
-            f.write(json.dumps(request) + "\n")
 
 
 def process_file(
@@ -162,14 +147,14 @@ def process_file(
             # Write batch when full
             if len(current_batch) >= REQUESTS_PER_BATCH:
                 batch_num += 1
-                write_batch(output_dir, batch_num, current_batch)
+                write_request_file(output_dir, batch_num, current_batch)
                 stats["batches"] += 1
                 current_batch = []
 
     # Write remaining requests
     if current_batch:
         batch_num += 1
-        write_batch(output_dir, batch_num, current_batch)
+        write_request_file(output_dir, batch_num, current_batch)
         stats["batches"] += 1
 
     elapsed = time.time() - start_time

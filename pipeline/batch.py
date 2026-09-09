@@ -100,6 +100,26 @@ def format_batch_request(
     }
 
 
+def write_request_file(output_dir: Path, batch_num: int, requests: list[dict]) -> Path:
+    """
+    Write one batch of requests as batch_NNN.jsonl.
+
+    Args:
+        output_dir: Directory to write into (created if missing).
+        batch_num: 1-based batch number for the filename.
+        requests: Request dicts as returned by format_batch_request.
+
+    Returns:
+        Path of the file written.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"batch_{batch_num:03d}.jsonl"
+    with open(path, "w") as f:
+        for request in requests:
+            f.write(json.dumps(request) + "\n")
+    return path
+
+
 # -----------------------------------------------------------------------------
 # State management
 # -----------------------------------------------------------------------------

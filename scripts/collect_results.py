@@ -20,8 +20,9 @@ Output:
     - data/processed/sentiment.parquet (final joined output)
     - data/<season>/batches/<stage>/failed_requests.jsonl (if any failures)
 
-Only the sentiment stage has an assembly step; other stages stop after
-downloading (their sidecar builders land with their tickets).
+Assembly per stage: sentiment joins results to the filtered comments
+(sentiment.parquet); target joins verdicts to the pool prepared by
+prepare_targets (sentiment_targets.parquet).
 """
 
 import argparse
@@ -31,6 +32,7 @@ import sys
 import time
 from pathlib import Path
 
+import polars as pl
 from dotenv import load_dotenv
 
 from pipeline.batch import (
@@ -50,7 +52,11 @@ from pipeline.batch import (
     save_state,
     summarize_actual_usage,
 )
-from pipeline.results import build_sentiment_dataframe, check_response_models
+from pipeline.results import (
+    build_sentiment_dataframe,
+    build_targets_dataframe,
+    check_response_models,
+)
 from pipeline.schemas import SCHEMA_VERSION
 from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
@@ -73,7 +79,11 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 FILTERED_FILENAME = "r_nba_player_mentions.jsonl"
-OUTPUT_FILENAME = "sentiment.parquet"
+POOL_FILENAME = "pool.parquet"
+OUTPUT_FILENAMES = {
+    "sentiment": "sentiment.parquet",
+    "target": "sentiment_targets.parquet",
+}
 FAILED_FILENAME = "failed_requests.jsonl"
 
 # -----------------------------------------------------------------------------
@@ -296,8 +306,9 @@ def main() -> None:
     requests_dir = batches_dir / REQUESTS_SUBDIR
     responses_dir = batches_dir / RESPONSES_SUBDIR
     filtered_path = get_filtered_dir() / FILTERED_FILENAME
+    pool_path = batches_dir / POOL_FILENAME
     processed_dir = get_processed_dir()
-    output_path = processed_dir / OUTPUT_FILENAME
+    output_path = processed_dir / OUTPUT_FILENAMES[stage.name]
     failed_path = batches_dir / FAILED_FILENAME
 
     logger.info("=" * 60)
@@ -317,8 +328,9 @@ def main() -> None:
         logger.error("No batches found in state. Run submit_batches.py first.")
         sys.exit(1)
 
-    if not filtered_path.exists():
-        logger.error(f"Filtered comments file not found: {filtered_path}")
+    assembly_input = filtered_path if stage.name == "sentiment" else pool_path
+    if not assembly_input.exists():
+        logger.error(f"Assembly input not found: {assembly_input}")
         sys.exit(1)
 
     logger.info(f"Found {batch_count} batch(es) in state")
@@ -374,13 +386,6 @@ def main() -> None:
         )
         sys.exit(0)
 
-    if stage.name != "sentiment":
-        logger.info(
-            f"No assembly step for stage {stage.name!r} in this version; "
-            f"its sidecar builder lands with its ticket (#91)"
-        )
-        sys.exit(0)
-
     # Check if we can build the final output
     pending = get_pending_batches(state)
     not_downloaded = get_missing_results(state)
@@ -408,39 +413,45 @@ def main() -> None:
         logger.warning("=" * 60)
 
     logger.info("=" * 60)
-    logger.info("Building sentiment.parquet...")
+    logger.info(f"Building {output_path.name}...")
     logger.info("=" * 60)
 
     try:
         # Classifier identity (#90): recorded in state at submission,
         # carried through every re-assembly unchanged. Cross-check and
         # metadata are settled before the expensive join to fail fast.
-        metadata = {
-            "players_config_version": load_player_config_version(),
-            "schema_version": str(SCHEMA_VERSION),
-        }
+        metadata = {"schema_version": str(SCHEMA_VERSION)}
         identity = get_classifier_identity(state)
         if identity is None:
             logger.warning(
-                "state.json carries no classifier identity - sentiment.parquet "
+                f"state.json carries no classifier identity - {output_path.name} "
                 "will have no classifier lineage stamp"
             )
         else:
             check_response_models(responses_dir, identity["model"])
-            metadata["classifier_sentiment_model"] = identity["model"]
-            metadata["classifier_sentiment_prompt_version"] = identity[
-                "prompt_version"
-            ]
+            model_key, prompt_key = stage.stamp_keys
+            metadata[model_key] = identity["model"]
+            metadata[prompt_key] = identity["prompt_version"]
 
-        sentiment_df, failed_requests = build_sentiment_dataframe(
-            responses_dir, filtered_path
-        )
+        if stage.name == "sentiment":
+            # Config-lineage stamp (#54): mentioned_players is re-derived
+            # under the active config at every assembly
+            metadata["players_config_version"] = load_player_config_version()
+            output_df, failed_requests = build_sentiment_dataframe(
+                responses_dir, filtered_path
+            )
+        else:
+            # The pool was selected under a config; the sidecar carries the
+            # pool's stamp, not the live one, so the two stay coherent
+            pool_metadata = pl.read_parquet_metadata(pool_path)
+            metadata["players_config_version"] = pool_metadata["players_config_version"]
+            output_df, failed_requests = build_targets_dataframe(
+                responses_dir, pool_path
+            )
 
-        # Save parquet with config-lineage stamp (#54): mentioned_players
-        # was re-derived under this config version at assembly
         processed_dir.mkdir(parents=True, exist_ok=True)
-        sentiment_df.write_parquet(output_path, metadata=metadata)
-        logger.info(f"Wrote {len(sentiment_df)} rows to {output_path}")
+        output_df.write_parquet(output_path, metadata=metadata)
+        logger.info(f"Wrote {len(output_df)} rows to {output_path}")
 
         # Save failed requests
         if failed_requests:

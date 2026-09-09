@@ -24,6 +24,17 @@ class TestGetStage:
         with pytest.raises(ValueError, match="sentiment"):
             get_stage("nope")
 
+    def test_stamp_keys_are_the_lineage_metadata_keys(self):
+        """Verify stamp_keys spell the parquet metadata keys assembly writes."""
+        assert SENTIMENT_STAGE.stamp_keys == (
+            "classifier_sentiment_model",
+            "classifier_sentiment_prompt_version",
+        )
+        assert TARGET_STAGE.stamp_keys == (
+            "classifier_target_model",
+            "classifier_target_prompt_version",
+        )
+
     def test_stages_are_distinct_identities(self):
         """Verify the two stages differ in name, model, and sampling contract."""
         assert SENTIMENT_STAGE.name != TARGET_STAGE.name

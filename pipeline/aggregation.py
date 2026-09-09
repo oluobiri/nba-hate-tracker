@@ -11,6 +11,7 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.receipts import select_receipt_candidates
 from pipeline.schemas import (
     COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
@@ -159,26 +160,25 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     return grouped.sort(group_cols)
 
 
-def aggregate_sentiment(input_path: Path) -> dict:
+def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     """
-    Aggregate classified sentiment data into dashboard-ready JSON.
+    Load the fact and derive its config-versioned attributes.
 
-    Reads the sentiment parquet, attributes comments to players,
-    extracts team flair, and computes all aggregation views.
+    Reads sentiment.parquet, validates it, warns on missing or drifted
+    lineage stamps, drops error rows, and adds attributed_player (via
+    resolve_player under the active alias map), team (fan role, from
+    flair), and week. This is the frame every consumer of the model
+    starts from: the aggregate views, the receipts pool, and analysis.
 
     Args:
-        input_path: Path to sentiment.parquet file.
+        input_path: Path to sentiment.parquet.
 
     Returns:
-        Dict where player_overall, player_temporal, player_team,
-        team_overall, players, teams, and comment_samples hold
-        pl.DataFrames conforming to DASHBOARD_OUTPUT_SCHEMAS; metadata is
-        a dict. The legacy player_metadata dict is reconstructed at
-        serialization time via players_to_metadata_dict().
+        Tuple of (frame with attributed_player, team, and week columns
+        added; count of error rows excluded).
 
     Raises:
-        ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
-            or a computed output does not match its schema contract.
+        ValueError: If the input parquet does not match SENTIMENT_SCHEMA.
     """
     logger.info(f"Loading sentiment data from {input_path}")
     df = pl.read_parquet(input_path)
@@ -225,8 +225,6 @@ def aggregate_sentiment(input_path: Path) -> dict:
     # Build lookup maps
     alias_map = build_alias_to_player_map()
     team_map = build_alias_to_team_map()
-    player_metadata = load_player_metadata()
-    team_config = load_team_config()
 
     # Player attribution
     logger.info("Attributing comments to players...")
@@ -265,6 +263,37 @@ def aggregate_sentiment(input_path: Path) -> dict:
 
     # Temporal prep: convert created_utc to datetime, truncate to week (Monday)
     df = df.with_columns(pl.from_epoch("created_utc").dt.truncate("1w").alias("week"))
+
+    return df, excluded_rows
+
+
+def aggregate_sentiment(input_path: Path) -> dict:
+    """
+    Aggregate classified sentiment data into dashboard-ready JSON.
+
+    Reads the sentiment parquet, attributes comments to players,
+    extracts team flair, and computes all aggregation views.
+
+    Args:
+        input_path: Path to sentiment.parquet file.
+
+    Returns:
+        Dict where player_overall, player_temporal, player_team,
+        team_overall, players, teams, and comment_samples hold
+        pl.DataFrames conforming to DASHBOARD_OUTPUT_SCHEMAS; metadata is
+        a dict. The legacy player_metadata dict is reconstructed at
+        serialization time via players_to_metadata_dict().
+
+    Raises:
+        ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
+            or a computed output does not match its schema contract.
+    """
+    df, excluded_rows = load_attributed_frame(input_path)
+    usable_rows = len(df)
+    total_rows = usable_rows + excluded_rows
+    attributed_count = df.filter(pl.col("attributed_player").is_not_null()).height
+    player_metadata = load_player_metadata()
+    team_config = load_team_config()
 
     # --- Aggregation views ---
 
@@ -395,15 +424,11 @@ def build_comment_samples(
     """
     Select the comment samples: top-N receipts per player x sentiment.
 
-    Candidacy: body no longer than max_body_chars and, for pos/neg,
-    confidence at or above min_confidence and a named sentiment_player.
-    Neutral rows are exempt from both polar gates - the classifier
-    reports a conventional 0.5 for neu and routinely omits the target on
-    neutral comments; a polar row with no stated target is the ambiguity
-    class a receipt can't carry. Within each (attributed_player,
-    sentiment) cell, duplicate bodies collapse to the best-ranked copy,
-    rows rank by score desc (ties: confidence desc, comment_id asc,
-    nulls last) and the top n are kept; thin cells are never padded.
+    Candidacy and ranking are select_receipt_candidates with the target
+    gate on: a polar row with no stated target is the ambiguity class a
+    receipt can't carry, while neutral rows are exempt from both polar
+    gates (the classifier reports a conventional 0.5 for neu and
+    routinely omits the target there). Thin cells are never padded.
     Bodies are verbatim.
 
     Args:
@@ -419,38 +444,10 @@ def build_comment_samples(
         (attributed_player, sentiment, rank).
     """
     cell = ["attributed_player", "sentiment"]
-
-    passes_floor = (pl.col("sentiment") == "neu") | (
-        pl.col("confidence") >= min_confidence
-    )
-    has_target = (pl.col("sentiment") == "neu") | pl.col(
-        "sentiment_player"
-    ).is_not_null()
-    within_cap = pl.col("body").str.len_chars() <= max_body_chars
-    candidates = df.filter(passes_floor & has_target & within_cap)
-    if df.height:
-        below_floor = df.filter(~passes_floor).height
-        no_target = df.filter(passes_floor & ~has_target).height
-        over_cap = df.filter(passes_floor & has_target & ~within_cap).height
-        logger.info(
-            f"comment_samples candidacy: {df.height:,} attributed rows; "
-            f"{below_floor:,} ({below_floor / df.height:.1%}) removed by the "
-            f"pos/neg confidence floor {min_confidence}, "
-            f"{no_target:,} ({no_target / df.height:.1%}) removed by the "
-            f"pos/neg target gate, "
-            f"{over_cap:,} ({over_cap / df.height:.1%}) removed by the "
-            f"{max_body_chars}-char body cap; {candidates.height:,} candidates"
-        )
-
     return (
-        candidates.sort(
-            ["score", "confidence", "comment_id"],
-            descending=[True, True, False],
-            nulls_last=True,
+        select_receipt_candidates(
+            df, n=n, min_confidence=min_confidence, max_body_chars=max_body_chars
         )
-        .unique(subset=[*cell, "body"], keep="first", maintain_order=True)
-        .with_columns((pl.int_range(pl.len()).over(cell) + 1).alias("rank"))
-        .filter(pl.col("rank") <= n)
         .rename({"team": "fan_team"})
         .select(COMMENT_SAMPLES_SCHEMA.names())
         .sort([*cell, "rank"])

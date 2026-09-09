@@ -555,6 +555,16 @@ class TestBuildTargetsDataframe:
         assert targets["comment_id"].to_list() == ["a"]
         assert [f["custom_id"] for f in failed] == ["b"]
 
+    def test_duplicate_verdict_raises(self, tmp_path):
+        """Verify a comment answered twice across results files fails loudly."""
+        pool = _write_pool(tmp_path, [{"comment_id": "a"}])
+        responses = tmp_path / "responses"
+        _write_results_file(responses, [_succeeded("a", '{"t": null, "c": 0.9}')], 1)
+        _write_results_file(responses, [_succeeded("a", '{"t": null, "c": 0.9}')], 2)
+
+        with pytest.raises(ValueError, match="duplicate"):
+            build_targets_dataframe(responses, pool)
+
     def test_verdict_without_pool_row_raises(self, tmp_path):
         """Verify a response the pool never sent fails loudly."""
         pool = _write_pool(tmp_path, [{"comment_id": "a"}])

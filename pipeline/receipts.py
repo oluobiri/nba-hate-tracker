@@ -67,8 +67,9 @@ def select_receipt_candidates(
         below_floor = df.filter(~passes_floor).height
         no_target = df.filter(passes_floor & ~has_target).height
         over_cap = df.filter(passes_floor & has_target & ~within_cap).height
+        gate = "on" if require_target else "lifted"
         logger.info(
-            f"comment_samples candidacy: {df.height:,} attributed rows; "
+            f"receipt candidacy (target gate {gate}): {df.height:,} attributed rows; "
             f"{below_floor:,} ({below_floor / df.height:.1%}) removed by the "
             f"pos/neg confidence floor {min_confidence}, "
             f"{no_target:,} ({no_target / df.height:.1%}) removed by the "

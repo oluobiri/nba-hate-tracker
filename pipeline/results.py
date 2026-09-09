@@ -282,6 +282,12 @@ def build_targets_dataframe(
         },
     )
 
+    duplicates = verdicts_df.height - verdicts_df["comment_id"].n_unique()
+    if duplicates:
+        raise ValueError(
+            f"{duplicates} duplicate verdict(s) across the results files; the "
+            f"sidecar's grain is one row per comment"
+        )
     unknown = verdicts_df.join(pool.select("comment_id"), on="comment_id", how="anti")
     if unknown.height:
         raise ValueError(

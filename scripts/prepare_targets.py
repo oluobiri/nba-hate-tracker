@@ -91,10 +91,12 @@ def main() -> None:
     if not input_path.exists():
         logger.error(f"Sentiment parquet not found: {input_path}")
         sys.exit(1)
-    if requests_dir.exists() and any(requests_dir.glob("batch_*.jsonl")):
+    if pool_path.exists() or (
+        requests_dir.exists() and any(requests_dir.glob("batch_*.jsonl"))
+    ):
         logger.error(
-            f"{requests_dir} already holds request files - a pool was prepared "
-            f"here; remove the stage directory to prepare a fresh one"
+            f"{batches_dir} already holds a pool or request files; remove the "
+            f"stage directory to prepare a fresh one"
         )
         sys.exit(1)
 
@@ -134,6 +136,8 @@ def main() -> None:
         how="left",
         maintain_order="left",
     )
+    if with_bodies["body"].null_count():
+        raise ValueError("pool rows without a body: the pool must come from this frame")
     requests = [
         format_batch_request(
             TARGET_STAGE,

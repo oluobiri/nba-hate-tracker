@@ -923,7 +923,9 @@ class TestVerifiedAdmission:
 
     def test_missing_verdict_excludes(self):
         """Strict: a polar row with no sidecar row is not a receipt."""
-        frame = self._samples(self._rows(), [{"comment_id": "c1", "target_raw": "lebron"}])
+        frame = self._samples(
+            self._rows(), [{"comment_id": "c1", "target_raw": "lebron"}]
+        )
 
         assert frame["comment_id"].to_list() == ["c1"]
 
@@ -979,7 +981,9 @@ class TestVerifiedAdmission:
 
     def test_conforms_to_schema(self):
         """Verified output matches COMMENT_SAMPLES_SCHEMA exactly."""
-        frame = self._samples(self._rows(), [{"comment_id": "c3", "target_raw": "lebron"}])
+        frame = self._samples(
+            self._rows(), [{"comment_id": "c3", "target_raw": "lebron"}]
+        )
 
         assert frame.schema == COMMENT_SAMPLES_SCHEMA
 
@@ -1049,7 +1053,8 @@ class TestMeasurePrecision:
     def test_would_have_shipped_is_the_gate_on_top_n(self):
         """Unnamed rows and rows past rank n are not in the denominator."""
         rows = _samples_input(
-            _cell("LeBron James", "neg", 3) + _cell("LeBron James", "pos", 2, named=False)
+            _cell("LeBron James", "neg", 3)
+            + _cell("LeBron James", "pos", 2, named=False)
         )
         verdicts = _verdicts(
             [{"comment_id": f"Leneg{i:02d}", "target_raw": "lebron"} for i in range(3)]
@@ -1064,7 +1069,9 @@ class TestMeasurePrecision:
         """An empty intersection reports precision None rather than dividing."""
         rows = _samples_input(_cell("LeBron James", "neg", 2))
 
-        result = measure_precision(rows, resolve_verdicts(_verdicts([]), _ALIAS_MAP), n=10)
+        result = measure_precision(
+            rows, resolve_verdicts(_verdicts([]), _ALIAS_MAP), n=10
+        )
 
         assert result["verified"] == 0
         assert result["precision"] is None
@@ -1149,7 +1156,20 @@ class TestLoadReceiptVerdicts:
 
         assert meta["receipts_coverage"] == 0.5
         assert "coverage shortfall" in caplog.text
-        assert "--top-up" in caplog.text
+        assert "top up" in caplog.text
+
+    def test_verified_with_no_shipped_row_verified_keeps_null_precision(self, tmp_path):
+        """A sidecar that covers no would-have-shipped row is still the
+        verified posture, with precision None rather than a division."""
+        rows = _samples_input(_cell("LeBron James", "neg", 2, named=False))
+        path = self._sidecar(
+            tmp_path, _verdicts([{"comment_id": "Leneg00", "target_raw": "lebron"}])
+        )
+
+        _, meta = load_receipt_verdicts(rows, path, _ALIAS_MAP)
+
+        assert meta["receipts_verified"] is True
+        assert meta["receipts_precision"] is None
 
 
 class TestSamplesStamps:

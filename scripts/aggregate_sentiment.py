@@ -194,8 +194,11 @@ def main() -> None:
     logger.info(f"Teams:               {meta['team_count']}")
     logger.info(f"Weeks:               {meta['week_count']}")
     logger.info(f"Receipts verified:   {meta['receipts_verified']}")
-    if meta["receipts_verified"]:
+    # Both are None in the fallback; precision is also None when no
+    # would-have-shipped row carries a verdict
+    if meta["receipts_coverage"] is not None:
         logger.info(f"Receipts coverage:   {meta['receipts_coverage']:.1%}")
+    if meta["receipts_precision"] is not None:
         logger.info(f"Receipts precision:  {meta['receipts_precision']:.1%}")
 
 

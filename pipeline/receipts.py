@@ -1,10 +1,12 @@
 """The receipts: which comments stand for a player's sentiment.
 
-Home of the comment_samples fact subset and the target-verifier pool.
-Both start from one candidate selection, so they are the same
-computation by construction: the samples apply the classifier's target
-gate; the pool lifts it so named and unnamed rows compete for
-verification in one ranking.
+Home of the comment_samples fact subset, the target-verifier pool, and
+the verdict consumer. Pool and samples start from one candidate
+selection, so they are the same computation by construction: the pool
+lifts the classifier's target gate so named and unnamed rows compete for
+verification in one ranking; the samples admit a polar row on the
+verifier's verdict when a sidecar exists and on the classifier's gate
+when it doesn't, and say which (receipts_verified).
 """
 
 import logging
@@ -37,6 +39,21 @@ CELL = ["attributed_player", "sentiment"]
 TARGET_STAMP_KEYS = ("classifier_target_model", "classifier_target_prompt_version")
 UNRESOLVED_LOG_MIN = 3  # an untracked string is logged once it recurs under a player
 UNRESOLVED_LOG_TOP = 3  # strings logged per player
+
+
+def _polar(df: pl.DataFrame) -> pl.DataFrame:
+    """Attributed pos/neg rows."""
+    return df.filter(
+        pl.col("attributed_player").is_not_null()
+        & pl.col("sentiment").is_in(POLAR_SENTIMENTS)
+    )
+
+
+def _fold_ascii(name: str | None) -> str | None:
+    """NFKD-decompose and drop non-ASCII, so 'Dončić' folds to 'Doncic'."""
+    if name is None:
+        return None
+    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
 
 
 def select_receipt_candidates(
@@ -216,13 +233,6 @@ def load_target_verdicts(path: Path) -> tuple[pl.DataFrame, dict[str, str | None
     return verdicts, stamps
 
 
-def _fold_ascii(name: str | None) -> str | None:
-    """NFKD-decompose and drop non-ASCII, so 'Dončić' folds to 'Doncic'."""
-    if name is None:
-        return None
-    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-
-
 def resolve_verdicts(verdicts: pl.DataFrame, alias_map: dict[str, str]) -> pl.DataFrame:
     """
     Resolve the verifier's raw target strings under an alias map.
@@ -279,7 +289,7 @@ def admit_verified(
     Returns:
         The admitted rows, input columns only.
     """
-    polar = df.filter(pl.col("sentiment").is_in(POLAR_SENTIMENTS))
+    polar = _polar(df)
     neutral = df.filter(~pl.col("sentiment").is_in(POLAR_SENTIMENTS))
 
     affirmed = (
@@ -304,6 +314,94 @@ def admit_verified(
     return pl.concat([admitted, neutral])
 
 
+def build_comment_samples(
+    df: pl.DataFrame,
+    *,
+    verdicts: pl.DataFrame | None = None,
+    alias_map: dict[str, str] | None = None,
+    n: int = COMMENT_SAMPLES_TOP_N,
+    min_confidence: float = COMMENT_SAMPLES_MIN_CONFIDENCE,
+    max_body_chars: int = COMMENT_SAMPLES_MAX_BODY_CHARS,
+) -> pl.DataFrame:
+    """
+    Select the comment samples: top-N receipts per player x sentiment.
+
+    Candidacy and ranking are select_receipt_candidates. Without a
+    sidecar the target gate is on: a polar row with no stated target is
+    the ambiguity class a receipt can't carry. With a sidecar the
+    verifier's verdict is the admission test instead (admit_verified),
+    and the classifier's target survives only as the free gate. Neutral
+    rows are exempt from every polar gate either way (the classifier
+    reports a conventional 0.5 for neu and routinely omits the target
+    there). Thin cells are never padded. Bodies are verbatim.
+
+    Args:
+        df: Attributed, flair-resolved frame with attributed_player,
+            sentiment, sentiment_player, comment_id, link_id, body,
+            score, confidence, created_utc, team.
+        verdicts: Resolved sidecar from resolve_verdicts; None for the
+            gate-only fallback.
+        alias_map: Lowercase alias -> canonical name, for the free gate;
+            required with verdicts.
+        n: Maximum rows per (attributed_player, sentiment) cell.
+        min_confidence: Candidacy floor on confidence, pos/neg rows only.
+        max_body_chars: Candidacy cap on body length, in characters.
+
+    Returns:
+        Frame conforming to COMMENT_SAMPLES_SCHEMA, sorted by
+        (attributed_player, sentiment, rank).
+
+    Raises:
+        ValueError: If verdicts are given without an alias_map.
+    """
+    if verdicts is not None:
+        if alias_map is None:
+            raise ValueError("verdicts require an alias_map for the free gate")
+        df = admit_verified(df, verdicts, alias_map)
+    return (
+        select_receipt_candidates(
+            df,
+            n=n,
+            min_confidence=min_confidence,
+            max_body_chars=max_body_chars,
+            require_target=verdicts is None,
+        )
+        .rename({"team": "fan_team"})
+        .select(COMMENT_SAMPLES_SCHEMA.names())
+        .sort([*CELL, "rank"])
+    )
+
+
+def log_comment_samples_diagnostics(
+    df_attributed: pl.DataFrame, comment_samples: pl.DataFrame
+) -> None:
+    """
+    Log the multi-mention share of the sampled rows.
+
+    A two-name receipt can read ambiguously under one player's card;
+    the share is logged every run so it stays visible.
+
+    Args:
+        df_attributed: The attributed frame (carries mentioned_players).
+        comment_samples: The selected samples (COMMENT_SAMPLES_SCHEMA).
+    """
+    if not comment_samples.height:
+        logger.info("comment_samples: no rows selected")
+        return
+    # Semi-join: can't fan out if a comment_id were ever duplicated
+    multi = comment_samples.join(
+        df_attributed.filter(pl.col("mentioned_players").list.len() > 1).select(
+            "comment_id"
+        ),
+        on="comment_id",
+        how="semi",
+    ).height
+    logger.info(
+        f"comment_samples: {comment_samples.height:,} rows selected; "
+        f"{multi:,} multi-mention ({multi / comment_samples.height:.1%})"
+    )
+
+
 def measure_coverage(
     df: pl.DataFrame,
     verdicts: pl.DataFrame,
@@ -317,7 +415,7 @@ def measure_coverage(
 
     The pool is re-derived from the attributed frame (gate lifted, depth
     k), so a config bump that admits new candidates shows up as a
-    shortfall: the top-up trigger. Unparsed verdicts count as uncovered.
+    shortfall: the top-up trigger (#100). Unparsed verdicts count as uncovered.
 
     Args:
         df: Attributed frame (unattributed rows are ignored).
@@ -421,65 +519,6 @@ def measure_precision(
     return result
 
 
-def load_receipt_verdicts(
-    df: pl.DataFrame, targets_path: Path | None, alias_map: dict[str, str]
-) -> tuple[pl.DataFrame | None, dict]:
-    """
-    Apply the two-level posture: strict under a sidecar, fallback without.
-
-    With a sidecar the verdicts are resolved, coverage over the current
-    pool is measured (WARN on any shortfall - the top-up trigger) and
-    the precision figure is computed. Without one the samples fall back
-    to the gate-only rule and the metadata says so, so the frontend can
-    gate receipt rendering on receipts_verified.
-
-    Args:
-        df: Attributed frame from load_attributed_frame.
-        targets_path: Path to sentiment_targets.parquet, or None.
-        alias_map: Lowercase alias -> canonical name.
-
-    Returns:
-        Tuple of (resolved verdicts or None; the receipts metadata block:
-        receipts_verified, receipts_coverage, receipts_precision, and the
-        two classifier_target stamps).
-    """
-    if targets_path is None or not targets_path.exists():
-        logger.warning(
-            f"no verdict sidecar at {targets_path}: comment_samples fall back "
-            f"to the gate-only rule and ship receipts_verified=false"
-        )
-        return None, {
-            "receipts_verified": False,
-            "receipts_coverage": None,
-            "receipts_precision": None,
-            **dict.fromkeys(TARGET_STAMP_KEYS),
-        }
-
-    raw, stamps = load_target_verdicts(targets_path)
-    verdicts = resolve_verdicts(raw, alias_map)
-
-    verified, pool = measure_coverage(df, verdicts)
-    coverage = verified / pool if pool else 1.0
-    if verified < pool:
-        logger.warning(
-            f"verdict coverage shortfall: {verified:,} of {pool:,} current pool "
-            f"rows ({coverage:.1%}) carry a verdict; unverified candidates are "
-            f"not receipts - run prepare_targets --top-up"
-        )
-    else:
-        logger.info(f"verdict coverage: {verified:,} of {pool:,} pool rows")
-
-    precision = measure_precision(df, verdicts)
-    _log_precision(precision, verdicts, df)
-
-    return verdicts, {
-        "receipts_verified": True,
-        "receipts_coverage": coverage,
-        "receipts_precision": precision["precision"],
-        **stamps,
-    }
-
-
 def _log_precision(precision: dict, verdicts: pl.DataFrame, df: pl.DataFrame) -> None:
     """Log the precision breakdown and the top unresolved strings per player."""
     if precision["precision"] is None:
@@ -519,6 +558,66 @@ def _log_precision(precision: dict, verdicts: pl.DataFrame, df: pl.DataFrame) ->
         logger.info(f"unresolved targets under {player[0]}: {top}")
 
 
+def load_receipt_verdicts(
+    df: pl.DataFrame, targets_path: Path | None, alias_map: dict[str, str]
+) -> tuple[pl.DataFrame | None, dict]:
+    """
+    Apply the two-level posture: strict under a sidecar, fallback without.
+
+    With a sidecar the verdicts are resolved, coverage over the current
+    pool is measured (WARN on any shortfall - the top-up trigger) and
+    the precision figure is computed. Without one the samples fall back
+    to the gate-only rule and the metadata says so, so the frontend can
+    gate receipt rendering on receipts_verified.
+
+    Args:
+        df: Attributed frame from load_attributed_frame.
+        targets_path: Path to sentiment_targets.parquet, or None.
+        alias_map: Lowercase alias -> canonical name.
+
+    Returns:
+        Tuple of (resolved verdicts or None; the receipts metadata block:
+        receipts_verified, receipts_coverage, receipts_precision, and the
+        two classifier_target stamps).
+    """
+    if targets_path is None or not targets_path.exists():
+        logger.warning(
+            f"no verdict sidecar at {targets_path}: comment_samples fall back "
+            f"to the gate-only rule and ship receipts_verified=false"
+        )
+        return None, {
+            "receipts_verified": False,
+            "receipts_coverage": None,
+            "receipts_precision": None,
+            **dict.fromkeys(TARGET_STAMP_KEYS),
+        }
+
+    raw, stamps = load_target_verdicts(targets_path)
+    verdicts = resolve_verdicts(raw, alias_map)
+
+    verified, pool = measure_coverage(df, verdicts)
+    # An empty pool has nothing to cover: 100% by convention, not measurement
+    coverage = verified / pool if pool else 1.0
+    if verified < pool:
+        logger.warning(
+            f"verdict coverage shortfall: {verified:,} of {pool:,} current pool "
+            f"rows ({coverage:.1%}) carry a verdict; unverified candidates are "
+            f"not receipts - top up the target run for the uncovered rows (#100)"
+        )
+    else:
+        logger.info(f"verdict coverage: {verified:,} of {pool:,} pool rows")
+
+    precision = measure_precision(df, verdicts)
+    _log_precision(precision, verdicts, df)
+
+    return verdicts, {
+        "receipts_verified": True,
+        "receipts_coverage": coverage,
+        "receipts_precision": precision["precision"],
+        **stamps,
+    }
+
+
 def samples_stamps(metadata: dict) -> dict[str, str]:
     """
     The comment_samples parquet metadata, from the aggregation metadata.
@@ -534,99 +633,3 @@ def samples_stamps(metadata: dict) -> dict[str, str]:
     if metadata["receipts_verified"]:
         stamps.update({key: metadata[key] for key in TARGET_STAMP_KEYS})
     return stamps
-
-
-def _polar(df: pl.DataFrame) -> pl.DataFrame:
-    """Attributed pos/neg rows."""
-    return df.filter(
-        pl.col("attributed_player").is_not_null()
-        & pl.col("sentiment").is_in(POLAR_SENTIMENTS)
-    )
-
-
-def build_comment_samples(
-    df: pl.DataFrame,
-    *,
-    verdicts: pl.DataFrame | None = None,
-    alias_map: dict[str, str] | None = None,
-    n: int = COMMENT_SAMPLES_TOP_N,
-    min_confidence: float = COMMENT_SAMPLES_MIN_CONFIDENCE,
-    max_body_chars: int = COMMENT_SAMPLES_MAX_BODY_CHARS,
-) -> pl.DataFrame:
-    """
-    Select the comment samples: top-N receipts per player x sentiment.
-
-    Candidacy and ranking are select_receipt_candidates. Without a
-    sidecar the target gate is on: a polar row with no stated target is
-    the ambiguity class a receipt can't carry. With a sidecar the
-    verifier's verdict is the admission test instead (admit_verified),
-    and the classifier's target survives only as the free gate. Neutral
-    rows are exempt from every polar gate either way (the classifier
-    reports a conventional 0.5 for neu and routinely omits the target
-    there). Thin cells are never padded. Bodies are verbatim.
-
-    Args:
-        df: Attributed, flair-resolved frame with attributed_player,
-            sentiment, sentiment_player, comment_id, link_id, body,
-            score, confidence, created_utc, team.
-        verdicts: Resolved sidecar from resolve_verdicts; None for the
-            gate-only fallback.
-        alias_map: Lowercase alias -> canonical name, for the free gate;
-            required with verdicts.
-        n: Maximum rows per (attributed_player, sentiment) cell.
-        min_confidence: Candidacy floor on confidence, pos/neg rows only.
-        max_body_chars: Candidacy cap on body length, in characters.
-
-    Returns:
-        Frame conforming to COMMENT_SAMPLES_SCHEMA, sorted by
-        (attributed_player, sentiment, rank).
-
-    Raises:
-        ValueError: If verdicts are given without an alias_map.
-    """
-    if verdicts is not None:
-        if alias_map is None:
-            raise ValueError("verdicts require an alias_map for the free gate")
-        df = admit_verified(df, verdicts, alias_map)
-    return (
-        select_receipt_candidates(
-            df,
-            n=n,
-            min_confidence=min_confidence,
-            max_body_chars=max_body_chars,
-            require_target=verdicts is None,
-        )
-        .rename({"team": "fan_team"})
-        .select(COMMENT_SAMPLES_SCHEMA.names())
-        .sort([*CELL, "rank"])
-    )
-
-
-def log_comment_samples_diagnostics(
-    df_attributed: pl.DataFrame, comment_samples: pl.DataFrame
-) -> None:
-    """
-    Log the multi-mention share of the sampled rows.
-
-    A two-name receipt can read ambiguously under one player's card;
-    the share is logged every run so it stays visible.
-
-    Args:
-        df_attributed: The attributed frame (carries mentioned_players).
-        comment_samples: The selected samples (COMMENT_SAMPLES_SCHEMA).
-    """
-    if not comment_samples.height:
-        logger.info("comment_samples: no rows selected")
-        return
-    # Semi-join: can't fan out if a comment_id were ever duplicated
-    multi = comment_samples.join(
-        df_attributed.filter(pl.col("mentioned_players").list.len() > 1).select(
-            "comment_id"
-        ),
-        on="comment_id",
-        how="semi",
-    ).height
-    logger.info(
-        f"comment_samples: {comment_samples.height:,} rows selected; "
-        f"{multi:,} multi-mention ({multi / comment_samples.height:.1%})"
-    )

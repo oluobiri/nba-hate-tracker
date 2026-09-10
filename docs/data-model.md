@@ -139,7 +139,7 @@ The `Player → Team (roster)` edge carries a fidelity ceiling worth stating pla
 
 ## 4. View lineage — cheap, needs-a-join, expensive
 
-Three classes of produced table: the four views are **rollups** of `ClassifiedComment` (fact tables with measures at a coarser grain); `Player` and `Team` are the **dimensions** joined in; `comment_samples` is a **fact subset** — verbatim rows of `ClassifiedComment` at its own grain, selected (top-N per player × sentiment by score, under candidacy gates; a pos/neg receipt additionally requires the classifier's stated target, `sentiment_player`) rather than aggregated. Attribution counts every resolved comment; a receipt held up as *what was said about this player* holds the stricter bar.
+Three classes of produced table: the four views are **rollups** of `ClassifiedComment` (fact tables with measures at a coarser grain); `Player` and `Team` are the **dimensions** joined in; `comment_samples` is a **fact subset** — verbatim rows of `ClassifiedComment` at its own grain, selected (top-N per player × sentiment by score, under candidacy gates; a pos/neg receipt additionally requires a second-pass verdict that the sentiment is directed *at* the attributed player, not merely about them — the verifier's re-derived target, resolved under the active alias map, must match) rather than aggregated. Attribution counts every resolved comment; a receipt held up as *what was said about this player* holds the stricter bar. A season without verdicts falls back to the classifier's stated target as the gate, and the file says so (`receipts_verified`), so a consumer never mistakes the weaker bar for the stronger one.
 
 | Table (parquet) | Grain | Derives from | Cheap question it already answers |
 |---|---|---|---|

@@ -1,6 +1,7 @@
 """Tests for pipeline.receipts (candidate selection, the target pool, the samples)."""
 
 import logging
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -8,15 +9,22 @@ import pytest
 from pipeline.receipts import (
     build_comment_samples,
     build_target_pool,
+    load_target_verdicts,
+    resolve_verdicts,
     select_receipt_candidates,
 )
-from pipeline.schemas import COMMENT_SAMPLES_SCHEMA, TARGET_POOL_SCHEMA
+from pipeline.schemas import (
+    COMMENT_SAMPLES_SCHEMA,
+    SENTIMENT_TARGETS_SCHEMA,
+    TARGET_POOL_SCHEMA,
+)
 from utils.constants import (
     COMMENT_SAMPLES_MAX_BODY_CHARS,
     COMMENT_SAMPLES_MIN_CONFIDENCE,
     COMMENT_SAMPLES_TOP_N,
     TARGET_POOL_STRATA,
 )
+from utils.player_config import load_player_config_version
 
 _INPUT_SCHEMA = pl.Schema(
     {
@@ -699,3 +707,274 @@ class TestBuildCommentSamples:
 
         assert empty.height == 0 and empty.schema == COMMENT_SAMPLES_SCHEMA
         assert gated.height == 0 and gated.schema == COMMENT_SAMPLES_SCHEMA
+
+
+# --- the verdict sidecar ---------------------------------------------------
+
+_ALIAS_MAP = {
+    "lebron james": "LeBron James",
+    "lebron": "LeBron James",
+    "anthony davis": "Anthony Davis",
+    "ad": "Anthony Davis",
+    "luka doncic": "Luka Doncic",
+    "luka": "Luka Doncic",
+}
+
+
+def _verdicts(rows: list[dict]) -> pl.DataFrame:
+    """Build a SENTIMENT_TARGETS_SCHEMA frame from row dicts with stable
+    defaults: a valid candidate-stratum verdict at rank 1, confidence 0.9."""
+    defaults = {
+        "attributed_player": "LeBron James",
+        "sentiment": "neg",
+        "stratum": "candidate",
+        "rank": 1,
+        "target_confidence": 0.9,
+        "valid": True,
+        "input_tokens": 100,
+        "output_tokens": 10,
+    }
+    return pl.DataFrame(
+        [{**defaults, **row} for row in rows], schema=SENTIMENT_TARGETS_SCHEMA
+    )
+
+
+class TestResolveVerdicts:
+    """Tests for resolve_verdicts (raw target string -> canonical player)."""
+
+    def test_resolves_through_alias_map_with_normalization(self):
+        """Case and punctuation variants of an alias resolve to the canonical name."""
+        verdicts = _verdicts(
+            [
+                {"comment_id": "c1", "target_raw": "lebron"},
+                {"comment_id": "c2", "target_raw": "LeBron James."},
+                {"comment_id": "c3", "target_raw": "A.D."},
+            ]
+        )
+
+        resolved = resolve_verdicts(verdicts, _ALIAS_MAP)
+
+        assert resolved["target_player"].to_list() == [
+            "LeBron James",
+            "LeBron James",
+            "Anthony Davis",
+        ]
+
+    def test_null_and_untracked_targets_resolve_to_null(self):
+        """A null verdict and a string outside the alias map both yield null."""
+        verdicts = _verdicts(
+            [
+                {"comment_id": "c1", "target_raw": None},
+                {"comment_id": "c2", "target_raw": "Nico Harrison"},
+            ]
+        )
+
+        resolved = resolve_verdicts(verdicts, _ALIAS_MAP)
+
+        assert resolved["target_player"].to_list() == [None, None]
+
+    def test_folded_column_resolves_diacritics_for_measurement_only(self):
+        """A model-emitted accent leaves target_player unresolved but
+        target_player_folded resolved (NFKD, ASCII) - the mechanical-loss
+        class the diagnostics separate from real screens."""
+        verdicts = _verdicts([{"comment_id": "c1", "target_raw": "Luka Dončić"}])
+
+        resolved = resolve_verdicts(verdicts, _ALIAS_MAP)
+
+        assert resolved["target_player"][0] is None
+        assert resolved["target_player_folded"][0] == "Luka Doncic"
+
+    def test_keeps_input_columns(self):
+        """The two resolved columns are appended; nothing is dropped."""
+        verdicts = _verdicts([{"comment_id": "c1", "target_raw": "lebron"}])
+
+        resolved = resolve_verdicts(verdicts, _ALIAS_MAP)
+
+        assert resolved.columns == [
+            *SENTIMENT_TARGETS_SCHEMA.names(),
+            "target_player",
+            "target_player_folded",
+        ]
+
+
+class TestLoadTargetVerdicts:
+    """Tests for load_target_verdicts (sidecar read, validation, stamps)."""
+
+    STAMPS = {
+        "classifier_target_model": "claude-sonnet-5",
+        "classifier_target_prompt_version": "v1",
+    }
+
+    def _write(self, tmp_path, verdicts: pl.DataFrame, metadata: dict) -> Path:
+        path = tmp_path / "sentiment_targets.parquet"
+        verdicts.write_parquet(path, metadata=metadata)
+        return path
+
+    def test_returns_frame_and_classifier_stamps(self, tmp_path):
+        """The frame is returned as written with the two classifier keys."""
+        path = self._write(
+            tmp_path,
+            _verdicts([{"comment_id": "c1", "target_raw": "lebron"}]),
+            {**self.STAMPS, "players_config_version": load_player_config_version()},
+        )
+
+        frame, stamps = load_target_verdicts(path)
+
+        assert frame.height == 1
+        assert stamps == self.STAMPS
+
+    def test_rejects_wrong_schema(self, tmp_path):
+        """A parquet that is not SENTIMENT_TARGETS_SCHEMA raises."""
+        path = tmp_path / "sentiment_targets.parquet"
+        pl.DataFrame({"comment_id": ["c1"]}).write_parquet(path)
+
+        with pytest.raises(ValueError, match="sentiment_targets"):
+            load_target_verdicts(path)
+
+    def test_warns_on_players_config_drift(self, tmp_path, caplog):
+        """A pool built under a stale players.yaml warns, as the fact does."""
+        path = self._write(
+            tmp_path,
+            _verdicts([{"comment_id": "c1", "target_raw": "lebron"}]),
+            {**self.STAMPS, "players_config_version": "0.1"},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.receipts"):
+            load_target_verdicts(path)
+
+        assert "players_config_version drift" in caplog.text
+
+    def test_warns_on_absent_classifier_stamps(self, tmp_path, caplog):
+        """A sidecar with no verifier identity warns; stamps come back None."""
+        path = self._write(
+            tmp_path,
+            _verdicts([{"comment_id": "c1", "target_raw": "lebron"}]),
+            {"players_config_version": load_player_config_version()},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.receipts"):
+            _, stamps = load_target_verdicts(path)
+
+        assert "no classifier identity" in caplog.text
+        assert stamps == {
+            "classifier_target_model": None,
+            "classifier_target_prompt_version": None,
+        }
+
+
+class TestVerifiedAdmission:
+    """Tests for build_comment_samples under a verdict sidecar (strict posture)."""
+
+    def _rows(self) -> list[dict]:
+        """Three LeBron/neg candidates c3 > c2 > c1 by score, all named."""
+        return [
+            {
+                "attributed_player": "LeBron James",
+                "sentiment": "neg",
+                "comment_id": f"c{k}",
+                "body": f"b{k}",
+                "score": k,
+            }
+            for k in (3, 2, 1)
+        ]
+
+    def _samples(self, rows, verdict_rows):
+        resolved = resolve_verdicts(_verdicts(verdict_rows), _ALIAS_MAP)
+        return build_comment_samples(
+            _samples_input(rows), verdicts=resolved, alias_map=_ALIAS_MAP
+        )
+
+    def test_affirmed_rows_ship_and_rerank(self):
+        """Rows whose resolved target is the attributed player ship; rank is
+        contiguous over the admitted rows, not the pre-admission ranking."""
+        frame = self._samples(
+            self._rows(),
+            [
+                {"comment_id": "c3", "target_raw": None},
+                {"comment_id": "c2", "target_raw": "LeBron"},
+                {"comment_id": "c1", "target_raw": "lebron james"},
+            ],
+        )
+
+        assert frame["comment_id"].to_list() == ["c2", "c1"]
+        assert frame["rank"].to_list() == [1, 2]
+
+    @pytest.mark.parametrize(
+        "verdict",
+        [
+            {"comment_id": "c3", "target_raw": None},
+            {"comment_id": "c3", "target_raw": "Anthony Davis"},
+            {"comment_id": "c3", "target_raw": "Nico Harrison"},
+            {"comment_id": "c3", "target_raw": "Luka Dončić"},
+            {"comment_id": "c3", "target_raw": "lebron", "valid": False},
+        ],
+        ids=["null_target", "other_tracked", "untracked", "unfolded", "invalid"],
+    )
+    def test_non_affirming_verdict_excludes(self, verdict):
+        """Null, other-player, untracked, unresolved-accent, and unparsed
+        verdicts all exclude the row; admission is on resolved match only."""
+        frame = self._samples(self._rows()[:1], [verdict])
+
+        assert frame.height == 0
+
+    def test_missing_verdict_excludes(self):
+        """Strict: a polar row with no sidecar row is not a receipt."""
+        frame = self._samples(self._rows(), [{"comment_id": "c1", "target_raw": "lebron"}])
+
+        assert frame["comment_id"].to_list() == ["c1"]
+
+    def test_verifier_readmits_unnamed_row(self):
+        """A NULL-sentiment_player row the classifier's gate would drop ships
+        when the verifier names the attributed player."""
+        rows = self._rows()[:1]
+        rows[0]["sentiment_player"] = None
+        frame = self._samples(rows, [{"comment_id": "c3", "target_raw": "lebron"}])
+
+        assert frame["comment_id"].to_list() == ["c3"]
+
+    def test_free_gate_vetoes_a_different_tracked_target(self):
+        """The classifier's own target, when it resolves to another tracked
+        player, drops the row even though the verifier affirmed."""
+        rows = self._rows()[:1]
+        rows[0]["sentiment_player"] = "AD"
+        frame = self._samples(rows, [{"comment_id": "c3", "target_raw": "lebron"}])
+
+        assert frame.height == 0
+
+    def test_free_gate_ignores_an_untracked_target(self):
+        """A classifier target outside the alias map is not a veto."""
+        rows = self._rows()[:1]
+        rows[0]["sentiment_player"] = "Rich Paul"
+        frame = self._samples(rows, [{"comment_id": "c3", "target_raw": "lebron"}])
+
+        assert frame["comment_id"].to_list() == ["c3"]
+
+    def test_neutral_rows_need_no_verdict(self):
+        """Neutral rows are never verified and ship as before."""
+        rows = self._rows()[:1]
+        rows[0]["sentiment"] = "neu"
+        rows[0]["sentiment_player"] = None
+        frame = self._samples(rows, [])
+
+        assert frame["comment_id"].to_list() == ["c3"]
+
+    def test_polar_gates_still_apply(self):
+        """The confidence floor and body cap gate an affirmed row as before."""
+        rows = self._rows()[:1]
+        rows[0]["confidence"] = 0.5
+        frame = self._samples(rows, [{"comment_id": "c3", "target_raw": "lebron"}])
+
+        assert frame.height == 0
+
+    def test_verdicts_require_alias_map(self):
+        """The free gate needs the alias map; passing verdicts alone raises."""
+        resolved = resolve_verdicts(_verdicts([]), _ALIAS_MAP)
+
+        with pytest.raises(ValueError, match="alias_map"):
+            build_comment_samples(_samples_input(self._rows()), verdicts=resolved)
+
+    def test_conforms_to_schema(self):
+        """Verified output matches COMMENT_SAMPLES_SCHEMA exactly."""
+        frame = self._samples(self._rows(), [{"comment_id": "c3", "target_raw": "lebron"}])
+
+        assert frame.schema == COMMENT_SAMPLES_SCHEMA

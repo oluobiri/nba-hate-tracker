@@ -9,8 +9,12 @@ import pytest
 from pipeline.receipts import (
     build_comment_samples,
     build_target_pool,
+    load_receipt_verdicts,
     load_target_verdicts,
+    measure_coverage,
+    measure_precision,
     resolve_verdicts,
+    samples_stamps,
     select_receipt_candidates,
 )
 from pipeline.schemas import (
@@ -978,3 +982,199 @@ class TestVerifiedAdmission:
         frame = self._samples(self._rows(), [{"comment_id": "c3", "target_raw": "lebron"}])
 
         assert frame.schema == COMMENT_SAMPLES_SCHEMA
+
+
+class TestMeasureCoverage:
+    """Tests for measure_coverage (verdicts over the current gate-lifted pool)."""
+
+    def test_full_coverage(self):
+        """Every current pool row with a valid verdict -> (pool, pool)."""
+        rows = _samples_input(_cell("LeBron James", "neg", 3))
+        verdicts = _verdicts(
+            [{"comment_id": f"Leneg{i:02d}", "target_raw": "lebron"} for i in range(3)]
+        )
+
+        assert measure_coverage(rows, verdicts, k=50) == (3, 3)
+
+    def test_shortfall_counts_missing_and_invalid_as_unverified(self):
+        """A pool row with no sidecar row, or an unparsed one, is uncovered."""
+        rows = _samples_input(_cell("LeBron James", "neg", 3))
+        verdicts = _verdicts(
+            [
+                {"comment_id": "Leneg00", "target_raw": "lebron"},
+                {"comment_id": "Leneg01", "target_raw": "lebron", "valid": False},
+            ]
+        )
+
+        assert measure_coverage(rows, verdicts, k=50) == (1, 3)
+
+    def test_pool_is_gate_lifted_top_k(self):
+        """The denominator is the top-k per cell with unnamed rows included."""
+        rows = _samples_input(_cell("LeBron James", "neg", 5, named=False))
+
+        assert measure_coverage(rows, _verdicts([]), k=2) == (0, 2)
+
+
+class TestMeasurePrecision:
+    """Tests for measure_precision (over the would-have-shipped top-n)."""
+
+    def test_breakdown_and_precision(self):
+        """Six would-have-shipped rows: affirmed, mechanical (accent), null,
+        other tracked, untracked, and one with no verdict (excluded from
+        both sides). precision = (affirmed + mechanical) / verified."""
+        rows = _samples_input(_cell("Luka Doncic", "neg", 6))
+        verdicts = _verdicts(
+            [
+                {"comment_id": "Luneg00", "target_raw": "Luka"},
+                {"comment_id": "Luneg01", "target_raw": "Luka Dončić"},
+                {"comment_id": "Luneg02", "target_raw": None},
+                {"comment_id": "Luneg03", "target_raw": "Anthony Davis"},
+                {"comment_id": "Luneg04", "target_raw": "Nico Harrison"},
+            ]
+        )
+
+        result = measure_precision(rows, resolve_verdicts(verdicts, _ALIAS_MAP), n=10)
+
+        assert result == {
+            "would_have_shipped": 6,
+            "verified": 5,
+            "affirmed": 1,
+            "mechanical": 1,
+            "null_target": 1,
+            "other_tracked": 1,
+            "untracked": 1,
+            "precision": 0.4,
+        }
+
+    def test_would_have_shipped_is_the_gate_on_top_n(self):
+        """Unnamed rows and rows past rank n are not in the denominator."""
+        rows = _samples_input(
+            _cell("LeBron James", "neg", 3) + _cell("LeBron James", "pos", 2, named=False)
+        )
+        verdicts = _verdicts(
+            [{"comment_id": f"Leneg{i:02d}", "target_raw": "lebron"} for i in range(3)]
+        )
+
+        result = measure_precision(rows, resolve_verdicts(verdicts, _ALIAS_MAP), n=2)
+
+        assert result["would_have_shipped"] == 2
+        assert result["precision"] == 1.0
+
+    def test_no_verified_rows_yields_null_precision(self):
+        """An empty intersection reports precision None rather than dividing."""
+        rows = _samples_input(_cell("LeBron James", "neg", 2))
+
+        result = measure_precision(rows, resolve_verdicts(_verdicts([]), _ALIAS_MAP), n=10)
+
+        assert result["verified"] == 0
+        assert result["precision"] is None
+
+
+class TestLoadReceiptVerdicts:
+    """Tests for load_receipt_verdicts (the two-level posture)."""
+
+    def _sidecar(self, tmp_path, verdicts: pl.DataFrame) -> Path:
+        path = tmp_path / "sentiment_targets.parquet"
+        verdicts.write_parquet(
+            path,
+            metadata={
+                "classifier_target_model": "claude-sonnet-5",
+                "classifier_target_prompt_version": "v1",
+                "players_config_version": load_player_config_version(),
+            },
+        )
+        return path
+
+    def test_absent_sidecar_falls_back_and_warns(self, tmp_path, caplog):
+        """No file: verdicts None, receipts_verified False, the figures null."""
+        rows = _samples_input(_cell("LeBron James", "neg", 2))
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.receipts"):
+            verdicts, meta = load_receipt_verdicts(
+                rows, tmp_path / "missing.parquet", _ALIAS_MAP
+            )
+
+        assert verdicts is None
+        assert meta == {
+            "receipts_verified": False,
+            "receipts_coverage": None,
+            "receipts_precision": None,
+            "classifier_target_model": None,
+            "classifier_target_prompt_version": None,
+        }
+        assert "receipts_verified" in caplog.text
+
+    def test_none_path_falls_back(self, tmp_path):
+        """No path at all is the same fallback."""
+        rows = _samples_input(_cell("LeBron James", "neg", 2))
+
+        verdicts, meta = load_receipt_verdicts(rows, None, _ALIAS_MAP)
+
+        assert verdicts is None
+        assert meta["receipts_verified"] is False
+
+    def test_present_sidecar_is_strict_with_figures_and_stamps(self, tmp_path):
+        """A sidecar yields resolved verdicts, coverage, precision, stamps."""
+        rows = _samples_input(_cell("LeBron James", "neg", 2))
+        path = self._sidecar(
+            tmp_path,
+            _verdicts(
+                [
+                    {"comment_id": "Leneg00", "target_raw": "lebron"},
+                    {"comment_id": "Leneg01", "target_raw": None},
+                ]
+            ),
+        )
+
+        verdicts, meta = load_receipt_verdicts(rows, path, _ALIAS_MAP)
+
+        assert "target_player" in verdicts.columns
+        assert meta == {
+            "receipts_verified": True,
+            "receipts_coverage": 1.0,
+            "receipts_precision": 0.5,
+            "classifier_target_model": "claude-sonnet-5",
+            "classifier_target_prompt_version": "v1",
+        }
+
+    def test_coverage_shortfall_warns(self, tmp_path, caplog):
+        """A current pool row without a verdict is the top-up trigger."""
+        rows = _samples_input(_cell("LeBron James", "neg", 2))
+        path = self._sidecar(
+            tmp_path, _verdicts([{"comment_id": "Leneg00", "target_raw": "lebron"}])
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.receipts"):
+            _, meta = load_receipt_verdicts(rows, path, _ALIAS_MAP)
+
+        assert meta["receipts_coverage"] == 0.5
+        assert "coverage shortfall" in caplog.text
+        assert "--top-up" in caplog.text
+
+
+class TestSamplesStamps:
+    """Tests for samples_stamps (the comment_samples parquet metadata)."""
+
+    def test_verified_carries_flag_and_classifier_keys(self):
+        """Verified: the flag plus both verifier identity keys, all strings."""
+        meta = {
+            "receipts_verified": True,
+            "classifier_target_model": "claude-sonnet-5",
+            "classifier_target_prompt_version": "v1",
+        }
+
+        assert samples_stamps(meta) == {
+            "receipts_verified": "true",
+            "classifier_target_model": "claude-sonnet-5",
+            "classifier_target_prompt_version": "v1",
+        }
+
+    def test_unverified_carries_only_the_flag(self):
+        """Fallback: the flag alone; no null-valued identity keys."""
+        meta = {
+            "receipts_verified": False,
+            "classifier_target_model": None,
+            "classifier_target_prompt_version": None,
+        }
+
+        assert samples_stamps(meta) == {"receipts_verified": "false"}

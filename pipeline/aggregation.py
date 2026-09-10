@@ -11,7 +11,11 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.receipts import build_comment_samples, log_comment_samples_diagnostics
+from pipeline.receipts import (
+    build_comment_samples,
+    load_receipt_verdicts,
+    log_comment_samples_diagnostics,
+)
 from pipeline.schemas import (
     DASHBOARD_OUTPUT_SCHEMAS,
     PLAYERS_CONFIG_COLUMNS,
@@ -261,15 +265,20 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     return df, excluded_rows
 
 
-def aggregate_sentiment(input_path: Path) -> dict:
+def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> dict:
     """
     Aggregate classified sentiment data into dashboard-ready JSON.
 
     Reads the sentiment parquet, attributes comments to players,
-    extracts team flair, and computes all aggregation views.
+    extracts team flair, and computes all aggregation views. The
+    comment samples are verified against the target-verifier sidecar
+    when one exists and fall back to the gate-only rule when it doesn't;
+    metadata says which (receipts_verified).
 
     Args:
         input_path: Path to sentiment.parquet file.
+        targets_path: Path to sentiment_targets.parquet; None or a
+            missing file selects the fallback posture.
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
@@ -354,7 +363,14 @@ def aggregate_sentiment(input_path: Path) -> dict:
     players = _build_players_dimension(player_metadata, attributed_players)
 
     logger.info("Selecting comment_samples...")
-    comment_samples = build_comment_samples(df_attributed)
+    alias_map = build_alias_to_player_map()
+    verdicts, receipts_metadata = load_receipt_verdicts(
+        df_attributed, targets_path, alias_map
+    )
+    metadata.update(receipts_metadata)
+    comment_samples = build_comment_samples(
+        df_attributed, verdicts=verdicts, alias_map=alias_map
+    )
     log_comment_samples_diagnostics(df_attributed, comment_samples)
 
     logger.info(

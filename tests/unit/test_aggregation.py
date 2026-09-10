@@ -30,6 +30,7 @@ from pipeline.schemas import (
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
+    SENTIMENT_TARGETS_SCHEMA,
     TEAMS_SCHEMA,
 )
 from utils.player_config import load_player_config_version, load_player_metadata
@@ -980,6 +981,59 @@ class TestAggregateViews:
         sampled_ids = result["comment_samples"]["comment_id"].to_list()
         assert "c7" not in sampled_ids
         assert "c1" in sampled_ids
+
+    def test_verdict_sidecar_replaces_the_gate(self, views_parquet, tmp_path):
+        """Under a sidecar the verifier decides: c7 (unnamed, affirmed) is
+        re-admitted at rank 1 over c1 (named, screened as a null target),
+        and the metadata reports the verified posture with its figures."""
+        sidecar = tmp_path / "sentiment_targets.parquet"
+        pl.DataFrame(
+            {
+                "comment_id": ["c7", "c1", "c5"],
+                "attributed_player": ["Giannis Antetokounmpo"] * 2 + ["LeBron James"],
+                "sentiment": ["neg", "neg", "pos"],
+                "stratum": ["candidate"] * 3,
+                "rank": [1, 2, 1],
+                "target_raw": ["Giannis", None, "LeBron"],
+                "target_confidence": [0.9, 0.9, 0.9],
+                "valid": [True, True, True],
+                "input_tokens": [100] * 3,
+                "output_tokens": [10] * 3,
+            },
+            schema=SENTIMENT_TARGETS_SCHEMA,
+        ).write_parquet(
+            sidecar,
+            metadata={
+                "classifier_target_model": "claude-sonnet-5",
+                "classifier_target_prompt_version": "v1",
+                "players_config_version": load_player_config_version(),
+            },
+        )
+
+        result = aggregate_sentiment(views_parquet, sidecar)
+
+        giannis = result["comment_samples"].filter(
+            pl.col("attributed_player") == "Giannis Antetokounmpo"
+        )
+        assert giannis.select("sentiment", "rank", "comment_id").rows() == [
+            ("neg", 1, "c7"),
+        ]
+        meta = result["metadata"]
+        assert meta["receipts_verified"] is True
+        assert meta["classifier_target_model"] == "claude-sonnet-5"
+        assert meta["classifier_target_prompt_version"] == "v1"
+        assert 0.0 < meta["receipts_coverage"] < 1.0  # c2, c3 uncovered
+        assert meta["receipts_precision"] == 0.5  # c1 null, c5 affirmed
+
+    def test_no_sidecar_reports_unverified(self, views_parquet):
+        """Fallback posture: the flag is false and the figures are null."""
+        result = aggregate_sentiment(views_parquet)
+
+        meta = result["metadata"]
+        assert meta["receipts_verified"] is False
+        assert meta["receipts_coverage"] is None
+        assert meta["receipts_precision"] is None
+        assert meta["classifier_target_model"] is None
 
     def test_player_overall_sorted_by_neg_rate_desc_then_player_asc(
         self, views_parquet

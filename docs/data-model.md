@@ -54,18 +54,20 @@ The pipeline produces three classes of table from this model, none of which is d
 | `confidence` | numeric measure |
 | `mentioned_players[]` | → **Player**, M:N — substring matches re-derived from `body` at assembly time under the active `players.yaml`, *pre-resolution* |
 | `sentiment_player` | the classifier's single pick — a disambiguation input |
-| `attributed_player` | → **Player**, the *resolved* single FK the aggregate views key on |
-| `author_flair_text` → `fan_team` | → **Team** (fan role), 0-or-1 (flair may not resolve) |
+| `attributed_player` | → **Player**, the *resolved* single FK the aggregate views key on — materialized on the fact at assembly |
+| `author_flair_text` → `fan_team` | → **Team** (fan role), 0-or-1 (flair may not resolve) — materialized on the fact at assembly |
 | `created_utc` → `day` | → **Date** |
 
-**The player FK is resolved, not raw.** `mentioned_players[]` (M:N) and `sentiment_player` are the *inputs*; `resolve_player()` collapses them to a single `attributed_player` (or null). The fact tables join on `attributed_player`. ~1.57M of ~1.93M classified rows resolve to a player.
+**The player FK is resolved, not raw.** `mentioned_players[]` (M:N) and `sentiment_player` are the *inputs*; `resolve_player()` collapses them to a single `attributed_player` (or null), and the result is stored on the fact. The fact tables join on `attributed_player`. ~1.57M of ~1.93M classified rows resolve to a player.
+
+**Resolution happens once, at assembly.** `attributed_player` and `fan_team` are columns of `sentiment.parquet`, not something a reader derives. Every consumer of the fact — the aggregate views, the receipts pool, notebooks, anything reading the parquet outside Python — sees the same resolution, because there is exactly one. A reader that re-implemented the resolver would drift from the pipeline the first time an alias changed; storing the derivation under a config stamp is what makes that class of bug impossible.
 
 **Two provenance layers on the fact.** The fact's attributes split into two classes with opposite change semantics:
 
 - **Population + event/classification fields** — frozen at filter/classification time: `body`, `author`, `created_utc`, `score`, `link_id`, `sentiment`, `confidence`, `sentiment_player`. Re-running assembly never changes them; which comments exist in the fact (the population) is part of this frozen layer.
-- **Config-versioned derivations** — `mentioned_players`, and therefore `attributed_player`: caches of `f(body, players.yaml@version)`, re-derived at every assembly and stamped with the config `version` into the parquet's file metadata. The stamp is checked at aggregation read time (drift → WARNING) — the config `version` field (major = roster, minor = alias) is load-bearing lineage metadata, not documentation.
+- **Config-versioned derivations** — `mentioned_players` and `attributed_player`, caches of `f(body, sentiment_player, players.yaml@version)`, and `fan_team`, a cache of `f(author_flair_text, teams.yaml@version)`: re-derived at every assembly and stamped with their config `version` into the parquet's file metadata (`players_config_version`, `teams_config_version`). Both stamps are checked at aggregation read time (drift → WARNING) — the config `version` field (major = roster, minor = alias) is load-bearing lineage metadata, not documentation.
 
-The distinction matters because the two layers age differently: frozen fields stay correct forever, while a stored derivation is only as current as the config it was derived under — copying it forward through a rebuild silently reintroduces every alias fix made since. `fan_team` = `f(author_flair_text, teams.yaml)` is the **same attribute class** — a config-derived attribute, and a future team-alias fix is this same problem. Its lineage anchor is the `teams.yaml` `version` stamped into `teams.parquet`; the dimension and the fan-team views are produced in one atomic aggregation run, so the stamp dates the config every `fan_team` derivation in the output set was built under.
+The distinction matters because the two layers age differently: frozen fields stay correct forever, while a stored derivation is only as current as the config it was derived under — copying it forward through a rebuild silently reintroduces every alias fix made since. That is why the derived columns are never projected from an earlier file: assembly recomputes all three from the frozen layer, so a rebuild under a newer config is a correct rebuild by construction. `teams.parquet` carries the same `teams.yaml` stamp for the dimension side.
 
 > `link_id` — decided V2 addition for the v3 bridge; pending, must land before the classify run (see Forward look).
 

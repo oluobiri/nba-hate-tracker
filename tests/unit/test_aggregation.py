@@ -21,8 +21,13 @@ from pipeline.aggregation import (
     pivot_bar_race_wide,
     players_to_metadata_dict,
 )
+from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
+    GAMES_SCHEMA,
+    PLAYER_GAME_LOG_SCHEMA,
+    PLAYER_GAMES_SCHEMA,
+    TEAM_GAME_LOG_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
     PLAYERS_SCHEMA,
     ROSTERS_SCHEMA,
@@ -1480,3 +1485,105 @@ class TestClassifierLineage:
         warnings = self._classifier_warnings(caplog)
         assert len(warnings) == 1
         assert "no classifier identity" in warnings[0]
+
+
+class TestAggregateGames:
+    """Tests for the game layer's passage through aggregate_sentiment."""
+
+    _BOX = {
+        "minutes": 34,
+        "fgm": 10,
+        "fga": 20,
+        "fg3m": 2,
+        "fg3a": 6,
+        "ftm": 6,
+        "fta": 8,
+        "oreb": 1,
+        "dreb": 7,
+        "reb": 8,
+        "ast": 9,
+        "stl": 1,
+        "blk": 1,
+        "tov": 3,
+        "pf": 2,
+        "pts": 28,
+        "plus_minus": 6,
+    }
+
+    def _write_game_logs(self, ref_dir, season=None):
+        """One Lakers home win over Boston with a LeBron line."""
+        common = {
+            "season_type": "Regular Season",
+            "game_id": "0022500001",
+            "game_date": date(2025, 10, 21),
+        }
+        team_rows = [
+            {
+                **common,
+                "team_id": 1610612747,
+                "team_abbr": "LAL",
+                "team_name": "Los Angeles Lakers",
+                "matchup": "LAL vs. BOS",
+                "wl": "W",
+                **{**self._BOX, "pts": 110},
+            },
+            {
+                **common,
+                "team_id": 1610612738,
+                "team_abbr": "BOS",
+                "team_name": "Boston Celtics",
+                "matchup": "BOS @ LAL",
+                "wl": "L",
+                **{**self._BOX, "pts": 100},
+            },
+        ]
+        player_rows = [
+            {
+                **common,
+                "player_id": 2544,
+                "player_name": "LeBron James",
+                "team_id": 1610612747,
+                "team_abbr": "LAL",
+                "matchup": "LAL vs. BOS",
+                "wl": "W",
+                **self._BOX,
+            }
+        ]
+        pl.DataFrame(team_rows, schema=TEAM_GAME_LOG_SCHEMA).write_parquet(
+            ref_dir / TEAM_GAME_LOG_FILENAME,
+            metadata={
+                "season": season or get_active_season(),
+                "fetched_at": "2026-09-12",
+            },
+        )
+        pl.DataFrame(player_rows, schema=PLAYER_GAME_LOG_SCHEMA).write_parquet(
+            ref_dir / PLAYER_GAME_LOG_FILENAME
+        )
+
+    def test_no_snapshots_ships_empty_tables(self, tmp_path, pinned_snapshot):
+        """Without game logs the tables are empty but present and conforming."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["games"].schema == GAMES_SCHEMA
+        assert result["player_games"].schema == PLAYER_GAMES_SCHEMA
+        assert result["games"].height == 0
+        assert result["metadata"]["game_count"] == 0
+        assert result["metadata"]["games_fetched_at"] is None
+
+    def test_builds_tables_from_snapshots(self, tmp_path, pinned_snapshot):
+        """Game logs on disk become games + LeBron's line, under the real configs."""
+        self._write_game_logs(pinned_snapshot)
+
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        game = result["games"].row(0, named=True)
+        assert game["home_team"] == "Los Angeles Lakers"
+        assert game["winner"] == "Los Angeles Lakers"
+        line = result["player_games"].row(0, named=True)
+        assert line["attributed_player"] == "LeBron James"
+        assert line["team"] == "Los Angeles Lakers"
+        assert line["opponent"] == "Boston Celtics"
+        assert line["is_home"] is True
+        assert result["metadata"]["game_count"] == 1
+        assert result["metadata"]["player_game_count"] == 1
+        assert result["metadata"]["games_fetched_at"] == "2026-09-12"

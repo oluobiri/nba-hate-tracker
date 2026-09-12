@@ -147,6 +147,12 @@ def main() -> None:
         **samples_stamps(result["metadata"]),
         "schema_version": str(SCHEMA_VERSION),
     }
+    # The game tables carry their snapshot's fetch date forward (None
+    # when no snapshot was on disk and the tables are empty)
+    game_stamps = {"schema_version": str(SCHEMA_VERSION)}
+    if result["metadata"]["games_fetched_at"] is not None:
+        game_stamps["fetched_at"] = result["metadata"]["games_fetched_at"]
+    stamps["games"] = stamps["player_games"] = game_stamps
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,11 +177,12 @@ def main() -> None:
     logger.info(f"Wrote aggregates to {output_path}")
 
     # Write one parquet per produced table (four views, the players and
-    # teams dimensions, comment_samples). Each dimension carries the
-    # config-version stamp pre-flighted above, so fact<->dimension drift
-    # is checkable (same mechanism as sentiment.parquet's stamp in
-    # collect_results); comment_samples carries its verified flag and
-    # verifier identity; the views carry none.
+    # teams dimensions, the game layer, comment_samples). Each dimension
+    # carries the config-version stamp pre-flighted above, so
+    # fact<->dimension drift is checkable (same mechanism as
+    # sentiment.parquet's stamp in collect_results); comment_samples
+    # carries its verified flag and verifier identity; the game tables
+    # their snapshot's fetch date; the views carry none.
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_path.parent / f"{name}.parquet"
         result[name].write_parquet(parquet_path, metadata=stamps.get(name))
@@ -193,6 +200,8 @@ def main() -> None:
     logger.info(f"Players:             {meta['player_count']}")
     logger.info(f"Teams:               {meta['team_count']}")
     logger.info(f"Weeks:               {meta['week_count']}")
+    logger.info(f"Games:               {meta['game_count']:,}")
+    logger.info(f"Player-game lines:   {meta['player_game_count']:,}")
     logger.info(f"Receipts verified:   {meta['receipts_verified']}")
     # Both are None in the fallback; precision is also None when no
     # would-have-shipped row carries a verdict

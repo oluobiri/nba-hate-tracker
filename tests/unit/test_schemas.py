@@ -8,10 +8,14 @@ from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
+    GAMES_SCHEMA,
+    PLAYER_GAME_LOG_SCHEMA,
+    PLAYER_GAMES_SCHEMA,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
     ROSTERS_SCHEMA,
     SENTIMENT_SCHEMA,
+    TEAM_GAME_LOG_SCHEMA,
     TEAMS_SCHEMA,
     validate_schema,
 )
@@ -87,6 +91,8 @@ class TestPlayersContract:
         assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
             "players",
             "teams",
+            "games",
+            "player_games",
             "comment_samples",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
@@ -119,6 +125,88 @@ class TestTeamsContract:
         dimension, not a fact rollup; the views mapping stays fact-only."""
         assert DASHBOARD_OUTPUT_SCHEMAS["teams"] is TEAMS_SCHEMA
         assert "teams" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestGamesContract:
+    """Contract guards for the Game dimension (games.parquet)."""
+
+    def test_pins_column_set_and_dtypes(self):
+        """Verify the decided column set with pinned dtypes, in order."""
+        assert GAMES_SCHEMA == pl.Schema(
+            {
+                "game_id": pl.String,
+                "game_date": pl.Date,
+                "season_type": pl.String,
+                "nba_cup_final": pl.Boolean,
+                "neutral_site": pl.Boolean,
+                "home_team": pl.String,
+                "away_team": pl.String,
+                "home_score": pl.Int64,
+                "away_score": pl.Int64,
+                "winner": pl.String,
+                "playoff_round": pl.Int64,
+                "playoff_series": pl.Int64,
+                "playoff_game": pl.Int64,
+            }
+        )
+
+    def test_team_fks_are_role_marked(self):
+        """Verify the two Team roles are marked by name — no unmarked
+        `team` column, and no abbreviation-typed FK beside the key."""
+        assert {"home_team", "away_team"} <= set(GAMES_SCHEMA.names())
+        assert "team" not in GAMES_SCHEMA.names()
+        assert "abbreviation" not in GAMES_SCHEMA.names()
+
+    def test_joins_outputs_but_not_views(self):
+        """Verify games ships via DASHBOARD_OUTPUT_SCHEMAS only — a
+        dimension, not a fact rollup."""
+        assert DASHBOARD_OUTPUT_SCHEMAS["games"] is GAMES_SCHEMA
+        assert "games" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestPlayerGamesContract:
+    """Contract guards for the per-player box-score lines (player_games.parquet)."""
+
+    def test_key_columns_lead(self):
+        """Verify the PK is (game_id, attributed_player): the player key
+        carries the dimension's name so the client join to game_sentiment
+        is on identical column names."""
+        assert PLAYER_GAMES_SCHEMA.names()[:2] == ["game_id", "attributed_player"]
+        assert PLAYER_GAMES_SCHEMA["player_id"] == pl.Int64
+
+    def test_box_score_dtypes_derive_from_snapshot(self):
+        """Verify every box-score column keeps the snapshot's dtype."""
+        for col in ("minutes", "pts", "reb", "ast", "plus_minus"):
+            assert PLAYER_GAMES_SCHEMA[col] == PLAYER_GAME_LOG_SCHEMA[col]
+            assert PLAYER_GAMES_SCHEMA[col] == TEAM_GAME_LOG_SCHEMA[col]
+
+    def test_team_is_the_dated_roster_role(self):
+        """Verify the line carries `team` and `opponent` as canonical Team
+        FKs plus is_home — never a snapshot abbreviation column."""
+        for col in ("team", "opponent", "is_home"):
+            assert col in PLAYER_GAMES_SCHEMA.names()
+        assert "team_abbr" not in PLAYER_GAMES_SCHEMA.names()
+
+    def test_joins_outputs_but_not_views(self):
+        """Verify player_games ships via DASHBOARD_OUTPUT_SCHEMAS only."""
+        assert DASHBOARD_OUTPUT_SCHEMAS["player_games"] is PLAYER_GAMES_SCHEMA
+        assert "player_games" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestGameLogSnapshotsContract:
+    """Contract guards for the game-log reference assets."""
+
+    def test_team_log_grain_columns(self):
+        """Verify the team log keys on game x team and keeps the raw matchup."""
+        for col in ("season_type", "game_id", "team_id", "team_abbr", "matchup"):
+            assert col in TEAM_GAME_LOG_SCHEMA.names()
+        assert TEAM_GAME_LOG_SCHEMA["game_date"] == pl.Date
+
+    def test_player_log_grain_columns(self):
+        """Verify the player log keys on game x player, all players."""
+        for col in ("season_type", "game_id", "player_id", "team_abbr", "matchup"):
+            assert col in PLAYER_GAME_LOG_SCHEMA.names()
+        assert PLAYER_GAME_LOG_SCHEMA["player_id"] == ROSTERS_SCHEMA["player_id"]
 
 
 class TestCommentSamplesContract:

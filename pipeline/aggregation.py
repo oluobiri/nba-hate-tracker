@@ -32,77 +32,16 @@ from utils.player_config import (
     build_alias_to_player_map,
     load_player_config_version,
     load_player_metadata,
-    resolve_sentiment_player,
+    resolve_player,
 )
 from utils.season_config import get_active_season
-from utils.team_config import build_alias_to_team_map, load_team_config
+from utils.team_config import (
+    build_alias_to_team_map,
+    extract_team_from_flair,
+    load_team_config,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def resolve_player(
-    mentioned_players: list[str] | None,
-    sentiment_player: str | None,
-    alias_map: dict[str, str],
-) -> str | None:
-    """
-    Attribute a comment to a single canonical player.
-
-    Uses four-bucket logic:
-    1. Single player in mentioned_players → return it.
-    2. Multi-player + sentiment_player resolves (punctuation/case-normalized
-       alias lookup) → return canonical.
-    3. Otherwise → return None.
-
-    Args:
-        mentioned_players: List of player names mentioned in the comment.
-        sentiment_player: Player identified by sentiment classification.
-        alias_map: Mapping of lowercase aliases to canonical player names.
-
-    Returns:
-        Canonical player name, or None if attribution fails.
-    """
-    if not mentioned_players:
-        return None
-
-    if len(mentioned_players) == 1:
-        player = mentioned_players[0]
-        return alias_map.get(player.lower(), player)
-
-    # Multi-player: disambiguate via the classifier's sentiment_player,
-    # normalizing punctuation/case before the alias lookup.
-    return resolve_sentiment_player(sentiment_player, alias_map)
-
-
-def extract_team_from_flair(
-    flair_text: str | None,
-    alias_to_team: dict[str, str],
-) -> str | None:
-    """
-    Extract team name from Reddit flair text.
-
-    Lowercases the flair and checks each team alias as a substring,
-    trying longest aliases first to avoid collisions (e.g., "hornets"
-    before "nets").
-
-    Args:
-        flair_text: Raw author flair text from Reddit.
-        alias_to_team: Mapping of lowercase aliases to canonical team names.
-
-    Returns:
-        Canonical team name, or None if no match found.
-    """
-    if not flair_text:
-        return None
-
-    flair_lower = flair_text.lower()
-    # Sort aliases longest-first to prevent substring collisions
-    # (e.g., "hornets" must match before "nets")
-    for alias in sorted(alias_to_team, key=len, reverse=True):
-        if alias in flair_lower:
-            return alias_to_team[alias]
-
-    return None
 
 
 def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:

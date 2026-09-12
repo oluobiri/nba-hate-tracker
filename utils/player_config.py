@@ -3,7 +3,8 @@ Player configuration loading from YAML.
 
 This module provides cached access to player aliases, short alias lists,
 player metadata, and the config version string from
-config/{season}/players.yaml.
+config/{season}/players.yaml, plus the pure resolvers that turn classifier
+output and mention lists into a canonical attributed player.
 
 Note: Config is cached per process invocation via @lru_cache. One season
 per process — the season is resolved through get_active_season() at first
@@ -154,6 +155,40 @@ def resolve_sentiment_player(name: str | None, alias_map: dict[str, str]) -> str
     if not name:
         return None
     return alias_map.get(_normalize_player_name(name))
+
+
+def resolve_player(
+    mentioned_players: list[str] | None,
+    sentiment_player: str | None,
+    alias_map: dict[str, str],
+) -> str | None:
+    """
+    Attribute a comment to a single canonical player.
+
+    Uses four-bucket logic:
+    1. Single player in mentioned_players → return it.
+    2. Multi-player + sentiment_player resolves (punctuation/case-normalized
+       alias lookup) → return canonical.
+    3. Otherwise → return None.
+
+    Args:
+        mentioned_players: List of player names mentioned in the comment.
+        sentiment_player: Player identified by sentiment classification.
+        alias_map: Mapping of lowercase aliases to canonical player names.
+
+    Returns:
+        Canonical player name, or None if attribution fails.
+    """
+    if not mentioned_players:
+        return None
+
+    if len(mentioned_players) == 1:
+        player = mentioned_players[0]
+        return alias_map.get(_normalize_player_name(player), player)
+
+    # Multi-player: disambiguate via the classifier's sentiment_player,
+    # normalizing punctuation/case before the alias lookup.
+    return resolve_sentiment_player(sentiment_player, alias_map)
 
 
 @lru_cache(maxsize=1)

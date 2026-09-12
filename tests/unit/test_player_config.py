@@ -15,6 +15,7 @@ from utils.player_config import (
     load_player_config,
     load_player_config_version,
     load_player_metadata,
+    resolve_player,
     resolve_sentiment_player,
 )
 
@@ -205,6 +206,84 @@ class TestResolveSentimentPlayer:
             pytest.skip("active config does not track Moussa Diabaté")
         assert resolve_sentiment_player("Moussa Diabaté", alias_map) == "Moussa Diabaté"
         assert resolve_sentiment_player("Moussa Diabate", alias_map) == "Moussa Diabaté"
+
+
+class TestResolvePlayer:
+    """Tests for resolve_player function."""
+
+    def test_single_player_returns_it(self, player_alias_map):
+        """Single player in mentioned_players is returned directly."""
+        result = resolve_player(["LeBron James"], "Nikola Jokic", player_alias_map)
+        assert result == "LeBron James"
+
+    def test_single_player_normalizes_alias(self, player_alias_map):
+        """Single non-canonical player name is normalized via alias map."""
+        result = resolve_player(["jokic"], None, player_alias_map)
+        assert result == "Nikola Jokic"
+
+    def test_multi_player_canonical_sentiment_player(self, player_alias_map):
+        """Multi-player with canonical sentiment_player returns it."""
+        result = resolve_player(
+            ["LeBron James", "Nikola Jokic"],
+            "Nikola Jokic",
+            player_alias_map,
+        )
+        assert result == "Nikola Jokic"
+
+    def test_multi_player_alias_sentiment_player(self, player_alias_map):
+        """Multi-player with alias sentiment_player normalizes to canonical."""
+        result = resolve_player(
+            ["LeBron James", "Nikola Jokic"],
+            "jokic",
+            player_alias_map,
+        )
+        assert result == "Nikola Jokic"
+
+    def test_multi_player_punctuated_sentiment_player(self):
+        """Multi-player sentiment_player with punctuation still attributes.
+
+        Regression: the model emits "Michael Porter Jr." (trailing period) but
+        the config alias is period-free. Without normalization the comment is
+        dropped even though the player is already in mentioned_players.
+        """
+        alias_map = {
+            "michael porter jr": "Michael Porter Jr",
+            "lebron": "LeBron James",
+        }
+        result = resolve_player(
+            ["Michael Porter Jr", "LeBron James"],
+            "Michael Porter Jr.",
+            alias_map,
+        )
+        assert result == "Michael Porter Jr"
+
+    def test_multi_player_null_sentiment_player(self, player_alias_map):
+        """Multi-player with null sentiment_player returns None."""
+        result = resolve_player(
+            ["LeBron James", "Nikola Jokic"],
+            None,
+            player_alias_map,
+        )
+        assert result is None
+
+    def test_multi_player_unrecognized_sentiment_player(self, player_alias_map):
+        """Multi-player with unrecognized sentiment_player returns None."""
+        result = resolve_player(
+            ["LeBron James", "Nikola Jokic"],
+            "unknown_player_xyz",
+            player_alias_map,
+        )
+        assert result is None
+
+    def test_empty_mentioned_players(self, player_alias_map):
+        """Empty mentioned_players returns None."""
+        result = resolve_player([], "LeBron James", player_alias_map)
+        assert result is None
+
+    def test_none_mentioned_players(self, player_alias_map):
+        """None mentioned_players returns None."""
+        result = resolve_player(None, "LeBron James", player_alias_map)
+        assert result is None
 
 
 class TestLoadPlayerMetadata:

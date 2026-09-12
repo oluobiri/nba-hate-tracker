@@ -1,8 +1,8 @@
 """
 Tests for sentiment aggregation logic.
 
-Tests cover the pure functions resolve_player, extract_team_from_flair,
-and compute_metrics from the aggregation pipeline.
+Tests cover compute_metrics, the dimension builders, the attributed
+frame loader, and aggregate_sentiment end to end.
 """
 
 import logging
@@ -17,11 +17,9 @@ from pipeline.aggregation import (
     build_teams_dimension,
     compute_cumulative_metrics,
     compute_metrics,
-    extract_team_from_flair,
     mask_below_threshold,
     pivot_bar_race_wide,
     players_to_metadata_dict,
-    resolve_player,
 )
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
@@ -36,128 +34,6 @@ from pipeline.schemas import (
 from utils.player_config import load_player_config_version, load_player_metadata
 from utils.season_config import get_active_season
 from utils.team_config import load_team_config
-
-
-class TestResolvePlayer:
-    """Tests for resolve_player function."""
-
-    def test_single_player_returns_it(self, player_alias_map):
-        """Single player in mentioned_players is returned directly."""
-        result = resolve_player(["LeBron James"], "Nikola Jokic", player_alias_map)
-        assert result == "LeBron James"
-
-    def test_single_player_normalizes_alias(self, player_alias_map):
-        """Single non-canonical player name is normalized via alias map."""
-        result = resolve_player(["jokic"], None, player_alias_map)
-        assert result == "Nikola Jokic"
-
-    def test_multi_player_canonical_sentiment_player(self, player_alias_map):
-        """Multi-player with canonical sentiment_player returns it."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            "Nikola Jokic",
-            player_alias_map,
-        )
-        assert result == "Nikola Jokic"
-
-    def test_multi_player_alias_sentiment_player(self, player_alias_map):
-        """Multi-player with alias sentiment_player normalizes to canonical."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            "jokic",
-            player_alias_map,
-        )
-        assert result == "Nikola Jokic"
-
-    def test_multi_player_punctuated_sentiment_player(self):
-        """Multi-player sentiment_player with punctuation still attributes.
-
-        Regression: the model emits "Michael Porter Jr." (trailing period) but
-        the config alias is period-free. Without normalization the comment is
-        dropped even though the player is already in mentioned_players.
-        """
-        alias_map = {
-            "michael porter jr": "Michael Porter Jr",
-            "lebron": "LeBron James",
-        }
-        result = resolve_player(
-            ["Michael Porter Jr", "LeBron James"],
-            "Michael Porter Jr.",
-            alias_map,
-        )
-        assert result == "Michael Porter Jr"
-
-    def test_multi_player_null_sentiment_player(self, player_alias_map):
-        """Multi-player with null sentiment_player returns None."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            None,
-            player_alias_map,
-        )
-        assert result is None
-
-    def test_multi_player_unrecognized_sentiment_player(self, player_alias_map):
-        """Multi-player with unrecognized sentiment_player returns None."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            "unknown_player_xyz",
-            player_alias_map,
-        )
-        assert result is None
-
-    def test_empty_mentioned_players(self, player_alias_map):
-        """Empty mentioned_players returns None."""
-        result = resolve_player([], "LeBron James", player_alias_map)
-        assert result is None
-
-    def test_none_mentioned_players(self, player_alias_map):
-        """None mentioned_players returns None."""
-        result = resolve_player(None, "LeBron James", player_alias_map)
-        assert result is None
-
-
-class TestExtractTeamFromFlair:
-    """Tests for extract_team_from_flair function."""
-
-    def test_standard_flair(self, team_alias_map):
-        """Standard Reddit flair with emoji prefix resolves."""
-        result = extract_team_from_flair(":lal-1: Lakers", team_alias_map)
-        assert result == "Los Angeles Lakers"
-
-    def test_abbreviation_flair(self, team_alias_map):
-        """Abbreviation-only flair resolves."""
-        result = extract_team_from_flair(":bos-1:", team_alias_map)
-        assert result == "Boston Celtics"
-
-    def test_plain_text_flair(self, team_alias_map):
-        """Plain text team name resolves."""
-        result = extract_team_from_flair("Celtics", team_alias_map)
-        assert result == "Boston Celtics"
-
-    def test_null_flair(self, team_alias_map):
-        """Null flair returns None."""
-        result = extract_team_from_flair(None, team_alias_map)
-        assert result is None
-
-    def test_empty_flair(self, team_alias_map):
-        """Empty string flair returns None."""
-        result = extract_team_from_flair("", team_alias_map)
-        assert result is None
-
-    def test_unrecognized_flair(self, team_alias_map):
-        """Unrecognized flair text returns None."""
-        result = extract_team_from_flair(":AUS: Australia", team_alias_map)
-        assert result is None
-
-    def test_legacy_code_flair(self, team_alias_map):
-        """Legacy Reddit flair code resolves."""
-        result = extract_team_from_flair(":njn-1:", team_alias_map)
-        assert result == "Brooklyn Nets"
-
-    def test_substring_collision_hornets_not_nets(self, team_alias_map):
-        """Hornets flair matches Charlotte, not Brooklyn (nets substring)."""
-        result = extract_team_from_flair(":cha-1: Hornets", team_alias_map)
-        assert result == "Charlotte Hornets"
 
 
 class TestComputeMetrics:

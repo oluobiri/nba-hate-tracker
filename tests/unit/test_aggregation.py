@@ -14,7 +14,6 @@ import pytest
 from pipeline.aggregation import (
     load_attributed_frame,
     aggregate_sentiment,
-    build_comment_samples,
     build_teams_dimension,
     compute_cumulative_metrics,
     compute_metrics,
@@ -31,12 +30,8 @@ from pipeline.schemas import (
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
+    SENTIMENT_TARGETS_SCHEMA,
     TEAMS_SCHEMA,
-)
-from utils.constants import (
-    COMMENT_SAMPLES_MAX_BODY_CHARS,
-    COMMENT_SAMPLES_MIN_CONFIDENCE,
-    COMMENT_SAMPLES_TOP_N,
 )
 from utils.player_config import load_player_config_version, load_player_metadata
 from utils.season_config import get_active_season
@@ -580,502 +575,6 @@ class TestAggregateTeams:
         assert result["teams"].height == 30
 
 
-# Input contract of build_comment_samples: the attributed, fan-team-resolved
-# frame aggregate_sentiment() holds. Pinned so an all-null team column
-# can't infer as Null dtype.
-_SAMPLES_INPUT_SCHEMA = pl.Schema(
-    {
-        "attributed_player": pl.String,
-        "sentiment": pl.String,
-        "sentiment_player": pl.String,
-        "comment_id": pl.String,
-        "link_id": pl.String,
-        "body": pl.String,
-        "score": pl.Int64,
-        "confidence": pl.Float64,
-        "created_utc": pl.Int64,
-        "team": pl.String,
-    }
-)
-
-
-def _samples_input(rows: list[dict]) -> pl.DataFrame:
-    """Build a build_comment_samples input frame from row dicts, filling
-    the columns a test doesn't care about with stable defaults.
-    sentiment_player defaults to the row's attributed_player (a named
-    target), so only the target-gate tests set it explicitly."""
-    defaults = {
-        "link_id": "t3_post1",
-        "confidence": 0.95,
-        "created_utc": 1704067200,
-        "team": None,
-    }
-    return pl.DataFrame(
-        [
-            {
-                "sentiment_player": row["attributed_player"],
-                **defaults,
-                **row,
-            }
-            for row in rows
-        ],
-        schema=_SAMPLES_INPUT_SCHEMA,
-    )
-
-
-class TestBuildCommentSamples:
-    """Tests for build_comment_samples (the comment-samples fact subset)."""
-
-    @pytest.fixture
-    def cell_rows(self) -> list[dict]:
-        """Twelve distinct LeBron/neg candidates with scores 12..1, bodies b12..b1
-        (score k has body bk), all above the confidence floor and short."""
-        return [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": f"c{k:02d}",
-                "body": f"b{k}",
-                "score": k,
-            }
-            for k in range(12, 0, -1)
-        ]
-
-    def test_conforms_to_schema(self, cell_rows):
-        """The frame matches COMMENT_SAMPLES_SCHEMA exactly."""
-        frame = build_comment_samples(_samples_input(cell_rows))
-
-        assert frame.schema == COMMENT_SAMPLES_SCHEMA
-
-    def test_caps_each_cell_at_n_by_score(self, cell_rows):
-        """A cell keeps its top-n by score; rank follows score order."""
-        frame = build_comment_samples(_samples_input(cell_rows), n=10)
-
-        assert frame.height == 10
-        assert frame["rank"].to_list() == list(range(1, 11))
-        assert frame["score"].to_list() == list(range(12, 2, -1))
-        assert frame["comment_id"][0] == "c12"
-
-    def test_custom_n_honored(self, cell_rows):
-        """n is a keyword parameter, not a baked constant."""
-        frame = build_comment_samples(_samples_input(cell_rows), n=3)
-
-        assert frame["rank"].to_list() == [1, 2, 3]
-
-    def test_thin_cell_not_padded(self):
-        """A cell with fewer than n candidates yields fewer rows, never padding."""
-        rows = [
-            {
-                "attributed_player": "Stephen Curry",
-                "sentiment": "pos",
-                "comment_id": "c1",
-                "body": "splash",
-                "score": 4,
-            },
-            {
-                "attributed_player": "Stephen Curry",
-                "sentiment": "pos",
-                "comment_id": "c2",
-                "body": "greatest shooter",
-                "score": 9,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows), n=10)
-
-        assert frame.height == 2
-        assert frame["rank"].to_list() == [1, 2]
-        assert frame["comment_id"].to_list() == ["c2", "c1"]
-
-    def test_confidence_floor_excludes_low_confidence(self):
-        """A high-score row below the floor is not a candidate at all."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "viral",
-                "body": "washed",
-                "score": 5000,
-                "confidence": 0.6,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "solid",
-                "body": "cooked",
-                "score": 10,
-                "confidence": 0.9,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows), min_confidence=0.9)
-
-        assert frame["comment_id"].to_list() == ["solid"]
-        assert frame["rank"].to_list() == [1]
-
-    def test_confidence_floor_exempts_neutral(self):
-        """The floor guards the polar labels only: a neu row at the
-        classifier's conventional 0.5 is still a candidate."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neu",
-                "comment_id": "neutral",
-                "body": "LeBron had 28 tonight",
-                "score": 40,
-                "confidence": 0.5,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "pos",
-                "comment_id": "hedged",
-                "body": "decent game I guess",
-                "score": 40,
-                "confidence": 0.5,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows), min_confidence=0.9)
-
-        assert frame["comment_id"].to_list() == ["neutral"]
-
-    def test_target_gate_excludes_polar_rows_without_target(self):
-        """A polar row where the classifier declined to name a target is
-        not a candidate, whatever its score; the next-best named-target
-        row takes its rank."""
-        rows = [
-            {
-                "attributed_player": "Rudy Gobert",
-                "sentiment": "neg",
-                "sentiment_player": None,
-                "comment_id": "bystander",
-                "body": "You were fouling Wemby all game",
-                "score": 5000,
-            },
-            {
-                "attributed_player": "Rudy Gobert",
-                "sentiment": "neg",
-                "comment_id": "named",
-                "body": "classic Gobert defense",
-                "score": 10,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame["comment_id"].to_list() == ["named"]
-        assert frame["rank"].to_list() == [1]
-
-    def test_target_gate_exempts_neutral(self):
-        """The gate guards the polar labels only: the classifier routinely
-        omits the target on neutral comments, so a null-target neu row is
-        still a candidate."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neu",
-                "sentiment_player": None,
-                "comment_id": "neutral",
-                "body": "LeBron had 28 tonight",
-                "score": 40,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame["comment_id"].to_list() == ["neutral"]
-
-    def test_candidacy_log_reports_target_gate(self, caplog):
-        """The candidacy line reports the target gate's removals alongside
-        the floor and cap."""
-        rows = [
-            {
-                "attributed_player": "Rudy Gobert",
-                "sentiment": "neg",
-                "sentiment_player": None,
-                "comment_id": "bystander",
-                "body": "You were fouling Wemby all game",
-                "score": 5000,
-            },
-            {
-                "attributed_player": "Rudy Gobert",
-                "sentiment": "neg",
-                "comment_id": "named",
-                "body": "classic Gobert defense",
-                "score": 10,
-            },
-        ]
-        with caplog.at_level(logging.INFO, logger="pipeline.receipts"):
-            build_comment_samples(_samples_input(rows))
-
-        assert "1 (50.0%) removed by the pos/neg target gate" in caplog.text
-
-    def test_body_length_cap_excludes_long_bodies(self):
-        """A high-score essay over the cap is not a candidate at all."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "essay",
-                "body": "x" * 501,
-                "score": 5000,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "quip",
-                "body": "x" * 500,
-                "score": 10,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows), max_body_chars=500)
-
-        assert frame["comment_id"].to_list() == ["quip"]
-
-    def test_bodies_are_verbatim(self):
-        """body is carried untouched — no truncation, no whitespace edits."""
-        body = "  LeBron is  washed\n\nand it's not close  "
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "c1",
-                "body": body,
-                "score": 3,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame["body"][0] == body
-
-    def test_dedup_by_body_keeps_highest_scored(self):
-        """Identical bodies within a cell collapse to the best-ranked copy."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "low",
-                "body": "same copypasta",
-                "score": 2,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "high",
-                "body": "same copypasta",
-                "score": 20,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "other",
-                "body": "different",
-                "score": 5,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame["comment_id"].to_list() == ["high", "other"]
-        assert frame["rank"].to_list() == [1, 2]
-
-    def test_dedup_is_per_cell(self):
-        """The same body under two players (or sentiments) is not a duplicate."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "c1",
-                "body": "overrated",
-                "score": 5,
-            },
-            {
-                "attributed_player": "Kevin Durant",
-                "sentiment": "neg",
-                "comment_id": "c2",
-                "body": "overrated",
-                "score": 5,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame.height == 2
-
-    def test_tiebreak_score_then_confidence_then_comment_id(self):
-        """Equal scores break on confidence desc, then comment_id asc."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "zz",
-                "body": "a",
-                "score": 7,
-                "confidence": 0.99,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "bb",
-                "body": "b",
-                "score": 7,
-                "confidence": 0.95,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "aa",
-                "body": "c",
-                "score": 7,
-                "confidence": 0.95,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame["comment_id"].to_list() == ["zz", "aa", "bb"]
-
-    def test_null_score_ranks_last(self):
-        """A null score never wins a cell: nulls sort last, so the true
-        top-upvoted receipt keeps rank 1."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "nullscore",
-                "body": "washed",
-                "score": None,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "real",
-                "body": "cooked",
-                "score": 12,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame["comment_id"].to_list() == ["real", "nullscore"]
-
-    def test_defaults_are_the_named_constants(self):
-        """The kwarg defaults are the importable module constants, so the
-        manifest can import them rather than retype the rule."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": f"c{k:02d}",
-                "body": f"b{k}",
-                "score": k,
-            }
-            for k in range(COMMENT_SAMPLES_TOP_N + 5, 0, -1)
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame.height == COMMENT_SAMPLES_TOP_N
-        assert COMMENT_SAMPLES_MIN_CONFIDENCE == 0.9
-        assert COMMENT_SAMPLES_MAX_BODY_CHARS == 500
-
-    def test_fan_team_role_marked_and_nullable(self):
-        """The fact's team column ships as fan_team; unresolved flair stays null."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "pos",
-                "comment_id": "c1",
-                "body": "goat",
-                "score": 9,
-                "team": "Los Angeles Lakers",
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "pos",
-                "comment_id": "c2",
-                "body": "king",
-                "score": 4,
-                "team": None,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert "team" not in frame.columns
-        assert frame["fan_team"].to_list() == ["Los Angeles Lakers", None]
-
-    def test_all_three_sentiments_sampled(self):
-        """pos, neg, and neu cells are all sampled — balanced by construction."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": s,
-                "comment_id": f"c_{s}",
-                "body": s,
-                "score": 1,
-            }
-            for s in ("pos", "neg", "neu")
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert sorted(frame["sentiment"].to_list()) == ["neg", "neu", "pos"]
-
-    def test_sorted_by_player_sentiment_rank(self):
-        """File order is (attributed_player, sentiment, rank), independent
-        of input order and of score across cells."""
-        rows = [
-            {
-                "attributed_player": "Stephen Curry",
-                "sentiment": "pos",
-                "comment_id": "c1",
-                "body": "a",
-                "score": 100,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "pos",
-                "comment_id": "c2",
-                "body": "b",
-                "score": 1,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "c3",
-                "body": "c",
-                "score": 50,
-            },
-            {
-                "attributed_player": "LeBron James",
-                "sentiment": "neg",
-                "comment_id": "c4",
-                "body": "d",
-                "score": 60,
-            },
-        ]
-        frame = build_comment_samples(_samples_input(rows))
-
-        assert frame.select("attributed_player", "sentiment", "rank").rows() == [
-            ("LeBron James", "neg", 1),
-            ("LeBron James", "neg", 2),
-            ("LeBron James", "pos", 1),
-            ("Stephen Curry", "pos", 1),
-        ]
-        assert frame["comment_id"].to_list() == ["c4", "c3", "c2", "c1"]
-
-    def test_empty_input_returns_conforming_empty_frame(self):
-        """No candidates (empty input, or everything gated out) still yields
-        a schema-conforming frame — the unified validation loop runs on it."""
-        empty = build_comment_samples(_samples_input([]))
-        gated = build_comment_samples(
-            _samples_input(
-                [
-                    {
-                        "attributed_player": "LeBron James",
-                        "sentiment": "neg",
-                        "comment_id": "c1",
-                        "body": "x",
-                        "score": 1,
-                        "confidence": 0.1,
-                    },
-                ]
-            )
-        )
-
-        assert empty.height == 0 and empty.schema == COMMENT_SAMPLES_SCHEMA
-        assert gated.height == 0 and gated.schema == COMMENT_SAMPLES_SCHEMA
-
-
 class TestPlayersToMetadataDict:
     """Tests for players_to_metadata_dict (frame -> legacy aggregates.json dict).
 
@@ -1482,6 +981,59 @@ class TestAggregateViews:
         sampled_ids = result["comment_samples"]["comment_id"].to_list()
         assert "c7" not in sampled_ids
         assert "c1" in sampled_ids
+
+    def test_verdict_sidecar_replaces_the_gate(self, views_parquet, tmp_path):
+        """Under a sidecar the verifier decides: c7 (unnamed, affirmed) is
+        re-admitted at rank 1 over c1 (named, screened as a null target),
+        and the metadata reports the verified posture with its figures."""
+        sidecar = tmp_path / "sentiment_targets.parquet"
+        pl.DataFrame(
+            {
+                "comment_id": ["c7", "c1", "c5"],
+                "attributed_player": ["Giannis Antetokounmpo"] * 2 + ["LeBron James"],
+                "sentiment": ["neg", "neg", "pos"],
+                "stratum": ["candidate"] * 3,
+                "rank": [1, 2, 1],
+                "target_raw": ["Giannis", None, "LeBron"],
+                "target_confidence": [0.9, 0.9, 0.9],
+                "valid": [True, True, True],
+                "input_tokens": [100] * 3,
+                "output_tokens": [10] * 3,
+            },
+            schema=SENTIMENT_TARGETS_SCHEMA,
+        ).write_parquet(
+            sidecar,
+            metadata={
+                "classifier_target_model": "claude-sonnet-5",
+                "classifier_target_prompt_version": "v1",
+                "players_config_version": load_player_config_version(),
+            },
+        )
+
+        result = aggregate_sentiment(views_parquet, sidecar)
+
+        giannis = result["comment_samples"].filter(
+            pl.col("attributed_player") == "Giannis Antetokounmpo"
+        )
+        assert giannis.select("sentiment", "rank", "comment_id").rows() == [
+            ("neg", 1, "c7"),
+        ]
+        meta = result["metadata"]
+        assert meta["receipts_verified"] is True
+        assert meta["classifier_target_model"] == "claude-sonnet-5"
+        assert meta["classifier_target_prompt_version"] == "v1"
+        assert 0.0 < meta["receipts_coverage"] < 1.0  # c2, c3 uncovered
+        assert meta["receipts_precision"] == 0.5  # c1 null, c5 affirmed
+
+    def test_no_sidecar_reports_unverified(self, views_parquet):
+        """Fallback posture: the flag is false and the figures are null."""
+        result = aggregate_sentiment(views_parquet)
+
+        meta = result["metadata"]
+        assert meta["receipts_verified"] is False
+        assert meta["receipts_coverage"] is None
+        assert meta["receipts_precision"] is None
+        assert meta["classifier_target_model"] is None
 
     def test_player_overall_sorted_by_neg_rate_desc_then_player_asc(
         self, views_parquet

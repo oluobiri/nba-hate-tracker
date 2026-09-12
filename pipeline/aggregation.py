@@ -11,9 +11,12 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.receipts import select_receipt_candidates
+from pipeline.receipts import (
+    build_comment_samples,
+    load_receipt_verdicts,
+    log_comment_samples_diagnostics,
+)
 from pipeline.schemas import (
-    COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
@@ -23,11 +26,6 @@ from pipeline.schemas import (
     TEAM_OVERALL_SCHEMA,
     TEAMS_SCHEMA,
     validate_schema,
-)
-from utils.constants import (
-    COMMENT_SAMPLES_MAX_BODY_CHARS,
-    COMMENT_SAMPLES_MIN_CONFIDENCE,
-    COMMENT_SAMPLES_TOP_N,
 )
 from utils.paths import get_reference_dir
 from utils.player_config import (
@@ -267,15 +265,20 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     return df, excluded_rows
 
 
-def aggregate_sentiment(input_path: Path) -> dict:
+def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> dict:
     """
     Aggregate classified sentiment data into dashboard-ready JSON.
 
     Reads the sentiment parquet, attributes comments to players,
-    extracts team flair, and computes all aggregation views.
+    extracts team flair, and computes all aggregation views. The
+    comment samples are verified against the target-verifier sidecar
+    when one exists and fall back to the gate-only rule when it doesn't;
+    metadata says which (receipts_verified).
 
     Args:
         input_path: Path to sentiment.parquet file.
+        targets_path: Path to sentiment_targets.parquet; None or a
+            missing file selects the fallback posture.
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
@@ -360,8 +363,15 @@ def aggregate_sentiment(input_path: Path) -> dict:
     players = _build_players_dimension(player_metadata, attributed_players)
 
     logger.info("Selecting comment_samples...")
-    comment_samples = build_comment_samples(df_attributed)
-    _log_comment_samples_diagnostics(df_attributed, comment_samples)
+    alias_map = build_alias_to_player_map()
+    verdicts, receipts_metadata = load_receipt_verdicts(
+        df_attributed, targets_path, alias_map
+    )
+    metadata.update(receipts_metadata)
+    comment_samples = build_comment_samples(
+        df_attributed, verdicts=verdicts, alias_map=alias_map
+    )
+    log_comment_samples_diagnostics(df_attributed, comment_samples)
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "
@@ -411,76 +421,6 @@ def build_teams_dimension(team_config: dict[str, dict]) -> pl.DataFrame:
             "logo_url": [info["logo_url"] for info in team_config.values()],
         },
         schema=TEAMS_SCHEMA,
-    )
-
-
-def build_comment_samples(
-    df: pl.DataFrame,
-    *,
-    n: int = COMMENT_SAMPLES_TOP_N,
-    min_confidence: float = COMMENT_SAMPLES_MIN_CONFIDENCE,
-    max_body_chars: int = COMMENT_SAMPLES_MAX_BODY_CHARS,
-) -> pl.DataFrame:
-    """
-    Select the comment samples: top-N receipts per player x sentiment.
-
-    Candidacy and ranking are select_receipt_candidates with the target
-    gate on: a polar row with no stated target is the ambiguity class a
-    receipt can't carry, while neutral rows are exempt from both polar
-    gates (the classifier reports a conventional 0.5 for neu and
-    routinely omits the target there). Thin cells are never padded.
-    Bodies are verbatim.
-
-    Args:
-        df: Attributed, flair-resolved frame with attributed_player,
-            sentiment, sentiment_player, comment_id, link_id, body,
-            score, confidence, created_utc, team.
-        n: Maximum rows per (attributed_player, sentiment) cell.
-        min_confidence: Candidacy floor on confidence, pos/neg rows only.
-        max_body_chars: Candidacy cap on body length, in characters.
-
-    Returns:
-        Frame conforming to COMMENT_SAMPLES_SCHEMA, sorted by
-        (attributed_player, sentiment, rank).
-    """
-    cell = ["attributed_player", "sentiment"]
-    return (
-        select_receipt_candidates(
-            df, n=n, min_confidence=min_confidence, max_body_chars=max_body_chars
-        )
-        .rename({"team": "fan_team"})
-        .select(COMMENT_SAMPLES_SCHEMA.names())
-        .sort([*cell, "rank"])
-    )
-
-
-def _log_comment_samples_diagnostics(
-    df_attributed: pl.DataFrame, comment_samples: pl.DataFrame
-) -> None:
-    """
-    Log the multi-mention share of the sampled rows.
-
-    A two-name receipt can read ambiguously under one player's card;
-    the share is logged every run so it stays visible.
-
-    Args:
-        df_attributed: The attributed frame (carries mentioned_players).
-        comment_samples: The selected samples (COMMENT_SAMPLES_SCHEMA).
-    """
-    if not comment_samples.height:
-        logger.info("comment_samples: no rows selected")
-        return
-    # Semi-join: can't fan out if a comment_id were ever duplicated
-    multi = comment_samples.join(
-        df_attributed.filter(pl.col("mentioned_players").list.len() > 1).select(
-            "comment_id"
-        ),
-        on="comment_id",
-        how="semi",
-    ).height
-    logger.info(
-        f"comment_samples: {comment_samples.height:,} rows selected; "
-        f"{multi:,} multi-mention ({multi / comment_samples.height:.1%})"
     )
 
 

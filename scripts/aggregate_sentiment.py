@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from pipeline.aggregation import aggregate_sentiment, players_to_metadata_dict
+from pipeline.receipts import samples_stamps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.paths import get_dashboard_dir, get_processed_dir
 from utils.player_config import load_player_config_version
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 DEFAULT_INPUT_FILENAME = "sentiment.parquet"
+DEFAULT_TARGETS_FILENAME = "sentiment_targets.parquet"
 DEFAULT_OUTPUT_FILENAME = "aggregates.json"
 
 # The legacy aggregates.json key set, frozen as a literal: exactly the
@@ -83,6 +85,13 @@ def main() -> None:
         f"(default: data/<season>/dashboard/{DEFAULT_OUTPUT_FILENAME})",
     )
     parser.add_argument(
+        "--targets",
+        type=Path,
+        default=None,
+        help="Path to the target-verifier sidecar; absent file -> gate-only "
+        f"samples (default: data/<season>/processed/{DEFAULT_TARGETS_FILENAME})",
+    )
+    parser.add_argument(
         "--season",
         default=None,
         metavar="YYYY-YY",
@@ -97,6 +106,7 @@ def main() -> None:
     # Defaults resolve after the season override so they land in the
     # right season directory
     input_path = args.input or get_processed_dir() / DEFAULT_INPUT_FILENAME
+    targets_path = args.targets or get_processed_dir() / DEFAULT_TARGETS_FILENAME
     output_path = args.output or get_dashboard_dir() / DEFAULT_OUTPUT_FILENAME
 
     # Validate input exists
@@ -108,8 +118,9 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Sentiment Aggregation")
     logger.info("=" * 60)
-    logger.info(f"Input:  {input_path}")
-    logger.info(f"Output: {output_path}")
+    logger.info(f"Input:   {input_path}")
+    logger.info(f"Targets: {targets_path}")
+    logger.info(f"Output:  {output_path}")
     logger.info("=" * 60)
 
     # Pre-flight the config-version stamps before anything runs or is
@@ -129,7 +140,13 @@ def main() -> None:
     }
 
     # Run aggregation
-    result = aggregate_sentiment(input_path)
+    result = aggregate_sentiment(input_path, targets_path)
+    # The samples stamp is read back from the sidecar inside aggregation
+    # (verified flag + verifier identity), so it joins the set here
+    stamps["comment_samples"] = {
+        **samples_stamps(result["metadata"]),
+        "schema_version": str(SCHEMA_VERSION),
+    }
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +174,8 @@ def main() -> None:
     # teams dimensions, comment_samples). Each dimension carries the
     # config-version stamp pre-flighted above, so fact<->dimension drift
     # is checkable (same mechanism as sentiment.parquet's stamp in
-    # collect_results); the other outputs carry none.
+    # collect_results); comment_samples carries its verified flag and
+    # verifier identity; the views carry none.
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_path.parent / f"{name}.parquet"
         result[name].write_parquet(parquet_path, metadata=stamps.get(name))
@@ -175,6 +193,13 @@ def main() -> None:
     logger.info(f"Players:             {meta['player_count']}")
     logger.info(f"Teams:               {meta['team_count']}")
     logger.info(f"Weeks:               {meta['week_count']}")
+    logger.info(f"Receipts verified:   {meta['receipts_verified']}")
+    # Both are None in the fallback; precision is also None when no
+    # would-have-shipped row carries a verdict
+    if meta["receipts_coverage"] is not None:
+        logger.info(f"Receipts coverage:   {meta['receipts_coverage']:.1%}")
+    if meta["receipts_precision"] is not None:
+        logger.info(f"Receipts precision:  {meta['receipts_precision']:.1%}")
 
 
 if __name__ == "__main__":

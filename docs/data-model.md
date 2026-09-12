@@ -10,7 +10,7 @@
 
 ## The model at a glance
 
-A **star schema**: one fact at the center — `ClassifiedComment` — with three dimensions radiating out. `Team` is a **role-playing dimension**: the same franchise table is referenced in two distinct roles (a player's *roster* team and a commenter's *fan* team). `Date` is a **modeled target** — it does not exist as a table today (temporal lives as a derived `week` column), but the model names it because the V2 temporal work is built against it.
+A **star schema**: one fact at the center — `ClassifiedComment` — with three dimensions radiating out, plus the **game layer**: `Game`, a dimension here (a fact in a basketball model — fact-vs-dimension is relative to the star you're in), and `PlayerGame`, one tracked player's box-score line in one game. `Team` is a **role-playing dimension**: the same franchise table is referenced in four distinct roles (a player's *roster* team, a commenter's *fan* team, and a game's *home* and *away* teams). `Date` is a **modeled target** — it does not exist as a table today (temporal lives as a derived `week` column), but the model names it because the V2 temporal work is built against it.
 
 ```mermaid
 erDiagram
@@ -26,17 +26,29 @@ erDiagram
     Date {
         date day PK "grain: one day (modeled target)"
     }
+    Game {
+        string game_id PK "grain: one game"
+    }
+    PlayerGame {
+        string game_id PK "grain: one tracked player in one game"
+        string attributed_player PK
+    }
 
     Player            }o--|| Team   : "roster_team (point-in-time)"
     ClassifiedComment }o--o| Team   : "fan_team (flair, 0-1)"
     ClassifiedComment }o--o| Player : "attributed_player (resolved)"
     ClassifiedComment }o--o{ Player : "mentioned_players (M:N, pre-resolution)"
     ClassifiedComment }o--|| Date   : "created_utc to day"
+    Game              }o--|| Team   : "home_team"
+    Game              }o--|| Team   : "away_team"
+    PlayerGame        }o--|| Game   : "game_id"
+    PlayerGame        }o--|| Player : "attributed_player"
+    PlayerGame        }o--|| Team   : "team (dated roster)"
 ```
 
 The diagram carries **structure only** — entity boxes, the role-playing edges, and each box's grain/key. Full attribute lists live in the entity key below, so the diagram stays readable and so forward-look attributes never appear to already exist.
 
-The pipeline produces three classes of table from this model, none of which is drawn as a box: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
+The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
 
 ---
 
@@ -93,6 +105,30 @@ The distinction matters because the two layers age differently: frozen fields st
 | `abbreviation`, `conference`, `team_id`, `logo_url` | descriptive attributes |
 | `aliases[]` | the flair fragments feeding `fan_team` resolution |
 
+### `Game` — dimension
+
+**Grain:** one game. Materialized as `games.parquet`, pivoted from the season's team game-log snapshot (`data/<season>/reference/team_game_log.parquet`, stats.nba.com `LeagueGameLog`, every season type). The snapshot holds both sides of every game as the endpoint serves them; the dimension decides what ships: exhibitions against non-NBA opponents are dropped, and a game whose two lines both read "away" (a neutral site) is flagged, its sides assigned by `team_id` so the row does not depend on endpoint order.
+
+| Field | Notes |
+|---|---|
+| `game_id` | stats.nba.com id (PK); the prefix encodes the season type and, for playoffs, `004 YY 00 R S G` |
+| `game_date`, `season_type` | `pre_season` / `regular_season` / `play_in` / `playoffs`; the NBA Cup final sits in the regular-season window under `nba_cup_final` |
+| `home_team`, `away_team`, `winner` | → **Team** (home / away roles), canonical names |
+| `home_score`, `away_score` | measures of the game, not of the star |
+| `playoff_round`, `playoff_series`, `playoff_game` | parsed from the id; null outside the playoffs |
+| `neutral_site` | see above |
+
+### `PlayerGame` — one player in one game
+
+**Grain:** one tracked player's box-score line in one game. Materialized as `player_games.parquet` from the player game-log snapshot (`player_game_log.parquet`, every player who dressed), selected to the Player dimension by `player_id` under the active `players.yaml`. A tracked player with no line is absent, never fabricated. Not a rollup of the fact — it carries the game's measures (`pts`, `reb`, `plus_minus`, …), and the comment-side view at the same grain is a separate rollup (see §4).
+
+| Field | Notes |
+|---|---|
+| `game_id`, `attributed_player` | PK; → **Game**, → **Player** (the dimension's key name, so the join to the comment-side view at this grain is on identical columns) |
+| `team` | → **Team**, the **dated roster role**: the player's team on that line — see §3 |
+| `opponent`, `is_home` | → **Team**; `is_home` is derived from `games.home_team` so the two files agree on neutral-site games |
+| `wl`, `minutes`, the box-score line, `plus_minus` | as the endpoint serves them |
+
 ### `Date` — dimension (modeled target, not yet materialized)
 
 **Grain:** one day. **No Date table exists today** — temporal currently lives as a single derived column, `week` (`created_utc` truncated to Monday), on `player_temporal`. This box models the *target* shape that the V2 temporal page and cross-season work are designed against.
@@ -110,12 +146,14 @@ The atomic fact stays at `created_utc` (seconds) and serves the replay directly;
 
 ## 2. The two `team` roles
 
-`Team` is **one role-playing dimension**. The same franchise table is referenced in two roles, and an unmarked `team` is untenable once you have more than one — so the model marks them:
+`Team` is **one role-playing dimension**. The same franchise table is referenced in four roles, and an unmarked `team` is untenable once you have more than one — so the model marks them:
 
-- **`roster_team`** — `Player → Team`. Who a player plays for.
+- **`roster_team`** — `Player → Team`. Who a player plays for (season-end).
 - **`fan_team`** — `ClassifiedComment → Team`, resolved from the commenter's flair. Whose fan is talking.
+- **`home_team`** / **`away_team`** — `Game → Team`. Who hosted, who visited.
+- **`team`** on `PlayerGame` — the dated roster role: who the player played for in that game. Unmarked because the row's grain already names the game; `opponent` is its counterpart.
 
-**Decided convention:** mark the role everywhere as `roster_team` / `fan_team`.
+**Decided convention:** mark the role everywhere as `roster_team` / `fan_team` / `home_team` / `away_team`. Every Team FK carries the dimension's canonical `team` name, never an abbreviation, so every join is `USING (team)`.
 
 **Current-column map:**
 
@@ -126,6 +164,8 @@ The atomic fact stays at `created_utc` (seconds) and serves the replay directly;
 | `player_team.team` | `fan_team` |
 | `team_overall.team` | `fan_team` |
 | `comment_samples.fan_team` | `fan_team` (role-marked physical name) |
+| `games.home_team`, `games.away_team`, `games.winner` | `home_team` / `away_team` (role-marked physical names) |
+| `player_games.team`, `player_games.opponent` | dated roster role (grain-scoped) |
 
 The fan-team columns in the two existing views still carry the unmarked physical name `team`; their rename is a **pending follow-up** (a separate ticket), not planned here. New produced files carry the role-marked name from birth. This doc records the concept and the mapping so the model and the code don't read as contradictory in the meantime.
 
@@ -133,7 +173,7 @@ The fan-team columns in the two existing views still carry the unmarked physical
 
 ## 3. Roster team is point-in-time
 
-The `Player → Team (roster)` edge carries a fidelity ceiling worth stating plainly: **roster team is point-in-time, not static.** A traded player has different roster teams across weeks, but the season config and the Player dimension carry a single **season-end** team. So roster-keyed temporal and cross-season analysis mis-homes traded players (e.g. Luka). A trade-aware (slowly-changing) mapping is a future refinement; the model only flags the ceiling.
+The `Player → Team (roster)` edge carries a fidelity ceiling worth stating plainly: **roster team is point-in-time, not static.** A traded player has different roster teams across weeks, but the season config and the Player dimension carry a single **season-end** team, which is the label the dimension keeps (as NBA.com does). The dated edge exists elsewhere: `player_games.team` is the player's team on each game line, so a roster-keyed temporal question can join through `player_games` instead of the dimension when the trade matters. Views keyed on `roster_team` still carry the season-end ceiling.
 
 `jersey_number` sits under the same ceiling: it can change mid-season, and the dimension carries the snapshot's single value. The consequence class is cosmetic, which is why the ceiling is accepted rather than engineered around.
 
@@ -153,7 +193,7 @@ Three classes of produced table: the four views are **rollups** of `ClassifiedCo
 
 The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me every comment"* deliberately **expensive** — the atomic fact is not a shipped table; a full drill is a separate engine (v3), not a view.
 
-**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school).
+**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school). Likewise a box score beside a sentiment number: `player_games` joins any Player × Game table on `(game_id, attributed_player)`, and `games` supplies the date, score and phase. The box score is never pre-joined into a rollup.
 
 **Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
 
@@ -169,12 +209,8 @@ The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me
 >
 > **`link_id` is the bridge, and capturing it in V2 is decided.** It is the single field that unlocks everything in this section. It must be added to `SENTIMENT_SCHEMA` and carried through `process_comments` **before the V2 classification run** — otherwise it is unrecoverable for this season. This is the one item here with a hard deadline. Recording the decision is this doc's job; the implementation is a pending Tier-1 action pointed at a ticket, not planned here.
 >
-> **`Post` (new entity)** — bridges `ClassifiedComment → Game` via `link_id`, and carries `post_type` (game thread / post-game / regular). `post_type` is what finally answers the recurring "did this include game threads?" feedback the V1 launch raised.
+> **`Post` (new entity)** — bridges `ClassifiedComment → Game` via `link_id`, and carries `post_type` (game thread / post-game / regular). `post_type` is what finally answers the recurring "did this include game threads?" feedback the V1 launch raised. `Game` itself is in the core model; until `Post` lands it is reachable only from `PlayerGame` and `Team`, not from the fact.
 >
-> **`Game` (new entity)** — `home_score`, `away_score`, `date`, with FKs to `home_team` / `away_team`. Note that `Game` is a *fact* in a basketball model but a *dimension* here — fact-vs-dimension is relative to the star you're in.
->
-> **`Team` gains `home` / `away` roles** — four roles in total: `roster`, `fan`, `home`, `away`. This is *why* the core columns are marked `roster_team` / `fan_team`: an unmarked `team` was always going to collide.
->
-> **Game data is the "why" layer.** It lets sentiment be *explained*, not just measured — criticism-vs-hate (negativity the box score predicts vs. the residual character hate) and event annotation (every spike self-labels with the game that caused it).
+> **Game data is the "why" layer.** It lets sentiment be *explained*, not just measured — criticism-vs-hate (negativity the box score predicts vs. the residual character hate) and event annotation (every spike self-labels with the game that caused it). The comment-side half of that is a `Player × Game` rollup of the fact through `Post`, joined client-side to `PlayerGame`.
 >
 > **Modeling guardrail:** `Post` bridges `ClassifiedComment → Game`; `fan_team` stays on the `ClassifiedComment` (the commenter's flair), **not** on `Post`. The post a comment lived in tells you the *game*; the flair still tells you the *fan*.

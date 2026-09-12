@@ -344,7 +344,7 @@ PLAYER_GAMES_SCHEMA = pl.Schema(
         "player_id": pl.Int64,
         "team": pl.String,  # FK -> teams.parquet, dated roster role
         "opponent": pl.String,  # FK -> teams.parquet
-        "is_home": pl.Boolean,  # team == games.home_team
+        "is_home": pl.Boolean,  # team == games.home_team; null on a neutral site
         "wl": pl.String,  # nullable
         **_BOX_SCORE_COLUMNS,
     }

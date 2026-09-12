@@ -12,6 +12,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.games import load_game_tables
+from pipeline.nba_stats import check_snapshot_season
 from pipeline.receipts import (
     build_comment_samples,
     load_receipt_verdicts,
@@ -408,18 +409,7 @@ def _build_players_dimension(
     # Snapshot-lineage check, same spirit as the players_config_version
     # stamp: a snapshot fetched for another season is legitimate to read,
     # just not silently.
-    stamped_season = pl.read_parquet_metadata(snapshot_path).get("season")
-    active_season = get_active_season()
-    if stamped_season is None:
-        logger.warning(
-            f"{snapshot_path} carries no season stamp - snapshot lineage "
-            f"cannot be verified"
-        )
-    elif stamped_season != active_season:
-        logger.warning(
-            f"{snapshot_path}: season stamp {stamped_season!r} does not match "
-            f"active season {active_season!r}; snapshot facts may be stale"
-        )
+    check_snapshot_season(snapshot_path, subject="snapshot facts", log=logger)
 
     snapshot = pl.read_parquet(snapshot_path).select(
         ["player_id", *PLAYERS_SNAPSHOT_COLUMNS]

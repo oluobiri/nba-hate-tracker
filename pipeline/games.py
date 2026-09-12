@@ -14,62 +14,70 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.nba_stats import check_snapshot_season
 from pipeline.schemas import GAMES_SCHEMA, PLAYER_GAMES_SCHEMA
-from utils.constants import NBA_STATS_CUP_SEASON_TYPE
-from utils.season_config import get_active_season
 
 logger = logging.getLogger(__name__)
 
 TEAM_GAME_LOG_FILENAME = "team_game_log.parquet"
 PLAYER_GAME_LOG_FILENAME = "player_game_log.parquet"
 
-# Endpoint season-type label -> published season_type. The NBA Cup
-# final is fetched under "IST" (its own game id, not in the regular-
-# season log) but sits in the regular-season window.
-SEASON_TYPE_LABELS = {
-    "Pre Season": "pre_season",
-    "Regular Season": "regular_season",
-    NBA_STATS_CUP_SEASON_TYPE: "regular_season",
-    "PlayIn": "play_in",
-    "Playoffs": "playoffs",
+# The game id's three-digit prefix encodes the season type; it is the one
+# decoder for season_type, the Cup final and the preseason. The endpoint
+# label carried on the snapshot is provenance, not an input.
+GAME_ID_PREFIX_SEASON_TYPES = {
+    "001": "pre_season",
+    "002": "regular_season",
+    "004": "playoffs",
+    "005": "play_in",
+    "006": "regular_season",  # the NBA Cup final: its own id, regular-season window
 }
-PLAYOFF_GAME_ID_PREFIX = "004"
-PRE_SEASON_LABEL = "Pre Season"
+PRE_SEASON_PREFIX = "001"
+PLAYOFF_PREFIX = "004"
+NBA_CUP_FINAL_PREFIX = "006"
 
 # "BOS vs. NYK" is Boston at home; "BOS @ NYK" is Boston away.
 _HOME_MARKER = " vs. "
 _OPPONENT_PATTERN = r"(?:vs\.|@)\s*(\S+)$"
 
 
-def build_games(team_log: pl.DataFrame, team_config: dict[str, dict]) -> pl.DataFrame:
+def build_games(team_log: pl.DataFrame, abbr_to_team: dict[str, str]) -> pl.DataFrame:
     """
     Pivot the team game log into the Game dimension, one row per game.
 
     Games against non-NBA opponents (an abbreviation unknown to
     teams.yaml, preseason only) are dropped with a logged count. On a
     neutral-site game both lines read "@"; sides are then assigned by
-    team_id so the row is independent of endpoint order.
+    team_id so the row is independent of endpoint order. The winner is
+    the higher score; W/L is checked against it, never trusted alone.
 
     Args:
         team_log: Frame conforming to TEAM_GAME_LOG_SCHEMA.
-        team_config: Team config dict from load_team_config().
+        abbr_to_team: Team abbreviation -> canonical name, from teams.yaml.
 
     Returns:
         Frame conforming to GAMES_SCHEMA, sorted by date then id.
 
     Raises:
-        ValueError: If a non-preseason game involves an unknown
-            abbreviation, a game has a row count other than two, or a
-            game's W/L disagrees with its scores.
+        ValueError: If a game id has an unknown prefix, a non-preseason
+            game involves an unknown abbreviation, a game has a row count
+            other than two, a matchup is null or names two hosts, or a
+            game's W/L is missing or disagrees with its scores.
     """
-    abbr_to_team = {info["abbreviation"]: team for team, info in team_config.items()}
+    prefix = pl.col("game_id").str.slice(0, 3)
+    unknown_prefix = team_log.filter(~prefix.is_in(list(GAME_ID_PREFIX_SEASON_TYPES)))
+    if unknown_prefix.height:
+        raise ValueError(
+            "team_game_log carries game id prefix(es) with no season type: "
+            f"{sorted(unknown_prefix.select(prefix.alias('p'))['p'].unique().to_list())}"
+        )
+
     log = team_log.with_columns(
         pl.col("team_abbr").replace_strict(abbr_to_team, default=None).alias("team")
     )
-
     unknown = log.filter(pl.col("team").is_null())
     if unknown.height:
-        not_preseason = unknown.filter(pl.col("season_type") != PRE_SEASON_LABEL)
+        not_preseason = unknown.filter(prefix != PRE_SEASON_PREFIX)
         if not_preseason.height:
             raise ValueError(
                 "team_game_log carries abbreviation(s) unknown to teams.yaml "
@@ -83,25 +91,30 @@ def build_games(team_log: pl.DataFrame, team_config: dict[str, dict]) -> pl.Data
         )
         log = log.filter(~pl.col("game_id").is_in(dropped_ids))
 
-    rows_per_game = log.group_by("game_id").len()
-    malformed = rows_per_game.filter(pl.col("len") != 2)
+    malformed = log.group_by("game_id").len().filter(pl.col("len") != 2)
     if malformed.height:
         raise ValueError(
             "team_game_log grain is one row per game x team, two per game; "
             f"{malformed.height} game(s) break it: "
             f"{malformed.sort('game_id').head(10).rows()}"
         )
+    no_matchup = log.filter(pl.col("matchup").is_null())
+    if no_matchup.height:
+        raise ValueError(
+            f"team_game_log has null matchup on {no_matchup['game_id'].to_list()[:10]}"
+        )
 
     # Within a game, sort so the home row leads: (is_home desc, team_id
     # desc). A neutral-site game has two equal is_home values and falls
     # through to team_id, which is what makes the assignment stable.
     ordered = (
-        log.with_columns(pl.col("matchup").str.contains(_HOME_MARKER).alias("is_home"))
+        log.with_columns(
+            pl.col("matchup").str.contains(_HOME_MARKER, literal=True).alias("is_home")
+        )
         .sort(["game_id", "is_home", "team_id"], descending=[False, True, True])
         .group_by("game_id", maintain_order=True)
         .agg(
             pl.col("game_date").first(),
-            pl.col("season_type").first(),
             pl.col("is_home").sum().alias("home_rows"),
             pl.col("team").first().alias("home_team"),
             pl.col("team").last().alias("away_team"),
@@ -111,22 +124,28 @@ def build_games(team_log: pl.DataFrame, team_config: dict[str, dict]) -> pl.Data
         )
     )
 
+    two_hosts = ordered.filter(pl.col("home_rows") > 1)
+    if two_hosts.height:
+        raise ValueError(
+            f"team_game_log lists both teams as host on {two_hosts['game_id'].to_list()[:10]}"
+        )
+    home_won = pl.col("home_score") > pl.col("away_score")
     inconsistent = ordered.filter(
-        (pl.col("home_wl") == "W") != (pl.col("home_score") > pl.col("away_score"))
+        pl.col("home_wl").is_null() | ((pl.col("home_wl") == "W") != home_won)
     )
     if inconsistent.height:
         raise ValueError(
-            f"team_game_log W/L disagrees with the scores on "
+            f"team_game_log W/L is missing or disagrees with the scores on "
             f"{inconsistent['game_id'].to_list()[:10]}"
         )
 
-    is_playoff = pl.col("game_id").str.starts_with(PLAYOFF_GAME_ID_PREFIX)
+    is_playoff = prefix == PLAYOFF_PREFIX
     games = (
         ordered.with_columns(
-            pl.col("season_type").replace_strict(SEASON_TYPE_LABELS),
-            (pl.col("season_type") == NBA_STATS_CUP_SEASON_TYPE).alias("nba_cup_final"),
-            (pl.col("home_rows") != 1).alias("neutral_site"),
-            pl.when(pl.col("home_wl") == "W")
+            prefix.replace_strict(GAME_ID_PREFIX_SEASON_TYPES).alias("season_type"),
+            (prefix == NBA_CUP_FINAL_PREFIX).alias("nba_cup_final"),
+            (pl.col("home_rows") == 0).alias("neutral_site"),
+            pl.when(home_won)
             .then(pl.col("home_team"))
             .otherwise(pl.col("away_team"))
             .alias("winner"),
@@ -158,7 +177,7 @@ def build_player_games(
     player_log: pl.DataFrame,
     games: pl.DataFrame,
     player_metadata: dict[str, dict],
-    team_config: dict[str, dict],
+    abbr_to_team: dict[str, str],
     attributed_players: set[str],
 ) -> pl.DataFrame:
     """
@@ -167,14 +186,14 @@ def build_player_games(
     Lines are kept only for games present in `games` (so a dropped game
     takes its lines with it) and for players in the Player dimension,
     joined on player_id. `team` and `opponent` resolve to canonical
-    names; is_home is derived from games.home_team so the two files
-    agree on neutral-site games.
+    names; is_home is derived from games.home_team, and is null on a
+    neutral-site game, where neither side hosted.
 
     Args:
         player_log: Frame conforming to PLAYER_GAME_LOG_SCHEMA.
         games: Frame conforming to GAMES_SCHEMA.
         player_metadata: Per-player config dict from load_player_metadata().
-        team_config: Team config dict from load_team_config().
+        abbr_to_team: Team abbreviation -> canonical name, from teams.yaml.
         attributed_players: Players present in the Player dimension.
 
     Returns:
@@ -188,11 +207,14 @@ def build_player_games(
         for player, meta in player_metadata.items()
         if player in attributed_players and meta.get("player_id") is not None
     }
-    abbr_to_team = {info["abbreviation"]: team for team, info in team_config.items()}
 
     lines = (
         player_log.filter(pl.col("player_id").is_in(list(id_to_player)))
-        .join(games.select("game_id", "home_team"), on="game_id", how="inner")
+        .join(
+            games.select("game_id", "home_team", "neutral_site"),
+            on="game_id",
+            how="inner",
+        )
         .with_columns(
             pl.col("player_id").replace_strict(id_to_player).alias("attributed_player"),
             pl.col("team_abbr").replace_strict(abbr_to_team).alias("team"),
@@ -201,7 +223,12 @@ def build_player_games(
             .replace_strict(abbr_to_team)
             .alias("opponent"),
         )
-        .with_columns((pl.col("team") == pl.col("home_team")).alias("is_home"))
+        .with_columns(
+            pl.when(pl.col("neutral_site"))
+            .then(pl.lit(None, dtype=pl.Boolean))
+            .otherwise(pl.col("team") == pl.col("home_team"))
+            .alias("is_home")
+        )
     )
 
     duplicated = (
@@ -237,19 +264,6 @@ def build_player_games(
     return player_games
 
 
-def _check_snapshot_season(path: Path) -> None:
-    """Warn when a snapshot's season stamp is missing or not the active season."""
-    stamped = pl.read_parquet_metadata(path).get("season")
-    active = get_active_season()
-    if stamped is None:
-        logger.warning(f"{path} carries no season stamp - lineage cannot be verified")
-    elif stamped != active:
-        logger.warning(
-            f"{path}: season stamp {stamped!r} does not match active season "
-            f"{active!r}; game data may be stale"
-        )
-
-
 def load_game_tables(
     reference_dir: Path,
     player_metadata: dict[str, dict],
@@ -261,7 +275,10 @@ def load_game_tables(
 
     A missing snapshot degrades to empty tables with a warning, so
     aggregation stays runnable before scripts.fetch_games has run for
-    the season.
+    the season. Both snapshots' season stamps are checked, and a fetch
+    date that differs between them is flagged: the two logs are one
+    fetch, and a fresh team log beside a stale player log joins to
+    nothing without complaint otherwise.
 
     Args:
         reference_dir: Season reference directory holding the snapshots.
@@ -286,14 +303,26 @@ def load_game_tables(
         player_games = pl.DataFrame(schema=PLAYER_GAMES_SCHEMA)
         fetched_at = None
     else:
-        _check_snapshot_season(team_path)
-        fetched_at = pl.read_parquet_metadata(team_path).get("fetched_at")
-        games = build_games(pl.read_parquet(team_path), team_config)
+        team_stamps = check_snapshot_season(team_path, subject="game data", log=logger)
+        player_stamps = check_snapshot_season(
+            player_path, subject="game data", log=logger
+        )
+        fetched_at = team_stamps.get("fetched_at")
+        if fetched_at != player_stamps.get("fetched_at"):
+            logger.warning(
+                f"{team_path} and {player_path} carry different fetch dates "
+                f"({fetched_at!r} vs {player_stamps.get('fetched_at')!r}); "
+                f"re-run scripts.fetch_games so both logs come from one fetch"
+            )
+        abbr_to_team = {
+            info["abbreviation"]: team for team, info in team_config.items()
+        }
+        games = build_games(pl.read_parquet(team_path), abbr_to_team)
         player_games = build_player_games(
             pl.read_parquet(player_path),
             games,
             player_metadata,
-            team_config,
+            abbr_to_team,
             attributed_players,
         )
 

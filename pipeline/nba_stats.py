@@ -21,6 +21,7 @@ import logging
 import time
 from collections.abc import Callable
 from functools import partial
+from pathlib import Path
 
 import polars as pl
 import requests
@@ -40,8 +41,44 @@ from utils.constants import (
     NBA_STATS_RETRY_BACKOFF,
     NBA_STATS_TIMEOUT,
 )
+from utils.season_config import get_active_season
 
 logger = logging.getLogger(__name__)
+
+
+def check_snapshot_season(
+    path: Path, *, subject: str, log: logging.Logger
+) -> dict[str, str]:
+    """
+    Read a snapshot's file metadata and warn if its season stamp is off.
+
+    Every snapshot this module's scripts write carries a `season` stamp;
+    a snapshot fetched for another season is legitimate to read, just
+    not silently. Warnings go to the caller's logger so they read as
+    the consumer's own.
+
+    Args:
+        path: Snapshot parquet path.
+        subject: What goes stale if the stamp is wrong, for the message.
+        log: Logger to warn on.
+
+    Returns:
+        The snapshot's file metadata (season, fetched_at, ...).
+    """
+    stamps = pl.read_parquet_metadata(path)
+    stamped = stamps.get("season")
+    active = get_active_season()
+    if stamped is None:
+        log.warning(
+            f"{path} carries no season stamp - snapshot lineage cannot be verified"
+        )
+    elif stamped != active:
+        log.warning(
+            f"{path}: season stamp {stamped!r} does not match active season "
+            f"{active!r}; {subject} may be stale"
+        )
+    return stamps
+
 
 # Raw endpoint column -> snapshot column. The selection half of
 # ROSTERS_SCHEMA: endpoint columns absent here (SEASON, LeagueID,

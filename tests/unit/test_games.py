@@ -19,12 +19,14 @@ from pipeline.schemas import (
     PLAYER_GAMES_SCHEMA,
     TEAM_GAME_LOG_SCHEMA,
 )
+from utils.season_config import get_active_season
 
 TEAM_CONFIG = {
     "Boston Celtics": {"abbreviation": "BOS", "team_id": 2},
     "New York Knicks": {"abbreviation": "NYK", "team_id": 3},
     "Los Angeles Lakers": {"abbreviation": "LAL", "team_id": 1},
 }
+ABBR_TO_TEAM = {info["abbreviation"]: team for team, info in TEAM_CONFIG.items()}
 TEAM_IDS = {"BOS": 2, "NYK": 3, "LAL": 1, "MEL": 99}
 
 PLAYER_METADATA = {
@@ -147,7 +149,7 @@ class TestBuildGames:
 
     def test_pivots_two_lines_into_one_game(self, two_games):
         """Home/away, scores and winner come from the two team lines."""
-        games = build_games(two_games, TEAM_CONFIG)
+        games = build_games(two_games, ABBR_TO_TEAM)
 
         assert games.schema == GAMES_SCHEMA
         row = games.row(by_predicate=pl.col("game_id") == "0022500010", named=True)
@@ -161,7 +163,7 @@ class TestBuildGames:
 
     def test_away_winner(self, two_games):
         """An away win names the away team as winner."""
-        games = build_games(two_games, TEAM_CONFIG)
+        games = build_games(two_games, ABBR_TO_TEAM)
 
         row = games.row(by_predicate=pl.col("game_id") == "0022500011", named=True)
         assert row["winner"] == "Boston Celtics"
@@ -169,7 +171,7 @@ class TestBuildGames:
 
     def test_sorted_by_date_then_id(self, two_games):
         """Output order is chronological regardless of input order."""
-        games = build_games(two_games.reverse(), TEAM_CONFIG)
+        games = build_games(two_games.reverse(), ABBR_TO_TEAM)
 
         assert games["game_id"].to_list() == ["0022500010", "0022500011"]
 
@@ -181,8 +183,8 @@ class TestBuildGames:
             _team_row("0062500001", "BOS", "NYK", False, 113, "L"),
         ]
 
-        forward = build_games(_team_log(rows), TEAM_CONFIG)
-        reverse = build_games(_team_log(rows[::-1]), TEAM_CONFIG)
+        forward = build_games(_team_log(rows), ABBR_TO_TEAM)
+        reverse = build_games(_team_log(rows[::-1]), ABBR_TO_TEAM)
 
         assert forward.equals(reverse)
         row = forward.row(0, named=True)
@@ -192,40 +194,47 @@ class TestBuildGames:
         assert (row["home_score"], row["away_score"]) == (124, 113)
         assert row["winner"] == "New York Knicks"
 
-    def test_ist_label_is_the_cup_final_in_the_regular_season(self):
-        """The IST-only game maps to regular_season with the cup flag set."""
+    def test_cup_final_prefix_is_regular_season_with_the_flag(self):
+        """Prefix 006 (the IST-only game) maps to regular_season, cup flag set."""
         rows = [
             _team_row("0062500001", "NYK", "BOS", False, 124, "W", season_type="IST"),
             _team_row("0062500001", "BOS", "NYK", False, 113, "L", season_type="IST"),
         ]
 
-        row = build_games(_team_log(rows), TEAM_CONFIG).row(0, named=True)
+        row = build_games(_team_log(rows), ABBR_TO_TEAM).row(0, named=True)
 
         assert row["season_type"] == "regular_season"
         assert row["nba_cup_final"] is True
 
     @pytest.mark.parametrize(
-        "label,expected",
+        "game_id,expected",
         [
-            ("Pre Season", "pre_season"),
-            ("Regular Season", "regular_season"),
-            ("PlayIn", "play_in"),
-            ("Playoffs", "playoffs"),
+            ("0012500001", "pre_season"),
+            ("0022500001", "regular_season"),
+            ("0052500001", "play_in"),
+            ("0042500101", "playoffs"),
         ],
     )
-    def test_season_type_labels(self, label: str, expected: str):
-        """Endpoint labels map to the published season_type vocabulary."""
-        rows = _game_rows("0012500001", "BOS", "NYK", 100, 90, season_type=label)
+    def test_season_type_decodes_from_the_id_prefix(self, game_id: str, expected: str):
+        """The id prefix, not the endpoint label, sets season_type."""
+        rows = _game_rows(game_id, "BOS", "NYK", 100, 90, season_type="Regular Season")
 
-        games = build_games(_team_log(rows), TEAM_CONFIG)
+        games = build_games(_team_log(rows), ABBR_TO_TEAM)
 
         assert games["season_type"][0] == expected
+
+    def test_unknown_id_prefix_raises(self):
+        """An id prefix outside the decoder is unknown data, not a default."""
+        rows = _game_rows("0032500001", "BOS", "NYK", 100, 90)
+
+        with pytest.raises(ValueError, match="no season type"):
+            build_games(_team_log(rows), ABBR_TO_TEAM)
 
     def test_playoff_fields_parse_from_the_id(self):
         """004 YY 00 R S G: round, series and game come from the id."""
         rows = _game_rows("0042500317", "BOS", "NYK", 100, 90, season_type="Playoffs")
 
-        row = build_games(_team_log(rows), TEAM_CONFIG).row(0, named=True)
+        row = build_games(_team_log(rows), ABBR_TO_TEAM).row(0, named=True)
 
         assert (row["playoff_round"], row["playoff_series"], row["playoff_game"]) == (
             3,
@@ -235,7 +244,7 @@ class TestBuildGames:
 
     def test_playoff_fields_null_outside_the_playoffs(self, two_games):
         """A regular-season id carries null playoff fields."""
-        games = build_games(two_games, TEAM_CONFIG)
+        games = build_games(two_games, ABBR_TO_TEAM)
 
         assert games["playoff_round"].null_count() == games.height
 
@@ -253,7 +262,7 @@ class TestBuildGames:
 
         with caplog.at_level(logging.INFO, logger="pipeline.games"):
             games = build_games(
-                pl.concat([two_games, _team_log(exhibition)]), TEAM_CONFIG
+                pl.concat([two_games, _team_log(exhibition)]), ABBR_TO_TEAM
             )
 
         assert "0012500009" not in games["game_id"].to_list()
@@ -269,14 +278,14 @@ class TestBuildGames:
         ]
 
         with pytest.raises(ValueError, match="unknown to teams.yaml"):
-            build_games(_team_log(rows), TEAM_CONFIG)
+            build_games(_team_log(rows), ABBR_TO_TEAM)
 
     def test_single_line_game_raises(self, two_games):
         """A game with one team line breaks the grain and fails loudly."""
         lone = [_team_row("0022500099", "BOS", "NYK", True, 100, "W")]
 
         with pytest.raises(ValueError, match="two per game"):
-            build_games(pl.concat([two_games, _team_log(lone)]), TEAM_CONFIG)
+            build_games(pl.concat([two_games, _team_log(lone)]), ABBR_TO_TEAM)
 
     def test_wl_disagreeing_with_scores_raises(self):
         """A W on the lower score is corrupt input, not a tie-break."""
@@ -286,12 +295,40 @@ class TestBuildGames:
         ]
 
         with pytest.raises(ValueError, match="disagrees with the scores"):
-            build_games(_team_log(rows), TEAM_CONFIG)
+            build_games(_team_log(rows), ABBR_TO_TEAM)
+
+    def test_missing_wl_raises(self):
+        """A null W/L on a team line is an unfinished game, never a winner guess."""
+        rows = [
+            _team_row("0022500010", "BOS", "NYK", True, 100, None),
+            _team_row("0022500010", "NYK", "BOS", False, 90, "L"),
+        ]
+
+        with pytest.raises(ValueError, match="missing or disagrees"):
+            build_games(_team_log(rows), ABBR_TO_TEAM)
+
+    def test_two_hosts_raises(self):
+        """Both lines reading "vs." is malformed, not a neutral site."""
+        rows = [
+            _team_row("0022500010", "BOS", "NYK", True, 100, "W"),
+            _team_row("0022500010", "NYK", "BOS", True, 90, "L"),
+        ]
+
+        with pytest.raises(ValueError, match="both teams as host"):
+            build_games(_team_log(rows), ABBR_TO_TEAM)
+
+    def test_null_matchup_raises(self):
+        """A null matchup cannot place a side and fails loudly."""
+        rows = _game_rows("0022500010", "BOS", "NYK", 100, 90)
+        rows[1]["matchup"] = None
+
+        with pytest.raises(ValueError, match="null matchup"):
+            build_games(_team_log(rows), ABBR_TO_TEAM)
 
 
 @pytest.fixture
 def games(two_games) -> pl.DataFrame:
-    return build_games(two_games, TEAM_CONFIG)
+    return build_games(two_games, ABBR_TO_TEAM)
 
 
 @pytest.fixture
@@ -313,7 +350,7 @@ class TestBuildPlayerGames:
     def test_keeps_attributed_players_only(self, player_log, games):
         """Untracked players are dropped; tracked ones join by player_id."""
         lines = build_player_games(
-            player_log, games, PLAYER_METADATA, TEAM_CONFIG, ATTRIBUTED
+            player_log, games, PLAYER_METADATA, ABBR_TO_TEAM, ATTRIBUTED
         )
 
         assert lines.schema == PLAYER_GAMES_SCHEMA
@@ -323,7 +360,7 @@ class TestBuildPlayerGames:
     def test_labels_team_opponent_and_home(self, player_log, games):
         """team/opponent are canonical names; is_home follows games.home_team."""
         lines = build_player_games(
-            player_log, games, PLAYER_METADATA, TEAM_CONFIG, ATTRIBUTED
+            player_log, games, PLAYER_METADATA, ABBR_TO_TEAM, ATTRIBUTED
         )
 
         tatum_away = lines.row(
@@ -342,7 +379,7 @@ class TestBuildPlayerGames:
     def test_excludes_attributed_players_outside_the_dimension(self, player_log, games):
         """attributed_players narrows the set below the config's tracked ids."""
         lines = build_player_games(
-            player_log, games, PLAYER_METADATA, TEAM_CONFIG, {"LeBron James"}
+            player_log, games, PLAYER_METADATA, ABBR_TO_TEAM, {"LeBron James"}
         )
 
         assert lines["attributed_player"].to_list() == ["LeBron James"]
@@ -361,7 +398,7 @@ class TestBuildPlayerGames:
             pl.concat([player_log, extra]),
             games,
             PLAYER_METADATA,
-            TEAM_CONFIG,
+            ABBR_TO_TEAM,
             ATTRIBUTED,
         )
 
@@ -373,11 +410,29 @@ class TestBuildPlayerGames:
         """A tracked player with no line has no row - never a fabricated one."""
         with caplog.at_level(logging.INFO, logger="pipeline.games"):
             lines = build_player_games(
-                player_log, games, PLAYER_METADATA, TEAM_CONFIG, ATTRIBUTED
+                player_log, games, PLAYER_METADATA, ABBR_TO_TEAM, ATTRIBUTED
             )
 
         assert "Ben Simmons" not in lines["attributed_player"].to_list()
         assert "no game lines: ['Ben Simmons']" in caplog.text
+
+    def test_is_home_is_null_on_a_neutral_site(self, player_log):
+        """Neither side hosted a neutral-site game; the line says so with null."""
+        neutral = _team_log(
+            [
+                _team_row("0062500001", "NYK", "BOS", False, 124, "W"),
+                _team_row("0062500001", "BOS", "NYK", False, 113, "L"),
+            ]
+        )
+        games = build_games(neutral, ABBR_TO_TEAM)
+        extra = _player_log([_player_row("0062500001", 1628369, "BOS", "NYK", False)])
+
+        lines = build_player_games(
+            extra, games, PLAYER_METADATA, ABBR_TO_TEAM, ATTRIBUTED
+        )
+
+        assert lines.schema == PLAYER_GAMES_SCHEMA
+        assert lines["is_home"][0] is None
 
     def test_duplicate_line_raises(self, player_log, games):
         """A player twice in one game breaks the grain and fails loudly."""
@@ -388,7 +443,7 @@ class TestBuildPlayerGames:
                 pl.concat([player_log, dup]),
                 games,
                 PLAYER_METADATA,
-                TEAM_CONFIG,
+                ABBR_TO_TEAM,
                 ATTRIBUTED,
             )
 
@@ -430,14 +485,37 @@ class TestLoadGameTables:
         assert player_games.height == 3
         assert meta["games_fetched_at"] == "2026-09-12"
 
-    def test_season_stamp_mismatch_warns(self, tmp_path, two_games, player_log, caplog):
-        """A snapshot stamped for another season triggers the lineage warning."""
+    def test_season_stamp_mismatch_warns_for_either_snapshot(
+        self, tmp_path, two_games, player_log, caplog
+    ):
+        """Each snapshot's season stamp is checked; a stale player log warns too."""
         two_games.write_parquet(
-            tmp_path / TEAM_GAME_LOG_FILENAME, metadata={"season": "1999-00"}
+            tmp_path / TEAM_GAME_LOG_FILENAME, metadata={"season": get_active_season()}
         )
-        player_log.write_parquet(tmp_path / PLAYER_GAME_LOG_FILENAME)
+        player_log.write_parquet(
+            tmp_path / PLAYER_GAME_LOG_FILENAME, metadata={"season": "1999-00"}
+        )
 
         with caplog.at_level(logging.WARNING, logger="pipeline.games"):
             load_game_tables(tmp_path, PLAYER_METADATA, TEAM_CONFIG, ATTRIBUTED)
 
-        assert "season stamp '1999-00' does not match" in caplog.text
+        assert "player_game_log.parquet: season stamp '1999-00' does not match" in (
+            caplog.text
+        )
+
+    def test_differing_fetch_dates_warn(self, tmp_path, two_games, player_log, caplog):
+        """The two logs are one fetch; different fetch dates mean a torn snapshot."""
+        two_games.write_parquet(
+            tmp_path / TEAM_GAME_LOG_FILENAME, metadata={"fetched_at": "2026-09-12"}
+        )
+        player_log.write_parquet(
+            tmp_path / PLAYER_GAME_LOG_FILENAME, metadata={"fetched_at": "2026-09-01"}
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.games"):
+            _, _, meta = load_game_tables(
+                tmp_path, PLAYER_METADATA, TEAM_CONFIG, ATTRIBUTED
+            )
+
+        assert "different fetch dates" in caplog.text
+        assert meta["games_fetched_at"] == "2026-09-12"

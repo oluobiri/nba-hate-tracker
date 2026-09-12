@@ -112,7 +112,7 @@ The distinction matters because the two layers age differently: frozen fields st
 | Field | Notes |
 |---|---|
 | `game_id` | stats.nba.com id (PK); the prefix encodes the season type and, for playoffs, `004 YY 00 R S G` |
-| `game_date`, `season_type` | `pre_season` / `regular_season` / `play_in` / `playoffs`; the NBA Cup final sits in the regular-season window under `nba_cup_final` |
+| `game_date`, `season_type` | `pre_season` / `regular_season` / `play_in` / `playoffs`, decoded from the id prefix; the NBA Cup final (its own prefix) sits in the regular-season window under `nba_cup_final` |
 | `home_team`, `away_team`, `winner` | → **Team** (home / away roles), canonical names |
 | `home_score`, `away_score` | measures of the game, not of the star |
 | `playoff_round`, `playoff_series`, `playoff_game` | parsed from the id; null outside the playoffs |
@@ -126,7 +126,7 @@ The distinction matters because the two layers age differently: frozen fields st
 |---|---|
 | `game_id`, `attributed_player` | PK; → **Game**, → **Player** (the dimension's key name, so the join to the comment-side view at this grain is on identical columns) |
 | `team` | → **Team**, the **dated roster role**: the player's team on that line — see §3 |
-| `opponent`, `is_home` | → **Team**; `is_home` is derived from `games.home_team` so the two files agree on neutral-site games |
+| `opponent`, `is_home` | → **Team**; `is_home` is derived from `games.home_team`, and null on a neutral-site game, where neither side hosted |
 | `wl`, `minutes`, the box-score line, `plus_minus` | as the endpoint serves them |
 
 ### `Date` — dimension (modeled target, not yet materialized)

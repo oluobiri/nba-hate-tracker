@@ -30,7 +30,7 @@ by them).
 import polars as pl
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -49,15 +49,20 @@ SENTIMENT_SCHEMA = pl.Schema(
         "sentiment": pl.String,  # "pos" | "neg" | "neu" | "error"
         "confidence": pl.Float64,
         "sentiment_player": pl.String,  # nullable
+        # Config-versioned derivations materialized at assembly, stamped with
+        # players_config_version / teams_config_version in the file metadata
+        "attributed_player": pl.String,  # nullable; resolve_player()
+        "fan_team": pl.String,  # nullable; fan role of Team, from flair
         "input_tokens": pl.Int64,
         "output_tokens": pl.Int64,
     }
 )
 
 # --- Construction-side schemas, derived from SENTIMENT_SCHEMA ---------------
-# The joined frame is assembled from two file inputs plus one assembly-derived
-# column: mentioned_players is recomputed from body at assembly time (#54), so
-# neither input schema carries it. Deriving the input schemas from
+# The joined frame is assembled from two file inputs plus three assembly-derived
+# columns: mentioned_players is recomputed from body at assembly time, and
+# attributed_player / fan_team are resolved from it and from the flair, so
+# neither input schema carries them. Deriving the input schemas from
 # SENTIMENT_SCHEMA means a dtype change happens in exactly one place and the
 # strict boundary check can never drift from construction.
 

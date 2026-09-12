@@ -31,9 +31,19 @@ from pipeline.schemas import (
     SENTIMENT_TARGETS_SCHEMA,
     TEAMS_SCHEMA,
 )
-from utils.player_config import load_player_config_version, load_player_metadata
+from utils.player_config import (
+    build_alias_to_player_map,
+    load_player_config_version,
+    load_player_metadata,
+    resolve_player,
+)
 from utils.season_config import get_active_season
-from utils.team_config import load_team_config
+from utils.team_config import (
+    build_alias_to_team_map,
+    extract_team_from_flair,
+    load_team_config,
+    load_team_config_version,
+)
 
 
 class TestComputeMetrics:
@@ -111,13 +121,39 @@ class TestComputeMetrics:
         assert result["player"].to_list() == ["A", "B", "C"]
 
 
+def _derive(rows: dict) -> dict:
+    """Add attributed_player and fan_team the way assembly does, if absent.
+
+    Tests describe a comment by its mentions and flair; the materialized
+    columns follow from those under the active configs.
+    """
+    if "attributed_player" in rows and "fan_team" in rows:
+        return rows
+    alias_map = build_alias_to_player_map()
+    team_map = build_alias_to_team_map()
+    return {
+        **rows,
+        "attributed_player": [
+            resolve_player(mentions, pick, alias_map)
+            for mentions, pick in zip(
+                rows["mentioned_players"], rows["sentiment_player"]
+            )
+        ],
+        "fan_team": [
+            extract_team_from_flair(flair, team_map)
+            for flair in rows["author_flair_text"]
+        ],
+    }
+
+
 def _make_test_parquet(tmp_path, rows, metadata=None):
     """Create a SENTIMENT_SCHEMA-conforming parquet for testing aggregate_sentiment.
 
-    metadata, when given, is written as file-level key-value metadata
-    (the config-lineage stamp from scripts/collect_results.py).
+    attributed_player and fan_team are derived from the rows when not
+    given. metadata, when given, is written as file-level key-value
+    metadata (the config-lineage stamps from scripts/collect_results.py).
     """
-    df = pl.DataFrame(rows, schema=SENTIMENT_SCHEMA)
+    df = pl.DataFrame(_derive(rows), schema=SENTIMENT_SCHEMA)
     path = tmp_path / "test_sentiment.parquet"
     df.write_parquet(path, metadata=metadata)
     return path
@@ -191,17 +227,37 @@ def _lebron_rows_with_error() -> dict:
 class TestLoadAttributedFrame:
     """Tests for load_attributed_frame, the model's shared starting frame."""
 
-    def test_adds_derived_columns_and_drops_error_rows(self, tmp_path):
-        """Verify the frame gains attributed_player, team, and week; errors are excluded."""
+    def test_adds_week_and_drops_error_rows(self, tmp_path):
+        """Verify the frame carries attributed_player, fan_team, and week; errors are excluded."""
         path = _make_test_parquet(tmp_path, _lebron_rows_with_error())
 
         df, excluded = load_attributed_frame(path)
 
         assert excluded == 1
         assert df.height == 2
-        assert {"attributed_player", "team", "week"} <= set(df.columns)
+        assert {"attributed_player", "fan_team", "week"} <= set(df.columns)
         assert "error" not in df["sentiment"].to_list()
         assert df["attributed_player"].to_list() == ["LeBron James"] * df.height
+
+    def test_reads_materialized_columns_without_recomputing(self, tmp_path):
+        """The stored attribution is read as-is, even where recomputation would differ.
+
+        attributed_player and fan_team are assembly's derivations under
+        the stamped configs; the reader trusts the file and the stamp
+        check, so a stale file is read faithfully (and warned about),
+        never silently re-resolved.
+        """
+        rows = {
+            **_lebron_rows(),
+            "attributed_player": ["Stored Player", None],
+            "fan_team": [None, "Stored Team"],
+        }
+        path = _make_test_parquet(tmp_path, rows)
+
+        df, _ = load_attributed_frame(path)
+
+        assert df["attributed_player"].to_list() == ["Stored Player", None]
+        assert df["fan_team"].to_list() == [None, "Stored Team"]
 
     def test_aggregate_sentiment_counts_match_the_frame(self, tmp_path):
         """Verify aggregate_sentiment's metadata counts derive from the same frame."""
@@ -521,7 +577,7 @@ class TestPlayersToMetadataDict:
 
 
 class TestConfigVersionLineage:
-    """Tests for the players_config_version drift warning (#54)."""
+    """Tests for the players_config_version drift warning."""
 
     ROWS = {
         "comment_id": ["c1", "c2"],
@@ -583,7 +639,7 @@ class TestConfigVersionLineage:
         assert load_player_config_version() in warnings[0]
 
     def test_absent_stamp_warns_distinctly(self, tmp_path, caplog):
-        """An unstamped parquet (pre-#54 legacy) warns with its own message.
+        """An unstamped parquet (legacy) warns with its own message.
 
         Absent is not drift: the message must say lineage cannot be
         verified, not claim a version mismatch.
@@ -599,6 +655,63 @@ class TestConfigVersionLineage:
         warnings = self._lineage_warnings(caplog)
         assert len(warnings) == 1
         assert "no players_config_version" in warnings[0]
+        assert "drift" not in warnings[0]
+
+
+class TestTeamsConfigVersionLineage:
+    """Tests for the teams_config_version drift warning on fan_team."""
+
+    ROWS = TestConfigVersionLineage.ROWS
+
+    def _lineage_warnings(self, caplog) -> list[str]:
+        """Extract WARNING messages about the teams config stamp."""
+        return [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and "teams_config_version" in record.message
+        ]
+
+    def test_matching_stamp_emits_no_lineage_warning(self, tmp_path, caplog):
+        """A stamp matching the on-disk teams.yaml version stays silent."""
+        path = _make_test_parquet(
+            tmp_path,
+            self.ROWS,
+            metadata={"teams_config_version": load_team_config_version()},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        assert self._lineage_warnings(caplog) == []
+
+    def test_stamp_drift_warns_naming_both_versions_and_fan_team(
+        self, tmp_path, caplog
+    ):
+        """A drifted teams stamp warns, naming both versions and fan_team."""
+        path = _make_test_parquet(
+            tmp_path, self.ROWS, metadata={"teams_config_version": "0.1"}
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        warnings = self._lineage_warnings(caplog)
+        assert len(warnings) == 1
+        assert "0.1" in warnings[0]
+        assert load_team_config_version() in warnings[0]
+        assert "fan_team" in warnings[0]
+
+    def test_absent_stamp_warns_distinctly(self, tmp_path, caplog):
+        """A parquet without the teams stamp warns that fan_team lineage is unverified."""
+        path = _make_test_parquet(tmp_path, self.ROWS)
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        warnings = self._lineage_warnings(caplog)
+        assert len(warnings) == 1
+        assert "no teams_config_version" in warnings[0]
         assert "drift" not in warnings[0]
 
 

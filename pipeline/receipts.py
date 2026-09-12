@@ -319,9 +319,9 @@ def build_comment_samples(
     there). Thin cells are never padded. Bodies are verbatim.
 
     Args:
-        df: Attributed, flair-resolved frame with attributed_player,
-            sentiment, sentiment_player, comment_id, link_id, body,
-            score, confidence, created_utc, team.
+        df: Attributed frame with attributed_player, sentiment,
+            sentiment_player, comment_id, link_id, body, score,
+            confidence, created_utc, fan_team.
         verdicts: Resolved sidecar from resolve_verdicts; None for the
             gate-only fallback.
         alias_map: Lowercase alias -> canonical name, for the free gate;
@@ -349,7 +349,6 @@ def build_comment_samples(
             max_body_chars=max_body_chars,
             require_target=verdicts is None,
         )
-        .rename({"team": "fan_team"})
         .select(COMMENT_SAMPLES_SCHEMA.names())
         .sort([*CELL, "rank"])
     )

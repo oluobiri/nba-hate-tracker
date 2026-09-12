@@ -231,7 +231,7 @@ _SAMPLES_INPUT_SCHEMA = pl.Schema(
         "score": pl.Int64,
         "confidence": pl.Float64,
         "created_utc": pl.Int64,
-        "team": pl.String,
+        "fan_team": pl.String,
     }
 )
 
@@ -245,7 +245,7 @@ def _samples_input(rows: list[dict]) -> pl.DataFrame:
         "link_id": "t3_post1",
         "confidence": 0.95,
         "created_utc": 1704067200,
-        "team": None,
+        "fan_team": None,
     }
     return pl.DataFrame(
         [
@@ -606,8 +606,8 @@ class TestBuildCommentSamples:
         assert COMMENT_SAMPLES_MIN_CONFIDENCE == 0.9
         assert COMMENT_SAMPLES_MAX_BODY_CHARS == 500
 
-    def test_fan_team_role_marked_and_nullable(self):
-        """The fact's team column ships as fan_team; unresolved flair stays null."""
+    def test_fan_team_carried_and_nullable(self):
+        """The fact's fan_team ships as-is; unresolved flair stays null."""
         rows = [
             {
                 "attributed_player": "LeBron James",
@@ -615,7 +615,7 @@ class TestBuildCommentSamples:
                 "comment_id": "c1",
                 "body": "goat",
                 "score": 9,
-                "team": "Los Angeles Lakers",
+                "fan_team": "Los Angeles Lakers",
             },
             {
                 "attributed_player": "LeBron James",
@@ -623,12 +623,11 @@ class TestBuildCommentSamples:
                 "comment_id": "c2",
                 "body": "king",
                 "score": 4,
-                "team": None,
+                "fan_team": None,
             },
         ]
         frame = build_comment_samples(_samples_input(rows))
 
-        assert "team" not in frame.columns
         assert frame["fan_team"].to_list() == ["Los Angeles Lakers", None]
 
     def test_all_three_sentiments_sampled(self):

@@ -10,7 +10,6 @@ when it doesn't, and say which (receipts_verified).
 """
 
 import logging
-import unicodedata
 from pathlib import Path
 
 import polars as pl
@@ -47,13 +46,6 @@ def _polar(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("attributed_player").is_not_null()
         & pl.col("sentiment").is_in(POLAR_SENTIMENTS)
     )
-
-
-def _fold_ascii(name: str | None) -> str | None:
-    """NFKD-decompose and drop non-ASCII, so 'Dončić' folds to 'Doncic'."""
-    if name is None:
-        return None
-    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
 
 
 def select_receipt_candidates(
@@ -237,20 +229,17 @@ def resolve_verdicts(verdicts: pl.DataFrame, alias_map: dict[str, str]) -> pl.Da
     """
     Resolve the verifier's raw target strings under an alias map.
 
-    Adds target_player (the canonical name, or null when the verdict is
-    null or names no tracked player) and target_player_folded (the same
-    lookup after NFKD/ASCII folding). Admission reads target_player;
-    the folded column exists for measurement only, so a model-emitted
-    accent the config doesn't carry is counted as a mechanical loss
-    rather than a screen.
+    Adds target_player: the canonical name, or null when the verdict is
+    null or names no tracked player. The lookup normalizes case,
+    punctuation, and diacritics, so a model-emitted accent resolves the
+    same as production attribution does.
 
     Args:
         verdicts: Frame conforming to SENTIMENT_TARGETS_SCHEMA.
         alias_map: Lowercase alias -> canonical name.
 
     Returns:
-        The input frame with target_player and target_player_folded
-        appended.
+        The input frame with target_player appended.
     """
     return verdicts.with_columns(
         pl.col("target_raw")
@@ -259,12 +248,6 @@ def resolve_verdicts(verdicts: pl.DataFrame, alias_map: dict[str, str]) -> pl.Da
             return_dtype=pl.String,
         )
         .alias("target_player"),
-        pl.col("target_raw")
-        .map_elements(
-            lambda raw: resolve_sentiment_player(_fold_ascii(raw), alias_map),
-            return_dtype=pl.String,
-        )
-        .alias("target_player_folded"),
     )
 
 
@@ -455,11 +438,10 @@ def measure_precision(
 
     The would-have-shipped set is the gate-on top-n: what the samples
     file carried before verification. Rows with a valid verdict are
-    classified by the folded resolution so a model-emitted accent counts
-    as a mechanical loss (affirmed for measurement) rather than a
-    screen; rows with no verdict are excluded from both sides (coverage
-    carries that information). precision is the affirmed share; its
-    complement is the misdirected share.
+    classified by their resolved target; rows with no verdict are
+    excluded from both sides (coverage carries that information).
+    precision is the affirmed share; its complement is the misdirected
+    share.
 
     Args:
         df: Attributed frame (unattributed rows are ignored).
@@ -469,9 +451,9 @@ def measure_precision(
         max_body_chars: Candidacy cap on body length, in characters.
 
     Returns:
-        Dict with would_have_shipped, verified, affirmed, mechanical,
-        null_target, other_tracked, untracked, and precision (None when
-        no row is verified).
+        Dict with would_have_shipped, verified, affirmed, null_target,
+        other_tracked, untracked, and precision (None when no row is
+        verified).
     """
     shipped = select_receipt_candidates(
         _polar(df),
@@ -482,7 +464,7 @@ def measure_precision(
     )
     joined = shipped.select("comment_id", "attributed_player").join(
         verdicts.filter(pl.col("valid")).select(
-            "comment_id", "target_raw", "target_player", "target_player_folded"
+            "comment_id", "target_raw", "target_player"
         ),
         on="comment_id",
         how="inner",
@@ -491,11 +473,9 @@ def measure_precision(
     outcome = (
         pl.when(pl.col("target_player") == attributed)
         .then(pl.lit("affirmed"))
-        .when(pl.col("target_player_folded") == attributed)
-        .then(pl.lit("mechanical"))
         .when(pl.col("target_raw").is_null())
         .then(pl.lit("null_target"))
-        .when(pl.col("target_player_folded").is_not_null())
+        .when(pl.col("target_player").is_not_null())
         .then(pl.lit("other_tracked"))
         .otherwise(pl.lit("untracked"))
     )
@@ -509,13 +489,9 @@ def measure_precision(
         "would_have_shipped": shipped.height,
         "verified": joined.height,
     }
-    for key in ("affirmed", "mechanical", "null_target", "other_tracked", "untracked"):
+    for key in ("affirmed", "null_target", "other_tracked", "untracked"):
         result[key] = counts.get(key, 0)
-    result["precision"] = (
-        (result["affirmed"] + result["mechanical"]) / joined.height
-        if joined.height
-        else None
-    )
+    result["precision"] = result["affirmed"] / joined.height if joined.height else None
     return result
 
 
@@ -528,8 +504,7 @@ def _log_precision(precision: dict, verdicts: pl.DataFrame, df: pl.DataFrame) ->
         f"receipts precision {precision['precision']:.1%} over "
         f"{precision['verified']:,} verified of "
         f"{precision['would_have_shipped']:,} would-have-shipped rows: "
-        f"affirmed {precision['affirmed']:,}, mechanical (accent) "
-        f"{precision['mechanical']:,}; misdirected "
+        f"affirmed {precision['affirmed']:,}; misdirected "
         f"{1 - precision['precision']:.1%} = null target "
         f"{precision['null_target']:,}, other tracked "
         f"{precision['other_tracked']:,}, untracked {precision['untracked']:,}"
@@ -540,7 +515,7 @@ def _log_precision(precision: dict, verdicts: pl.DataFrame, df: pl.DataFrame) ->
         verdicts.filter(
             pl.col("valid")
             & pl.col("target_raw").is_not_null()
-            & pl.col("target_player_folded").is_null()
+            & pl.col("target_player").is_null()
         )
         .join(
             df.select("comment_id", "attributed_player"), on="comment_id", how="inner"

@@ -11,6 +11,7 @@ import yaml
 
 from utils.player_config import (
     build_alias_to_player_map,
+    invert_player_aliases,
     load_player_config,
     load_player_config_version,
     load_player_metadata,
@@ -112,6 +113,32 @@ class TestBuildAliasToPlayerMap:
         assert result1 is result2
 
 
+class TestInvertPlayerAliases:
+    """Tests for invert_player_aliases, the normalized alias map builder."""
+
+    def test_keys_are_normalized(self):
+        """Canonical names and aliases are keyed by their folded, period-free form."""
+        alias_map = invert_player_aliases(
+            {"Moussa Diabaté": ["diabaté"], "Jabari Smith Jr.": ["jabari"]}
+        )
+        assert alias_map == {
+            "moussa diabate": "Moussa Diabaté",
+            "diabate": "Moussa Diabaté",
+            "jabari smith jr": "Jabari Smith Jr.",
+            "jabari": "Jabari Smith Jr.",
+        }
+
+    def test_same_player_duplicates_are_fine(self):
+        """An accented and a plain alias for one player fold to one key, no error."""
+        alias_map = invert_player_aliases({"Dennis Schröder": ["schröder", "schroder"]})
+        assert alias_map["schroder"] == "Dennis Schröder"
+
+    def test_cross_player_collision_raises(self):
+        """A key claimed by two players raises rather than misattributing silently."""
+        with pytest.raises(ValueError, match="already claimed"):
+            invert_player_aliases({"Nikola Jokić": ["jokic"], "Other": ["Jokić"]})
+
+
 class TestResolveSentimentPlayer:
     """Tests for resolve_sentiment_player normalization and lookup."""
 
@@ -120,6 +147,9 @@ class TestResolveSentimentPlayer:
         "mpj": "Michael Porter Jr",
         "og anunoby": "OG Anunoby",
         "lebron": "LeBron James",
+        "luka doncic": "Luka Doncic",
+        "donte divincenzo": "Donte DiVincenzo",
+        "alperen sengun": "Alperen Sengun",
     }
 
     def test_canonical_resolves(self):
@@ -147,6 +177,34 @@ class TestResolveSentimentPlayer:
     def test_unrecognized_returns_none(self):
         """An untracked name returns None (the coverage-miss signal)."""
         assert resolve_sentiment_player("Kevin Porter Jr", self.ALIAS_MAP) is None
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("Luka Dončić", "Luka Doncic"),
+            ("Donté DiVincenzo", "Donte DiVincenzo"),
+            ("Alperen Şengün", "Alperen Sengun"),
+        ],
+        ids=["doncic", "divincenzo", "sengun"],
+    )
+    def test_diacritics_fold_to_ascii(self, name, expected):
+        """A model-emitted accent resolves to the ASCII canonical name."""
+        assert resolve_sentiment_player(name, self.ALIAS_MAP) == expected
+
+    def test_ascii_name_unchanged_by_fold(self):
+        """The fold is a no-op on a plain ASCII name."""
+        assert resolve_sentiment_player("Luka Doncic", self.ALIAS_MAP) == "Luka Doncic"
+
+    def test_accented_canonical_name_resolves_from_either_form(self):
+        """A player whose canonical name carries the accent resolves from the
+        accented and the plain form alike: the map is keyed on the folded
+        form, so the fold never strands a name the config spells with
+        diacritics."""
+        alias_map = build_alias_to_player_map()
+        if "Moussa Diabaté" not in alias_map.values():
+            pytest.skip("active config does not track Moussa Diabaté")
+        assert resolve_sentiment_player("Moussa Diabaté", alias_map) == "Moussa Diabaté"
+        assert resolve_sentiment_player("Moussa Diabate", alias_map) == "Moussa Diabaté"
 
 
 class TestLoadPlayerMetadata:

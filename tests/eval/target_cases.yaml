@@ -1011,8 +1011,7 @@ cases:
   category: readmit_affirm
   source: mined-v2
   comment_id: nkbor2v
-  known_miss: true
-  note: 'unstable across 3 runs: run 3 emitted ''Luka Dončić'', a diacritic the alias map doesn''t carry'
+  note: 'run 3 of the v1 freeze emitted ''Luka Dončić''; resolves since the normalizer folds diacritics'
 - id: random-m23
   text: Honestly his potential's as scary to me as Wemby's. This dude's poise is ridiculous for a first year there's like no sense that he's lacking much mentally or skill wise in any way. Man's already a complete player at 20
   sentiment: pos

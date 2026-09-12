@@ -2,7 +2,7 @@
 Tests for team configuration loading.
 
 Tests cover loading from YAML, alias map building, version loading,
-and caching behavior.
+caching behavior, and flair resolution.
 """
 
 import re
@@ -11,6 +11,7 @@ import pytest
 
 from utils.team_config import (
     build_alias_to_team_map,
+    extract_team_from_flair,
     load_team_config,
     load_team_config_version,
 )
@@ -136,3 +137,47 @@ class TestLoadTeamConfigVersion:
 
         with pytest.raises(ValueError, match="quoted string"):
             load_team_config_version()
+
+
+class TestExtractTeamFromFlair:
+    """Tests for extract_team_from_flair function."""
+
+    def test_standard_flair(self, team_alias_map):
+        """Standard Reddit flair with emoji prefix resolves."""
+        result = extract_team_from_flair(":lal-1: Lakers", team_alias_map)
+        assert result == "Los Angeles Lakers"
+
+    def test_abbreviation_flair(self, team_alias_map):
+        """Abbreviation-only flair resolves."""
+        result = extract_team_from_flair(":bos-1:", team_alias_map)
+        assert result == "Boston Celtics"
+
+    def test_plain_text_flair(self, team_alias_map):
+        """Plain text team name resolves."""
+        result = extract_team_from_flair("Celtics", team_alias_map)
+        assert result == "Boston Celtics"
+
+    def test_null_flair(self, team_alias_map):
+        """Null flair returns None."""
+        result = extract_team_from_flair(None, team_alias_map)
+        assert result is None
+
+    def test_empty_flair(self, team_alias_map):
+        """Empty string flair returns None."""
+        result = extract_team_from_flair("", team_alias_map)
+        assert result is None
+
+    def test_unrecognized_flair(self, team_alias_map):
+        """Unrecognized flair text returns None."""
+        result = extract_team_from_flair(":AUS: Australia", team_alias_map)
+        assert result is None
+
+    def test_legacy_code_flair(self, team_alias_map):
+        """Legacy Reddit flair code resolves."""
+        result = extract_team_from_flair(":njn-1:", team_alias_map)
+        assert result == "Brooklyn Nets"
+
+    def test_substring_collision_hornets_not_nets(self, team_alias_map):
+        """Hornets flair matches Charlotte, not Brooklyn (nets substring)."""
+        result = extract_team_from_flair(":cha-1: Hornets", team_alias_map)
+        assert result == "Charlotte Hornets"

@@ -62,6 +62,7 @@ from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
 from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
+from utils.team_config import load_team_config_version
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -434,9 +435,11 @@ def main() -> None:
             metadata[prompt_key] = identity["prompt_version"]
 
         if stage.name == "sentiment":
-            # Config-lineage stamp (#54): mentioned_players is re-derived
-            # under the active config at every assembly
+            # Config-lineage stamps: mentioned_players / attributed_player
+            # and fan_team are re-derived under the active configs at
+            # every assembly
             metadata["players_config_version"] = load_player_config_version()
+            metadata["teams_config_version"] = load_team_config_version()
             output_df, failed_requests = build_sentiment_dataframe(
                 responses_dir, filtered_path
             )

@@ -24,8 +24,14 @@ from pipeline.schemas import (
 )
 from pipeline.sentiment import parse_response
 from pipeline.targets import parse_target_response
+from utils.player_config import build_alias_to_player_map, resolve_player
+from utils.team_config import build_alias_to_team_map, extract_team_from_flair
 
 logger = logging.getLogger(__name__)
+
+# The classifier's multi-pick form: several names in one sentiment_player.
+# Diagnostic only, best-effort (separators seen in practice, not exhaustive)
+MULTI_PICK_PATTERN = r"[|,]"
 
 
 def check_response_models(responses_dir: Path, expected_model: str) -> None:
@@ -114,12 +120,15 @@ def build_sentiment_dataframe(
     Build sentiment DataFrame by joining results with comment metadata.
 
     mentioned_players is re-derived from body at assembly time under the
-    active (or --season override) season's config (#54) — the filtered
-    NDJSON's filter-time copy is ignored, so alias fixes reach the parquet
-    on any rebuild. Rows whose body no longer matches any tracked player
-    are kept with an empty list: population selection stays frozen at
-    filter time, only the derivation tracks config. Error-sentiment rows
-    get mentions derived too (harmless; aggregation filters them).
+    active (or --season override) season's config — the filtered NDJSON's
+    filter-time copy is ignored, so alias fixes reach the parquet on any
+    rebuild. Rows whose body no longer matches any tracked player are
+    kept with an empty list: population selection stays frozen at filter
+    time, only the derivation tracks config. attributed_player and
+    fan_team are materialized the same way, from mentioned_players +
+    sentiment_player and from the flair, so every reader of the fact
+    shares one resolution. Error-sentiment rows get all three derived
+    too (harmless; aggregation filters them).
 
     Token and cost accounting happens per batch at download time (see
     summarize_actual_usage in pipeline.batch); this function is a pure
@@ -176,9 +185,11 @@ def build_sentiment_dataframe(
     logger.info(f"Loading comments from {filtered_path}...")
     comments_df = pl.scan_ndjson(filtered_path, schema=COMMENT_INPUT_SCHEMA)
 
-    # Join results with comments
+    # Join results with comments, then derive the config-versioned columns
     logger.info("Joining results with comments...")
     results_count = len(all_results)
+    alias_map = build_alias_to_player_map()
+    team_map = build_alias_to_team_map()
     joined_df = (
         comments_df.join(results_df.lazy(), on="id", how="inner")
         .rename({"id": "comment_id"})
@@ -187,9 +198,26 @@ def build_sentiment_dataframe(
             .map_elements(find_player_mentions, return_dtype=pl.List(pl.String))
             .alias("mentioned_players")
         )
+        .with_columns(
+            pl.struct(["mentioned_players", "sentiment_player"])
+            .map_elements(
+                lambda row: resolve_player(
+                    row["mentioned_players"], row["sentiment_player"], alias_map
+                ),
+                return_dtype=pl.String,
+            )
+            .alias("attributed_player"),
+            pl.col("author_flair_text")
+            .map_elements(
+                lambda flair: extract_team_from_flair(flair, team_map),
+                return_dtype=pl.String,
+            )
+            .alias("fan_team"),
+        )
         .select(SENTIMENT_SCHEMA.names())
         .collect()
     )
+    _log_derivations(joined_df)
 
     # Validate join didn't drop rows
     joined_count = len(joined_df)
@@ -205,6 +233,22 @@ def build_sentiment_dataframe(
     validate_schema(joined_df, SENTIMENT_SCHEMA, "sentiment.parquet")
 
     return joined_df, failed_requests
+
+
+def _log_derivations(df: pl.DataFrame) -> None:
+    """Log attribution, flair-resolution, and multi-pick counts for the frame."""
+    rows = df.height or 1
+    attributed = df.filter(pl.col("attributed_player").is_not_null()).height
+    fan_team = df.filter(pl.col("fan_team").is_not_null()).height
+    multi_pick = df.filter(
+        (pl.col("mentioned_players").list.len() > 1)
+        & pl.col("sentiment_player").str.contains(MULTI_PICK_PATTERN)
+    ).height
+    logger.info(
+        f"Attributed {attributed:,} / {df.height:,} ({attributed / rows * 100:.1f}%); "
+        f"fan_team resolved on {fan_team:,}; multi-pick sentiment_player on "
+        f"{multi_pick:,} multi-mention rows (unresolvable, no split rule yet)"
+    )
 
 
 def build_targets_dataframe(

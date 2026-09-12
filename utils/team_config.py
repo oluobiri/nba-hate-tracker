@@ -2,7 +2,8 @@
 Team configuration loading from YAML.
 
 This module provides cached access to team names, abbreviations, and aliases
-from config/teams.yaml for flair normalization.
+from config/teams.yaml, plus the pure flair resolver that turns a commenter's
+flair text into a canonical fan team.
 """
 
 from functools import lru_cache
@@ -82,3 +83,34 @@ def build_alias_to_team_map() -> dict[str, str]:
         for alias in info.get("aliases", []):
             alias_map[alias.lower()] = team_name
     return alias_map
+
+
+def extract_team_from_flair(
+    flair_text: str | None,
+    alias_to_team: dict[str, str],
+) -> str | None:
+    """
+    Extract team name from Reddit flair text.
+
+    Lowercases the flair and checks each team alias as a substring,
+    trying longest aliases first to avoid collisions (e.g., "hornets"
+    before "nets").
+
+    Args:
+        flair_text: Raw author flair text from Reddit.
+        alias_to_team: Mapping of lowercase aliases to canonical team names.
+
+    Returns:
+        Canonical team name, or None if no match found.
+    """
+    if not flair_text:
+        return None
+
+    flair_lower = flair_text.lower()
+    # Sort aliases longest-first to prevent substring collisions
+    # (e.g., "hornets" must match before "nets")
+    for alias in sorted(alias_to_team, key=len, reverse=True):
+        if alias in flair_lower:
+            return alias_to_team[alias]
+
+    return None

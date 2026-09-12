@@ -3,7 +3,8 @@ Player configuration loading from YAML.
 
 This module provides cached access to player aliases, short alias lists,
 player metadata, and the config version string from
-config/{season}/players.yaml.
+config/{season}/players.yaml, plus the pure resolvers that turn classifier
+output and mention lists into a canonical attributed player.
 
 Note: Config is cached per process invocation via @lru_cache. One season
 per process — the season is resolved through get_active_season() at first
@@ -12,6 +13,7 @@ flag). The override's guard raises if these caches are already warm, so
 set it before anything triggers a load.
 """
 
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
@@ -61,31 +63,16 @@ def load_player_config() -> tuple[dict[str, list[str]], frozenset[str]]:
     return players, short_aliases
 
 
-@lru_cache(maxsize=1)
-def build_alias_to_player_map() -> dict[str, str]:
-    """
-    Invert player aliases to map each alias to its canonical player name.
-
-    Returns:
-        Dict mapping lowercase alias to canonical player name.
-        Includes canonical names themselves as keys.
-    """
-    players, _ = load_player_config()
-    alias_map: dict[str, str] = {}
-    for player_name, aliases in players.items():
-        alias_map[player_name.lower()] = player_name
-        for alias in aliases:
-            alias_map[alias.lower()] = player_name
-    return alias_map
-
-
 def _normalize_player_name(name: str) -> str:
     """
     Normalize a player name for alias-map lookup.
 
-    Lowercases, strips periods, and collapses whitespace so classifier output
-    variants (trailing "Jr." or initials like "O.G.") match the period-free
-    aliases and canonical names in the config.
+    Lowercases, strips periods and diacritics, and collapses whitespace so
+    classifier output variants (trailing "Jr.", initials like "O.G.", or a
+    model-emitted accent like "Dončić") match the period-free, ASCII
+    aliases and canonical names in the config. Diacritics are removed by
+    NFKD decomposition followed by dropping the combining marks, so base
+    letters survive and only the accents go.
 
     Args:
         name: Raw player name, typically a classifier sentiment_player value.
@@ -93,7 +80,58 @@ def _normalize_player_name(name: str) -> str:
     Returns:
         Normalized lookup key.
     """
-    return " ".join(name.lower().replace(".", "").split())
+    decomposed = unicodedata.normalize("NFKD", name)
+    folded = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return " ".join(folded.lower().replace(".", "").split())
+
+
+@lru_cache(maxsize=1)
+def build_alias_to_player_map() -> dict[str, str]:
+    """
+    Invert player aliases to map each alias to its canonical player name.
+
+    Keys are normalized with _normalize_player_name, the same function
+    every lookup passes its query through, so a canonical name or alias
+    that carries a diacritic ("Moussa Diabaté", "Schröder") is keyed by
+    its folded form and meets a folded query.
+
+    Returns:
+        Dict mapping normalized alias to canonical player name.
+        Includes canonical names themselves as keys.
+
+    Raises:
+        ValueError: If two players share a normalized key (an alias that
+            folds onto another player's name would misattribute silently).
+    """
+    players, _ = load_player_config()
+    return invert_player_aliases(players)
+
+
+def invert_player_aliases(players: dict[str, list[str]]) -> dict[str, str]:
+    """
+    Build the normalized alias -> canonical name map from a players dict.
+
+    Args:
+        players: Canonical name -> list of aliases, as load_player_config
+            returns.
+
+    Returns:
+        Dict mapping normalized alias to canonical player name.
+
+    Raises:
+        ValueError: If a normalized key would map to two different players.
+    """
+    alias_map: dict[str, str] = {}
+    for player_name, aliases in players.items():
+        for raw in (player_name, *aliases):
+            key = _normalize_player_name(raw)
+            owner = alias_map.setdefault(key, player_name)
+            if owner != player_name:
+                raise ValueError(
+                    f"Alias {raw!r} normalizes to {key!r}, already claimed by "
+                    f"{owner!r}; cannot also map to {player_name!r}"
+                )
+    return alias_map
 
 
 def resolve_sentiment_player(name: str | None, alias_map: dict[str, str]) -> str | None:
@@ -117,6 +155,40 @@ def resolve_sentiment_player(name: str | None, alias_map: dict[str, str]) -> str
     if not name:
         return None
     return alias_map.get(_normalize_player_name(name))
+
+
+def resolve_player(
+    mentioned_players: list[str] | None,
+    sentiment_player: str | None,
+    alias_map: dict[str, str],
+) -> str | None:
+    """
+    Attribute a comment to a single canonical player.
+
+    Uses four-bucket logic:
+    1. Single player in mentioned_players → return it.
+    2. Multi-player + sentiment_player resolves (punctuation/case-normalized
+       alias lookup) → return canonical.
+    3. Otherwise → return None.
+
+    Args:
+        mentioned_players: List of player names mentioned in the comment.
+        sentiment_player: Player identified by sentiment classification.
+        alias_map: Mapping of lowercase aliases to canonical player names.
+
+    Returns:
+        Canonical player name, or None if attribution fails.
+    """
+    if not mentioned_players:
+        return None
+
+    if len(mentioned_players) == 1:
+        player = mentioned_players[0]
+        return alias_map.get(_normalize_player_name(player), player)
+
+    # Multi-player: disambiguate via the classifier's sentiment_player,
+    # normalizing punctuation/case before the alias lookup.
+    return resolve_sentiment_player(sentiment_player, alias_map)
 
 
 @lru_cache(maxsize=1)

@@ -459,7 +459,7 @@ def attribution_match(
     Check attribution the way production consumes the model's p field.
 
     Resolves the predicted name through the alias map exactly as
-    resolve_player() does at aggregation, so nickname or initialism
+    resolve_player() does at assembly, so nickname or initialism
     output (e.g. "AD") counts as correct when it resolves to the
     expected canonical player. Unresolvable output counts as None —
     matching production, where such attributions are dropped.

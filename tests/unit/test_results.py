@@ -164,6 +164,101 @@ class TestBuildSentimentDataframe:
             "def456": ["Jayson Tatum"],
         }
 
+    def test_attributed_player_and_fan_team_materialized(
+        self, responses_dir, filtered_comments_file
+    ):
+        """Verify the two config-derived columns are resolved at assembly.
+
+        abc123 mentions LeBron with a LeBron pick; def456 mentions Tatum
+        with a null pick (single mention, so attribution needs no pick).
+        fan_team follows the flair through teams.yaml: "Lakers" resolves,
+        "Banner 18" is no alias and stays null. Real-config dependent,
+        like the mentions test above.
+        """
+        # Act
+        df, _ = build_sentiment_dataframe(responses_dir, filtered_comments_file)
+
+        # Assert
+        rows = {r["comment_id"]: r for r in df.to_dicts()}
+        assert rows["abc123"]["attributed_player"] == "LeBron James"
+        assert rows["def456"]["attributed_player"] == "Jayson Tatum"
+        assert rows["abc123"]["fan_team"] == "Los Angeles Lakers"
+        assert rows["def456"]["fan_team"] is None
+
+    def test_multi_mention_row_attributed_by_pick(
+        self, tmp_path, valid_nba_comment, valid_sentiment_responses
+    ):
+        """A multi-mention row resolves through the classifier's pick, null when it can't."""
+        # Arrange
+        comments = [
+            {**valid_nba_comment, "id": "two1", "body": "LeBron and Tatum both cooked"},
+            {**valid_nba_comment, "id": "two2", "body": "LeBron and Tatum both cooked"},
+        ]
+        filtered_path = tmp_path / "filtered.jsonl"
+        filtered_path.write_text(
+            "\n".join(json.dumps(comment) for comment in comments) + "\n"
+        )
+        raw_responses = [raw for raw, _ in valid_sentiment_responses]
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [
+                _succeeded("two1", raw_responses[0]),  # pick: LeBron James
+                _succeeded("two2", raw_responses[2]),  # pick: null
+            ],
+        )
+
+        # Act
+        df, _ = build_sentiment_dataframe(directory, filtered_path)
+
+        # Assert
+        rows = {r["comment_id"]: r for r in df.to_dicts()}
+        assert len(rows["two1"]["mentioned_players"]) == 2
+        assert rows["two1"]["attributed_player"] == "LeBron James"
+        assert rows["two2"]["attributed_player"] is None
+
+    def test_derivation_counts_logged(
+        self, tmp_path, valid_nba_comment, valid_sentiment_responses, caplog
+    ):
+        """Assembly logs the attributed count and the multi-pick count.
+
+        Three rows: one single-mention (attributed), one multi-mention with
+        a pipe-joined pick (unresolvable, counted as multi-pick), one
+        multi-mention with a null pick (neither).
+        """
+        # Arrange
+        comments = [
+            {**valid_nba_comment, "id": "one1", "body": "LeBron is cooking"},
+            {**valid_nba_comment, "id": "two1", "body": "LeBron and Tatum both cooked"},
+            {**valid_nba_comment, "id": "two2", "body": "LeBron and Tatum both cooked"},
+        ]
+        filtered_path = tmp_path / "filtered.jsonl"
+        filtered_path.write_text(
+            "\n".join(json.dumps(comment) for comment in comments) + "\n"
+        )
+        raw_responses = [raw for raw, _ in valid_sentiment_responses]
+        directory = tmp_path / "responses"
+        _write_results_file(
+            directory,
+            [
+                _succeeded("one1", raw_responses[0]),
+                _succeeded(
+                    "two1", '{"s":"neg","c":0.8,"p":"LeBron James|Jayson Tatum"}'
+                ),
+                _succeeded("two2", raw_responses[2]),
+            ],
+        )
+
+        # Act
+        with caplog.at_level(logging.INFO, logger="pipeline.results"):
+            df, _ = build_sentiment_dataframe(directory, filtered_path)
+
+        # Assert
+        assert df["attributed_player"].to_list() == ["LeBron James", None, None]
+        message = next(m for m in caplog.messages if m.startswith("Attributed"))
+        assert "Attributed 1 / 3 (33.3%)" in message
+        assert "multi-pick sentiment_player on 1 multi-mention rows" in message
+
     def test_zero_mention_rows_kept_with_empty_list(
         self, tmp_path, valid_nba_comment, valid_team_subreddit_comment,
         valid_sentiment_responses,

@@ -1,8 +1,8 @@
 """
 Tests for sentiment aggregation logic.
 
-Tests cover the pure functions resolve_player, extract_team_from_flair,
-and compute_metrics from the aggregation pipeline.
+Tests cover compute_metrics, the dimension builders, the attributed
+frame loader, and aggregate_sentiment end to end.
 """
 
 import logging
@@ -17,11 +17,9 @@ from pipeline.aggregation import (
     build_teams_dimension,
     compute_cumulative_metrics,
     compute_metrics,
-    extract_team_from_flair,
     mask_below_threshold,
     pivot_bar_race_wide,
     players_to_metadata_dict,
-    resolve_player,
 )
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
@@ -33,131 +31,19 @@ from pipeline.schemas import (
     SENTIMENT_TARGETS_SCHEMA,
     TEAMS_SCHEMA,
 )
-from utils.player_config import load_player_config_version, load_player_metadata
+from utils.player_config import (
+    build_alias_to_player_map,
+    load_player_config_version,
+    load_player_metadata,
+    resolve_player,
+)
 from utils.season_config import get_active_season
-from utils.team_config import load_team_config
-
-
-class TestResolvePlayer:
-    """Tests for resolve_player function."""
-
-    def test_single_player_returns_it(self, player_alias_map):
-        """Single player in mentioned_players is returned directly."""
-        result = resolve_player(["LeBron James"], "Nikola Jokic", player_alias_map)
-        assert result == "LeBron James"
-
-    def test_single_player_normalizes_alias(self, player_alias_map):
-        """Single non-canonical player name is normalized via alias map."""
-        result = resolve_player(["jokic"], None, player_alias_map)
-        assert result == "Nikola Jokic"
-
-    def test_multi_player_canonical_sentiment_player(self, player_alias_map):
-        """Multi-player with canonical sentiment_player returns it."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            "Nikola Jokic",
-            player_alias_map,
-        )
-        assert result == "Nikola Jokic"
-
-    def test_multi_player_alias_sentiment_player(self, player_alias_map):
-        """Multi-player with alias sentiment_player normalizes to canonical."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            "jokic",
-            player_alias_map,
-        )
-        assert result == "Nikola Jokic"
-
-    def test_multi_player_punctuated_sentiment_player(self):
-        """Multi-player sentiment_player with punctuation still attributes.
-
-        Regression: the model emits "Michael Porter Jr." (trailing period) but
-        the config alias is period-free. Without normalization the comment is
-        dropped even though the player is already in mentioned_players.
-        """
-        alias_map = {
-            "michael porter jr": "Michael Porter Jr",
-            "lebron": "LeBron James",
-        }
-        result = resolve_player(
-            ["Michael Porter Jr", "LeBron James"],
-            "Michael Porter Jr.",
-            alias_map,
-        )
-        assert result == "Michael Porter Jr"
-
-    def test_multi_player_null_sentiment_player(self, player_alias_map):
-        """Multi-player with null sentiment_player returns None."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            None,
-            player_alias_map,
-        )
-        assert result is None
-
-    def test_multi_player_unrecognized_sentiment_player(self, player_alias_map):
-        """Multi-player with unrecognized sentiment_player returns None."""
-        result = resolve_player(
-            ["LeBron James", "Nikola Jokic"],
-            "unknown_player_xyz",
-            player_alias_map,
-        )
-        assert result is None
-
-    def test_empty_mentioned_players(self, player_alias_map):
-        """Empty mentioned_players returns None."""
-        result = resolve_player([], "LeBron James", player_alias_map)
-        assert result is None
-
-    def test_none_mentioned_players(self, player_alias_map):
-        """None mentioned_players returns None."""
-        result = resolve_player(None, "LeBron James", player_alias_map)
-        assert result is None
-
-
-class TestExtractTeamFromFlair:
-    """Tests for extract_team_from_flair function."""
-
-    def test_standard_flair(self, team_alias_map):
-        """Standard Reddit flair with emoji prefix resolves."""
-        result = extract_team_from_flair(":lal-1: Lakers", team_alias_map)
-        assert result == "Los Angeles Lakers"
-
-    def test_abbreviation_flair(self, team_alias_map):
-        """Abbreviation-only flair resolves."""
-        result = extract_team_from_flair(":bos-1:", team_alias_map)
-        assert result == "Boston Celtics"
-
-    def test_plain_text_flair(self, team_alias_map):
-        """Plain text team name resolves."""
-        result = extract_team_from_flair("Celtics", team_alias_map)
-        assert result == "Boston Celtics"
-
-    def test_null_flair(self, team_alias_map):
-        """Null flair returns None."""
-        result = extract_team_from_flair(None, team_alias_map)
-        assert result is None
-
-    def test_empty_flair(self, team_alias_map):
-        """Empty string flair returns None."""
-        result = extract_team_from_flair("", team_alias_map)
-        assert result is None
-
-    def test_unrecognized_flair(self, team_alias_map):
-        """Unrecognized flair text returns None."""
-        result = extract_team_from_flair(":AUS: Australia", team_alias_map)
-        assert result is None
-
-    def test_legacy_code_flair(self, team_alias_map):
-        """Legacy Reddit flair code resolves."""
-        result = extract_team_from_flair(":njn-1:", team_alias_map)
-        assert result == "Brooklyn Nets"
-
-    def test_substring_collision_hornets_not_nets(self, team_alias_map):
-        """Hornets flair matches Charlotte, not Brooklyn (nets substring)."""
-        result = extract_team_from_flair(":cha-1: Hornets", team_alias_map)
-        assert result == "Charlotte Hornets"
+from utils.team_config import (
+    build_alias_to_team_map,
+    extract_team_from_flair,
+    load_team_config,
+    load_team_config_version,
+)
 
 
 class TestComputeMetrics:
@@ -235,13 +121,39 @@ class TestComputeMetrics:
         assert result["player"].to_list() == ["A", "B", "C"]
 
 
+def _derive(rows: dict) -> dict:
+    """Add attributed_player and fan_team the way assembly does, if absent.
+
+    Tests describe a comment by its mentions and flair; the materialized
+    columns follow from those under the active configs.
+    """
+    if "attributed_player" in rows and "fan_team" in rows:
+        return rows
+    alias_map = build_alias_to_player_map()
+    team_map = build_alias_to_team_map()
+    return {
+        **rows,
+        "attributed_player": [
+            resolve_player(mentions, pick, alias_map)
+            for mentions, pick in zip(
+                rows["mentioned_players"], rows["sentiment_player"]
+            )
+        ],
+        "fan_team": [
+            extract_team_from_flair(flair, team_map)
+            for flair in rows["author_flair_text"]
+        ],
+    }
+
+
 def _make_test_parquet(tmp_path, rows, metadata=None):
     """Create a SENTIMENT_SCHEMA-conforming parquet for testing aggregate_sentiment.
 
-    metadata, when given, is written as file-level key-value metadata
-    (the config-lineage stamp from scripts/collect_results.py).
+    attributed_player and fan_team are derived from the rows when not
+    given. metadata, when given, is written as file-level key-value
+    metadata (the config-lineage stamps from scripts/collect_results.py).
     """
-    df = pl.DataFrame(rows, schema=SENTIMENT_SCHEMA)
+    df = pl.DataFrame(_derive(rows), schema=SENTIMENT_SCHEMA)
     path = tmp_path / "test_sentiment.parquet"
     df.write_parquet(path, metadata=metadata)
     return path
@@ -315,17 +227,37 @@ def _lebron_rows_with_error() -> dict:
 class TestLoadAttributedFrame:
     """Tests for load_attributed_frame, the model's shared starting frame."""
 
-    def test_adds_derived_columns_and_drops_error_rows(self, tmp_path):
-        """Verify the frame gains attributed_player, team, and week; errors are excluded."""
+    def test_adds_week_and_drops_error_rows(self, tmp_path):
+        """Verify the frame carries attributed_player, fan_team, and week; errors are excluded."""
         path = _make_test_parquet(tmp_path, _lebron_rows_with_error())
 
         df, excluded = load_attributed_frame(path)
 
         assert excluded == 1
         assert df.height == 2
-        assert {"attributed_player", "team", "week"} <= set(df.columns)
+        assert {"attributed_player", "fan_team", "week"} <= set(df.columns)
         assert "error" not in df["sentiment"].to_list()
         assert df["attributed_player"].to_list() == ["LeBron James"] * df.height
+
+    def test_reads_materialized_columns_without_recomputing(self, tmp_path):
+        """The stored attribution is read as-is, even where recomputation would differ.
+
+        attributed_player and fan_team are assembly's derivations under
+        the stamped configs; the reader trusts the file and the stamp
+        check, so a stale file is read faithfully (and warned about),
+        never silently re-resolved.
+        """
+        rows = {
+            **_lebron_rows(),
+            "attributed_player": ["Stored Player", None],
+            "fan_team": [None, "Stored Team"],
+        }
+        path = _make_test_parquet(tmp_path, rows)
+
+        df, _ = load_attributed_frame(path)
+
+        assert df["attributed_player"].to_list() == ["Stored Player", None]
+        assert df["fan_team"].to_list() == [None, "Stored Team"]
 
     def test_aggregate_sentiment_counts_match_the_frame(self, tmp_path):
         """Verify aggregate_sentiment's metadata counts derive from the same frame."""
@@ -645,7 +577,7 @@ class TestPlayersToMetadataDict:
 
 
 class TestConfigVersionLineage:
-    """Tests for the players_config_version drift warning (#54)."""
+    """Tests for the players_config_version drift warning."""
 
     ROWS = {
         "comment_id": ["c1", "c2"],
@@ -707,7 +639,7 @@ class TestConfigVersionLineage:
         assert load_player_config_version() in warnings[0]
 
     def test_absent_stamp_warns_distinctly(self, tmp_path, caplog):
-        """An unstamped parquet (pre-#54 legacy) warns with its own message.
+        """An unstamped parquet (legacy) warns with its own message.
 
         Absent is not drift: the message must say lineage cannot be
         verified, not claim a version mismatch.
@@ -723,6 +655,63 @@ class TestConfigVersionLineage:
         warnings = self._lineage_warnings(caplog)
         assert len(warnings) == 1
         assert "no players_config_version" in warnings[0]
+        assert "drift" not in warnings[0]
+
+
+class TestTeamsConfigVersionLineage:
+    """Tests for the teams_config_version drift warning on fan_team."""
+
+    ROWS = TestConfigVersionLineage.ROWS
+
+    def _lineage_warnings(self, caplog) -> list[str]:
+        """Extract WARNING messages about the teams config stamp."""
+        return [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and "teams_config_version" in record.message
+        ]
+
+    def test_matching_stamp_emits_no_lineage_warning(self, tmp_path, caplog):
+        """A stamp matching the on-disk teams.yaml version stays silent."""
+        path = _make_test_parquet(
+            tmp_path,
+            self.ROWS,
+            metadata={"teams_config_version": load_team_config_version()},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        assert self._lineage_warnings(caplog) == []
+
+    def test_stamp_drift_warns_naming_both_versions_and_fan_team(
+        self, tmp_path, caplog
+    ):
+        """A drifted teams stamp warns, naming both versions and fan_team."""
+        path = _make_test_parquet(
+            tmp_path, self.ROWS, metadata={"teams_config_version": "0.1"}
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        warnings = self._lineage_warnings(caplog)
+        assert len(warnings) == 1
+        assert "0.1" in warnings[0]
+        assert load_team_config_version() in warnings[0]
+        assert "fan_team" in warnings[0]
+
+    def test_absent_stamp_warns_distinctly(self, tmp_path, caplog):
+        """A parquet without the teams stamp warns that fan_team lineage is unverified."""
+        path = _make_test_parquet(tmp_path, self.ROWS)
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.aggregation"):
+            aggregate_sentiment(path)
+
+        warnings = self._lineage_warnings(caplog)
+        assert len(warnings) == 1
+        assert "no teams_config_version" in warnings[0]
         assert "drift" not in warnings[0]
 
 

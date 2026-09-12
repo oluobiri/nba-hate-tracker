@@ -231,7 +231,7 @@ _SAMPLES_INPUT_SCHEMA = pl.Schema(
         "score": pl.Int64,
         "confidence": pl.Float64,
         "created_utc": pl.Int64,
-        "team": pl.String,
+        "fan_team": pl.String,
     }
 )
 
@@ -245,7 +245,7 @@ def _samples_input(rows: list[dict]) -> pl.DataFrame:
         "link_id": "t3_post1",
         "confidence": 0.95,
         "created_utc": 1704067200,
-        "team": None,
+        "fan_team": None,
     }
     return pl.DataFrame(
         [
@@ -606,8 +606,8 @@ class TestBuildCommentSamples:
         assert COMMENT_SAMPLES_MIN_CONFIDENCE == 0.9
         assert COMMENT_SAMPLES_MAX_BODY_CHARS == 500
 
-    def test_fan_team_role_marked_and_nullable(self):
-        """The fact's team column ships as fan_team; unresolved flair stays null."""
+    def test_fan_team_carried_and_nullable(self):
+        """The fact's fan_team ships as-is; unresolved flair stays null."""
         rows = [
             {
                 "attributed_player": "LeBron James",
@@ -615,7 +615,7 @@ class TestBuildCommentSamples:
                 "comment_id": "c1",
                 "body": "goat",
                 "score": 9,
-                "team": "Los Angeles Lakers",
+                "fan_team": "Los Angeles Lakers",
             },
             {
                 "attributed_player": "LeBron James",
@@ -623,12 +623,11 @@ class TestBuildCommentSamples:
                 "comment_id": "c2",
                 "body": "king",
                 "score": 4,
-                "team": None,
+                "fan_team": None,
             },
         ]
         frame = build_comment_samples(_samples_input(rows))
 
-        assert "team" not in frame.columns
         assert frame["fan_team"].to_list() == ["Los Angeles Lakers", None]
 
     def test_all_three_sentiments_sampled(self):
@@ -777,28 +776,21 @@ class TestResolveVerdicts:
 
         assert resolved["target_player"].to_list() == [None, None]
 
-    def test_folded_column_resolves_diacritics_for_measurement_only(self):
-        """A model-emitted accent leaves target_player unresolved but
-        target_player_folded resolved (NFKD, ASCII) - the mechanical-loss
-        class the diagnostics separate from real screens."""
+    def test_accented_target_resolves(self):
+        """A model-emitted accent resolves like production attribution does."""
         verdicts = _verdicts([{"comment_id": "c1", "target_raw": "Luka Dončić"}])
 
         resolved = resolve_verdicts(verdicts, _ALIAS_MAP)
 
-        assert resolved["target_player"][0] is None
-        assert resolved["target_player_folded"][0] == "Luka Doncic"
+        assert resolved["target_player"][0] == "Luka Doncic"
 
     def test_keeps_input_columns(self):
-        """The two resolved columns are appended; nothing is dropped."""
+        """The resolved column is appended; nothing is dropped."""
         verdicts = _verdicts([{"comment_id": "c1", "target_raw": "lebron"}])
 
         resolved = resolve_verdicts(verdicts, _ALIAS_MAP)
 
-        assert resolved.columns == [
-            *SENTIMENT_TARGETS_SCHEMA.names(),
-            "target_player",
-            "target_player_folded",
-        ]
+        assert resolved.columns == [*SENTIMENT_TARGETS_SCHEMA.names(), "target_player"]
 
 
 class TestLoadTargetVerdicts:
@@ -912,10 +904,10 @@ class TestVerifiedAdmission:
             {"comment_id": "c3", "target_raw": "Luka Dončić"},
             {"comment_id": "c3", "target_raw": "lebron", "valid": False},
         ],
-        ids=["null_target", "other_tracked", "untracked", "unfolded", "invalid"],
+        ids=["null_target", "other_tracked", "untracked", "accented_other", "invalid"],
     )
     def test_non_affirming_verdict_excludes(self, verdict):
-        """Null, other-player, untracked, unresolved-accent, and unparsed
+        """Null, other-player (plain or accented), untracked, and unparsed
         verdicts all exclude the row; admission is on resolved match only."""
         frame = self._samples(self._rows()[:1], [verdict])
 
@@ -1023,9 +1015,9 @@ class TestMeasurePrecision:
     """Tests for measure_precision (over the would-have-shipped top-n)."""
 
     def test_breakdown_and_precision(self):
-        """Six would-have-shipped rows: affirmed, mechanical (accent), null,
+        """Six would-have-shipped rows: affirmed (plain and accented), null,
         other tracked, untracked, and one with no verdict (excluded from
-        both sides). precision = (affirmed + mechanical) / verified."""
+        both sides). precision = affirmed / verified."""
         rows = _samples_input(_cell("Luka Doncic", "neg", 6))
         verdicts = _verdicts(
             [
@@ -1042,8 +1034,7 @@ class TestMeasurePrecision:
         assert result == {
             "would_have_shipped": 6,
             "verified": 5,
-            "affirmed": 1,
-            "mechanical": 1,
+            "affirmed": 2,
             "null_target": 1,
             "other_tracked": 1,
             "untracked": 1,

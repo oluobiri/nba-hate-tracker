@@ -35,6 +35,8 @@ def sentiment_frame() -> pl.DataFrame:
                 "sentiment": "neg",
                 "confidence": 0.95,
                 "sentiment_player": "LeBron James",
+                "attributed_player": "LeBron James",
+                "fan_team": "Los Angeles Lakers",
                 "input_tokens": 100,
                 "output_tokens": 20,
             }

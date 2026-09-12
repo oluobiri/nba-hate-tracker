@@ -32,77 +32,11 @@ from utils.player_config import (
     build_alias_to_player_map,
     load_player_config_version,
     load_player_metadata,
-    resolve_sentiment_player,
 )
 from utils.season_config import get_active_season
-from utils.team_config import build_alias_to_team_map, load_team_config
+from utils.team_config import load_team_config, load_team_config_version
 
 logger = logging.getLogger(__name__)
-
-
-def resolve_player(
-    mentioned_players: list[str] | None,
-    sentiment_player: str | None,
-    alias_map: dict[str, str],
-) -> str | None:
-    """
-    Attribute a comment to a single canonical player.
-
-    Uses four-bucket logic:
-    1. Single player in mentioned_players → return it.
-    2. Multi-player + sentiment_player resolves (punctuation/case-normalized
-       alias lookup) → return canonical.
-    3. Otherwise → return None.
-
-    Args:
-        mentioned_players: List of player names mentioned in the comment.
-        sentiment_player: Player identified by sentiment classification.
-        alias_map: Mapping of lowercase aliases to canonical player names.
-
-    Returns:
-        Canonical player name, or None if attribution fails.
-    """
-    if not mentioned_players:
-        return None
-
-    if len(mentioned_players) == 1:
-        player = mentioned_players[0]
-        return alias_map.get(player.lower(), player)
-
-    # Multi-player: disambiguate via the classifier's sentiment_player,
-    # normalizing punctuation/case before the alias lookup.
-    return resolve_sentiment_player(sentiment_player, alias_map)
-
-
-def extract_team_from_flair(
-    flair_text: str | None,
-    alias_to_team: dict[str, str],
-) -> str | None:
-    """
-    Extract team name from Reddit flair text.
-
-    Lowercases the flair and checks each team alias as a substring,
-    trying longest aliases first to avoid collisions (e.g., "hornets"
-    before "nets").
-
-    Args:
-        flair_text: Raw author flair text from Reddit.
-        alias_to_team: Mapping of lowercase aliases to canonical team names.
-
-    Returns:
-        Canonical team name, or None if no match found.
-    """
-    if not flair_text:
-        return None
-
-    flair_lower = flair_text.lower()
-    # Sort aliases longest-first to prevent substring collisions
-    # (e.g., "hornets" must match before "nets")
-    for alias in sorted(alias_to_team, key=len, reverse=True):
-        if alias in flair_lower:
-            return alias_to_team[alias]
-
-    return None
 
 
 def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
@@ -158,22 +92,42 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     return grouped.sort(group_cols)
 
 
+def _check_config_stamp(
+    input_path: Path, metadata: dict[str, str], key: str, active: str, derived: str
+) -> None:
+    """Warn when a config-lineage stamp is missing or drifted from the active config."""
+    stamped = metadata.get(key)
+    if stamped is None:
+        logger.warning(
+            f"{input_path} carries no {key} stamp - config lineage of {derived} "
+            f"cannot be verified"
+        )
+    elif stamped != active:
+        logger.warning(
+            f"{input_path}: {key} drift - parquet assembled with config "
+            f"{stamped!r} but active config is {active!r}; {derived} may not "
+            f"reflect the current config"
+        )
+
+
 def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     """
-    Load the fact and derive its config-versioned attributes.
+    Load the fact with its config-versioned attributes.
 
     Reads sentiment.parquet, validates it, warns on missing or drifted
-    lineage stamps, drops error rows, and adds attributed_player (via
-    resolve_player under the active alias map), team (fan role, from
-    flair), and week. This is the frame every consumer of the model
-    starts from: the aggregate views, the receipts pool, and analysis.
+    lineage stamps, drops error rows, and adds week. attributed_player
+    and fan_team are read from the file, never recomputed here: they are
+    materialized at assembly under the stamped configs, so every reader
+    of the fact sees one resolution. This is the frame every consumer of
+    the model starts from: the aggregate views, the receipts pool, and
+    analysis.
 
     Args:
         input_path: Path to sentiment.parquet.
 
     Returns:
-        Tuple of (frame with attributed_player, team, and week columns
-        added; count of error rows excluded).
+        Tuple of (frame with the week column added; count of error rows
+        excluded).
 
     Raises:
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA.
@@ -182,25 +136,26 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     df = pl.read_parquet(input_path)
     validate_schema(df, SENTIMENT_SCHEMA, str(input_path))
 
-    # Config-lineage check (#54): mentioned_players in the parquet reflects
-    # the players.yaml it was assembled under; stale attribution is
-    # legitimate to read, just not silently.
+    # Config-lineage checks: the derived columns reflect the configs the
+    # parquet was assembled under; stale attribution is legitimate to
+    # read, just not silently.
     parquet_metadata = pl.read_parquet_metadata(input_path)
-    stamped = parquet_metadata.get("players_config_version")
-    active = load_player_config_version()
-    if stamped is None:
-        logger.warning(
-            f"{input_path} carries no players_config_version stamp (written "
-            f"before #54) - config lineage cannot be verified"
-        )
-    elif stamped != active:
-        logger.warning(
-            f"{input_path}: players_config_version drift - parquet assembled "
-            f"with config {stamped!r} but active config is {active!r}; "
-            f"mentioned_players may not reflect the current players.yaml"
-        )
+    _check_config_stamp(
+        input_path,
+        parquet_metadata,
+        "players_config_version",
+        load_player_config_version(),
+        "mentioned_players / attributed_player",
+    )
+    _check_config_stamp(
+        input_path,
+        parquet_metadata,
+        "teams_config_version",
+        load_team_config_version(),
+        "fan_team",
+    )
 
-    # Classifier lineage (#90): a birth certificate, not a cache stamp -
+    # Classifier lineage: a birth certificate, not a cache stamp -
     # nothing live to drift against, so only absence is warnable.
     if (
         parquet_metadata.get("classifier_sentiment_model") is None
@@ -220,43 +175,12 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     excluded_rows = total_rows - usable_rows
     logger.info(f"Usable rows: {usable_rows:,} (excluded {excluded_rows:,} errors)")
 
-    # Build lookup maps
-    alias_map = build_alias_to_player_map()
-    team_map = build_alias_to_team_map()
-
-    # Player attribution
-    logger.info("Attributing comments to players...")
-    df = df.with_columns(
-        pl.struct(["mentioned_players", "sentiment_player"])
-        .map_elements(
-            lambda row: resolve_player(
-                row["mentioned_players"],
-                row["sentiment_player"],
-                alias_map,
-            ),
-            return_dtype=pl.Utf8,
-        )
-        .alias("attributed_player")
-    )
-
     attributed_count = df.filter(pl.col("attributed_player").is_not_null()).height
     logger.info(
         f"Attributed {attributed_count:,} / {usable_rows:,} "
         f"({attributed_count / usable_rows * 100:.1f}%)"
     )
-
-    # Team flair extraction
-    logger.info("Extracting team from flair...")
-    df = df.with_columns(
-        pl.col("author_flair_text")
-        .map_elements(
-            lambda flair: extract_team_from_flair(flair, team_map),
-            return_dtype=pl.Utf8,
-        )
-        .alias("team")
-    )
-
-    team_count = df.filter(pl.col("team").is_not_null()).height
+    team_count = df.filter(pl.col("fan_team").is_not_null()).height
     logger.info(f"Matched {team_count:,} comments to team flairs")
 
     # Temporal prep: convert created_utc to datetime, truncate to week (Monday)
@@ -269,8 +193,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     """
     Aggregate classified sentiment data into dashboard-ready JSON.
 
-    Reads the sentiment parquet, attributes comments to players,
-    extracts team flair, and computes all aggregation views. The
+    Reads the sentiment parquet and computes all aggregation views. The
     comment samples are verified against the target-verifier sidecar
     when one exists and fall back to the gate-only rule when it doesn't;
     metadata says which (receipts_verified).
@@ -311,16 +234,19 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     logger.info("Computing player_temporal...")
     player_temporal = compute_metrics(df_attributed, ["attributed_player", "week"])
 
-    # Player by team flair (both non-null)
+    # Player by team flair (both non-null). The views keep the unmarked
+    # physical name "team" for the fan role until the contract rename.
     logger.info("Computing player_team...")
     df_player_team = df.filter(
-        pl.col("attributed_player").is_not_null() & pl.col("team").is_not_null()
+        pl.col("attributed_player").is_not_null() & pl.col("fan_team").is_not_null()
     )
-    player_team = compute_metrics(df_player_team, ["attributed_player", "team"])
+    player_team = compute_metrics(
+        df_player_team, ["attributed_player", "fan_team"]
+    ).rename({"fan_team": "team"})
 
-    # Team overall (team non-null)
+    # Team overall (fan_team non-null)
     logger.info("Computing team_overall...")
-    df_team = df.filter(pl.col("team").is_not_null())
+    df_team = df.filter(pl.col("fan_team").is_not_null())
 
     # Team dimension: pure config export, also the single source for
     # team_overall's baked enrichment columns (abbreviation, conference,
@@ -334,14 +260,15 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     # don't preserve row order.
     enrichment_cols = [c for c in TEAM_OVERALL_SCHEMA.names() if c in TEAMS_SCHEMA]
     team_overall = (
-        compute_metrics(df_team, ["team"])
+        compute_metrics(df_team, ["fan_team"])
+        .rename({"fan_team": "team"})
         .join(teams.select(enrichment_cols), on="team", how="left")
         .sort("team")
     )
 
     # Metadata
     unique_players = df_attributed["attributed_player"].n_unique()
-    unique_teams = df.filter(pl.col("team").is_not_null())["team"].n_unique()
+    unique_teams = df_team["fan_team"].n_unique()
     unique_weeks = df["week"].n_unique()
 
     metadata = {

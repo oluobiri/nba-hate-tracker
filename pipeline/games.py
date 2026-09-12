@@ -15,6 +15,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.schemas import GAMES_SCHEMA, PLAYER_GAMES_SCHEMA
+from utils.constants import NBA_STATS_CUP_SEASON_TYPE
 from utils.season_config import get_active_season
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,10 @@ PLAYER_GAME_LOG_FILENAME = "player_game_log.parquet"
 SEASON_TYPE_LABELS = {
     "Pre Season": "pre_season",
     "Regular Season": "regular_season",
-    "IST": "regular_season",
+    NBA_STATS_CUP_SEASON_TYPE: "regular_season",
     "PlayIn": "play_in",
     "Playoffs": "playoffs",
 }
-NBA_CUP_FINAL_SEASON_TYPE = "IST"
 PLAYOFF_GAME_ID_PREFIX = "004"
 PRE_SEASON_LABEL = "Pre Season"
 
@@ -124,7 +124,7 @@ def build_games(team_log: pl.DataFrame, team_config: dict[str, dict]) -> pl.Data
     games = (
         ordered.with_columns(
             pl.col("season_type").replace_strict(SEASON_TYPE_LABELS),
-            (pl.col("season_type") == NBA_CUP_FINAL_SEASON_TYPE).alias("nba_cup_final"),
+            (pl.col("season_type") == NBA_STATS_CUP_SEASON_TYPE).alias("nba_cup_final"),
             (pl.col("home_rows") != 1).alias("neutral_site"),
             pl.when(pl.col("home_wl") == "W")
             .then(pl.col("home_team"))

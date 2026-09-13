@@ -10,7 +10,7 @@
 
 ## The model at a glance
 
-A **star schema**: one fact at the center — `ClassifiedComment` — with three dimensions radiating out, plus the **game layer**: `Game`, a dimension here (a fact in a basketball model — fact-vs-dimension is relative to the star you're in), and `PlayerGame`, one tracked player's box-score line in one game. `Team` is a **role-playing dimension**: the same franchise table is referenced in four distinct roles (a player's *roster* team, a commenter's *fan* team, and a game's *home* and *away* teams). `Date` is a **modeled target** — it does not exist as a table today (temporal lives as a derived `week` column), but the model names it because the V2 temporal work is built against it.
+A **star schema**: one fact at the center — `ClassifiedComment` — with three dimensions radiating out, plus the **game layer**: `Game`, a dimension here (a fact in a basketball model — fact-vs-dimension is relative to the star you're in), `PlayerGame`, one tracked player's box-score line in one game, and `Post`, the **bridge** from a comment to the game it lived in. `Team` is a **role-playing dimension**: the same franchise table is referenced in four distinct roles (a player's *roster* team, a commenter's *fan* team, and a game's *home* and *away* teams). `Date` is a **modeled target** — it does not exist as a table today (temporal lives as a derived `week` column), but the model names it because the V2 temporal work is built against it.
 
 ```mermaid
 erDiagram
@@ -33,12 +33,17 @@ erDiagram
         string game_id PK "grain: one tracked player in one game"
         string attributed_player PK
     }
+    Post {
+        string post_id PK "grain: one r/NBA post (bridge)"
+    }
 
     Player            }o--|| Team   : "roster_team (point-in-time)"
     ClassifiedComment }o--o| Team   : "fan_team (flair, 0-1)"
     ClassifiedComment }o--o| Player : "attributed_player (resolved)"
     ClassifiedComment }o--o{ Player : "mentioned_players (M:N, pre-resolution)"
     ClassifiedComment }o--|| Date   : "created_utc to day"
+    ClassifiedComment }o--|| Post   : "link_id"
+    Post              }o--o| Game   : "game_id (0-1; split threads N:1)"
     Game              }o--|| Team   : "home_team"
     Game              }o--|| Team   : "away_team"
     PlayerGame        }o--|| Game   : "game_id"
@@ -48,7 +53,7 @@ erDiagram
 
 The diagram carries **structure only** — entity boxes, the role-playing edges, and each box's grain/key. Full attribute lists live in the entity key below, so the diagram stays readable and so forward-look attributes never appear to already exist.
 
-The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
+The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the four aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain, and `Post` as `posts`, the bridge at its own grain. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
 
 ---
 
@@ -68,6 +73,7 @@ The pipeline produces three classes of table from this model: **rollups** of the
 | `sentiment_player` | the classifier's single pick — a disambiguation input |
 | `attributed_player` | → **Player**, the *resolved* single FK the aggregate views key on — materialized on the fact at assembly |
 | `author_flair_text` → `fan_team` | → **Team** (fan role), 0-or-1 (flair may not resolve) — materialized on the fact at assembly |
+| `link_id` | → **Post**, the post the comment lived in; the comment's only path to a **Game** |
 | `created_utc` → `day` | → **Date** |
 
 **The player FK is resolved, not raw.** `mentioned_players[]` (M:N) and `sentiment_player` are the *inputs*; `resolve_player()` collapses them to a single `attributed_player` (or null), and the result is stored on the fact. The fact tables join on `attributed_player`. ~1.57M of ~1.93M classified rows resolve to a player.
@@ -80,8 +86,6 @@ The pipeline produces three classes of table from this model: **rollups** of the
 - **Config-versioned derivations** — `mentioned_players` and `attributed_player`, caches of `f(body, sentiment_player, players.yaml@version)`, and `fan_team`, a cache of `f(author_flair_text, teams.yaml@version)`: re-derived at every assembly and stamped with their config `version` into the parquet's file metadata (`players_config_version`, `teams_config_version`). Both stamps are checked at aggregation read time (drift → WARNING) — the config `version` field (major = roster, minor = alias) is load-bearing lineage metadata, not documentation.
 
 The distinction matters because the two layers age differently: frozen fields stay correct forever, while a stored derivation is only as current as the config it was derived under — copying it forward through a rebuild silently reintroduces every alias fix made since. That is why the derived columns are never projected from an earlier file: assembly recomputes all three from the frozen layer, so a rebuild under a newer config is a correct rebuild by construction. `teams.parquet` carries the same `teams.yaml` stamp for the dimension side.
-
-> `link_id` — decided V2 addition for the v3 bridge; pending, must land before the classify run (see Forward look).
 
 ### `Player` — dimension
 
@@ -128,6 +132,20 @@ The distinction matters because the two layers age differently: frozen fields st
 | `team` | → **Team**, the **dated roster role**: the player's team on that line — see §3 |
 | `opponent`, `is_home` | → **Team**; `is_home` is derived from `games.home_team`, and null on a neutral-site game, where neither side hosted |
 | `wl`, `minutes`, the box-score line, `plus_minus` | as the endpoint serves them |
+
+### `Post` — bridge
+
+**Grain:** one r/NBA post. Materialized as `posts.parquet`, a subset of the full bridge the pipeline keeps in `data/<season>/reference/posts_bridge.parquet` (every post of the season, derived from the raw posts download). The bridge says which game a comment lived in; it is not a dimension of the comment. `fan_team` stays on `ClassifiedComment` — the post tells you the *game*, the flair still tells you the *fan*.
+
+| Field | Notes |
+|---|---|
+| `post_id` | the `t3_` fullname, equal to the fact's `link_id` (PK) |
+| `title`, `created_utc`, `score`, `num_comments`, `link_flair_text` | as the source. `num_comments` is the whole room, not the fact-row count |
+| `post_type` | `game_thread` / `post_game_thread` / `other`, from flair with an anchored title fallback for flair-stripped removals |
+| `game_id` | → **Game**, 0-or-1. Resolved from the title's unordered team pair and the Eastern day of `created_utc`, validated against `games` at aggregation; null on non-games, non-NBA opponents and postponements |
+| `is_primary` | the largest thread by `num_comments` per (`game_id`, `post_type`); split, second-half and repost threads share a `game_id` |
+
+**Published subset:** every game and post-game thread, plus every post a receipt points at (its title is the receipt's context). A game's room is the **sum** of `num_comments` over its threads — a second-half thread can outgrow the primary.
 
 ### `Date` — dimension (modeled target, not yet materialized)
 
@@ -193,7 +211,7 @@ Three classes of produced table: the four views are **rollups** of `ClassifiedCo
 
 The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me every comment"* deliberately **expensive** — the atomic fact is not a shipped table; a full drill is a separate engine (v3), not a view.
 
-**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school). Likewise a box score beside a sentiment number: `player_games` joins any Player × Game table on `(game_id, attributed_player)`, and `games` supplies the date, score and phase. The box score is never pre-joined into a rollup.
+**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school). Likewise a box score beside a sentiment number: `player_games` joins any Player × Game table on `(game_id, attributed_player)`, and `games` supplies the date, score and phase. The box score is never pre-joined into a rollup. A comment reaches its game through the bridge — `posts` on `link_id = post_id`, then `game_id` — and every hop is many-to-one, so a comment lands in at most one game.
 
 **Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
 
@@ -207,10 +225,4 @@ The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me
 >
 > This is the intended direction. **Nothing here is built or committed**, and the model above is what's real today — no entity or attribute below appears in the core diagram or the present-now key. Its two jobs: explain the V2 decisions that exist *because of* v3, and record the shape so the insight isn't lost.
 >
-> **`link_id` is the bridge, and capturing it in V2 is decided.** It is the single field that unlocks everything in this section. It must be added to `SENTIMENT_SCHEMA` and carried through `process_comments` **before the V2 classification run** — otherwise it is unrecoverable for this season. This is the one item here with a hard deadline. Recording the decision is this doc's job; the implementation is a pending Tier-1 action pointed at a ticket, not planned here.
->
-> **`Post` (new entity)** — bridges `ClassifiedComment → Game` via `link_id`, and carries `post_type` (game thread / post-game / regular). `post_type` is what finally answers the recurring "did this include game threads?" feedback the V1 launch raised. `Game` itself is in the core model; until `Post` lands it is reachable only from `PlayerGame` and `Team`, not from the fact.
->
-> **Game data is the "why" layer.** It lets sentiment be *explained*, not just measured — criticism-vs-hate (negativity the box score predicts vs. the residual character hate) and event annotation (every spike self-labels with the game that caused it). The comment-side half of that is a `Player × Game` rollup of the fact through `Post`, joined client-side to `PlayerGame`.
->
-> **Modeling guardrail:** `Post` bridges `ClassifiedComment → Game`; `fan_team` stays on the `ClassifiedComment` (the commenter's flair), **not** on `Post`. The post a comment lived in tells you the *game*; the flair still tells you the *fan*.
+> **Game data is the "why" layer.** It lets sentiment be *explained*, not just measured — criticism-vs-hate (negativity the box score predicts vs. the residual character hate) and event annotation (every spike self-labels with the game that caused it). The comment-side half of that is a `Player × Game` rollup of the fact through `Post`, joined client-side to `PlayerGame`. With `Post` in the core model the path exists; the rollup is the piece not yet built.

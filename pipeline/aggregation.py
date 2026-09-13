@@ -11,6 +11,8 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.games import load_game_tables
+from pipeline.nba_stats import check_snapshot_season
 from pipeline.receipts import (
     build_comment_samples,
     load_receipt_verdicts,
@@ -205,9 +207,9 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
-        team_overall, players, teams, and comment_samples hold
-        pl.DataFrames conforming to DASHBOARD_OUTPUT_SCHEMAS; metadata is
-        a dict. The legacy player_metadata dict is reconstructed at
+        team_overall, players, teams, games, player_games, and
+        comment_samples hold pl.DataFrames conforming to
+        DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy player_metadata dict is reconstructed at
         serialization time via players_to_metadata_dict().
 
     Raises:
@@ -289,6 +291,14 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     attributed_players = set(player_overall.get_column("attributed_player").to_list())
     players = _build_players_dimension(player_metadata, attributed_players)
 
+    # Game layer: the Game dimension and the attributed players' box-score
+    # lines, derived from the season's game-log snapshots
+    logger.info("Building games and player_games...")
+    games, player_games, game_metadata = load_game_tables(
+        get_reference_dir(), player_metadata, team_config, attributed_players
+    )
+    metadata.update(game_metadata)
+
     logger.info("Selecting comment_samples...")
     alias_map = build_alias_to_player_map()
     verdicts, receipts_metadata = load_receipt_verdicts(
@@ -313,6 +323,8 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         "team_overall": team_overall,
         "players": players,
         "teams": teams,
+        "games": games,
+        "player_games": player_games,
         "comment_samples": comment_samples,
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
@@ -397,18 +409,7 @@ def _build_players_dimension(
     # Snapshot-lineage check, same spirit as the players_config_version
     # stamp: a snapshot fetched for another season is legitimate to read,
     # just not silently.
-    stamped_season = pl.read_parquet_metadata(snapshot_path).get("season")
-    active_season = get_active_season()
-    if stamped_season is None:
-        logger.warning(
-            f"{snapshot_path} carries no season stamp - snapshot lineage "
-            f"cannot be verified"
-        )
-    elif stamped_season != active_season:
-        logger.warning(
-            f"{snapshot_path}: season stamp {stamped_season!r} does not match "
-            f"active season {active_season!r}; snapshot facts may be stale"
-        )
+    check_snapshot_season(snapshot_path, subject="snapshot facts", log=logger)
 
     snapshot = pl.read_parquet(snapshot_path).select(
         ["player_id", *PLAYERS_SNAPSHOT_COLUMNS]

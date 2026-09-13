@@ -13,6 +13,13 @@ pipeline produces. Data dictionary first, enforcement second:
 - ROSTERS_SCHEMA describes the season roster snapshot — a reference
   asset (pipeline ingredient, not a published output) enforced at the
   fetch write boundary (scripts/fetch_rosters.py).
+- TEAM_GAME_LOG_SCHEMA / PLAYER_GAME_LOG_SCHEMA describe the season
+  game-log snapshots from stats.nba.com (scripts/fetch_games.py), the
+  reference assets the game tables derive from.
+- GAMES_SCHEMA / PLAYER_GAMES_SCHEMA describe the game layer
+  (games.parquet, player_games.parquet): the Game dimension and the
+  per-player box-score lines, derived from the snapshots under the
+  active config (pipeline/games.py); enforced via the unified loop.
 - PLAYERS_SCHEMA describes the Player dimension (players.parquet),
   config curation joined with snapshot facts; enforced in
   aggregate_sentiment() via the unified DASHBOARD_OUTPUT_SCHEMAS loop.
@@ -130,6 +137,68 @@ ROSTERS_SCHEMA = pl.Schema(
     }
 )
 
+# The box-score line as LeagueGameLog serves it, shared by the team and
+# player logs and carried verbatim onto player_games. Percentages and
+# fantasy points are derivable and stay out.
+_BOX_SCORE_COLUMNS: dict[str, pl.DataType] = {
+    "minutes": pl.Int64,
+    "fgm": pl.Int64,
+    "fga": pl.Int64,
+    "fg3m": pl.Int64,
+    "fg3a": pl.Int64,
+    "ftm": pl.Int64,
+    "fta": pl.Int64,
+    "oreb": pl.Int64,
+    "dreb": pl.Int64,
+    "reb": pl.Int64,
+    "ast": pl.Int64,
+    "stl": pl.Int64,
+    "blk": pl.Int64,
+    "tov": pl.Int64,
+    "pf": pl.Int64,
+    "pts": pl.Int64,
+    "plus_minus": pl.Int64,
+}
+
+# data/<season>/reference/team_game_log.parquet — one row per game x team,
+# the LeagueGameLog team lines across every season type (pipeline/
+# nba_stats.py). A faithful capture at the endpoint's own grain: both
+# sides of every game, non-NBA preseason opponents included; the game
+# tables, not the snapshot, decide what ships. season_type is the
+# endpoint label the row was fetched under ("Regular Season", "IST",
+# ...); the Cup final is the one game that lives only under "IST".
+TEAM_GAME_LOG_SCHEMA = pl.Schema(
+    {
+        "season_type": pl.String,
+        "game_id": pl.String,  # 10 digits; prefix encodes the season type
+        "game_date": pl.Date,
+        "team_id": pl.Int64,
+        "team_abbr": pl.String,
+        "team_name": pl.String,
+        "matchup": pl.String,  # "BOS vs. NYK" at home, "BOS @ NYK" away
+        "wl": pl.String,
+        **_BOX_SCORE_COLUMNS,
+    }
+)
+
+# data/<season>/reference/player_game_log.parquet — one row per game x
+# player, every player who dressed (not just the tracked set, so a
+# players.yaml roster bump never needs a re-fetch).
+PLAYER_GAME_LOG_SCHEMA = pl.Schema(
+    {
+        "season_type": pl.String,
+        "game_id": pl.String,
+        "game_date": pl.Date,
+        "player_id": pl.Int64,
+        "player_name": pl.String,  # endpoint spelling; the join key is player_id
+        "team_id": pl.Int64,
+        "team_abbr": pl.String,
+        "matchup": pl.String,
+        "wl": pl.String,  # nullable at source
+        **_BOX_SCORE_COLUMNS,
+    }
+)
+
 # --- Aggregate views (enforced in pipeline/aggregation.py) ------------------
 # Column order mirrors compute_metrics output: group cols, counts, rates.
 
@@ -238,6 +307,49 @@ TEAMS_SCHEMA = pl.Schema(
     }
 )
 
+# --- Game layer (built in pipeline/games.py, enforced in aggregation) -------
+# games.parquet: the Game dimension, one row per game, pivoted from the
+# team game log. Team FKs carry the canonical `team` name (the Team
+# dimension's key) in the home and away roles. On a neutral-site game
+# both team lines list the opponent as host; sides are then assigned by
+# team_id so the row does not depend on endpoint order. Playoff fields
+# parse from the id (004 YY 00 R S G) and are null otherwise.
+
+GAMES_SCHEMA = pl.Schema(
+    {
+        "game_id": pl.String,
+        "game_date": pl.Date,
+        "season_type": pl.String,  # pre_season | regular_season | play_in | playoffs
+        "nba_cup_final": pl.Boolean,  # regular_season window, its own game id
+        "neutral_site": pl.Boolean,
+        "home_team": pl.String,  # FK -> teams.parquet, home role
+        "away_team": pl.String,  # FK -> teams.parquet, away role
+        "home_score": pl.Int64,
+        "away_score": pl.Int64,
+        "winner": pl.String,  # FK -> teams.parquet
+        "playoff_round": pl.Int64,  # nullable
+        "playoff_series": pl.Int64,  # nullable
+        "playoff_game": pl.Int64,  # nullable
+    }
+)
+
+# player_games.parquet: one row per game x tracked player who dressed.
+# `team` is the player's team on that line — the dated roster edge,
+# distinct from players.roster_team (season-end). Absent lines are
+# absent, never fabricated. PK (game_id, attributed_player).
+PLAYER_GAMES_SCHEMA = pl.Schema(
+    {
+        "game_id": pl.String,  # FK -> games.parquet
+        "attributed_player": pl.String,  # FK -> players.parquet
+        "player_id": pl.Int64,
+        "team": pl.String,  # FK -> teams.parquet, dated roster role
+        "opponent": pl.String,  # FK -> teams.parquet
+        "is_home": pl.Boolean,  # team == games.home_team; null on a neutral site
+        "wl": pl.String,  # nullable
+        **_BOX_SCORE_COLUMNS,
+    }
+)
+
 # --- Comment samples: fact subset (enforced in pipeline/aggregation.py) ------
 # One row per sampled comment: verbatim fact rows, top-N per player x
 # sentiment by score (see build_comment_samples). PK (attributed_player,
@@ -284,15 +396,18 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
     }
 )
 
-# Every table the aggregation stage produces -> its schema, across the three
-# classes of produced table: the four fact rollups (AGGREGATE_VIEW_SCHEMAS),
-# the Player and Team dimensions, and the comment-samples fact subset.
+# Every table the aggregation stage produces -> its schema, across the
+# classes of produced table: the fact rollups (AGGREGATE_VIEW_SCHEMAS),
+# the Player and Team dimensions, the game layer (Game dimension +
+# per-player box-score lines), and the comment-samples fact subset.
 # Single source for aggregate_sentiment()'s unified validation loop and the
 # script's parquet write loop (<name>.parquet).
 DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     **AGGREGATE_VIEW_SCHEMAS,
     "players": PLAYERS_SCHEMA,
     "teams": TEAMS_SCHEMA,
+    "games": GAMES_SCHEMA,
+    "player_games": PLAYER_GAMES_SCHEMA,
     "comment_samples": COMMENT_SAMPLES_SCHEMA,
 }
 

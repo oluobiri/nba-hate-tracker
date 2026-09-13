@@ -21,6 +21,7 @@ data/             → Not committed
   │   ├── filtered/   → Player-mention filtered JSONL
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
+  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs)
   │   └── dashboard/  → aggregates.json + per-table Parquet files
   └── 2025-26/    → V2 season data (same structure)
 ```

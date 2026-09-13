@@ -9,8 +9,16 @@ import polars as pl
 import pytest
 import requests
 
-from pipeline.nba_stats import fetch_rosters
-from pipeline.schemas import ROSTERS_SCHEMA
+from pipeline.nba_stats import (
+    fetch_player_game_log,
+    fetch_rosters,
+    fetch_team_game_log,
+)
+from pipeline.schemas import (
+    PLAYER_GAME_LOG_SCHEMA,
+    ROSTERS_SCHEMA,
+    TEAM_GAME_LOG_SCHEMA,
+)
 
 FAKE_TEAMS = [
     {"id": 1, "full_name": "Atlanta Hawks", "abbreviation": "ATL"},
@@ -286,3 +294,239 @@ class TestRetry:
 
         with pytest.raises(requests.ConnectionError):
             _fetch_with_mocks(_second_team_down, max_attempts=2)
+
+
+# ---------------------------------------------------------------------------
+# Game logs (LeagueGameLog)
+# ---------------------------------------------------------------------------
+
+_RAW_BOX = {
+    "MIN": 240,
+    "FGM": 40,
+    "FGA": 88,
+    "FG_PCT": 0.455,
+    "FG3M": 12,
+    "FG3A": 35,
+    "FG3_PCT": 0.343,
+    "FTM": 18,
+    "FTA": 22,
+    "FT_PCT": 0.818,
+    "OREB": 10,
+    "DREB": 34,
+    "REB": 44,
+    "AST": 25,
+    "STL": 7,
+    "BLK": 5,
+    "TOV": 13,
+    "PF": 19,
+    "PTS": 110,
+    "PLUS_MINUS": 10,
+    "VIDEO_AVAILABLE": 1,
+}
+
+
+def _raw_team_line(**overrides) -> dict:
+    """One endpoint-shaped team line (uppercase LeagueGameLog columns)."""
+    row = {
+        "SEASON_ID": "22025",
+        "TEAM_ID": 1610612738,
+        "TEAM_ABBREVIATION": "BOS",
+        "TEAM_NAME": "Boston Celtics",
+        "GAME_ID": "0022500001",
+        "GAME_DATE": "2025-10-21",
+        "MATCHUP": "BOS vs. NYK",
+        "WL": "W",
+        **_RAW_BOX,
+    }
+    row.update(overrides)
+    return row
+
+
+def _raw_player_line(**overrides) -> dict:
+    """One endpoint-shaped player line."""
+    row = {
+        "SEASON_ID": "22025",
+        "PLAYER_ID": 1628369,
+        "PLAYER_NAME": "Jayson Tatum",
+        "TEAM_ID": 1610612738,
+        "TEAM_ABBREVIATION": "BOS",
+        "TEAM_NAME": "Boston Celtics",
+        "GAME_ID": "0022500001",
+        "GAME_DATE": "2025-10-21",
+        "MATCHUP": "BOS vs. NYK",
+        "WL": "W",
+        **{**_RAW_BOX, "MIN": 36, "PTS": 30, "PLUS_MINUS": 12},
+        "FANTASY_PTS": 55.5,
+    }
+    row.update(overrides)
+    return row
+
+
+def _game_log_endpoint(pages: dict[str, list[dict]]):
+    """Build a LeagueGameLog stand-in serving one raw frame per season type.
+
+    A season type absent from `pages` serves an empty frame with the
+    endpoint's column set, as stats.nba.com does before a phase starts.
+    """
+    columns = list(_raw_player_line().keys())
+
+    def _make(**kwargs) -> Mock:
+        rows = pages.get(kwargs["season_type_all_star"], [])
+        endpoint = Mock()
+        endpoint.get_data_frames.return_value = [
+            pd.DataFrame(rows) if rows else pd.DataFrame(columns=columns)
+        ]
+        return endpoint
+
+    return _make
+
+
+def _fetch_log_with_mocks(
+    endpoint_side_effect, fetch, **fetch_kwargs
+) -> tuple[pl.DataFrame, Mock, Mock]:
+    """Run a game-log fetch with the endpoint and sleep mocked."""
+    with (
+        patch(
+            "pipeline.nba_stats.leaguegamelog.LeagueGameLog",
+            side_effect=endpoint_side_effect,
+        ) as mock_endpoint,
+        patch("pipeline.nba_stats.time.sleep") as mock_sleep,
+    ):
+        df = fetch("2025-26", **fetch_kwargs)
+    return df, mock_endpoint, mock_sleep
+
+
+def _one_game_pages() -> dict[str, list[dict]]:
+    """A regular-season game (both lines) re-listed under IST, plus the Cup final."""
+    game = [
+        _raw_team_line(),
+        _raw_team_line(
+            TEAM_ID=1610612752,
+            TEAM_ABBREVIATION="NYK",
+            TEAM_NAME="New York Knicks",
+            MATCHUP="NYK @ BOS",
+            WL="L",
+            PTS=100,
+            PLUS_MINUS=-10,
+        ),
+    ]
+    cup_final = [
+        _raw_team_line(
+            GAME_ID="0062500001", GAME_DATE="2025-12-16", MATCHUP="BOS @ NYK"
+        ),
+        _raw_team_line(
+            GAME_ID="0062500001",
+            GAME_DATE="2025-12-16",
+            TEAM_ID=1610612752,
+            TEAM_ABBREVIATION="NYK",
+            TEAM_NAME="New York Knicks",
+            MATCHUP="NYK @ BOS",
+            WL="L",
+            PTS=100,
+        ),
+    ]
+    return {"Regular Season": game, "IST": game + cup_final}
+
+
+class TestFetchTeamGameLog:
+    """Tests for fetch_team_game_log (LeagueGameLog team lines)."""
+
+    def test_conforms_to_schema(self):
+        """The union of every season type lands as TEAM_GAME_LOG_SCHEMA."""
+        df, _, _ = _fetch_log_with_mocks(
+            _game_log_endpoint(_one_game_pages()), fetch_team_game_log
+        )
+
+        assert df.schema == TEAM_GAME_LOG_SCHEMA
+        assert df["game_date"][0] == date(2025, 10, 21)
+
+    def test_drops_ist_relistings_and_keeps_the_cup_final(self):
+        """Group games already in the regular-season page are dropped from
+        IST; the Cup final, present only there, survives under its label."""
+        df, _, _ = _fetch_log_with_mocks(
+            _game_log_endpoint(_one_game_pages()), fetch_team_game_log
+        )
+
+        assert df.height == 4
+        by_game = df.group_by("game_id").agg(pl.col("season_type").unique())
+        assert by_game.row(by_predicate=pl.col("game_id") == "0022500001")[1] == [
+            "Regular Season"
+        ]
+        assert by_game.row(by_predicate=pl.col("game_id") == "0062500001")[1] == ["IST"]
+
+    def test_fetches_every_season_type_with_season_and_timeout(self):
+        """One page per season type, all carrying season, kind and timeout."""
+        _, mock_endpoint, mock_sleep = _fetch_log_with_mocks(
+            _game_log_endpoint(_one_game_pages()), fetch_team_game_log, timeout=45
+        )
+
+        requested = [
+            c.kwargs["season_type_all_star"] for c in mock_endpoint.call_args_list
+        ]
+        assert requested == [
+            "Pre Season",
+            "Regular Season",
+            "IST",
+            "PlayIn",
+            "Playoffs",
+        ]
+        for call_args in mock_endpoint.call_args_list:
+            assert call_args.kwargs["season"] == "2025-26"
+            assert call_args.kwargs["player_or_team_abbreviation"] == "T"
+            assert call_args.kwargs["timeout"] == 45
+        assert mock_sleep.call_count == 5
+
+    def test_duplicate_outside_ist_raises(self):
+        """The same team line twice under one season type is an endpoint fault."""
+        pages = {"Regular Season": [_raw_team_line(), _raw_team_line()]}
+
+        with pytest.raises(ValueError, match="one row per game_id x team_id"):
+            _fetch_log_with_mocks(_game_log_endpoint(pages), fetch_team_game_log)
+
+    def test_transient_timeout_is_retried(self):
+        """A page that times out once still lands on the retry."""
+        make = _game_log_endpoint(_one_game_pages())
+        attempts = iter([requests.Timeout("hang")])
+
+        def _flaky(**kwargs) -> Mock:
+            if kwargs["season_type_all_star"] == "Regular Season":
+                error = next(attempts, None)
+                if error:
+                    raise error
+            return make(**kwargs)
+
+        df, mock_endpoint, _ = _fetch_log_with_mocks(_flaky, fetch_team_game_log)
+
+        assert mock_endpoint.call_count == 6
+        assert df.height == 4
+
+
+class TestFetchPlayerGameLog:
+    """Tests for fetch_player_game_log (LeagueGameLog player lines)."""
+
+    def test_conforms_to_schema_and_keeps_every_player(self):
+        """All players land, tracked or not; the tracked cut is aggregation's."""
+        pages = {
+            "Regular Season": [
+                _raw_player_line(),
+                _raw_player_line(PLAYER_ID=999, PLAYER_NAME="Two-Way Guy", MIN=2),
+            ]
+        }
+
+        df, mock_endpoint, _ = _fetch_log_with_mocks(
+            _game_log_endpoint(pages), fetch_player_game_log
+        )
+
+        assert df.schema == PLAYER_GAME_LOG_SCHEMA
+        assert df["player_id"].to_list() == [999, 1628369]
+        assert mock_endpoint.call_args.kwargs["player_or_team_abbreviation"] == "P"
+
+    def test_null_wl_survives_as_null(self):
+        """A line with no W/L (it happens) keeps a null, not the string "None"."""
+        pages = {"Regular Season": [_raw_player_line(WL=None)]}
+
+        df, _, _ = _fetch_log_with_mocks(
+            _game_log_endpoint(pages), fetch_player_game_log
+        )
+
+        assert df["wl"][0] is None

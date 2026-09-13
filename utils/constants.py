@@ -103,6 +103,18 @@ NBA_STATS_MAX_ATTEMPTS = 4
 # Base seconds for exponential backoff between retries (2s -> 4s -> 8s)
 NBA_STATS_RETRY_BACKOFF = 2.0
 
+# LeagueGameLog season types fetched for the game-log snapshots, in fetch
+# order. "IST" (the NBA Cup) re-lists the group games already in the
+# regular-season log; only the Cup final lives there alone.
+NBA_STATS_GAME_LOG_SEASON_TYPES = (
+    "Pre Season",
+    "Regular Season",
+    "IST",
+    "PlayIn",
+    "Playoffs",
+)
+NBA_STATS_CUP_SEASON_TYPE = "IST"
+
 
 # =============================================================================
 # AGGREGATION - comment_samples selection (pipeline/aggregation.py)

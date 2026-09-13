@@ -12,7 +12,7 @@
 #   - Disney bubble hotel flairs (GD, YC, SP8, GFL)
 #   - Multi-team flairs (Mavs & Magic)
 
-version: "2.1"
+version: "2.2"
 
 teams:
   Atlanta Hawks:
@@ -139,6 +139,7 @@ teams:
       - lac
       - clippers
       - san diego clippers
+      - la clippers
 
   Los Angeles Lakers:
     abbreviation: LAL
@@ -148,6 +149,7 @@ teams:
     aliases:
       - lal
       - lakers
+      - la lakers
 
   Memphis Grizzlies:
     abbreviation: MEM
@@ -215,6 +217,7 @@ teams:
     aliases:
       - okc
       - thunder
+      - oklahoma thunder
 
   Orlando Magic:
     abbreviation: ORL
@@ -224,6 +227,7 @@ teams:
     aliases:
       - orl
       - magic
+      - orland magic
 
   Philadelphia 76ers:
     abbreviation: PHI
@@ -234,6 +238,7 @@ teams:
       - phi
       - 76ers
       - sixers
+      - philadelphia sixers
 
   Phoenix Suns:
     abbreviation: PHX
@@ -255,6 +260,7 @@ teams:
       - pdx
       - trail blazers
       - blazers
+      - portland trailblazers
 
   Sacramento Kings:
     abbreviation: SAC

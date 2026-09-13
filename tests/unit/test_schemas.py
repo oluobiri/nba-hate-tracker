@@ -13,6 +13,7 @@ from pipeline.schemas import (
     PLAYER_GAMES_SCHEMA,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
+    POSTS_SCHEMA,
     ROSTERS_SCHEMA,
     SENTIMENT_SCHEMA,
     TEAM_GAME_LOG_SCHEMA,
@@ -191,6 +192,23 @@ class TestPlayerGamesContract:
         """Verify player_games ships via DASHBOARD_OUTPUT_SCHEMAS only."""
         assert DASHBOARD_OUTPUT_SCHEMAS["player_games"] is PLAYER_GAMES_SCHEMA
         assert "player_games" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestPostsContract:
+    """Contract guards for the Post bridge (posts.parquet / posts_bridge.parquet)."""
+
+    def test_key_is_the_fact_link_id(self):
+        """Verify post_id leads and is typed like sentiment.link_id, the
+        join it exists for."""
+        assert POSTS_SCHEMA.names()[0] == "post_id"
+        assert POSTS_SCHEMA["post_id"] == SENTIMENT_SCHEMA["link_id"]
+
+    def test_bridge_columns(self):
+        """Verify the derived trio: type, nullable game FK, primary flag."""
+        assert POSTS_SCHEMA["post_type"] == pl.String
+        assert POSTS_SCHEMA["game_id"] == GAMES_SCHEMA["game_id"]
+        assert POSTS_SCHEMA["is_primary"] == pl.Boolean
+        assert "fan_team" not in POSTS_SCHEMA.names()
 
 
 class TestGameLogSnapshotsContract:

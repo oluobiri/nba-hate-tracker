@@ -20,6 +20,10 @@ pipeline produces. Data dictionary first, enforcement second:
   (games.parquet, player_games.parquet): the Game dimension and the
   per-player box-score lines, derived from the snapshots under the
   active config (pipeline/games.py); enforced via the unified loop.
+- POSTS_SCHEMA describes the Post bridge: the full bridge
+  (reference/posts_bridge.parquet, every post, enforced at the build
+  write boundary in scripts/process_posts.py) and its published subset
+  (posts.parquet, enforced via the unified loop).
 - PLAYERS_SCHEMA describes the Player dimension (players.parquet),
   config curation joined with snapshot facts; enforced in
   aggregate_sentiment() via the unified DASHBOARD_OUTPUT_SCHEMAS loop.
@@ -347,6 +351,28 @@ PLAYER_GAMES_SCHEMA = pl.Schema(
         "is_home": pl.Boolean,  # team == games.home_team; null on a neutral site
         "wl": pl.String,  # nullable
         **_BOX_SCORE_COLUMNS,
+    }
+)
+
+# --- Post bridge (built in pipeline/posts.py) --------------------------------
+# One row per r/NBA post. post_id is the t3_ fullname, the fact's link_id,
+# so the comment -> game path is one join. post_type derives from flair
+# (title as fallback); game_id from the title's team pair and the ET date
+# of created_utc, validated against games.parquet. Split, second-half and
+# repost threads share a game_id; is_primary marks the largest by
+# num_comments per (game_id, post_type). The published subset keeps the
+# game and post-game threads plus every post a receipt points at.
+POSTS_SCHEMA = pl.Schema(
+    {
+        "post_id": pl.String,
+        "title": pl.String,
+        "created_utc": pl.Int64,  # epoch seconds, as the source
+        "score": pl.Int64,
+        "num_comments": pl.Int64,  # whole-room size; sum per game for a game's room
+        "link_flair_text": pl.String,  # nullable, as the source
+        "post_type": pl.String,  # game_thread | post_game_thread | other
+        "game_id": pl.String,  # FK -> games.parquet; null when unlinked
+        "is_primary": pl.Boolean,  # false whenever game_id is null
     }
 )
 

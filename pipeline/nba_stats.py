@@ -46,6 +46,76 @@ from utils.season_config import get_active_season
 logger = logging.getLogger(__name__)
 
 
+# Raw endpoint column -> snapshot column. The selection half of
+# ROSTERS_SCHEMA: endpoint columns absent here (SEASON, LeagueID,
+# PLAYER_SLUG, TeamID) are dropped; team_name/team_abbr are added per
+# team from the static team list, not the endpoint payload.
+_RENAME = {
+    "PLAYER_ID": "player_id",
+    "PLAYER": "player_name",
+    "NUM": "jersey_number",
+    "POSITION": "position",
+    "HEIGHT": "height",
+    "WEIGHT": "weight",
+    "AGE": "age",
+    "EXP": "experience",
+    "BIRTH_DATE": "birth_date",
+    "SCHOOL": "school",
+}
+
+# Endpoint columns that must land as strings (birth_date included: it is
+# parsed from string downstream). The endpoint serves these as strings
+# today, but they are semantically numeric-ish (EXP "5"/"R", NUM "00"),
+# so a serialization change to raw JSON numbers would hand pandas a
+# mixed str/int object column that pl.from_pandas cannot convert —
+# coercing in pandas first makes the fetch immune to that drift.
+_STRING_SOURCE_COLUMNS = [
+    raw
+    for raw, col in _RENAME.items()
+    if col == "birth_date" or ROSTERS_SCHEMA[col] == pl.String
+]
+
+
+# Raw LeagueGameLog column -> snapshot column, the selection half of the
+# two game-log schemas (team lines lack the PLAYER_* columns and player
+# lines lack TEAM_NAME; the schema select drops what each does not use).
+# Percentages, FANTASY_PTS and VIDEO_AVAILABLE are not selected.
+_GAME_LOG_RENAME = {
+    "GAME_ID": "game_id",
+    "GAME_DATE": "game_date",
+    "PLAYER_ID": "player_id",
+    "PLAYER_NAME": "player_name",
+    "TEAM_ID": "team_id",
+    "TEAM_ABBREVIATION": "team_abbr",
+    "TEAM_NAME": "team_name",
+    "MATCHUP": "matchup",
+    "WL": "wl",
+    "MIN": "minutes",
+    "FGM": "fgm",
+    "FGA": "fga",
+    "FG3M": "fg3m",
+    "FG3A": "fg3a",
+    "FTM": "ftm",
+    "FTA": "fta",
+    "OREB": "oreb",
+    "DREB": "dreb",
+    "REB": "reb",
+    "AST": "ast",
+    "STL": "stl",
+    "BLK": "blk",
+    "TOV": "tov",
+    "PF": "pf",
+    "PTS": "pts",
+    "PLUS_MINUS": "plus_minus",
+}
+
+# Endpoint value of player_or_team_abbreviation -> (schema, grain key)
+_GAME_LOG_KINDS = {
+    "T": (TEAM_GAME_LOG_SCHEMA, "team_id"),
+    "P": (PLAYER_GAME_LOG_SCHEMA, "player_id"),
+}
+
+
 def check_snapshot_season(
     path: Path, *, subject: str, log: logging.Logger
 ) -> dict[str, str]:
@@ -78,36 +148,6 @@ def check_snapshot_season(
             f"{active!r}; {subject} may be stale"
         )
     return stamps
-
-
-# Raw endpoint column -> snapshot column. The selection half of
-# ROSTERS_SCHEMA: endpoint columns absent here (SEASON, LeagueID,
-# PLAYER_SLUG, TeamID) are dropped; team_name/team_abbr are added per
-# team from the static team list, not the endpoint payload.
-_RENAME = {
-    "PLAYER_ID": "player_id",
-    "PLAYER": "player_name",
-    "NUM": "jersey_number",
-    "POSITION": "position",
-    "HEIGHT": "height",
-    "WEIGHT": "weight",
-    "AGE": "age",
-    "EXP": "experience",
-    "BIRTH_DATE": "birth_date",
-    "SCHOOL": "school",
-}
-
-# Endpoint columns that must land as strings (birth_date included: it is
-# parsed from string downstream). The endpoint serves these as strings
-# today, but they are semantically numeric-ish (EXP "5"/"R", NUM "00"),
-# so a serialization change to raw JSON numbers would hand pandas a
-# mixed str/int object column that pl.from_pandas cannot convert —
-# coercing in pandas first makes the fetch immune to that drift.
-_STRING_SOURCE_COLUMNS = [
-    raw
-    for raw, col in _RENAME.items()
-    if col == "birth_date" or ROSTERS_SCHEMA[col] == pl.String
-]
 
 
 def _call_with_retries(
@@ -259,46 +299,6 @@ def fetch_rosters(
         f"{rosters['team_abbr'].n_unique()} teams"
     )
     return rosters
-
-
-# Raw LeagueGameLog column -> snapshot column, the selection half of the
-# two game-log schemas (team lines lack the PLAYER_* columns and player
-# lines lack TEAM_NAME; the schema select drops what each does not use).
-# Percentages, FANTASY_PTS and VIDEO_AVAILABLE are not selected.
-_GAME_LOG_RENAME = {
-    "GAME_ID": "game_id",
-    "GAME_DATE": "game_date",
-    "PLAYER_ID": "player_id",
-    "PLAYER_NAME": "player_name",
-    "TEAM_ID": "team_id",
-    "TEAM_ABBREVIATION": "team_abbr",
-    "TEAM_NAME": "team_name",
-    "MATCHUP": "matchup",
-    "WL": "wl",
-    "MIN": "minutes",
-    "FGM": "fgm",
-    "FGA": "fga",
-    "FG3M": "fg3m",
-    "FG3A": "fg3a",
-    "FTM": "ftm",
-    "FTA": "fta",
-    "OREB": "oreb",
-    "DREB": "dreb",
-    "REB": "reb",
-    "AST": "ast",
-    "STL": "stl",
-    "BLK": "blk",
-    "TOV": "tov",
-    "PF": "pf",
-    "PTS": "pts",
-    "PLUS_MINUS": "plus_minus",
-}
-
-# Endpoint value of player_or_team_abbreviation -> (schema, grain key)
-_GAME_LOG_KINDS = {
-    "T": (TEAM_GAME_LOG_SCHEMA, "team_id"),
-    "P": (PLAYER_GAME_LOG_SCHEMA, "player_id"),
-}
 
 
 def _fetch_game_log_page(

@@ -1,5 +1,6 @@
 """Tests for pipeline/posts.py — the Post bridge from r/NBA posts to games."""
 
+import json
 import logging
 from datetime import date
 
@@ -10,7 +11,9 @@ from pipeline.posts import (
     GAME_THREAD,
     OTHER,
     POST_GAME_THREAD,
+    RAW_POSTS_SCHEMA,
     build_game_index,
+    build_posts_bridge,
     build_title_name_map,
     classify_post,
     extract_team_pair,
@@ -18,8 +21,9 @@ from pipeline.posts import (
     match_game,
     parse_score,
     parse_title_date,
+    read_raw_posts,
 )
-from pipeline.schemas import GAMES_SCHEMA
+from pipeline.schemas import GAMES_SCHEMA, POSTS_SCHEMA
 
 TEAM_CONFIG = {
     "Boston Celtics": {"abbreviation": "BOS", "aliases": ["bos", "celtics"]},
@@ -168,6 +172,17 @@ class TestExtractTeamPair:
     def test_title_aliases_normalize(self, title, expected):
         """Verify teams.yaml title spellings resolve to the canonical name."""
         assert extract_team_pair(title, NAME_MAP) == frozenset(expected)
+
+    def test_first_two_teams_in_title_order(self):
+        """Verify a third team named later in the title never displaces
+        the matchup, whatever the spellings' lengths."""
+        title = (
+            "[Post Game Thread] The Orlando Magic (3-2) defeat the Boston "
+            "Celtics to advance and face the Los Angeles Clippers (2-3), 110-98."
+        )
+        assert extract_team_pair(title, NAME_MAP) == frozenset(
+            {"Orlando Magic", "Boston Celtics"}
+        )
 
     def test_single_token_aliases_never_fire(self):
         """Verify prose containing `was` and `victory` names no third team."""
@@ -407,3 +422,157 @@ class TestMatchGame:
         with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
             assert match_game(self.PAIR, _AFTER_MIDNIGHT_ET, None, None, index) is None
         assert "Ambiguous" in caplog.text
+
+
+def _post(post_id, title, created_utc, flair, num_comments=10, score=5) -> dict:
+    """One raw-projected post row (the read_raw_posts shape)."""
+    return {
+        "post_id": post_id,
+        "title": title,
+        "created_utc": created_utc,
+        "score": score,
+        "num_comments": num_comments,
+        "link_flair_text": flair,
+    }
+
+
+def _posts(rows) -> pl.DataFrame:
+    return pl.DataFrame(rows, schema=RAW_POSTS_SCHEMA)
+
+
+class TestReadRawPosts:
+    """Tests for read_raw_posts (streamed projection of the download)."""
+
+    def test_projects_the_bridge_fields(self, tmp_path):
+        """Verify only the six source fields survive, keyed by the t3_
+        fullname, with a null flair kept null."""
+        path = tmp_path / "r_nba_posts.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "id": "abc",
+                    "name": "t3_abc",
+                    "title": "GAME THREAD: A @ B",
+                    "created_utc": 1768962682,
+                    "score": 12,
+                    "num_comments": 340,
+                    "link_flair_text": "Game Thread",
+                    "selftext": "long body",
+                    "author": "NBA_MOD",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "id": "def",
+                    "name": "t3_def",
+                    "title": "Some highlight",
+                    "created_utc": 1768962700,
+                    "score": 1,
+                    "num_comments": 0,
+                    "link_flair_text": None,
+                }
+            )
+            + "\n"
+        )
+
+        posts = read_raw_posts(path)
+
+        assert posts.schema == RAW_POSTS_SCHEMA
+        assert posts["post_id"].to_list() == ["t3_abc", "t3_def"]
+        assert posts["link_flair_text"].to_list() == ["Game Thread", None]
+        assert posts["num_comments"].to_list() == [340, 0]
+
+
+class TestBuildPostsBridge:
+    """Tests for build_posts_bridge (every post -> type, game, primary flag)."""
+
+    GAMES = [
+        _game(
+            "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20), 99, 84
+        ),
+    ]
+    ROWS = [
+        _post(
+            "t3_gt1",
+            "GAME THREAD: New York Knicks (0-1) @ Boston Celtics (1-0) - (January 21, 2026)",
+            _EVENING_ET,
+            "Game Thread",
+            num_comments=30,
+        ),
+        _post(
+            "t3_gt2",
+            "Game Thread: Boston Celtics vs New York Knicks Live Score | NBA | Jan 20, 2026 (Second Half)",
+            _EVENING_ET + 3600,
+            "Game Thread",
+            num_comments=100,
+        ),
+        _post(
+            "t3_pgt",
+            "[Post Game Thread] The Boston Celtics (1-0) defeat the New York Knicks (0-1), 99-84.",
+            _AFTER_MIDNIGHT_ET,
+            None,
+            num_comments=500,
+        ),
+        _post(
+            "t3_tnt", "Game thread: Inside the NBA (ESPN)", _EVENING_ET, "Game Thread"
+        ),
+        _post(
+            "t3_hl", "Jaylen Brown dunks", _EVENING_ET, "Highlight", num_comments=900
+        ),
+    ]
+
+    def test_bridge_shape_and_links(self, caplog):
+        """Verify split threads share the game, the largest is primary,
+        the flair-stripped post-game thread links through the ET window,
+        the non-game keeps a null game_id and other posts stay other."""
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(
+                _posts(self.ROWS), _games(self.GAMES), TEAM_CONFIG
+            )
+
+        assert bridge.schema == POSTS_SCHEMA
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_gt1"]["game_id"] == "0022500001"
+        assert by_id["t3_gt2"]["game_id"] == "0022500001"
+        assert by_id["t3_gt1"]["is_primary"] is False
+        assert by_id["t3_gt2"]["is_primary"] is True
+        assert by_id["t3_pgt"]["post_type"] == POST_GAME_THREAD
+        assert by_id["t3_pgt"]["game_id"] == "0022500001"
+        assert by_id["t3_pgt"]["is_primary"] is True
+        assert by_id["t3_tnt"]["post_type"] == GAME_THREAD
+        assert by_id["t3_tnt"]["game_id"] is None
+        assert by_id["t3_tnt"]["is_primary"] is False
+        assert by_id["t3_hl"]["post_type"] == OTHER
+        assert by_id["t3_hl"]["game_id"] is None
+        assert "game_thread: 2/3 linked" in caplog.text
+        assert "post_game_thread: 1/1 linked" in caplog.text
+        assert "1/1 games" in caplog.text
+        assert "Inside the NBA" in caplog.text
+
+    def test_sorted_by_creation_then_id(self):
+        """Verify the bridge is ordered like the fact, by time then key."""
+        bridge = build_posts_bridge(_posts(self.ROWS), _games(self.GAMES), TEAM_CONFIG)
+
+        assert bridge["post_id"].to_list() == [
+            "t3_gt1",
+            "t3_hl",
+            "t3_tnt",
+            "t3_gt2",
+            "t3_pgt",
+        ]
+
+    def test_duplicate_post_id_raises(self):
+        """Verify the one-row-per-post grain is enforced at the build."""
+        rows = [self.ROWS[0], {**self.ROWS[0], "title": "repost"}]
+
+        with pytest.raises(ValueError, match="one row per post"):
+            build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+    def test_no_games_leaves_every_thread_unlinked(self):
+        """Verify an empty Game dimension still classifies, links nothing."""
+        bridge = build_posts_bridge(_posts(self.ROWS), _games([]), TEAM_CONFIG)
+
+        assert bridge["game_id"].null_count() == bridge.height
+        assert not bridge["is_primary"].any()
+        assert bridge.filter(pl.col("post_type") == GAME_THREAD).height == 3

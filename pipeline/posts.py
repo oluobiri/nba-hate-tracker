@@ -9,17 +9,36 @@ dimension. The raw posts file holds every post; this module decides
 what ships.
 """
 
+import json
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import polars as pl
+
+from pipeline.schemas import POSTS_SCHEMA
 
 logger = logging.getLogger(__name__)
 
 RAW_POSTS_FILENAME = "r_nba_posts.jsonl"
 POSTS_BRIDGE_FILENAME = "posts_bridge.parquet"
+
+# Source field -> bridge column; `name` is the t3_ fullname the fact's
+# link_id carries, `id` is the bare id.
+RAW_POST_FIELDS = {
+    "name": "post_id",
+    "title": "title",
+    "created_utc": "created_utc",
+    "score": "score",
+    "num_comments": "num_comments",
+    "link_flair_text": "link_flair_text",
+}
+RAW_POSTS_SCHEMA = pl.Schema(
+    {col: POSTS_SCHEMA[col] for col in RAW_POST_FIELDS.values()}
+)
+UNLINKED_TITLES_LOGGED = 10
 
 GAME_THREAD = "game_thread"
 POST_GAME_THREAD = "post_game_thread"
@@ -114,15 +133,21 @@ def extract_team_pair(title: str, name_map: dict[str, str]) -> frozenset[str] | 
         than two distinct teams (non-games, non-NBA opponents).
     """
     remaining = title.lower()
-    found: list[str] = []
+    found: list[tuple[int, str]] = []
     for spelling in sorted(name_map, key=len, reverse=True):
         pattern = rf"(?<![a-z0-9]){re.escape(spelling)}(?![a-z0-9])"
-        remaining, hits = re.subn(pattern, " ", remaining)
-        if hits and name_map[spelling] not in found:
-            found.append(name_map[spelling])
-    if len(found) < 2:
+        for match in re.finditer(pattern, remaining):
+            found.append((match.start(), name_map[spelling]))
+        remaining = re.sub(pattern, lambda m: " " * len(m.group()), remaining)
+    # Title order, so a third team named later ("to face the Spurs")
+    # never displaces the matchup.
+    teams: list[str] = []
+    for _, team in sorted(found):
+        if team not in teams:
+            teams.append(team)
+    if len(teams) < 2:
         return None
-    return frozenset(found[:2])
+    return frozenset(teams[:2])
 
 
 def parse_title_date(title: str) -> date | None:
@@ -248,3 +273,127 @@ def match_game(
             f"{[g['game_id'] for g in candidates]}; left unlinked"
         )
     return None
+
+
+def read_raw_posts(path: Path) -> pl.DataFrame:
+    """
+    Stream the raw posts download, keeping the bridge's source fields.
+
+    A post carries a hundred-odd fields; the six the bridge needs are
+    projected line by line so the file never sits in memory whole.
+
+    Args:
+        path: The r_<subreddit>_posts.jsonl download.
+
+    Returns:
+        Frame conforming to RAW_POSTS_SCHEMA, in file order.
+    """
+    rows = []
+    with open(path) as f:
+        for line in f:
+            post = json.loads(line)
+            rows.append(
+                {col: post.get(field) for field, col in RAW_POST_FIELDS.items()}
+            )
+    posts = pl.DataFrame(rows, schema=RAW_POSTS_SCHEMA)
+    logger.info(f"Read {posts.height} posts from {path}")
+    return posts
+
+
+def build_posts_bridge(
+    posts: pl.DataFrame, games: pl.DataFrame, team_config: dict[str, dict]
+) -> pl.DataFrame:
+    """
+    Derive post_type, game_id and is_primary for every post.
+
+    Only game and post-game threads are resolved to a game. Split,
+    second-half and repost threads share a game_id; is_primary marks the
+    largest by num_comments per (game_id, post_type), and is false on
+    every unlinked row. Coverage is logged: threads linked, games with
+    a thread, and why the rest did not link.
+
+    Args:
+        posts: Frame conforming to RAW_POSTS_SCHEMA.
+        games: Frame conforming to GAMES_SCHEMA.
+        team_config: Team config dict from load_team_config().
+
+    Returns:
+        Frame conforming to POSTS_SCHEMA, sorted by creation time then id.
+
+    Raises:
+        ValueError: If a post_id appears more than once.
+    """
+    duplicated = posts.group_by("post_id").len().filter(pl.col("len") > 1)
+    if duplicated.height:
+        raise ValueError(
+            "posts grain is one row per post; duplicated: "
+            f"{duplicated.sort('post_id').head(10)['post_id'].to_list()}"
+        )
+
+    name_map = build_title_name_map(team_config)
+    index = build_game_index(games)
+    post_types: list[str] = []
+    game_ids: list[str | None] = []
+    unparsed: list[str] = []
+    unmatched: list[str] = []
+    for title, flair, created_utc in posts.select(
+        "title", "link_flair_text", "created_utc"
+    ).iter_rows():
+        title = title or ""
+        post_type = classify_post(title, flair)
+        game_id = None
+        if post_type != OTHER:
+            pair = extract_team_pair(title, name_map)
+            if pair is None:
+                unparsed.append(title)
+            else:
+                game_id = match_game(
+                    pair,
+                    created_utc,
+                    parse_title_date(title),
+                    parse_score(title),
+                    index,
+                )
+                if game_id is None:
+                    unmatched.append(title)
+        post_types.append(post_type)
+        game_ids.append(game_id)
+
+    # Rank within (game, type) by size so the largest thread is primary;
+    # over() follows frame order, hence the sort first.
+    bridge = (
+        posts.with_columns(
+            pl.Series("post_type", post_types, dtype=pl.String),
+            pl.Series("game_id", game_ids, dtype=pl.String),
+        )
+        .sort(["num_comments", "post_id"], descending=[True, False])
+        .with_columns(
+            (
+                pl.col("game_id").is_not_null()
+                & (pl.int_range(pl.len()).over(["game_id", "post_type"]) == 0)
+            ).alias("is_primary")
+        )
+        .select(POSTS_SCHEMA.names())
+        .cast(dict(POSTS_SCHEMA))
+        .sort(["created_utc", "post_id"])
+    )
+
+    for post_type in (GAME_THREAD, POST_GAME_THREAD):
+        threads = bridge.filter(pl.col("post_type") == post_type)
+        linked = threads.filter(pl.col("game_id").is_not_null())
+        logger.info(
+            f"{post_type}: {linked.height}/{threads.height} linked to a game; "
+            f"{linked['game_id'].n_unique()}/{games.height} games have one"
+        )
+    logger.info(
+        f"Unlinked threads: {len(unparsed)} name fewer than two teams, "
+        f"{len(unmatched)} name a pair with no game within a day"
+    )
+    for label, titles in (("no team pair", unparsed), ("no game", unmatched)):
+        if titles:
+            logger.info(f"  {label} (head): {titles[:UNLINKED_TITLES_LOGGED]}")
+    logger.info(
+        f"posts bridge: {bridge.height} posts, "
+        f"{bridge.filter(pl.col('post_type') == OTHER).height} other"
+    )
+    return bridge

@@ -27,6 +27,7 @@ from pipeline.posts import (
 )
 from pipeline.schemas import GAMES_SCHEMA, POSTS_SCHEMA
 from utils.season_config import get_active_season
+from utils.team_config import load_team_config_version
 
 TEAM_CONFIG = {
     "Boston Celtics": {"abbreviation": "BOS", "aliases": ["bos", "celtics"]},
@@ -572,6 +573,16 @@ class TestBuildPostsBridge:
         with pytest.raises(ValueError, match="one row per post"):
             build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
 
+    def test_null_num_comments_never_wins_primary(self):
+        """Verify a thread with no comment count ranks last, not first."""
+        rows = [self.ROWS[0], {**self.ROWS[1], "num_comments": None}]
+
+        bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_gt1"]["is_primary"] is True
+        assert by_id["t3_gt2"]["is_primary"] is False
+
     def test_no_games_leaves_every_thread_unlinked(self):
         """Verify an empty Game dimension still classifies, links nothing."""
         bridge = build_posts_bridge(_posts(self.ROWS), _games([]), TEAM_CONFIG)
@@ -610,12 +621,19 @@ class TestLoadPostsTable:
     RECEIPTS = pl.DataFrame({"link_id": ["t3_receipt", "t3_receipt", "t3_missing"]})
 
     def _write_bridge(
-        self, ref_dir, rows=None, *, season=None, games_fetched_at="2026-09-12"
+        self,
+        ref_dir,
+        rows=None,
+        *,
+        season=None,
+        games_fetched_at="2026-09-12",
+        teams_config_version=None,
     ):
         stamps = {
             "season": season or get_active_season(),
             "processed_at": "2026-09-13",
             "games_fetched_at": games_fetched_at,
+            "teams_config_version": teams_config_version or load_team_config_version(),
         }
         pl.DataFrame(rows or self.BRIDGE, schema=POSTS_SCHEMA).write_parquet(
             ref_dir / POSTS_BRIDGE_FILENAME, metadata=stamps
@@ -660,6 +678,17 @@ class TestLoadPostsTable:
             load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
 
         assert "2026-09-01" in caplog.text and "2026-09-12" in caplog.text
+
+    def test_teams_config_drift_warns(self, tmp_path, caplog):
+        """Verify a bridge derived under another teams.yaml is flagged: a
+        later alias fix would leave it silently under-matching titles."""
+        self._write_bridge(tmp_path, teams_config_version="0.1")
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
+            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+
+        assert "teams_config_version drift" in caplog.text
+        assert "'0.1'" in caplog.text
 
     def test_season_stamp_mismatch_warns(self, tmp_path, caplog):
         """Verify a bridge built for another season is read, not silently."""

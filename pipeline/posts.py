@@ -20,6 +20,7 @@ import polars as pl
 
 from pipeline.nba_stats import check_snapshot_season
 from pipeline.schemas import POSTS_SCHEMA, validate_schema
+from utils.team_config import load_team_config_version
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ def match_game(
     pair: frozenset[str],
     created_utc: int,
     title_date: date | None,
-    score: set[int] | None,
+    title_score: set[int] | None,
     index: dict[tuple[frozenset[str], date], list[dict]],
 ) -> str | None:
     """
@@ -246,7 +247,7 @@ def match_game(
         pair: The two teams the title names.
         created_utc: The post's creation time, epoch seconds.
         title_date: A date read from the title, or None.
-        score: The score read from the title, or None.
+        title_score: The final score read from the title, or None.
         index: From build_game_index().
 
     Returns:
@@ -260,7 +261,8 @@ def match_game(
     ]
     for narrow in (
         lambda g: title_date is not None and g["game_date"] == title_date,
-        lambda g: score is not None and {g["home_score"], g["away_score"]} == score,
+        lambda g: title_score is not None
+        and {g["home_score"], g["away_score"]} == title_score,
         lambda g: g["game_date"] == created_day,
     ):
         if len(candidates) < 2:
@@ -280,8 +282,8 @@ def read_raw_posts(path: Path) -> pl.DataFrame:
     """
     Stream the raw posts download, keeping the bridge's source fields.
 
-    A post carries a hundred-odd fields; the six the bridge needs are
-    projected line by line so the file never sits in memory whole.
+    A post carries a hundred-odd fields; each line is projected to the
+    six the bridge needs as it is read, so only those ever accumulate.
 
     Args:
         path: The r_<subreddit>_posts.jsonl download.
@@ -361,13 +363,14 @@ def build_posts_bridge(
         game_ids.append(game_id)
 
     # Rank within (game, type) by size so the largest thread is primary;
-    # over() follows frame order, hence the sort first.
+    # over() follows frame order, hence the sort first. A null count ranks
+    # last: Polars would otherwise sort it ahead of every number.
     bridge = (
         posts.with_columns(
             pl.Series("post_type", post_types, dtype=pl.String),
             pl.Series("game_id", game_ids, dtype=pl.String),
         )
-        .sort(["num_comments", "post_id"], descending=[True, False])
+        .sort(["num_comments", "post_id"], descending=[True, False], nulls_last=True)
         .with_columns(
             (
                 pl.col("game_id").is_not_null()
@@ -413,9 +416,10 @@ def load_posts_table(
     post a receipt points at (its title is the receipt's context). A
     missing bridge degrades to an empty table with a warning, so
     aggregation stays runnable before scripts.process_posts has run.
-    The bridge's season stamp is checked, and a bridge derived from a
-    different game-log fetch than the game tables is flagged; a
-    game_id the dimension no longer carries fails the build outright.
+    The bridge's season and teams-config stamps are checked, and a
+    bridge derived from a different game-log fetch than the game tables
+    is flagged; a game_id the dimension no longer carries fails the
+    build outright.
 
     Args:
         reference_dir: Season reference directory holding the bridge.
@@ -442,6 +446,14 @@ def load_posts_table(
         }
 
     stamps = check_snapshot_season(path, subject="post bridge", log=logger)
+    active_version = load_team_config_version()
+    if stamps.get("teams_config_version") != active_version:
+        logger.warning(
+            f"{path}: teams_config_version drift - bridge built with config "
+            f"{stamps.get('teams_config_version')!r} but active config is "
+            f"{active_version!r}; title spellings may be missed, re-run "
+            "scripts.process_posts"
+        )
     if stamps.get("games_fetched_at") != games_fetched_at:
         logger.warning(
             f"{path} was derived from a game-log fetch of "

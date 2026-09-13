@@ -13,6 +13,7 @@ import polars as pl
 
 from pipeline.games import load_game_tables
 from pipeline.nba_stats import check_snapshot_season
+from pipeline.posts import load_posts_table
 from pipeline.receipts import (
     build_comment_samples,
     load_receipt_verdicts,
@@ -207,7 +208,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
-        team_overall, players, teams, games, player_games, and
+        team_overall, players, teams, games, player_games, posts, and
         comment_samples hold pl.DataFrames conforming to
         DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy player_metadata dict is reconstructed at
         serialization time via players_to_metadata_dict().
@@ -310,6 +311,14 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     )
     log_comment_samples_diagnostics(df_attributed, comment_samples)
 
+    # Post bridge: the threads plus each receipt's post, from the bridge
+    # scripts.process_posts derived against the same game-log snapshot
+    logger.info("Selecting posts...")
+    posts, posts_metadata = load_posts_table(
+        get_reference_dir(), games, game_metadata["games_fetched_at"], comment_samples
+    )
+    metadata.update(posts_metadata)
+
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks, "
@@ -325,6 +334,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         "teams": teams,
         "games": games,
         "player_games": player_games,
+        "posts": posts,
         "comment_samples": comment_samples,
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():

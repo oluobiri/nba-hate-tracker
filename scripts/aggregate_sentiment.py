@@ -5,7 +5,8 @@ Reads classified sentiment parquet, computes player rankings,
 flair segmentation, and temporal trends. Writes the nested
 aggregates.json for the Streamlit dashboard plus one parquet per
 produced table (the four fact views, the players and teams
-dimensions, and the comment_samples fact subset) alongside it for
+dimensions, the game layer, and the comment_samples fact subset)
+alongside it for
 ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
@@ -153,6 +154,11 @@ def main() -> None:
     if result["metadata"]["games_fetched_at"] is not None:
         game_stamps["fetched_at"] = result["metadata"]["games_fetched_at"]
     stamps["games"] = stamps["player_games"] = game_stamps
+    # The Post bridge carries its build date forward the same way
+    posts_stamps = {"schema_version": str(SCHEMA_VERSION)}
+    if result["metadata"]["posts_processed_at"] is not None:
+        posts_stamps["processed_at"] = result["metadata"]["posts_processed_at"]
+    stamps["posts"] = posts_stamps
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +188,8 @@ def main() -> None:
     # fact<->dimension drift is checkable (same mechanism as
     # sentiment.parquet's stamp in collect_results); comment_samples
     # carries its verified flag and verifier identity; the game tables
-    # their snapshot's fetch date; the views carry none.
+    # their snapshot's fetch date, posts its build date; the views
+    # carry none.
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_path.parent / f"{name}.parquet"
         result[name].write_parquet(parquet_path, metadata=stamps.get(name))
@@ -202,6 +209,7 @@ def main() -> None:
     logger.info(f"Weeks:               {meta['week_count']}")
     logger.info(f"Games:               {meta['game_count']:,}")
     logger.info(f"Player-game lines:   {meta['player_game_count']:,}")
+    logger.info(f"Posts:               {meta['post_count']:,}")
     logger.info(f"Receipts verified:   {meta['receipts_verified']}")
     # Both are None in the fallback; precision is also None when no
     # would-have-shipped row carries a verdict

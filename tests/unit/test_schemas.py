@@ -94,6 +94,7 @@ class TestPlayersContract:
             "teams",
             "games",
             "player_games",
+            "posts",
             "comment_samples",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
@@ -209,6 +210,12 @@ class TestPostsContract:
         assert POSTS_SCHEMA["game_id"] == GAMES_SCHEMA["game_id"]
         assert POSTS_SCHEMA["is_primary"] == pl.Boolean
         assert "fan_team" not in POSTS_SCHEMA.names()
+
+    def test_joins_outputs_but_not_views(self):
+        """Verify posts ships via DASHBOARD_OUTPUT_SCHEMAS only — a bridge,
+        not a fact rollup."""
+        assert DASHBOARD_OUTPUT_SCHEMAS["posts"] is POSTS_SCHEMA
+        assert "posts" not in AGGREGATE_VIEW_SCHEMAS
 
 
 class TestGameLogSnapshotsContract:

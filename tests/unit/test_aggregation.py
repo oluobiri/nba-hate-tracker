@@ -22,6 +22,7 @@ from pipeline.aggregation import (
     players_to_metadata_dict,
 )
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
+from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     GAMES_SCHEMA,
@@ -30,6 +31,7 @@ from pipeline.schemas import (
     TEAM_GAME_LOG_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
     PLAYERS_SCHEMA,
+    POSTS_SCHEMA,
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
@@ -1487,78 +1489,80 @@ class TestClassifierLineage:
         assert "no classifier identity" in warnings[0]
 
 
+_BOX = {
+    "minutes": 34,
+    "fgm": 10,
+    "fga": 20,
+    "fg3m": 2,
+    "fg3a": 6,
+    "ftm": 6,
+    "fta": 8,
+    "oreb": 1,
+    "dreb": 7,
+    "reb": 8,
+    "ast": 9,
+    "stl": 1,
+    "blk": 1,
+    "tov": 3,
+    "pf": 2,
+    "pts": 28,
+    "plus_minus": 6,
+}
+
+
+def _write_game_logs(ref_dir, season=None):
+    """One Lakers home win over Boston with a LeBron line."""
+    common = {
+        "season_type": "Regular Season",
+        "game_id": "0022500001",
+        "game_date": date(2025, 10, 21),
+    }
+    team_rows = [
+        {
+            **common,
+            "team_id": 1610612747,
+            "team_abbr": "LAL",
+            "team_name": "Los Angeles Lakers",
+            "matchup": "LAL vs. BOS",
+            "wl": "W",
+            **{**_BOX, "pts": 110},
+        },
+        {
+            **common,
+            "team_id": 1610612738,
+            "team_abbr": "BOS",
+            "team_name": "Boston Celtics",
+            "matchup": "BOS @ LAL",
+            "wl": "L",
+            **{**_BOX, "pts": 100},
+        },
+    ]
+    player_rows = [
+        {
+            **common,
+            "player_id": 2544,
+            "player_name": "LeBron James",
+            "team_id": 1610612747,
+            "team_abbr": "LAL",
+            "matchup": "LAL vs. BOS",
+            "wl": "W",
+            **_BOX,
+        }
+    ]
+    pl.DataFrame(team_rows, schema=TEAM_GAME_LOG_SCHEMA).write_parquet(
+        ref_dir / TEAM_GAME_LOG_FILENAME,
+        metadata={
+            "season": season or get_active_season(),
+            "fetched_at": "2026-09-12",
+        },
+    )
+    pl.DataFrame(player_rows, schema=PLAYER_GAME_LOG_SCHEMA).write_parquet(
+        ref_dir / PLAYER_GAME_LOG_FILENAME
+    )
+
+
 class TestAggregateGames:
     """Tests for the game layer's passage through aggregate_sentiment."""
-
-    _BOX = {
-        "minutes": 34,
-        "fgm": 10,
-        "fga": 20,
-        "fg3m": 2,
-        "fg3a": 6,
-        "ftm": 6,
-        "fta": 8,
-        "oreb": 1,
-        "dreb": 7,
-        "reb": 8,
-        "ast": 9,
-        "stl": 1,
-        "blk": 1,
-        "tov": 3,
-        "pf": 2,
-        "pts": 28,
-        "plus_minus": 6,
-    }
-
-    def _write_game_logs(self, ref_dir, season=None):
-        """One Lakers home win over Boston with a LeBron line."""
-        common = {
-            "season_type": "Regular Season",
-            "game_id": "0022500001",
-            "game_date": date(2025, 10, 21),
-        }
-        team_rows = [
-            {
-                **common,
-                "team_id": 1610612747,
-                "team_abbr": "LAL",
-                "team_name": "Los Angeles Lakers",
-                "matchup": "LAL vs. BOS",
-                "wl": "W",
-                **{**self._BOX, "pts": 110},
-            },
-            {
-                **common,
-                "team_id": 1610612738,
-                "team_abbr": "BOS",
-                "team_name": "Boston Celtics",
-                "matchup": "BOS @ LAL",
-                "wl": "L",
-                **{**self._BOX, "pts": 100},
-            },
-        ]
-        player_rows = [
-            {
-                **common,
-                "player_id": 2544,
-                "player_name": "LeBron James",
-                "team_id": 1610612747,
-                "team_abbr": "LAL",
-                "matchup": "LAL vs. BOS",
-                "wl": "W",
-                **self._BOX,
-            }
-        ]
-        pl.DataFrame(team_rows, schema=TEAM_GAME_LOG_SCHEMA).write_parquet(
-            ref_dir / TEAM_GAME_LOG_FILENAME,
-            metadata={
-                "season": season or get_active_season(),
-                "fetched_at": "2026-09-12",
-            },
-        )
-        pl.DataFrame(player_rows, schema=PLAYER_GAME_LOG_SCHEMA).write_parquet(
-            ref_dir / PLAYER_GAME_LOG_FILENAME
-        )
 
     def test_no_snapshots_ships_empty_tables(self, tmp_path, pinned_snapshot):
         """Without game logs the tables are empty but present and conforming."""
@@ -1572,7 +1576,7 @@ class TestAggregateGames:
 
     def test_builds_tables_from_snapshots(self, tmp_path, pinned_snapshot):
         """Game logs on disk become games + LeBron's line, under the real configs."""
-        self._write_game_logs(pinned_snapshot)
+        _write_game_logs(pinned_snapshot)
 
         result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
@@ -1587,3 +1591,60 @@ class TestAggregateGames:
         assert result["metadata"]["game_count"] == 1
         assert result["metadata"]["player_game_count"] == 1
         assert result["metadata"]["games_fetched_at"] == "2026-09-12"
+
+
+def _write_posts_bridge(ref_dir, rows, season=None):
+    """A bridge derived from the same fetch as _write_game_logs."""
+    pl.DataFrame(rows, schema=POSTS_SCHEMA).write_parquet(
+        ref_dir / POSTS_BRIDGE_FILENAME,
+        metadata={
+            "season": season or get_active_season(),
+            "processed_at": "2026-09-13",
+            "games_fetched_at": "2026-09-12",
+        },
+    )
+
+
+class TestAggregatePosts:
+    """Tests for the Post bridge's passage through aggregate_sentiment."""
+
+    def _row(self, post_id, post_type, game_id, is_primary):
+        return {
+            "post_id": post_id,
+            "title": f"title {post_id}",
+            "created_utc": 1704067200,
+            "score": 1,
+            "num_comments": 10,
+            "link_flair_text": None,
+            "post_type": post_type,
+            "game_id": game_id,
+            "is_primary": is_primary,
+        }
+
+    def test_no_bridge_ships_empty_table(self, tmp_path, pinned_snapshot):
+        """Without a bridge the table is empty but present and conforming."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["posts"].schema == POSTS_SCHEMA
+        assert result["posts"].height == 0
+        assert result["metadata"]["post_count"] == 0
+        assert result["metadata"]["posts_processed_at"] is None
+
+    def test_publishes_threads_and_receipt_posts(self, tmp_path, pinned_snapshot):
+        """The threads ship, plus the post LeBron's receipt lives in; the
+        rest of the bridge stays in reference/."""
+        _write_game_logs(pinned_snapshot)
+        _write_posts_bridge(
+            pinned_snapshot,
+            [
+                self._row("t3_gt", "game_thread", "0022500001", True),
+                self._row("t3_post123", "other", None, False),
+                self._row("t3_noise", "other", None, False),
+            ],
+        )
+
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["posts"]["post_id"].to_list() == ["t3_gt", "t3_post123"]
+        assert result["metadata"]["post_count"] == 2
+        assert result["metadata"]["posts_processed_at"] == "2026-09-13"

@@ -11,12 +11,14 @@ from pipeline.posts import (
     GAME_THREAD,
     OTHER,
     POST_GAME_THREAD,
+    POSTS_BRIDGE_FILENAME,
     RAW_POSTS_SCHEMA,
     build_game_index,
     build_posts_bridge,
     build_title_name_map,
     classify_post,
     extract_team_pair,
+    load_posts_table,
     local_date,
     match_game,
     parse_score,
@@ -24,6 +26,7 @@ from pipeline.posts import (
     read_raw_posts,
 )
 from pipeline.schemas import GAMES_SCHEMA, POSTS_SCHEMA
+from utils.season_config import get_active_season
 
 TEAM_CONFIG = {
     "Boston Celtics": {"abbreviation": "BOS", "aliases": ["bos", "celtics"]},
@@ -576,3 +579,93 @@ class TestBuildPostsBridge:
         assert bridge["game_id"].null_count() == bridge.height
         assert not bridge["is_primary"].any()
         assert bridge.filter(pl.col("post_type") == GAME_THREAD).height == 3
+
+
+class TestLoadPostsTable:
+    """Tests for load_posts_table (bridge -> published subset at aggregation)."""
+
+    GAMES = [
+        _game("0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)),
+    ]
+    BRIDGE = [
+        {
+            **_post("t3_gt", "GAME THREAD: ...", _EVENING_ET, "Game Thread"),
+            "post_type": GAME_THREAD,
+            "game_id": "0022500001",
+            "is_primary": True,
+        },
+        {
+            **_post("t3_receipt", "Trade rumor", _EVENING_ET, None),
+            "post_type": OTHER,
+            "game_id": None,
+            "is_primary": False,
+        },
+        {
+            **_post("t3_noise", "Highlight", _EVENING_ET, "Highlight"),
+            "post_type": OTHER,
+            "game_id": None,
+            "is_primary": False,
+        },
+    ]
+    RECEIPTS = pl.DataFrame({"link_id": ["t3_receipt", "t3_receipt", "t3_missing"]})
+
+    def _write_bridge(
+        self, ref_dir, rows=None, *, season=None, games_fetched_at="2026-09-12"
+    ):
+        stamps = {
+            "season": season or get_active_season(),
+            "processed_at": "2026-09-13",
+            "games_fetched_at": games_fetched_at,
+        }
+        pl.DataFrame(rows or self.BRIDGE, schema=POSTS_SCHEMA).write_parquet(
+            ref_dir / POSTS_BRIDGE_FILENAME, metadata=stamps
+        )
+
+    def test_missing_bridge_degrades_to_empty(self, tmp_path, caplog):
+        """Verify aggregation stays runnable before the bridge exists."""
+        with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
+            posts, metadata = load_posts_table(
+                tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS
+            )
+
+        assert posts.schema == POSTS_SCHEMA
+        assert posts.height == 0
+        assert metadata == {"post_count": 0, "posts_processed_at": None}
+        assert "scripts.process_posts" in caplog.text
+
+    def test_publishes_threads_and_receipt_posts(self, tmp_path):
+        """Verify the subset is every thread plus each post a receipt
+        points at, and nothing else."""
+        self._write_bridge(tmp_path)
+
+        posts, metadata = load_posts_table(
+            tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS
+        )
+
+        assert posts["post_id"].to_list() == ["t3_gt", "t3_receipt"]
+        assert metadata == {"post_count": 2, "posts_processed_at": "2026-09-13"}
+
+    def test_game_id_absent_from_games_fails_the_build(self, tmp_path):
+        """Verify a bridge pointing at a game the dimension lacks raises."""
+        self._write_bridge(tmp_path)
+
+        with pytest.raises(ValueError, match="absent from games"):
+            load_posts_table(tmp_path, _games([]), "2026-09-12", self.RECEIPTS)
+
+    def test_fetch_date_mismatch_warns(self, tmp_path, caplog):
+        """Verify a bridge derived from another game-log fetch is flagged."""
+        self._write_bridge(tmp_path, games_fetched_at="2026-09-01")
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
+            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+
+        assert "2026-09-01" in caplog.text and "2026-09-12" in caplog.text
+
+    def test_season_stamp_mismatch_warns(self, tmp_path, caplog):
+        """Verify a bridge built for another season is read, not silently."""
+        self._write_bridge(tmp_path, season="1999-00")
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
+            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+
+        assert "1999-00" in caplog.text

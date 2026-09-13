@@ -425,7 +425,8 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
 # Every table the aggregation stage produces -> its schema, across the
 # classes of produced table: the fact rollups (AGGREGATE_VIEW_SCHEMAS),
 # the Player and Team dimensions, the game layer (Game dimension +
-# per-player box-score lines), and the comment-samples fact subset.
+# per-player box-score lines, the Post bridge), and the comment-samples
+# fact subset.
 # Single source for aggregate_sentiment()'s unified validation loop and the
 # script's parquet write loop (<name>.parquet).
 DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
@@ -434,6 +435,7 @@ DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     "teams": TEAMS_SCHEMA,
     "games": GAMES_SCHEMA,
     "player_games": PLAYER_GAMES_SCHEMA,
+    "posts": POSTS_SCHEMA,
     "comment_samples": COMMENT_SAMPLES_SCHEMA,
 }
 

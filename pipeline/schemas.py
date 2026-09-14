@@ -241,6 +241,20 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
     }
 )
 
+# Player x Game: the room's verdict on a player in one game's threads
+# (game + post-game merged per game_id). Fact rows reach a game through
+# posts (link_id = post_id -> game_id). Counts only — the display
+# baseline and floor are consumer choices. Box scores are not
+# pre-joined: player_games joins on (game_id, attributed_player).
+GAME_SENTIMENT_SCHEMA = pl.Schema(
+    {
+        "attributed_player": pl.String,  # FK -> players.parquet
+        "game_id": pl.String,  # FK -> games.parquet
+        **_METRIC_COLUMNS,
+        "thread_comment_count": pl.Int64,  # usable fact rows in the game's threads, all players
+    }
+)
+
 # View name -> schema for the aggregate *views* (fact-table rollups).
 # Keys match aggregate_sentiment() return-dict keys and parquet filenames.
 # Deliberately fact-only: dimensions live in DASHBOARD_OUTPUT_SCHEMAS

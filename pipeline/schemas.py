@@ -308,9 +308,15 @@ PLAYERS_SNAPSHOT_COLUMNS = [
     "weight",
 ]
 
+# Derived at build from attributed_player (utils.formatting.slugify): the
+# frontend's URL identity, read never re-derived. Asserted unique.
+PLAYERS_DERIVED_COLUMNS: dict[str, pl.DataType] = {"slug": pl.String}
+
 PLAYERS_SCHEMA = pl.Schema(
     {
-        **PLAYERS_CONFIG_COLUMNS,
+        "attributed_player": PLAYERS_CONFIG_COLUMNS["attributed_player"],
+        **PLAYERS_DERIVED_COLUMNS,
+        **{k: v for k, v in PLAYERS_CONFIG_COLUMNS.items() if k != "attributed_player"},
         **{col: ROSTERS_SCHEMA[col] for col in PLAYERS_SNAPSHOT_COLUMNS},
     }
 )

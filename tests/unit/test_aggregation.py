@@ -12,6 +12,7 @@ import polars as pl
 import pytest
 
 from pipeline.aggregation import (
+    _build_players_dimension,
     load_attributed_frame,
     aggregate_sentiment,
     attach_player_id,
@@ -303,6 +304,25 @@ class TestAggregatePlayers:
         assert row["conference"] == "West"
         assert row["player_id"] == 2544
         assert row["headshot_url"] is not None
+
+    def test_slug_derived_from_the_name(self, tmp_path):
+        """The URL slug is built from attributed_player at aggregation."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        row = result["players"].row(
+            by_predicate=pl.col("attributed_player") == "LeBron James", named=True
+        )
+        assert row["slug"] == "lebron-james"
+
+    def test_slug_collision_raises(self):
+        """Two names folding to one slug fail the build, naming both."""
+        metadata = {
+            "P.J. Washington": {"team": "Dallas Mavericks", "player_id": 1},
+            "P J Washington": {"team": "Dallas Mavericks", "player_id": 2},
+        }
+
+        with pytest.raises(ValueError, match=r"slug collision.*p-j-washington"):
+            _build_players_dimension(metadata, set(metadata))
 
     def test_snapshot_side_joined(self, tmp_path):
         """Snapshot columns join in via player_id."""

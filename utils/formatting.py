@@ -1,4 +1,9 @@
-"""Human-readable formatting utilities for durations and file sizes."""
+"""Human-readable formatting utilities: durations, file sizes, URL slugs."""
+
+import re
+import unicodedata
+
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 
 def format_duration(seconds: float) -> str:
@@ -39,3 +44,26 @@ def format_size(size_bytes: int) -> str:
             return f"{size_bytes:.1f} {unit}"
         size_bytes /= 1024
     return f"{size_bytes:.1f} TB"
+
+
+def slugify(name: str) -> str:
+    """
+    Fold a display name to a URL slug.
+
+    NFKD-decompose and drop the combining marks (Jokić -> Jokic),
+    lowercase, collapse every run of non-alphanumerics to one hyphen,
+    trim the ends: "De'Aaron Fox" -> "de-aaron-fox", "P.J. Washington"
+    -> "p-j-washington".
+
+    Args:
+        name: Display name, e.g. a players.yaml key.
+
+    Returns:
+        The slug; empty only if the name had no alphanumerics.
+    """
+    folded = "".join(
+        ch
+        for ch in unicodedata.normalize("NFKD", name)
+        if not unicodedata.combining(ch)
+    )
+    return _NON_ALNUM.sub("-", folded.lower()).strip("-")

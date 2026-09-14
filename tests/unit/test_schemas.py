@@ -13,6 +13,7 @@ from pipeline.schemas import (
     PLAYER_GAME_LOG_SCHEMA,
     PLAYER_GAMES_SCHEMA,
     PLAYER_OVERALL_SCHEMA,
+    PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
     POSTS_SCHEMA,
@@ -77,6 +78,13 @@ class TestPlayersContract:
         """Verify the roster column is role-marked from birth — never bare `team`."""
         assert PLAYERS_SCHEMA["roster_team"] == pl.String
         assert "team" not in PLAYERS_SCHEMA.names()
+
+    def test_slug_follows_the_display_key_and_is_not_config(self):
+        """Verify the URL slug sits right after attributed_player, derived
+        at build rather than curated in players.yaml."""
+        assert PLAYERS_SCHEMA.names()[:2] == ["attributed_player", "slug"]
+        assert PLAYERS_SCHEMA["slug"] == pl.String
+        assert "slug" not in PLAYERS_CONFIG_COLUMNS
 
     def test_excludes_rejected_columns(self):
         """Verify decided-out columns stay out (logo_url, age, snapshot team fields)."""

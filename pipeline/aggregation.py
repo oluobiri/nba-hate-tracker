@@ -39,6 +39,7 @@ from utils.player_config import (
     load_player_metadata,
 )
 from utils.season_config import get_active_season
+from utils.formatting import slugify
 from utils.team_config import load_team_config, load_team_config_version
 
 logger = logging.getLogger(__name__)
@@ -486,7 +487,8 @@ def _build_players_dimension(
     Build the Player dimension: config curation joined with snapshot facts.
 
     Config side: one row per attributed player, in players.yaml order,
-    with the roster team role-marked as roster_team. Snapshot side: LEFT
+    with the roster team role-marked as roster_team and the URL slug
+    derived from the name (unique, or the build fails). Snapshot side: LEFT
     JOIN on player_id from the season's rosters.parquet — a missing
     snapshot row (or the whole snapshot file) degrades to null snapshot
     columns, never dropped rows.
@@ -497,6 +499,10 @@ def _build_players_dimension(
 
     Returns:
         Frame conforming to PLAYERS_SCHEMA.
+
+    Raises:
+        ValueError: If two players fold to the same slug, or if the roster
+            snapshot carries a duplicate player_id.
     """
     config_rows = [
         {
@@ -509,7 +515,25 @@ def _build_players_dimension(
         for player, meta in player_metadata.items()
         if player in attributed_players
     ]
-    config_side = pl.DataFrame(config_rows, schema=PLAYERS_CONFIG_COLUMNS)
+    config_side = (
+        pl.DataFrame(config_rows, schema=PLAYERS_CONFIG_COLUMNS)
+        .with_columns(
+            pl.col("attributed_player")
+            .map_elements(slugify, return_dtype=pl.String)
+            .alias("slug")
+        )
+        .select(c for c in PLAYERS_SCHEMA.names() if c not in PLAYERS_SNAPSHOT_COLUMNS)
+    )
+    collisions = (
+        config_side.filter(pl.col("slug").is_duplicated())
+        .select("slug", "attributed_player")
+        .sort("slug", "attributed_player")
+    )
+    if collisions.height:
+        raise ValueError(
+            f"Player slug collision: {collisions.rows()} - slugs are URL identity "
+            f"and must be unique; rename or distinguish the players in players.yaml"
+        )
 
     snapshot_path = get_reference_dir() / "rosters.parquet"
     if not snapshot_path.exists():

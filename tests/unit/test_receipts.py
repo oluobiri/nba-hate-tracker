@@ -223,6 +223,7 @@ class TestBuildTargetPool:
 _SAMPLES_INPUT_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,
+        "player_id": pl.Int64,
         "sentiment": pl.String,
         "sentiment_player": pl.String,
         "comment_id": pl.String,
@@ -242,6 +243,7 @@ def _samples_input(rows: list[dict]) -> pl.DataFrame:
     sentiment_player defaults to the row's attributed_player (a named
     target), so only the target-gate tests set it explicitly."""
     defaults = {
+        "player_id": 1,
         "link_id": "t3_post1",
         "confidence": 0.95,
         "created_utc": 1704067200,

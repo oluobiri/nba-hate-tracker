@@ -7,10 +7,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - SENTIMENT_SCHEMA is enforced at the sentiment.parquet write boundary
   (pipeline/results.py) and again as a read-side guard in
   pipeline/aggregation.py.
-- The aggregate-view schemas describe the fact rollups in their
-  parquet-ready shape (the legacy aggregates.json carries the first
-  four); they are enforced in aggregate_sentiment() before the views
-  are returned for writing.
+- The aggregate-view schemas describe the fact rollups; they are
+  enforced in aggregate_sentiment() before the views are returned for
+  writing.
 - ROSTERS_SCHEMA describes the season roster snapshot — a reference
   asset (pipeline ingredient, not a published output) enforced at the
   fetch write boundary (scripts/fetch_rosters.py).
@@ -42,7 +41,7 @@ by them).
 import polars as pl
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -218,23 +217,33 @@ _METRIC_COLUMNS: dict[str, pl.DataType] = {
     "polarization": pl.Float64,
 }
 
-PLAYER_OVERALL_SCHEMA = pl.Schema({"attributed_player": pl.String, **_METRIC_COLUMNS})
+# Every player-keyed view carries the Player dimension's stable id right
+# after its display key, so consumers join on either.
+PLAYER_OVERALL_SCHEMA = pl.Schema(
+    {"attributed_player": pl.String, "player_id": pl.Int64, **_METRIC_COLUMNS}
+)
 
 PLAYER_TEMPORAL_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,
+        "player_id": pl.Int64,
         "week": pl.Datetime("us"),  # pl.from_epoch(...).dt.truncate("1w"), no tz
         **_METRIC_COLUMNS,
     }
 )
 
-PLAYER_TEAM_SCHEMA = pl.Schema(
-    {"attributed_player": pl.String, "team": pl.String, **_METRIC_COLUMNS}
+PLAYER_FAN_TEAM_SCHEMA = pl.Schema(
+    {
+        "attributed_player": pl.String,
+        "player_id": pl.Int64,
+        "fan_team": pl.String,
+        **_METRIC_COLUMNS,
+    }
 )
 
-TEAM_OVERALL_SCHEMA = pl.Schema(
+FAN_TEAM_OVERALL_SCHEMA = pl.Schema(
     {
-        "team": pl.String,
+        "fan_team": pl.String,
         **_METRIC_COLUMNS,
         "abbreviation": pl.String,  # enrichment from config/teams.yaml
         "conference": pl.String,
@@ -250,6 +259,7 @@ TEAM_OVERALL_SCHEMA = pl.Schema(
 GAME_SENTIMENT_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,  # FK -> players.parquet
+        "player_id": pl.Int64,
         "game_id": pl.String,  # FK -> games.parquet
         **_METRIC_COLUMNS,
         "thread_comment_count": pl.Int64,  # usable fact rows in the game's threads, all players
@@ -259,28 +269,24 @@ GAME_SENTIMENT_SCHEMA = pl.Schema(
 # View name -> schema for the aggregate *views* (fact-table rollups).
 # Keys match aggregate_sentiment() return-dict keys and parquet filenames.
 # Deliberately fact-only: dimensions live in DASHBOARD_OUTPUT_SCHEMAS
-# below. Membership here does NOT put a view into aggregates.json — the
-# script freezes that key set separately as a literal (LEGACY_JSON_VIEWS),
-# so future fact views join this mapping without touching the legacy file.
+# below.
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
-    "player_team": PLAYER_TEAM_SCHEMA,
-    "team_overall": TEAM_OVERALL_SCHEMA,
+    "player_fan_team": PLAYER_FAN_TEAM_SCHEMA,
+    "fan_team_overall": FAN_TEAM_OVERALL_SCHEMA,
     "game_sentiment": GAME_SENTIMENT_SCHEMA,
 }
 
 # --- Player dimension (enforced in pipeline/aggregation.py) ------------------
 # One row per attributed player — the Player dimension the views'
-# attributed_player FK references. Materialized as players.parquet; also
-# re-serialized to the legacy nested {player: {...}} player_metadata dict in
-# aggregates.json (players_to_metadata_dict). The config side is curated in
-# config/<season>/players.yaml; the snapshot side LEFT JOINs from the season's
-# rosters.parquet on player_id, so snapshot gaps surface as nulls, never
-# dropped rows.
+# attributed_player FK references. Materialized as players.parquet. The
+# config side is curated in config/<season>/players.yaml; the snapshot
+# side LEFT JOINs from the season's rosters.parquet on player_id, so
+# snapshot gaps surface as nulls, never dropped rows.
 # NOTE: roster_team is the *roster* role (who the player plays for),
-# role-marked from birth — distinct from the fan-role `team` in
-# player_team/team_overall. See docs/data-model.md §2.
+# distinct from the fan role (fan_team) on player_fan_team and
+# fan_team_overall.
 
 PLAYERS_CONFIG_COLUMNS: dict[str, pl.DataType] = {
     "attributed_player": pl.String,
@@ -302,16 +308,23 @@ PLAYERS_SNAPSHOT_COLUMNS = [
     "weight",
 ]
 
+# Derived at build from attributed_player (utils.formatting.slugify): the
+# frontend's URL identity, read never re-derived. Asserted unique.
+PLAYERS_DERIVED_COLUMNS: dict[str, pl.DataType] = {"slug": pl.String}
+
 PLAYERS_SCHEMA = pl.Schema(
     {
-        **PLAYERS_CONFIG_COLUMNS,
+        "attributed_player": PLAYERS_CONFIG_COLUMNS["attributed_player"],
+        **PLAYERS_DERIVED_COLUMNS,
+        **{k: v for k, v in PLAYERS_CONFIG_COLUMNS.items() if k != "attributed_player"},
         **{col: ROSTERS_SCHEMA[col] for col in PLAYERS_SNAPSHOT_COLUMNS},
     }
 )
 
 # --- Team dimension (enforced in pipeline/aggregation.py) -------------------
-# One row per franchise — the Team dimension the fan-role `team` FK in
-# player_team/team_overall references (and the roster_team FK in players).
+# One row per franchise — the Team dimension every role-marked FK
+# references (fan_team on the fan views, roster_team on players and
+# player_games, home_team/away_team on games).
 # Pure config export from config/teams.yaml; aliases stay config-only (the
 # dimension describes and slices, it never selects). PK is bare `team`:
 # role-marking (roster_team/fan_team) applies to FK columns on fact tables,
@@ -354,17 +367,17 @@ GAMES_SCHEMA = pl.Schema(
 )
 
 # player_games.parquet: one row per game x tracked player who dressed.
-# `team` is the player's team on that line — the dated roster edge,
-# distinct from players.roster_team (season-end). Absent lines are
+# `roster_team` is the player's team on that line — the dated roster
+# edge, distinct from players.roster_team (season-end). Absent lines are
 # absent, never fabricated. PK (game_id, attributed_player).
 PLAYER_GAMES_SCHEMA = pl.Schema(
     {
         "game_id": pl.String,  # FK -> games.parquet
         "attributed_player": pl.String,  # FK -> players.parquet
         "player_id": pl.Int64,
-        "team": pl.String,  # FK -> teams.parquet, dated roster role
+        "roster_team": pl.String,  # FK -> teams.parquet, dated roster role
         "opponent": pl.String,  # FK -> teams.parquet
-        "is_home": pl.Boolean,  # team == games.home_team; null on a neutral site
+        "is_home": pl.Boolean,  # roster_team == games.home_team; null on a neutral site
         "wl": pl.String,  # nullable
         **_BOX_SCORE_COLUMNS,
     }
@@ -399,6 +412,7 @@ POSTS_SCHEMA = pl.Schema(
 COMMENT_SAMPLES_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,  # FK -> players.parquet
+        "player_id": pl.Int64,
         "sentiment": pl.String,  # "pos" | "neg" | "neu", as the fact
         "rank": pl.Int64,  # 1..N within (attributed_player, sentiment)
         "comment_id": pl.String,  # provenance back to the fact

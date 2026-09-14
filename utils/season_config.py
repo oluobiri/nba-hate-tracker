@@ -248,7 +248,7 @@ def set_season_override(season: str) -> None:
     Call once at script entry (the --season flag), before any
     season-derived config is loaded. Everything that resolves through
     get_active_season() — data paths, the players.yaml loaders, the
-    season facts (load_season_config), the aggregates.json season stamp —
+    season facts (load_season_config), the manifest season stamp —
     follows the override.
 
     Args:

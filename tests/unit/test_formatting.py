@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.formatting import format_duration, format_size
+from utils.formatting import format_duration, format_size, slugify
 
 
 class TestFormatDuration:
@@ -110,3 +110,25 @@ class TestFormatSize:
         one_tb = 1024**4
         assert format_size(one_tb) == "1.0 TB"
         assert format_size(int(1.5 * one_tb)) == "1.5 TB"
+
+
+class TestSlugify:
+    """Tests for slugify (display name -> URL slug)."""
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("LeBron James", "lebron-james"),
+            ("Nikola Jokić", "nikola-jokic"),
+            ("Bogdan Bogdanović", "bogdan-bogdanovic"),
+            ("De'Aaron Fox", "de-aaron-fox"),
+            ("P.J. Washington", "p-j-washington"),
+            ("Wendell Carter Jr.", "wendell-carter-jr"),
+            ("Nickeil Alexander-Walker", "nickeil-alexander-walker"),
+            ("  Karl-Anthony   Towns ", "karl-anthony-towns"),
+        ],
+    )
+    def test_folds_to_kebab(self, name: str, expected: str):
+        """Diacritics fold, punctuation and runs of space become one hyphen,
+        ends are trimmed."""
+        assert slugify(name) == expected

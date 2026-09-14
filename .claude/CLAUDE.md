@@ -22,7 +22,7 @@ data/             → Not committed
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
   │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + posts_bridge.parquet
-  │   └── dashboard/  → aggregates.json + per-table Parquet files
+  │   └── dashboard/  → per-table Parquet files + manifest.json
   └── 2025-26/    → V2 season data (same structure)
 ```
 
@@ -65,11 +65,11 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 - `data/2024-25/batches/<stage>/requests/*.jsonl`
 - `data/2024-25/batches/<stage>/responses/*.jsonl`
 
-**Dashboard input:**
-- `data/2024-25/dashboard/aggregates.json` — precomputed views, ~2MB, safe to load
+**Published outputs (safe to load):**
+- `data/<season>/dashboard/*.parquet` + `manifest.json` — the contract. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
 
 **Schema contracts:**
-- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views); `SCHEMA_VERSION` is stamped into `aggregates.json` metadata. Don't duplicate column lists elsewhere.
+- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.
 
 **Conceptual model:**
 - `docs/data-model.md` — the star schema (one `ClassifiedComment` fact + Player/Team/Date dimensions), the role-playing `team` (roster vs. fan), and the view-lineage "cheap / needs-a-join / expensive" map. Read before designing a new aggregate view; it's the relationships behind `schemas.py`'s structure.
@@ -80,7 +80,7 @@ For ad-hoc queries on Parquet files. Read-only — never use to query `data/*/ra
 
 ```bash
 # Non-interactive (preferred in Claude Code)
-duckdb -c "SELECT player, neg_rate FROM 'data/2024-25/dashboard/player_overall.parquet' ORDER BY neg_rate DESC LIMIT 10"
+duckdb -c "SELECT attributed_player, neg_rate FROM 'data/2024-25/dashboard/player_overall.parquet' ORDER BY neg_rate DESC LIMIT 10"
 
 # Interactive shell
 duckdb

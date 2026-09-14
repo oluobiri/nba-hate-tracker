@@ -185,7 +185,7 @@ def build_player_games(
 
     Lines are kept only for games present in `games` (so a dropped game
     takes its lines with it) and for players in the Player dimension,
-    joined on player_id. `team` and `opponent` resolve to canonical
+    joined on player_id. `roster_team` and `opponent` resolve to canonical
     names; is_home is derived from games.home_team, and is null on a
     neutral-site game, where neither side hosted.
 
@@ -217,7 +217,7 @@ def build_player_games(
         )
         .with_columns(
             pl.col("player_id").replace_strict(id_to_player).alias("attributed_player"),
-            pl.col("team_abbr").replace_strict(abbr_to_team).alias("team"),
+            pl.col("team_abbr").replace_strict(abbr_to_team).alias("roster_team"),
             pl.col("matchup")
             .str.extract(_OPPONENT_PATTERN, 1)
             .replace_strict(abbr_to_team)
@@ -226,7 +226,7 @@ def build_player_games(
         .with_columns(
             pl.when(pl.col("neutral_site"))
             .then(pl.lit(None, dtype=pl.Boolean))
-            .otherwise(pl.col("team") == pl.col("home_team"))
+            .otherwise(pl.col("roster_team") == pl.col("home_team"))
             .alias("is_home")
         )
     )
@@ -250,7 +250,7 @@ def build_player_games(
     without = sorted(set(id_to_player.values()) - with_lines)
     movers = (
         player_games.group_by("attributed_player")
-        .agg(pl.col("team").n_unique().alias("teams"))
+        .agg(pl.col("roster_team").n_unique().alias("teams"))
         .filter(pl.col("teams") > 1)
         .height
     )

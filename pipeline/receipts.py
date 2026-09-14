@@ -319,9 +319,9 @@ def build_comment_samples(
     there). Thin cells are never padded. Bodies are verbatim.
 
     Args:
-        df: Attributed frame with attributed_player, sentiment,
-            sentiment_player, comment_id, link_id, body, score,
-            confidence, created_utc, fan_team.
+        df: Attributed frame with attributed_player, player_id,
+            sentiment, sentiment_player, comment_id, link_id, body,
+            score, confidence, created_utc, fan_team.
         verdicts: Resolved sidecar from resolve_verdicts; None for the
             gate-only fallback.
         alias_map: Lowercase alias -> canonical name, for the free gate;

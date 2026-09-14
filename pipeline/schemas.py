@@ -7,9 +7,10 @@ pipeline produces. Data dictionary first, enforcement second:
 - SENTIMENT_SCHEMA is enforced at the sentiment.parquet write boundary
   (pipeline/results.py) and again as a read-side guard in
   pipeline/aggregation.py.
-- The four aggregate-view schemas describe the tabular sections of
-  aggregates.json in their parquet-ready shape; they are enforced in
-  aggregate_sentiment() before the views are returned for writing.
+- The aggregate-view schemas describe the fact rollups in their
+  parquet-ready shape (the legacy aggregates.json carries the first
+  four); they are enforced in aggregate_sentiment() before the views
+  are returned for writing.
 - ROSTERS_SCHEMA describes the season roster snapshot — a reference
   asset (pipeline ingredient, not a published output) enforced at the
   fetch write boundary (scripts/fetch_rosters.py).
@@ -266,6 +267,7 @@ AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
     "player_team": PLAYER_TEAM_SCHEMA,
     "team_overall": TEAM_OVERALL_SCHEMA,
+    "game_sentiment": GAME_SENTIMENT_SCHEMA,
 }
 
 # --- Player dimension (enforced in pipeline/aggregation.py) ------------------

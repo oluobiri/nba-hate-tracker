@@ -16,6 +16,7 @@ from pipeline.aggregation import (
     aggregate_sentiment,
     build_teams_dimension,
     compute_cumulative_metrics,
+    compute_game_sentiment,
     compute_metrics,
     mask_below_threshold,
     pivot_bar_race_wide,
@@ -25,6 +26,7 @@ from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
+    GAME_SENTIMENT_SCHEMA,
     GAMES_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
     PLAYER_GAMES_SCHEMA,
@@ -1605,21 +1607,26 @@ def _write_posts_bridge(ref_dir, rows, season=None):
     )
 
 
+def _post_row(post_id, post_type, game_id, is_primary):
+    """One POSTS_SCHEMA row; the bridge's derived trio, the rest fixed."""
+    return {
+        "post_id": post_id,
+        "title": f"title {post_id}",
+        "created_utc": 1704067200,
+        "score": 1,
+        "num_comments": 10,
+        "link_flair_text": None,
+        "post_type": post_type,
+        "game_id": game_id,
+        "is_primary": is_primary,
+    }
+
+
 class TestAggregatePosts:
     """Tests for the Post bridge's passage through aggregate_sentiment."""
 
     def _row(self, post_id, post_type, game_id, is_primary):
-        return {
-            "post_id": post_id,
-            "title": f"title {post_id}",
-            "created_utc": 1704067200,
-            "score": 1,
-            "num_comments": 10,
-            "link_flair_text": None,
-            "post_type": post_type,
-            "game_id": game_id,
-            "is_primary": is_primary,
-        }
+        return _post_row(post_id, post_type, game_id, is_primary)
 
     def test_no_bridge_ships_empty_table(self, tmp_path, pinned_snapshot):
         """Without a bridge the table is empty but present and conforming."""
@@ -1648,3 +1655,178 @@ class TestAggregatePosts:
         assert result["posts"]["post_id"].to_list() == ["t3_gt", "t3_post123"]
         assert result["metadata"]["post_count"] == 2
         assert result["metadata"]["posts_processed_at"] == "2026-09-13"
+
+
+def _fact(rows: list[tuple[str, str | None, str]]) -> pl.DataFrame:
+    """A usable fact frame from (link_id, attributed_player, sentiment)
+    triples — the columns compute_game_sentiment reads."""
+    return pl.DataFrame(
+        {
+            "link_id": [r[0] for r in rows],
+            "attributed_player": [r[1] for r in rows],
+            "sentiment": [r[2] for r in rows],
+        },
+        schema={
+            "link_id": pl.String,
+            "attributed_player": pl.String,
+            "sentiment": pl.String,
+        },
+    )
+
+
+class TestComputeGameSentiment:
+    """Tests for the Player x Game rollup through the bridge."""
+
+    @pytest.fixture
+    def posts(self):
+        """Game 1's two threads, an unlinked post, and game 2's thread."""
+        return pl.DataFrame(
+            [
+                _post_row("t3_gt1", "game_thread", "G1", True),
+                _post_row("t3_pgt1", "post_game_thread", "G1", True),
+                _post_row("t3_news", "other", None, False),
+                _post_row("t3_gt2", "game_thread", "G2", True),
+            ],
+            schema=POSTS_SCHEMA,
+        )
+
+    def test_merges_a_games_threads(self, posts):
+        """The game and post-game threads roll up to one row per player x game."""
+        df = _fact(
+            [
+                ("t3_gt1", "LeBron James", "neg"),
+                ("t3_pgt1", "LeBron James", "pos"),
+                ("t3_pgt1", "LeBron James", "neg"),
+            ]
+        )
+
+        result = compute_game_sentiment(df, posts)
+
+        assert result.height == 1
+        row = result.row(0, named=True)
+        assert (row["attributed_player"], row["game_id"]) == ("LeBron James", "G1")
+        assert (row["neg_count"], row["pos_count"], row["comment_count"]) == (2, 1, 3)
+        assert row["neg_rate"] == 0.6667
+
+    def test_drops_rows_outside_a_games_threads(self, posts):
+        """A comment in a non-game post, or in a post the bridge never saw,
+        reaches no game."""
+        df = _fact(
+            [
+                ("t3_gt1", "LeBron James", "neg"),
+                ("t3_news", "LeBron James", "neg"),
+                ("t3_unknown", "LeBron James", "neg"),
+            ]
+        )
+
+        result = compute_game_sentiment(df, posts)
+
+        assert result["game_id"].to_list() == ["G1"]
+        assert result["comment_count"].to_list() == [1]
+
+    def test_thread_comment_count_is_the_games_usable_rows(self, posts):
+        """The room size counts every fact row in the game's threads —
+        other players and unattributed rows included — and repeats per
+        player row; the measures count only the player's own rows."""
+        df = _fact(
+            [
+                ("t3_gt1", "LeBron James", "neg"),
+                ("t3_pgt1", "LeBron James", "pos"),
+                ("t3_gt1", "Giannis Antetokounmpo", "neu"),
+                ("t3_pgt1", None, "neg"),
+                ("t3_gt2", "LeBron James", "pos"),
+            ]
+        )
+
+        result = compute_game_sentiment(df, posts)
+
+        by_key = {(r["attributed_player"], r["game_id"]): r for r in result.to_dicts()}
+        assert set(by_key) == {
+            ("Giannis Antetokounmpo", "G1"),
+            ("LeBron James", "G1"),
+            ("LeBron James", "G2"),
+        }
+        assert by_key[("LeBron James", "G1")]["comment_count"] == 2
+        assert by_key[("Giannis Antetokounmpo", "G1")]["comment_count"] == 1
+        assert by_key[("LeBron James", "G1")]["thread_comment_count"] == 4
+        assert by_key[("Giannis Antetokounmpo", "G1")]["thread_comment_count"] == 4
+        assert by_key[("LeBron James", "G2")]["thread_comment_count"] == 1
+
+    def test_conforms_and_sorts_by_player_then_game(self, posts):
+        """The frame is the contract, ordered by (attributed_player, game_id)."""
+        df = _fact(
+            [
+                ("t3_gt2", "LeBron James", "pos"),
+                ("t3_gt1", "LeBron James", "neg"),
+                ("t3_gt1", "Giannis Antetokounmpo", "neu"),
+            ]
+        )
+
+        result = compute_game_sentiment(df, posts)
+
+        assert result.schema == GAME_SENTIMENT_SCHEMA
+        assert result.select("attributed_player", "game_id").rows() == [
+            ("Giannis Antetokounmpo", "G1"),
+            ("LeBron James", "G1"),
+            ("LeBron James", "G2"),
+        ]
+
+    def test_empty_posts_gives_empty_conforming_view(self):
+        """Without a bridge the view is empty but keeps its contract."""
+        df = _fact([("t3_gt1", "LeBron James", "neg")])
+
+        result = compute_game_sentiment(df, pl.DataFrame(schema=POSTS_SCHEMA))
+
+        assert result.height == 0
+        assert result.schema == GAME_SENTIMENT_SCHEMA
+
+
+class TestAggregateGameSentiment:
+    """Tests for the view's passage through aggregate_sentiment."""
+
+    def test_no_bridge_ships_empty_view(self, tmp_path, pinned_snapshot):
+        """Without a bridge the view is empty but present and conforming."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["game_sentiment"].schema == GAME_SENTIMENT_SCHEMA
+        assert result["game_sentiment"].height == 0
+
+    def test_rolls_the_fact_up_through_the_published_posts(
+        self, tmp_path, pinned_snapshot
+    ):
+        """LeBron's comment in the game thread lands on the game; his other
+        comment, in a non-game post, does not — so the view's total per
+        player never exceeds player_overall's."""
+        _write_game_logs(pinned_snapshot)
+        _write_posts_bridge(
+            pinned_snapshot,
+            [
+                _post_row("t3_post123", "game_thread", "0022500001", True),
+                _post_row("t3_post456", "other", None, False),
+            ],
+        )
+
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        view = result["game_sentiment"]
+        assert view.to_dicts() == [
+            {
+                "attributed_player": "LeBron James",
+                "game_id": "0022500001",
+                "neg_count": 0,
+                "pos_count": 1,
+                "neu_count": 0,
+                "comment_count": 1,
+                "neg_rate": 0.0,
+                "pos_rate": 1.0,
+                "net_sentiment": 1.0,
+                "polarization": 1.0,
+                "thread_comment_count": 1,
+            }
+        ]
+        per_player = view.group_by("attributed_player").agg(
+            pl.col("comment_count").sum()
+        )
+        totals = result["player_overall"].select("attributed_player", "comment_count")
+        joined = per_player.join(totals, on="attributed_player", suffix="_overall")
+        assert (joined["comment_count"] <= joined["comment_count_overall"]).all()

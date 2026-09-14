@@ -182,7 +182,7 @@ def main() -> None:
 
     logger.info(f"Wrote aggregates to {output_path}")
 
-    # Write one parquet per produced table (four views, the players and
+    # Write one parquet per produced table (the fact views, the players and
     # teams dimensions, the game layer, comment_samples). Each dimension
     # carries the config-version stamp pre-flighted above, so
     # fact<->dimension drift is checkable (same mechanism as

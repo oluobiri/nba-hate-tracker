@@ -258,6 +258,12 @@ class TestGameSentimentContract:
         ):
             assert col not in GAME_SENTIMENT_SCHEMA.names()
 
+    def test_is_a_view(self):
+        """Verify game_sentiment is a fact rollup: in AGGREGATE_VIEW_SCHEMAS,
+        hence in the outputs."""
+        assert AGGREGATE_VIEW_SCHEMAS["game_sentiment"] is GAME_SENTIMENT_SCHEMA
+        assert DASHBOARD_OUTPUT_SCHEMAS["game_sentiment"] is GAME_SENTIMENT_SCHEMA
+
 
 class TestGameLogSnapshotsContract:
     """Contract guards for the game-log reference assets."""

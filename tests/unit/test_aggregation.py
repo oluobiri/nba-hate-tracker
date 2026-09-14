@@ -20,7 +20,6 @@ from pipeline.aggregation import (
     compute_metrics,
     mask_below_threshold,
     pivot_bar_race_wide,
-    players_to_metadata_dict,
 )
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
@@ -514,75 +513,6 @@ class TestAggregateTeams:
 
         assert result["teams"]["team"].to_list() == list(load_team_config())
         assert result["teams"].height == 30
-
-
-class TestPlayersToMetadataDict:
-    """Tests for players_to_metadata_dict (frame -> legacy aggregates.json dict).
-
-    These guard the consumer contract: aggregates.json must keep serving
-    the nested {player: {...}} dict with the legacy value keys.
-    """
-
-    @pytest.fixture
-    def players_frame(self) -> pl.DataFrame:
-        """Two-row Player dimension frame conforming to PLAYERS_SCHEMA."""
-        rows = [
-            {
-                "attributed_player": "LeBron James",
-                "roster_team": "Los Angeles Lakers",
-                "conference": "West",
-                "player_id": 2544,
-                "headshot_url": "https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png",
-                "position": "F",
-                "birth_date": date(1984, 12, 30),
-                "experience": "21",
-                "school": "St. Vincent-St. Mary HS (OH)",
-                "jersey_number": "23",
-                "height": "6-9",
-                "weight": "250",
-            },
-            {
-                "attributed_player": "Bam Adebayo",
-                "roster_team": "Miami Heat",
-                "conference": "East",
-                "player_id": 1628389,
-                "headshot_url": "https://cdn.nba.com/headshots/nba/latest/1040x760/1628389.png",
-                "position": "C",
-                "birth_date": date(1997, 7, 18),
-                "experience": "8",
-                "school": "Kentucky",
-                "jersey_number": "13",
-                "height": "6-9",
-                "weight": "255",
-            },
-        ]
-        return pl.DataFrame(rows, schema=PLAYERS_SCHEMA)
-
-    def test_reconstructs_nested_dict_keyed_by_player(self, players_frame):
-        """The dict keys by player name; roster_team serializes as legacy team."""
-        as_dict = players_to_metadata_dict(players_frame)
-
-        assert as_dict["LeBron James"]["team"] == "Los Angeles Lakers"
-        assert as_dict["LeBron James"]["conference"] == "West"
-        assert as_dict["Bam Adebayo"]["player_id"] == 1628389
-
-    def test_value_keys_match_json_contract(self, players_frame):
-        """Each entry carries exactly the legacy consumer keys, in order —
-        no snapshot columns, no logo_url."""
-        as_dict = players_to_metadata_dict(players_frame)
-
-        assert list(as_dict["LeBron James"].keys()) == [
-            "team",
-            "conference",
-            "player_id",
-            "headshot_url",
-        ]
-
-    def test_preserves_row_order(self, players_frame):
-        """Dict key order follows frame row order (players.yaml order)."""
-        as_dict = players_to_metadata_dict(players_frame)
-
-        assert list(as_dict.keys()) == players_frame["attributed_player"].to_list()
 
 
 class TestConfigVersionLineage:
@@ -1778,24 +1708,6 @@ class TestComputeGameSentiment:
 
         assert result.height == 0
         assert result.schema == GAME_SENTIMENT_SCHEMA
-
-
-class TestLegacyJsonViews:
-    """Tests for the frozen aggregates.json key set."""
-
-    def test_game_sentiment_is_parquet_only(self):
-        """Verify the legacy file keeps its four views and never picks up a
-        new fact view — the key set is frozen, not keyed off the registry."""
-        from scripts.aggregate_sentiment import LEGACY_JSON_VIEWS
-
-        assert set(LEGACY_JSON_VIEWS) == {
-            "player_overall",
-            "player_temporal",
-            "player_team",
-            "team_overall",
-        }
-        assert "game_sentiment" not in LEGACY_JSON_VIEWS
-        assert set(LEGACY_JSON_VIEWS) < set(AGGREGATE_VIEW_SCHEMAS)
 
 
 class TestAggregateGameSentiment:

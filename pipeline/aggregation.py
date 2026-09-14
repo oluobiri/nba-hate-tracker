@@ -1,8 +1,9 @@
 """
 Sentiment aggregation pipeline.
 
-Transforms the classified sentiment parquet into precomputed JSON aggregates
-for the Streamlit dashboard and animated bar race chart.
+Transforms the classified sentiment parquet into the published tables:
+the fact rollups, the Player and Team dimensions, the game layer, the
+Post bridge, and the comment-samples subset, plus the metadata block.
 """
 
 import logging
@@ -235,7 +236,7 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
 
 def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> dict:
     """
-    Aggregate classified sentiment data into dashboard-ready JSON.
+    Aggregate classified sentiment data into the published tables.
 
     Reads the sentiment parquet and computes all aggregation views. The
     comment samples are verified against the target-verifier sidecar
@@ -251,8 +252,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         Dict where player_overall, player_temporal, player_team,
         team_overall, game_sentiment, players, teams, games, player_games,
         posts, and comment_samples hold pl.DataFrames conforming to
-        DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy player_metadata dict is reconstructed at
-        serialization time via players_to_metadata_dict().
+        DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict.
 
     Raises:
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
@@ -503,35 +503,6 @@ def _build_players_dimension(
             f"per player - fix the snapshot (re-run scripts.fetch_rosters)"
         )
     return players
-
-
-def players_to_metadata_dict(df: pl.DataFrame) -> dict[str, dict]:
-    """
-    Reconstruct the legacy aggregates.json player_metadata dict.
-
-    Keys the dict by player name; values carry the config-side columns
-    under their legacy JSON names (roster_team serializes as `team`).
-    Snapshot columns don't ship in the JSON — the legacy consumers never
-    knew them. Row order is preserved.
-
-    Args:
-        df: Player dimension frame conforming to PLAYERS_SCHEMA.
-
-    Returns:
-        Dict mapping player name to the legacy metadata fields, in
-        frame-row order.
-    """
-    legacy_names = {
-        col: ("team" if col == "roster_team" else col)
-        for col in PLAYERS_CONFIG_COLUMNS
-        if col != "attributed_player"
-    }
-    return {
-        row["attributed_player"]: {
-            legacy: row[col] for col, legacy in legacy_names.items()
-        }
-        for row in df.select(list(PLAYERS_CONFIG_COLUMNS)).iter_rows(named=True)
-    }
 
 
 # ---------------------------------------------------------------------------

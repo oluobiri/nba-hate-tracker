@@ -7,10 +7,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - SENTIMENT_SCHEMA is enforced at the sentiment.parquet write boundary
   (pipeline/results.py) and again as a read-side guard in
   pipeline/aggregation.py.
-- The aggregate-view schemas describe the fact rollups in their
-  parquet-ready shape (the legacy aggregates.json carries the first
-  four); they are enforced in aggregate_sentiment() before the views
-  are returned for writing.
+- The aggregate-view schemas describe the fact rollups; they are
+  enforced in aggregate_sentiment() before the views are returned for
+  writing.
 - ROSTERS_SCHEMA describes the season roster snapshot — a reference
   asset (pipeline ingredient, not a published output) enforced at the
   fetch write boundary (scripts/fetch_rosters.py).
@@ -259,9 +258,7 @@ GAME_SENTIMENT_SCHEMA = pl.Schema(
 # View name -> schema for the aggregate *views* (fact-table rollups).
 # Keys match aggregate_sentiment() return-dict keys and parquet filenames.
 # Deliberately fact-only: dimensions live in DASHBOARD_OUTPUT_SCHEMAS
-# below. Membership here does NOT put a view into aggregates.json — the
-# script freezes that key set separately as a literal (LEGACY_JSON_VIEWS),
-# so future fact views join this mapping without touching the legacy file.
+# below.
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
@@ -272,12 +269,10 @@ AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
 
 # --- Player dimension (enforced in pipeline/aggregation.py) ------------------
 # One row per attributed player — the Player dimension the views'
-# attributed_player FK references. Materialized as players.parquet; also
-# re-serialized to the legacy nested {player: {...}} player_metadata dict in
-# aggregates.json (players_to_metadata_dict). The config side is curated in
-# config/<season>/players.yaml; the snapshot side LEFT JOINs from the season's
-# rosters.parquet on player_id, so snapshot gaps surface as nulls, never
-# dropped rows.
+# attributed_player FK references. Materialized as players.parquet. The
+# config side is curated in config/<season>/players.yaml; the snapshot
+# side LEFT JOINs from the season's rosters.parquet on player_id, so
+# snapshot gaps surface as nulls, never dropped rows.
 # NOTE: roster_team is the *roster* role (who the player plays for),
 # role-marked from birth — distinct from the fan-role `team` in
 # player_team/team_overall. See docs/data-model.md §2.

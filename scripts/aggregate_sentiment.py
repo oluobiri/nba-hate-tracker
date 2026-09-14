@@ -1,17 +1,16 @@
 """
-Aggregate sentiment data into dashboard-ready outputs.
+Aggregate sentiment data into the published tables.
 
-Reads classified sentiment parquet, computes player rankings,
-flair segmentation, and temporal trends. Writes the nested
-aggregates.json for the Streamlit dashboard plus one parquet per
-produced table (the four fact views, the players and teams
-dimensions, the game layer, and the comment_samples fact subset)
-alongside it for
-ad-hoc DuckDB queries and the v2 frontend.
+Reads classified sentiment parquet, computes player rankings, flair
+segmentation, temporal trends, the game layer and the receipts. Writes
+one parquet per produced table (the fact views, the players and teams
+dimensions, the game layer, and the comment_samples fact subset) plus
+manifest.json, the metadata block, into the season's dashboard
+directory for ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
-    uv run python -m scripts.aggregate_sentiment --input data/processed/sentiment.parquet --output data/dashboard/aggregates.json
+    uv run python -m scripts.aggregate_sentiment --input data/processed/sentiment.parquet --output-dir data/dashboard
 """
 
 import argparse
@@ -20,7 +19,7 @@ import logging
 import sys
 from pathlib import Path
 
-from pipeline.aggregation import aggregate_sentiment, players_to_metadata_dict
+from pipeline.aggregation import aggregate_sentiment
 from pipeline.receipts import samples_stamps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.paths import get_dashboard_dir, get_processed_dir
@@ -46,19 +45,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INPUT_FILENAME = "sentiment.parquet"
 DEFAULT_TARGETS_FILENAME = "sentiment_targets.parquet"
-DEFAULT_OUTPUT_FILENAME = "aggregates.json"
-
-# The legacy aggregates.json key set, frozen as a literal: exactly the
-# record-shaped views the file carried when it was demoted to legacy.
-# Deliberately NOT keyed off AGGREGATE_VIEW_SCHEMAS — that mapping grows
-# with new fact views, and this list never does. New outputs of any kind
-# are parquet-only; the file retires wholesale.
-LEGACY_JSON_VIEWS = (
-    "player_overall",
-    "player_temporal",
-    "player_team",
-    "team_overall",
-)
+MANIFEST_FILENAME = "manifest.json"
 
 
 # -----------------------------------------------------------------------------
@@ -69,7 +56,7 @@ LEGACY_JSON_VIEWS = (
 def main() -> None:
     """Main entry point for sentiment aggregation."""
     parser = argparse.ArgumentParser(
-        description="Aggregate sentiment data into dashboard-ready JSON"
+        description="Aggregate sentiment data into the published tables"
     )
     parser.add_argument(
         "--input",
@@ -79,11 +66,11 @@ def main() -> None:
         f"(default: data/<season>/processed/{DEFAULT_INPUT_FILENAME})",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=Path,
         default=None,
-        help="Path to write aggregates JSON "
-        f"(default: data/<season>/dashboard/{DEFAULT_OUTPUT_FILENAME})",
+        help="Directory to write the parquet tables and manifest.json "
+        "(default: data/<season>/dashboard)",
     )
     parser.add_argument(
         "--targets",
@@ -108,7 +95,7 @@ def main() -> None:
     # right season directory
     input_path = args.input or get_processed_dir() / DEFAULT_INPUT_FILENAME
     targets_path = args.targets or get_processed_dir() / DEFAULT_TARGETS_FILENAME
-    output_path = args.output or get_dashboard_dir() / DEFAULT_OUTPUT_FILENAME
+    output_dir = args.output_dir or get_dashboard_dir()
 
     # Validate input exists
     if not input_path.exists():
@@ -121,79 +108,61 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info(f"Input:   {input_path}")
     logger.info(f"Targets: {targets_path}")
-    logger.info(f"Output:  {output_path}")
+    logger.info(f"Output:  {output_dir}")
     logger.info("=" * 60)
 
     # Pre-flight the config-version stamps before anything runs or is
     # written: a bad config version (e.g. an unquoted YAML float) must
     # abort here, never between output writes — a torn output set
-    # (fresh aggregates.json beside stale parquets) is exactly the
-    # inconsistency the stamps exist to make detectable.
-    stamps = {
-        "players": {
-            "players_config_version": load_player_config_version(),
-            "schema_version": str(SCHEMA_VERSION),
-        },
-        "teams": {
-            "teams_config_version": load_team_config_version(),
-            "schema_version": str(SCHEMA_VERSION),
-        },
+    # (fresh dimensions beside stale views) is exactly the inconsistency
+    # the stamps exist to make detectable.
+    stamps: dict[str, dict[str, str]] = {
+        "players": {"players_config_version": load_player_config_version()},
+        "teams": {"teams_config_version": load_team_config_version()},
     }
 
     # Run aggregation
     result = aggregate_sentiment(input_path, targets_path)
     # The samples stamp is read back from the sidecar inside aggregation
     # (verified flag + verifier identity), so it joins the set here
-    stamps["comment_samples"] = {
-        **samples_stamps(result["metadata"]),
-        "schema_version": str(SCHEMA_VERSION),
-    }
+    stamps["comment_samples"] = samples_stamps(result["metadata"])
     # The game tables carry their snapshot's fetch date forward (None
     # when no snapshot was on disk and the tables are empty)
-    game_stamps = {"schema_version": str(SCHEMA_VERSION)}
+    game_stamps = {}
     if result["metadata"]["games_fetched_at"] is not None:
         game_stamps["fetched_at"] = result["metadata"]["games_fetched_at"]
     stamps["games"] = stamps["player_games"] = game_stamps
     # The Post bridge carries its build date forward the same way
-    posts_stamps = {"schema_version": str(SCHEMA_VERSION)}
+    posts_stamps = {}
     if result["metadata"]["posts_processed_at"] is not None:
         posts_stamps["processed_at"] = result["metadata"]["posts_processed_at"]
     stamps["posts"] = posts_stamps
 
     # Ensure output directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON output — the LEGACY_JSON_VIEWS literal freezes the key
-    # set: those views -> lists of dicts; the players dimension -> the
-    # legacy nested player_metadata dict (consumer-safe shim); the
-    # metadata scalar passes through. Anything else (the teams
-    # dimension, any future output) is parquet-only.
-    # default=str keeps week datetimes serialized exactly as before.
-    serializable = {}
-    for key, value in result.items():
-        if key in LEGACY_JSON_VIEWS:
-            serializable[key] = value.to_dicts()
-        elif key == "players":
-            serializable["player_metadata"] = players_to_metadata_dict(value)
-        elif key == "metadata":
-            serializable[key] = value
-    with open(output_path, "w") as f:
-        json.dump(serializable, f, indent=2, default=str)
-
-    logger.info(f"Wrote aggregates to {output_path}")
-
-    # Write one parquet per produced table (the fact views, the players and
-    # teams dimensions, the game layer, comment_samples). Each dimension
-    # carries the config-version stamp pre-flighted above, so
-    # fact<->dimension drift is checkable (same mechanism as
-    # sentiment.parquet's stamp in collect_results); comment_samples
-    # carries its verified flag and verifier identity; the game tables
-    # their snapshot's fetch date, posts its build date; the views
-    # carry none.
+    # Write one parquet per produced table. Every file carries the
+    # contract version; each dimension adds the config-version stamp
+    # pre-flighted above, so fact<->dimension drift is checkable (same
+    # mechanism as sentiment.parquet's stamp in collect_results);
+    # comment_samples adds its verified flag and verifier identity; the
+    # game tables their snapshot's fetch date, posts its build date.
+    version_stamp = {"schema_version": str(SCHEMA_VERSION)}
     for name in DASHBOARD_OUTPUT_SCHEMAS:
-        parquet_path = output_path.parent / f"{name}.parquet"
-        result[name].write_parquet(parquet_path, metadata=stamps.get(name))
+        parquet_path = output_dir / f"{name}.parquet"
+        result[name].write_parquet(
+            parquet_path, metadata={**version_stamp, **stamps.get(name, {})}
+        )
         logger.info(f"Wrote {parquet_path}")
+
+    # Write the metadata block as manifest.json. Seeded verbatim; the
+    # manifest's published shape (identity, semantic layer, season facts,
+    # table registry) is built up in place from here — don't type
+    # consumers against this seed.
+    manifest_path = output_dir / MANIFEST_FILENAME
+    with open(manifest_path, "w") as f:
+        json.dump(result["metadata"], f, indent=2, default=str)
+    logger.info(f"Wrote {manifest_path}")
 
     # Log metadata summary
     meta = result["metadata"]

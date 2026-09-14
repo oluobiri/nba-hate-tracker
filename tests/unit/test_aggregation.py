@@ -1781,6 +1781,24 @@ class TestComputeGameSentiment:
         assert result.schema == GAME_SENTIMENT_SCHEMA
 
 
+class TestLegacyJsonViews:
+    """Tests for the frozen aggregates.json key set."""
+
+    def test_game_sentiment_is_parquet_only(self):
+        """Verify the legacy file keeps its four views and never picks up a
+        new fact view — the key set is frozen, not keyed off the registry."""
+        from scripts.aggregate_sentiment import LEGACY_JSON_VIEWS
+
+        assert set(LEGACY_JSON_VIEWS) == {
+            "player_overall",
+            "player_temporal",
+            "player_team",
+            "team_overall",
+        }
+        assert "game_sentiment" not in LEGACY_JSON_VIEWS
+        assert set(LEGACY_JSON_VIEWS) < set(AGGREGATE_VIEW_SCHEMAS)
+
+
 class TestAggregateGameSentiment:
     """Tests for the view's passage through aggregate_sentiment."""
 

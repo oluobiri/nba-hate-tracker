@@ -21,6 +21,7 @@ from pipeline.receipts import (
 )
 from pipeline.schemas import (
     DASHBOARD_OUTPUT_SCHEMAS,
+    GAME_SENTIMENT_SCHEMA,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
@@ -93,6 +94,46 @@ def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     )
 
     return grouped.sort(group_cols)
+
+
+def compute_game_sentiment(df: pl.DataFrame, posts: pl.DataFrame) -> pl.DataFrame:
+    """
+    Roll the fact up to Player x Game through the Post bridge.
+
+    A fact row reaches a game through its post (link_id = post_id ->
+    game_id), so a game's threads (game + post-game) merge per game_id
+    and a comment lands in at most one game. The measures cover the
+    attributed rows; thread_comment_count is every usable fact row in
+    the game's threads, whoever it mentions, repeated on each of the
+    game's player rows. No floor: the display floor is a consumer choice.
+
+    Args:
+        df: Usable fact frame (SENTIMENT_SCHEMA plus week); attributed_player
+            may be null.
+        posts: Frame conforming to POSTS_SCHEMA.
+
+    Returns:
+        DataFrame conforming to GAME_SENTIMENT_SCHEMA, sorted by
+        (attributed_player, game_id).
+    """
+    linked = df.join(
+        posts.filter(pl.col("game_id").is_not_null()).select("post_id", "game_id"),
+        left_on="link_id",
+        right_on="post_id",
+        how="inner",
+    )
+    room = linked.group_by("game_id").agg(
+        pl.len().cast(pl.Int64).alias("thread_comment_count")
+    )
+    return (
+        compute_metrics(
+            linked.filter(pl.col("attributed_player").is_not_null()),
+            ["attributed_player", "game_id"],
+        )
+        .join(room, on="game_id", how="left")
+        .select(GAME_SENTIMENT_SCHEMA.names())
+        .sort(["attributed_player", "game_id"])
+    )
 
 
 def _check_config_stamp(
@@ -208,8 +249,8 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
 
     Returns:
         Dict where player_overall, player_temporal, player_team,
-        team_overall, players, teams, games, player_games, posts, and
-        comment_samples hold pl.DataFrames conforming to
+        team_overall, game_sentiment, players, teams, games, player_games,
+        posts, and comment_samples hold pl.DataFrames conforming to
         DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict. The legacy player_metadata dict is reconstructed at
         serialization time via players_to_metadata_dict().
 
@@ -319,6 +360,14 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     )
     metadata.update(posts_metadata)
 
+    # Player x Game: the fact rolled up through the bridge
+    logger.info("Computing game_sentiment...")
+    game_sentiment = compute_game_sentiment(df, posts)
+    logger.info(
+        f"game_sentiment: {game_sentiment.height:,} player-game rows over "
+        f"{game_sentiment['game_id'].n_unique():,} games"
+    )
+
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks, "
@@ -330,6 +379,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         "player_temporal": player_temporal,
         "player_team": player_team,
         "team_overall": team_overall,
+        "game_sentiment": game_sentiment,
         "players": players,
         "teams": teams,
         "games": games,

@@ -8,9 +8,11 @@ from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
     DASHBOARD_OUTPUT_SCHEMAS,
+    GAME_SENTIMENT_SCHEMA,
     GAMES_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
     PLAYER_GAMES_SCHEMA,
+    PLAYER_OVERALL_SCHEMA,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
     POSTS_SCHEMA,
@@ -216,6 +218,51 @@ class TestPostsContract:
         not a fact rollup."""
         assert DASHBOARD_OUTPUT_SCHEMAS["posts"] is POSTS_SCHEMA
         assert "posts" not in AGGREGATE_VIEW_SCHEMAS
+
+
+class TestGameSentimentContract:
+    """Contract guards for the Player x Game rollup (game_sentiment.parquet)."""
+
+    def test_keys_lead_and_match_the_dimensions(self):
+        """Verify the two FKs lead, typed like the dimension keys they point at
+        and named like player_games' so the client-side join is USING."""
+        assert GAME_SENTIMENT_SCHEMA.names()[:2] == ["attributed_player", "game_id"]
+        assert (
+            GAME_SENTIMENT_SCHEMA["attributed_player"]
+            == PLAYERS_SCHEMA["attributed_player"]
+        )
+        assert GAME_SENTIMENT_SCHEMA["game_id"] == GAMES_SCHEMA["game_id"]
+        assert set(PLAYER_GAMES_SCHEMA.names()[:2]) == set(
+            GAME_SENTIMENT_SCHEMA.names()[:2]
+        )
+
+    def test_metrics_match_the_other_views(self):
+        """Verify the measure block is the shared compute_metrics shape, then
+        the room-size count last."""
+        metrics = PLAYER_OVERALL_SCHEMA.names()[1:]
+        assert GAME_SENTIMENT_SCHEMA.names()[2:] == [*metrics, "thread_comment_count"]
+        for col in metrics:
+            assert GAME_SENTIMENT_SCHEMA[col] == PLAYER_OVERALL_SCHEMA[col]
+        assert GAME_SENTIMENT_SCHEMA["thread_comment_count"] == pl.Int64
+
+    def test_excludes_rejected_columns(self):
+        """Verify decided-out columns stay out: no verdict label, no baseline,
+        no pre-joined box score, no whole-room size (that is posts')."""
+        for col in (
+            "verdict",
+            "baseline",
+            "delta",
+            "pts",
+            "plus_minus",
+            "num_comments",
+        ):
+            assert col not in GAME_SENTIMENT_SCHEMA.names()
+
+    def test_is_a_view(self):
+        """Verify game_sentiment is a fact rollup: in AGGREGATE_VIEW_SCHEMAS,
+        hence in the outputs."""
+        assert AGGREGATE_VIEW_SCHEMAS["game_sentiment"] is GAME_SENTIMENT_SCHEMA
+        assert DASHBOARD_OUTPUT_SCHEMAS["game_sentiment"] is GAME_SENTIMENT_SCHEMA
 
 
 class TestGameLogSnapshotsContract:

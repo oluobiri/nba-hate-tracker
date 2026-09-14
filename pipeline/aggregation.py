@@ -539,7 +539,7 @@ def players_to_metadata_dict(df: pl.DataFrame) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
-def compute_cumulative_metrics(player_temporal: list[dict]) -> pl.DataFrame:
+def compute_cumulative_metrics(player_temporal: pl.DataFrame) -> pl.DataFrame:
     """
     Compute running cumulative neg_rate for each player across weeks.
 
@@ -549,19 +549,15 @@ def compute_cumulative_metrics(player_temporal: list[dict]) -> pl.DataFrame:
     keeping cumulative totals stable.
 
     Args:
-        player_temporal: List of weekly metric dicts read back from
-            aggregates.json, with week as a serialized string — not the
-            in-memory DataFrame view returned by aggregate_sentiment().
-            Each dict has: attributed_player, week, neg_count, comment_count.
+        player_temporal: The player_temporal view (PLAYER_TEMPORAL_SCHEMA):
+            attributed_player, week as Datetime, neg_count, comment_count.
 
     Returns:
         DataFrame with columns: attributed_player, week, cum_neg,
         cum_total, cum_neg_rate. Sorted by player then week.
     """
-    df = pl.DataFrame(player_temporal)
-
-    # Parse week strings to Date and exclude stub week
-    df = df.with_columns(pl.col("week").str.to_datetime().cast(pl.Date))
+    # Week to Date and exclude stub week
+    df = player_temporal.with_columns(pl.col("week").cast(pl.Date))
     stub_week = df["week"].max()
     df = df.filter(pl.col("week") != stub_week)
 
@@ -629,7 +625,7 @@ def mask_below_threshold(
 
 def pivot_bar_race_wide(
     df: pl.DataFrame,
-    player_metadata: dict[str, dict],
+    players: pl.DataFrame,
     top_n: int = 15,
     min_ranking_comments: int = 5000,
     min_entry_comments: int = 1000,
@@ -639,13 +635,14 @@ def pivot_bar_race_wide(
 
     Ranks players by their final-week cumulative neg_rate (before
     threshold masking), selects the top N, applies the entry mask,
-    joins metadata (team and headshot), and pivots week dates into columns.
+    joins the Player dimension (roster team and headshot), and pivots
+    week dates into columns.
 
     Args:
         df: DataFrame from compute_cumulative_metrics with attributed_player,
             week, cum_neg, cum_total, and cum_neg_rate columns.
-        player_metadata: Dict mapping player name to metadata with
-            'team' and 'headshot_url' keys.
+        players: Player dimension (or any frame) with attributed_player,
+            roster_team, and headshot_url columns.
         top_n: Number of top players to include in the output.
         min_ranking_comments: Minimum cumulative comments in the final week
             for a player to qualify for top-N ranking. Excludes low-volume
@@ -685,22 +682,17 @@ def pivot_bar_race_wide(
         values="cum_neg_rate",
     )
 
-    # Add metadata columns
-    labels = wide["attributed_player"]
-    categories = labels.map_elements(
-        lambda p: player_metadata.get(p, {}).get("team", ""),
-        return_dtype=pl.Utf8,
-    )
-    images = labels.map_elements(
-        lambda p: player_metadata.get(p, {}).get("headshot_url", ""),
-        return_dtype=pl.Utf8,
-    )
-
-    wide = wide.with_columns(
-        labels.alias("Label"),
-        categories.alias("Category"),
-        images.alias("Image"),
-    )
+    # Label / Category / Image from the Player dimension
+    wide = wide.join(
+        players.select(
+            "attributed_player",
+            pl.col("roster_team").alias("Category"),
+            pl.col("headshot_url").alias("Image"),
+        ),
+        on="attributed_player",
+        how="left",
+        maintain_order="left",
+    ).with_columns(pl.col("attributed_player").alias("Label"))
 
     # Reorder: Label, Category, Image, then week columns sorted chronologically
     week_cols = sorted(

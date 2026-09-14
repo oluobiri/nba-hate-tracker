@@ -1063,15 +1063,15 @@ class TestAggregateViews:
 
 def _make_temporal_records(
     players_weeks: dict[str, list[tuple[str, int, int]]],
-) -> list[dict]:
-    """Build player_temporal-shaped dicts for testing.
+) -> pl.DataFrame:
+    """Build a player_temporal-shaped frame for testing.
 
     Args:
         players_weeks: Mapping of player name to list of
             (week_str, neg_count, comment_count) tuples.
 
     Returns:
-        List of dicts matching the player_temporal schema.
+        Frame matching the player_temporal view, week as Datetime("us").
     """
     records = []
     for player, weeks in players_weeks.items():
@@ -1090,7 +1090,9 @@ def _make_temporal_records(
                     "polarization": 0.0,
                 }
             )
-    return records
+    return pl.DataFrame(records).with_columns(
+        pl.col("week").str.to_datetime(time_unit="us")
+    )
 
 
 class TestComputeCumulativeMetrics:
@@ -1281,29 +1283,26 @@ class TestPivotBarRaceWide:
                 ],
             }
         )
-        metadata = {
-            "Player A": {
-                "team": "Team Alpha",
-                "headshot_url": "https://cdn.example.com/a.png",
-            },
-            "Player B": {
-                "team": "Team Beta",
-                "headshot_url": "https://cdn.example.com/b.png",
-            },
-            "Player C": {
-                "team": "Team Gamma",
-                "headshot_url": "https://cdn.example.com/c.png",
-            },
-        }
-        return records, metadata
+        players = pl.DataFrame(
+            {
+                "attributed_player": ["Player A", "Player B", "Player C"],
+                "roster_team": ["Team Alpha", "Team Beta", "Team Gamma"],
+                "headshot_url": [
+                    "https://cdn.example.com/a.png",
+                    "https://cdn.example.com/b.png",
+                    "https://cdn.example.com/c.png",
+                ],
+            }
+        )
+        return records, players
 
     def test_output_columns_structure(self):
         """Output has Label, Category, Image, then date columns."""
-        records, metadata = self._build_test_data()
+        records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
             cumulative,
-            metadata,
+            players,
             top_n=3,
             min_ranking_comments=0,
             min_entry_comments=0,
@@ -1317,11 +1316,11 @@ class TestPivotBarRaceWide:
 
     def test_respects_top_n(self):
         """Only top_n players appear in output."""
-        records, metadata = self._build_test_data()
+        records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
             cumulative,
-            metadata,
+            players,
             top_n=2,
             min_ranking_comments=0,
             min_entry_comments=0,
@@ -1338,11 +1337,11 @@ class TestPivotBarRaceWide:
         """Week column headers match YYYY-MM-DD format."""
         import re
 
-        records, metadata = self._build_test_data()
+        records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
             cumulative,
-            metadata,
+            players,
             top_n=2,
             min_ranking_comments=0,
             min_entry_comments=0,
@@ -1354,13 +1353,13 @@ class TestPivotBarRaceWide:
 
     def test_masked_cells_are_null(self):
         """Cells masked below threshold appear as null in wide format."""
-        records, metadata = self._build_test_data()
+        records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         # Ranking threshold 0 lets all players qualify; entry threshold 1500
         # means week 1 (cum_total=1000) is below, week 2 (cum_total=2500) is above
         wide = pivot_bar_race_wide(
             cumulative,
-            metadata,
+            players,
             top_n=2,
             min_ranking_comments=0,
             min_entry_comments=1500,

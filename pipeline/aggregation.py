@@ -109,8 +109,8 @@ def compute_game_sentiment(df: pl.DataFrame, posts: pl.DataFrame) -> pl.DataFram
     game's player rows. No floor: the display floor is a consumer choice.
 
     Args:
-        df: Usable fact frame (SENTIMENT_SCHEMA plus week); attributed_player
-            may be null.
+        df: Usable fact frame (SENTIMENT_SCHEMA plus week and player_id);
+            attributed_player may be null.
         posts: Frame conforming to POSTS_SCHEMA.
 
     Returns:
@@ -129,7 +129,7 @@ def compute_game_sentiment(df: pl.DataFrame, posts: pl.DataFrame) -> pl.DataFram
     return (
         compute_metrics(
             linked.filter(pl.col("attributed_player").is_not_null()),
-            ["attributed_player", "game_id"],
+            ["attributed_player", "player_id", "game_id"],
         )
         .join(room, on="game_id", how="left")
         .select(GAME_SENTIMENT_SCHEMA.names())
@@ -261,22 +261,33 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     df, excluded_rows = load_attributed_frame(input_path)
     usable_rows = len(df)
     total_rows = usable_rows + excluded_rows
-    attributed_count = df.filter(pl.col("attributed_player").is_not_null()).height
     player_metadata = load_player_metadata()
     team_config = load_team_config()
+
+    # Player dimension: config curation joined with snapshot facts, one
+    # row per attributed player in players.yaml order. Built first so the
+    # fact carries player_id into every player-keyed view.
+    attributed_players = set(
+        df.get_column("attributed_player").drop_nulls().unique().to_list()
+    )
+    players = _build_players_dimension(player_metadata, attributed_players)
+    df = attach_player_id(df, players)
+    df_attributed = df.filter(pl.col("attributed_player").is_not_null())
+    attributed_count = df_attributed.height
 
     # --- Aggregation views ---
 
     # Player overall (attributed only)
     logger.info("Computing player_overall...")
-    df_attributed = df.filter(pl.col("attributed_player").is_not_null())
-    player_overall = compute_metrics(df_attributed, ["attributed_player"]).sort(
-        ["neg_rate", "attributed_player"], descending=[True, False]
-    )
+    player_overall = compute_metrics(
+        df_attributed, ["attributed_player", "player_id"]
+    ).sort(["neg_rate", "attributed_player"], descending=[True, False])
 
     # Player temporal (attributed only)
     logger.info("Computing player_temporal...")
-    player_temporal = compute_metrics(df_attributed, ["attributed_player", "week"])
+    player_temporal = compute_metrics(
+        df_attributed, ["attributed_player", "player_id", "week"]
+    )
 
     # Player by fan team (both non-null)
     logger.info("Computing player_fan_team...")
@@ -284,7 +295,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         pl.col("attributed_player").is_not_null() & pl.col("fan_team").is_not_null()
     )
     player_fan_team = compute_metrics(
-        df_player_fan_team, ["attributed_player", "fan_team"]
+        df_player_fan_team, ["attributed_player", "player_id", "fan_team"]
     )
 
     # Fan team overall (fan_team non-null)
@@ -331,11 +342,6 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         "season": get_active_season(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-
-    # Player dimension: config curation joined with snapshot facts, one
-    # row per attributed player in players.yaml order
-    attributed_players = set(player_overall.get_column("attributed_player").to_list())
-    players = _build_players_dimension(player_metadata, attributed_players)
 
     # Game layer: the Game dimension and the attributed players' box-score
     # lines, derived from the season's game-log snapshots
@@ -398,6 +404,52 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         **outputs,
         "metadata": metadata,
     }
+
+
+def attach_player_id(df: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
+    """
+    Join player_id from the Player dimension onto a frame keyed by attributed_player.
+
+    The id lands right after attributed_player. Rows with a null
+    attributed_player keep a null id; an attributed row without an id
+    fails, because every player-keyed output promises one — a player
+    the active config doesn't carry means the fact is stale and needs
+    reassembly under the current players.yaml.
+
+    Args:
+        df: Frame with an attributed_player column (nullable).
+        players: Player dimension with attributed_player and player_id.
+
+    Returns:
+        df with player_id inserted after attributed_player, row order kept.
+
+    Raises:
+        ValueError: If any attributed row resolves to no player_id.
+    """
+    joined = df.join(
+        players.select("attributed_player", "player_id"),
+        on="attributed_player",
+        how="left",
+        maintain_order="left",
+    )
+    missing = (
+        joined.filter(
+            pl.col("attributed_player").is_not_null() & pl.col("player_id").is_null()
+        )
+        .get_column("attributed_player")
+        .unique()
+        .sort()
+        .to_list()
+    )
+    if missing:
+        raise ValueError(
+            f"No player_id for attributed player(s) {missing} - not in the active "
+            f"players.yaml (or missing an id there); reassemble sentiment.parquet "
+            f"under the current config"
+        )
+    cols = df.columns
+    at = cols.index("attributed_player") + 1
+    return joined.select([*cols[:at], "player_id", *cols[at:]])
 
 
 def build_teams_dimension(team_config: dict[str, dict]) -> pl.DataFrame:

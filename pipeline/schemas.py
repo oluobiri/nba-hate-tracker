@@ -217,18 +217,28 @@ _METRIC_COLUMNS: dict[str, pl.DataType] = {
     "polarization": pl.Float64,
 }
 
-PLAYER_OVERALL_SCHEMA = pl.Schema({"attributed_player": pl.String, **_METRIC_COLUMNS})
+# Every player-keyed view carries the Player dimension's stable id right
+# after its display key, so consumers join on either.
+PLAYER_OVERALL_SCHEMA = pl.Schema(
+    {"attributed_player": pl.String, "player_id": pl.Int64, **_METRIC_COLUMNS}
+)
 
 PLAYER_TEMPORAL_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,
+        "player_id": pl.Int64,
         "week": pl.Datetime("us"),  # pl.from_epoch(...).dt.truncate("1w"), no tz
         **_METRIC_COLUMNS,
     }
 )
 
 PLAYER_FAN_TEAM_SCHEMA = pl.Schema(
-    {"attributed_player": pl.String, "fan_team": pl.String, **_METRIC_COLUMNS}
+    {
+        "attributed_player": pl.String,
+        "player_id": pl.Int64,
+        "fan_team": pl.String,
+        **_METRIC_COLUMNS,
+    }
 )
 
 FAN_TEAM_OVERALL_SCHEMA = pl.Schema(
@@ -249,6 +259,7 @@ FAN_TEAM_OVERALL_SCHEMA = pl.Schema(
 GAME_SENTIMENT_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,  # FK -> players.parquet
+        "player_id": pl.Int64,
         "game_id": pl.String,  # FK -> games.parquet
         **_METRIC_COLUMNS,
         "thread_comment_count": pl.Int64,  # usable fact rows in the game's threads, all players
@@ -395,6 +406,7 @@ POSTS_SCHEMA = pl.Schema(
 COMMENT_SAMPLES_SCHEMA = pl.Schema(
     {
         "attributed_player": pl.String,  # FK -> players.parquet
+        "player_id": pl.Int64,
         "sentiment": pl.String,  # "pos" | "neg" | "neu", as the fact
         "rank": pl.Int64,  # 1..N within (attributed_player, sentiment)
         "comment_id": pl.String,  # provenance back to the fact

@@ -14,6 +14,7 @@ import pytest
 from pipeline.aggregation import (
     load_attributed_frame,
     aggregate_sentiment,
+    attach_player_id,
     build_teams_dimension,
     compute_cumulative_metrics,
     compute_game_sentiment,
@@ -513,6 +514,71 @@ class TestAggregateTeams:
 
         assert result["teams"]["team"].to_list() == list(load_team_config())
         assert result["teams"].height == 30
+
+
+class TestAttachPlayerId:
+    """Tests for attach_player_id (the Player dimension's id onto the fact)."""
+
+    @pytest.fixture
+    def players(self) -> pl.DataFrame:
+        """Two-row Player dimension slice: name -> id."""
+        return pl.DataFrame(
+            {
+                "attributed_player": ["LeBron James", "Jayson Tatum"],
+                "player_id": [2544, 1628369],
+            }
+        )
+
+    def test_id_lands_after_the_display_key_in_row_order(self, players):
+        """player_id is inserted right after attributed_player; row order
+        and the other columns are untouched."""
+        df = pl.DataFrame(
+            {
+                "comment_id": ["c1", "c2", "c3"],
+                "attributed_player": ["Jayson Tatum", "LeBron James", "Jayson Tatum"],
+                "sentiment": ["neg", "pos", "neu"],
+            }
+        )
+
+        out = attach_player_id(df, players)
+
+        assert out.columns == [
+            "comment_id",
+            "attributed_player",
+            "player_id",
+            "sentiment",
+        ]
+        assert out["comment_id"].to_list() == ["c1", "c2", "c3"]
+        assert out["player_id"].to_list() == [1628369, 2544, 1628369]
+
+    def test_unattributed_rows_keep_a_null_id(self, players):
+        """A null attributed_player is not an error; its id is null."""
+        df = pl.DataFrame({"attributed_player": [None, "LeBron James"]})
+
+        out = attach_player_id(df, players)
+
+        assert out["player_id"].to_list() == [None, 2544]
+
+    def test_attributed_row_without_an_id_raises(self, players):
+        """An attributed player the dimension doesn't carry fails the build,
+        naming the player."""
+        df = pl.DataFrame({"attributed_player": ["LeBron James", "Stored Player"]})
+
+        with pytest.raises(ValueError, match=r"Stored Player.*players\.yaml"):
+            attach_player_id(df, players)
+
+    def test_aggregate_sentiment_fails_on_a_player_outside_the_config(self, tmp_path):
+        """A stale parquet attributing a player the active config doesn't
+        carry stops the build instead of silently dropping the player."""
+        rows = {
+            **_lebron_rows(),
+            "attributed_player": ["Stored Player", None],
+            "fan_team": [None, None],
+        }
+        path = _make_test_parquet(tmp_path, rows)
+
+        with pytest.raises(ValueError, match="Stored Player"):
+            aggregate_sentiment(path)
 
 
 class TestConfigVersionLineage:
@@ -1588,16 +1654,20 @@ class TestAggregatePosts:
 
 def _fact(rows: list[tuple[str, str | None, str]]) -> pl.DataFrame:
     """A usable fact frame from (link_id, attributed_player, sentiment)
-    triples — the columns compute_game_sentiment reads."""
+    triples — the columns compute_game_sentiment reads. player_id is
+    assigned per distinct player in order of appearance."""
+    ids = {p: i + 1 for i, p in enumerate(dict.fromkeys(r[1] for r in rows if r[1]))}
     return pl.DataFrame(
         {
             "link_id": [r[0] for r in rows],
             "attributed_player": [r[1] for r in rows],
+            "player_id": [ids.get(r[1]) for r in rows],
             "sentiment": [r[2] for r in rows],
         },
         schema={
             "link_id": pl.String,
             "attributed_player": pl.String,
+            "player_id": pl.Int64,
             "sentiment": pl.String,
         },
     )
@@ -1741,6 +1811,7 @@ class TestAggregateGameSentiment:
         assert view.to_dicts() == [
             {
                 "attributed_player": "LeBron James",
+                "player_id": 2544,
                 "game_id": "0022500001",
                 "neg_count": 0,
                 "pos_count": 1,

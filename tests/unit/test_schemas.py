@@ -102,6 +102,27 @@ class TestPlayersContract:
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
 
+    def test_player_id_follows_the_display_key(self):
+        """Verify every player-keyed output carries the dimension's stable id
+        right after attributed_player, typed like the dimension's."""
+        player_keyed = {
+            name: schema
+            for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items()
+            if "attributed_player" in schema.names() and name != "players"
+        }
+        assert set(player_keyed) == {
+            "player_overall",
+            "player_temporal",
+            "player_fan_team",
+            "game_sentiment",
+            "player_games",
+            "comment_samples",
+        }
+        for name, schema in player_keyed.items():
+            at = schema.names().index("attributed_player")
+            assert schema.names()[at + 1] == "player_id", name
+            assert schema["player_id"] == PLAYERS_SCHEMA["player_id"], name
+
     def test_no_unmarked_team_outside_the_dimension(self):
         """Verify every Team FK on a produced table carries its role
         (fan_team / roster_team / home_team / away_team); bare `team` is
@@ -236,21 +257,25 @@ class TestGameSentimentContract:
     def test_keys_lead_and_match_the_dimensions(self):
         """Verify the two FKs lead, typed like the dimension keys they point at
         and named like player_games' so the client-side join is USING."""
-        assert GAME_SENTIMENT_SCHEMA.names()[:2] == ["attributed_player", "game_id"]
+        assert GAME_SENTIMENT_SCHEMA.names()[:3] == [
+            "attributed_player",
+            "player_id",
+            "game_id",
+        ]
         assert (
             GAME_SENTIMENT_SCHEMA["attributed_player"]
             == PLAYERS_SCHEMA["attributed_player"]
         )
         assert GAME_SENTIMENT_SCHEMA["game_id"] == GAMES_SCHEMA["game_id"]
-        assert set(PLAYER_GAMES_SCHEMA.names()[:2]) == set(
-            GAME_SENTIMENT_SCHEMA.names()[:2]
+        assert set(PLAYER_GAMES_SCHEMA.names()[:3]) == set(
+            GAME_SENTIMENT_SCHEMA.names()[:3]
         )
 
     def test_metrics_match_the_other_views(self):
         """Verify the measure block is the shared compute_metrics shape, then
         the room-size count last."""
-        metrics = PLAYER_OVERALL_SCHEMA.names()[1:]
-        assert GAME_SENTIMENT_SCHEMA.names()[2:] == [*metrics, "thread_comment_count"]
+        metrics = PLAYER_OVERALL_SCHEMA.names()[2:]
+        assert GAME_SENTIMENT_SCHEMA.names()[3:] == [*metrics, "thread_comment_count"]
         for col in metrics:
             assert GAME_SENTIMENT_SCHEMA[col] == PLAYER_OVERALL_SCHEMA[col]
         assert GAME_SENTIMENT_SCHEMA["thread_comment_count"] == pl.Int64
@@ -299,6 +324,7 @@ class TestCommentSamplesContract:
         assert COMMENT_SAMPLES_SCHEMA == pl.Schema(
             {
                 "attributed_player": pl.String,
+                "player_id": pl.Int64,
                 "sentiment": pl.String,
                 "rank": pl.Int64,
                 "comment_id": pl.String,

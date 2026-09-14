@@ -41,7 +41,7 @@ by them).
 import polars as pl
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(

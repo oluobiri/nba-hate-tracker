@@ -48,12 +48,12 @@ erDiagram
     Game              }o--|| Team   : "away_team"
     PlayerGame        }o--|| Game   : "game_id"
     PlayerGame        }o--|| Player : "attributed_player"
-    PlayerGame        }o--|| Team   : "team (dated roster)"
+    PlayerGame        }o--|| Team   : "roster_team (dated roster)"
 ```
 
 The diagram carries **structure only** — entity boxes, the role-playing edges, and each box's grain/key. Full attribute lists live in the entity key below, so the diagram stays readable and so forward-look attributes never appear to already exist.
 
-The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the five aggregate views — `player_overall`, `player_temporal`, `player_team`, `team_overall`, `game_sentiment`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain, and `Post` as `posts`, the bridge at its own grain. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
+The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the five aggregate views — `player_overall`, `player_temporal`, `player_fan_team`, `fan_team_overall`, `game_sentiment`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain, and `Post` as `posts`, the bridge at its own grain. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
 
 ---
 
@@ -89,11 +89,12 @@ The distinction matters because the two layers age differently: frozen fields st
 
 ### `Player` — dimension
 
-**Grain:** one canonical player. Materialized as `players.parquet`: the curated layer from `config/<season>/players.yaml` LEFT JOINed on `player_id` with the season roster snapshot (`data/<season>/reference/rosters.parquet`) — a snapshot gap nulls the snapshot attributes, it never drops the row. The nested `player_metadata` dict inside `aggregates.json` is a legacy serialization of the same dimension (curated attributes only).
+**Grain:** one canonical player. Materialized as `players.parquet`: the curated layer from `config/<season>/players.yaml` LEFT JOINed on `player_id` with the season roster snapshot (`data/<season>/reference/rosters.parquet`) — a snapshot gap nulls the snapshot attributes, it never drops the row. Every player-keyed table carries the dimension's `player_id` beside `attributed_player`, so a consumer joins on either.
 
 | Field | Notes |
 |---|---|
 | `player` | canonical name (PK) |
+| `slug` | URL identity, derived from the name at build (NFKD-fold, lowercase, non-alphanumerics → one hyphen), asserted unique. Read by the frontend, never re-derived |
 | `roster_team` | → **Team** (roster role), from config. **Point-in-time** — see §3 |
 | `conference`, `player_id`, `headshot_url` | curated attributes (config) |
 | `position`, `birth_date`, `experience`, `school`, `jersey_number`, `height`, `weight` | snapshot attributes (roster snapshot, joined on `player_id`). Age is derived from `birth_date` at read time — a stored age is frozen at fetch |
@@ -101,7 +102,7 @@ The distinction matters because the two layers age differently: frozen fields st
 
 ### `Team` — dimension (role-playing)
 
-**Grain:** one franchise. Materialized as `teams.parquet`: a pure export of `config/teams.yaml` — all 30 franchises in config order, no fact dependency. The file carries the `teams.yaml` `version` in its parquet metadata (the same lineage stamp mechanism as the Player dimension). Referenced in **two roles** today (see §2).
+**Grain:** one franchise. Materialized as `teams.parquet`: a pure export of `config/teams.yaml` — all 30 franchises in config order, no fact dependency. The file carries the `teams.yaml` `version` in its parquet metadata (the same lineage stamp mechanism as the Player dimension). Referenced in **four roles** (see §2).
 
 | Field | Notes |
 |---|---|
@@ -128,8 +129,8 @@ The distinction matters because the two layers age differently: frozen fields st
 
 | Field | Notes |
 |---|---|
-| `game_id`, `attributed_player` | PK; → **Game**, → **Player** (the dimension's key name, so the join to the comment-side view at this grain is on identical columns) |
-| `team` | → **Team**, the **dated roster role**: the player's team on that line — see §3 |
+| `game_id`, `attributed_player` | PK; → **Game**, → **Player** (the dimension's key name, so the join to the comment-side view at this grain is on identical columns); `player_id` rides beside the key |
+| `roster_team` | → **Team**, the **dated roster role**: the player's team on that line — see §3 |
 | `opponent`, `is_home` | → **Team**; `is_home` is derived from `games.home_team`, and null on a neutral-site game, where neither side hosted |
 | `wl`, `minutes`, the box-score line, `plus_minus` | as the endpoint serves them |
 
@@ -162,36 +163,35 @@ The atomic fact stays at `created_utc` (seconds) and serves the replay directly;
 
 ---
 
-## 2. The two `team` roles
+## 2. The `team` roles
 
 `Team` is **one role-playing dimension**. The same franchise table is referenced in four roles, and an unmarked `team` is untenable once you have more than one — so the model marks them:
 
 - **`roster_team`** — `Player → Team`. Who a player plays for (season-end).
 - **`fan_team`** — `ClassifiedComment → Team`, resolved from the commenter's flair. Whose fan is talking.
 - **`home_team`** / **`away_team`** — `Game → Team`. Who hosted, who visited.
-- **`team`** on `PlayerGame` — the dated roster role: who the player played for in that game. Unmarked because the row's grain already names the game; `opponent` is its counterpart.
+- **`roster_team`** on `PlayerGame` — the dated roster role: who the player played for in that game; `opponent` is its counterpart. Same name as the dimension's season-end column, a different grain (§3).
 
-**Decided convention:** mark the role everywhere as `roster_team` / `fan_team` / `home_team` / `away_team`. Every Team FK carries the dimension's canonical `team` name, never an abbreviation, so every join is `USING (team)`.
+**Decided convention:** mark the role everywhere as `roster_team` / `fan_team` / `home_team` / `away_team` — on columns and, for the two views keyed by the fan role, on the table name (`player_fan_team`, `fan_team_overall`). Every Team FK carries the dimension's canonical name, never an abbreviation, so every join is `ON <role>_team = teams.team`. Bare `team` is the dimension's own PK and nothing else; a registry test enforces it over every produced table.
 
 **Current-column map:**
 
 | Physical column | Role |
 |---|---|
 | `players.parquet.roster_team` | `roster_team` (role-marked physical name) |
-| `player_metadata.team` (legacy JSON only) | `roster_team` |
-| `player_team.team` | `fan_team` |
-| `team_overall.team` | `fan_team` |
+| `player_fan_team.fan_team` | `fan_team` (role-marked physical name) |
+| `fan_team_overall.fan_team` | `fan_team` (role-marked physical name) |
 | `comment_samples.fan_team` | `fan_team` (role-marked physical name) |
 | `games.home_team`, `games.away_team`, `games.winner` | `home_team` / `away_team` (role-marked physical names) |
-| `player_games.team`, `player_games.opponent` | dated roster role (grain-scoped) |
+| `player_games.roster_team`, `player_games.opponent` | dated roster role (grain-scoped) |
 
-The fan-team columns in the two existing views still carry the unmarked physical name `team`; their rename is a **pending follow-up** (a separate ticket), not planned here. New produced files carry the role-marked name from birth. This doc records the concept and the mapping so the model and the code don't read as contradictory in the meantime.
+Every produced file carries the role-marked name.
 
 ---
 
 ## 3. Roster team is point-in-time
 
-The `Player → Team (roster)` edge carries a fidelity ceiling worth stating plainly: **roster team is point-in-time, not static.** A traded player has different roster teams across weeks, but the season config and the Player dimension carry a single **season-end** team, which is the label the dimension keeps (as NBA.com does). The dated edge exists elsewhere: `player_games.team` is the player's team on each game line, so a roster-keyed temporal question can join through `player_games` instead of the dimension when the trade matters. Views keyed on `roster_team` still carry the season-end ceiling.
+The `Player → Team (roster)` edge carries a fidelity ceiling worth stating plainly: **roster team is point-in-time, not static.** A traded player has different roster teams across weeks, but the season config and the Player dimension carry a single **season-end** team, which is the label the dimension keeps (as NBA.com does). The dated edge exists elsewhere: `player_games.roster_team` is the player's team on each game line, so a roster-keyed temporal question can join through `player_games` instead of the dimension when the trade matters. Views keyed on `roster_team` still carry the season-end ceiling.
 
 `jersey_number` sits under the same ceiling: it can change mid-season, and the dimension carries the snapshot's single value. The consequence class is cosmetic, which is why the ceiling is accepted rather than engineered around.
 
@@ -205,16 +205,18 @@ Three classes of produced table: the five views are **rollups** of `ClassifiedCo
 |---|---|---|---|
 | `player_overall` | Player | fact → Player | "Draymond's overall hate" |
 | `player_temporal` | Player × Week | fact → Player, Date(`week`) | "Draymond week over week" |
-| `player_team` | Player × `fan_team` | fact → Player, Team(fan) | "Lakers fans about Draymond" |
-| `team_overall` | `fan_team` | fact → Team(fan) | "Which fanbase is saltiest" |
+| `player_fan_team` | Player × `fan_team` | fact → Player, Team(fan) | "Lakers fans about Draymond" |
+| `fan_team_overall` | `fan_team` | fact → Team(fan) | "Which fanbase is saltiest" |
 | `game_sentiment` | Player × Game | fact → Post → Game, Player | "The room's verdict on Draymond in Game 7" — counts and rates for the player, plus `thread_comment_count`, the fact rows in that game's threads across all players |
 | `comment_samples` | Player × sentiment × rank | fact → Player, Team(fan) | "The receipts: what a Lakers fan actually said about Draymond" |
 
+Every player-keyed table (`player_overall`, `player_temporal`, `player_fan_team`, `game_sentiment`, `player_games`, `comment_samples`) carries `player_id` right after `attributed_player`: the name is the display key, the id the stable one.
+
 The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me every comment"* deliberately **expensive** — the atomic fact is not a shipped table; a full drill is a separate engine (v3), not a view.
 
-**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` and groups by `roster_team` (or any other dimension attribute: position, experience, school). Likewise a box score beside a sentiment number: `player_games` joins `game_sentiment` on `(game_id, attributed_player)`, and `games` supplies the date, score and phase. The box score is never pre-joined into a rollup, and neither is the whole-room thread size — that is `posts.num_comments` summed per `game_id`, distinct from the view's `thread_comment_count` (fact rows only). A comment reaches its game through the bridge — `posts` on `link_id = post_id`, then `game_id` — and every hop is many-to-one, so a comment lands in at most one game. The view ships counts, never a verdict: the baseline a game is judged against (the player's season rate) and the display floor are consumer choices.
+**Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` (or `USING (player_id)`) and groups by `roster_team` (or any other dimension attribute: position, experience, school). Likewise a box score beside a sentiment number: `player_games` joins `game_sentiment` on `(game_id, attributed_player)`, and `games` supplies the date, score and phase. The box score is never pre-joined into a rollup, and neither is the whole-room thread size — that is `posts.num_comments` summed per `game_id`, distinct from the view's `thread_comment_count` (fact rows only). A comment reaches its game through the bridge — `posts` on `link_id = post_id`, then `game_id` — and every hop is many-to-one, so a comment lands in at most one game. The view ships counts, never a verdict: the baseline a game is judged against (the player's season rate) and the display floor are consumer choices.
 
-**Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
+**Expensive** (a new aggregate view the pipeline must produce): "How Lakers fans' sentiment toward Draymond moved *week over week*" needs a `player_fan_team_temporal` view (Player × `fan_team` × Week) that doesn't exist. A new grain ⇒ a new pipeline output.
 
 > **Non-additive measures guardrail:** the rate measures (`neg_rate`, `pos_rate`, `net_sentiment`, `polarization`) are **non-additive** — re-aggregate them from the counts (`neg_count` / `comment_count`), never by averaging rates across rows. (This is the salt-index lesson: a fanbase's true negativity is `sum(neg) / sum(total)`, not the mean of per-player rates.) `thread_comment_count` on `game_sentiment` is a game-level count repeated on each of the game's player rows — never sum it across players. The guardrail has no purchase on the fact subset — it carries no measures, nothing to re-aggregate; its one rule is that `body` is never truncated (a receipt is verbatim or it isn't a receipt).
 

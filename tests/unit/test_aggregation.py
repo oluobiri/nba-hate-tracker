@@ -655,10 +655,10 @@ class TestTeamsConfigVersionLineage:
 
 
 class TestAggregateTeamConference:
-    """Tests for conference field in team_overall rows."""
+    """Tests for conference field in fan_team_overall rows."""
 
-    def test_team_overall_has_conference(self, tmp_path):
-        """Each team_overall row has a conference field."""
+    def test_fan_team_overall_has_conference(self, tmp_path):
+        """Each fan_team_overall row has a conference field."""
         path = _make_test_parquet(
             tmp_path,
             {
@@ -681,8 +681,8 @@ class TestAggregateTeamConference:
 
         result = aggregate_sentiment(path)
 
-        for row in result["team_overall"].to_dicts():
-            assert "conference" in row, f"Missing conference for {row['team']}"
+        for row in result["fan_team_overall"].to_dicts():
+            assert "conference" in row, f"Missing conference for {row['fan_team']}"
 
     def test_conference_values_correct(self, tmp_path):
         """Conference values match expected East/West assignments."""
@@ -707,13 +707,13 @@ class TestAggregateTeamConference:
         )
 
         result = aggregate_sentiment(path)
-        team_by_name = {r["team"]: r for r in result["team_overall"].to_dicts()}
+        team_by_name = {r["fan_team"]: r for r in result["fan_team_overall"].to_dicts()}
 
         assert team_by_name["Los Angeles Lakers"]["conference"] == "West"
         assert team_by_name["Boston Celtics"]["conference"] == "East"
 
-    def test_team_overall_has_abbreviation(self, tmp_path):
-        """Each team_overall row has the correct abbreviation."""
+    def test_fan_team_overall_has_abbreviation(self, tmp_path):
+        """Each fan_team_overall row has the correct abbreviation."""
         path = _make_test_parquet(
             tmp_path,
             {
@@ -735,13 +735,13 @@ class TestAggregateTeamConference:
         )
 
         result = aggregate_sentiment(path)
-        team_by_name = {r["team"]: r for r in result["team_overall"].to_dicts()}
+        team_by_name = {r["fan_team"]: r for r in result["fan_team_overall"].to_dicts()}
 
         assert team_by_name["Los Angeles Lakers"]["abbreviation"] == "LAL"
         assert team_by_name["Boston Celtics"]["abbreviation"] == "BOS"
 
-    def test_team_overall_has_logo_url(self, tmp_path):
-        """Each team_overall row has a logo_url field."""
+    def test_fan_team_overall_has_logo_url(self, tmp_path):
+        """Each fan_team_overall row has a logo_url field."""
         path = _make_test_parquet(
             tmp_path,
             {
@@ -764,8 +764,8 @@ class TestAggregateTeamConference:
 
         result = aggregate_sentiment(path)
 
-        for row in result["team_overall"].to_dicts():
-            assert "logo_url" in row, f"Missing logo_url for {row['team']}"
+        for row in result["fan_team_overall"].to_dicts():
+            assert "logo_url" in row, f"Missing logo_url for {row['fan_team']}"
             assert row["logo_url"] is not None
             assert "cdn.nba.com/logos" in row["logo_url"]
 
@@ -1516,7 +1516,7 @@ class TestAggregateGames:
         assert game["winner"] == "Los Angeles Lakers"
         line = result["player_games"].row(0, named=True)
         assert line["attributed_player"] == "LeBron James"
-        assert line["team"] == "Los Angeles Lakers"
+        assert line["roster_team"] == "Los Angeles Lakers"
         assert line["opponent"] == "Boston Celtics"
         assert line["is_home"] is True
         assert result["metadata"]["game_count"] == 1

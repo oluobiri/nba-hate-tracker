@@ -22,13 +22,13 @@ from pipeline.receipts import (
 )
 from pipeline.schemas import (
     DASHBOARD_OUTPUT_SCHEMAS,
+    FAN_TEAM_OVERALL_SCHEMA,
     GAME_SENTIMENT_SCHEMA,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
-    TEAM_OVERALL_SCHEMA,
     TEAMS_SCHEMA,
     validate_schema,
 )
@@ -249,8 +249,8 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
             missing file selects the fallback posture.
 
     Returns:
-        Dict where player_overall, player_temporal, player_team,
-        team_overall, game_sentiment, players, teams, games, player_games,
+        Dict where player_overall, player_temporal, player_fan_team,
+        fan_team_overall, game_sentiment, players, teams, games, player_games,
         posts, and comment_samples hold pl.DataFrames conforming to
         DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict.
 
@@ -278,36 +278,40 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     logger.info("Computing player_temporal...")
     player_temporal = compute_metrics(df_attributed, ["attributed_player", "week"])
 
-    # Player by team flair (both non-null). The views keep the unmarked
-    # physical name "team" for the fan role until the contract rename.
-    logger.info("Computing player_team...")
-    df_player_team = df.filter(
+    # Player by fan team (both non-null)
+    logger.info("Computing player_fan_team...")
+    df_player_fan_team = df.filter(
         pl.col("attributed_player").is_not_null() & pl.col("fan_team").is_not_null()
     )
-    player_team = compute_metrics(
-        df_player_team, ["attributed_player", "fan_team"]
-    ).rename({"fan_team": "team"})
+    player_fan_team = compute_metrics(
+        df_player_fan_team, ["attributed_player", "fan_team"]
+    )
 
-    # Team overall (fan_team non-null)
-    logger.info("Computing team_overall...")
+    # Fan team overall (fan_team non-null)
+    logger.info("Computing fan_team_overall...")
     df_team = df.filter(pl.col("fan_team").is_not_null())
 
     # Team dimension: pure config export, also the single source for
-    # team_overall's baked enrichment columns (abbreviation, conference,
-    # logo_url) so the two can never drift.
+    # fan_team_overall's baked enrichment columns (abbreviation,
+    # conference, logo_url) so the two can never drift.
     teams = build_teams_dimension(team_config)
 
     # Positive selection: the enrichment set is the intersection of the
     # two contracts, so a column added to the dimension alone never
-    # propagates into the view. Left join appends the columns after the
-    # metrics, matching TEAM_OVERALL_SCHEMA order; re-sort because joins
-    # don't preserve row order.
-    enrichment_cols = [c for c in TEAM_OVERALL_SCHEMA.names() if c in TEAMS_SCHEMA]
-    team_overall = (
+    # propagates into the view. The dimension's PK is bare `team`; the
+    # view carries the fan role, so the join key is renamed on the way
+    # in. Left join appends the columns after the metrics, matching
+    # FAN_TEAM_OVERALL_SCHEMA order; re-sort because joins don't
+    # preserve row order.
+    enrichment_cols = [c for c in FAN_TEAM_OVERALL_SCHEMA.names() if c in TEAMS_SCHEMA]
+    fan_team_overall = (
         compute_metrics(df_team, ["fan_team"])
-        .rename({"fan_team": "team"})
-        .join(teams.select(enrichment_cols), on="team", how="left")
-        .sort("team")
+        .join(
+            teams.select("team", *enrichment_cols).rename({"team": "fan_team"}),
+            on="fan_team",
+            how="left",
+        )
+        .sort("fan_team")
     )
 
     # Metadata
@@ -377,8 +381,8 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     outputs = {
         "player_overall": player_overall,
         "player_temporal": player_temporal,
-        "player_team": player_team,
-        "team_overall": team_overall,
+        "player_fan_team": player_fan_team,
+        "fan_team_overall": fan_team_overall,
         "game_sentiment": game_sentiment,
         "players": players,
         "teams": teams,

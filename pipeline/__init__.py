@@ -18,11 +18,11 @@ from .sentiment import build_prompt, parse_response
 from .schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     PLAYER_OVERALL_SCHEMA,
-    PLAYER_TEAM_SCHEMA,
+    PLAYER_FAN_TEAM_SCHEMA,
     PLAYER_TEMPORAL_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
-    TEAM_OVERALL_SCHEMA,
+    FAN_TEAM_OVERALL_SCHEMA,
     validate_schema,
 )
 
@@ -30,12 +30,12 @@ __all__ = [
     "AGGREGATE_VIEW_SCHEMAS",
     "ArcticShiftClient",
     "PLAYER_OVERALL_SCHEMA",
-    "PLAYER_TEAM_SCHEMA",
+    "PLAYER_FAN_TEAM_SCHEMA",
     "PLAYER_TEMPORAL_SCHEMA",
     "ProcessingStats",
     "SCHEMA_VERSION",
     "SENTIMENT_SCHEMA",
-    "TEAM_OVERALL_SCHEMA",
+    "FAN_TEAM_OVERALL_SCHEMA",
     "aggregate_sentiment",
     "build_prompt",
     "build_sentiment_dataframe",

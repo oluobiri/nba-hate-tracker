@@ -358,7 +358,7 @@ class TestBuildPlayerGames:
         assert set(lines["attributed_player"]) == {"Jayson Tatum", "LeBron James"}
 
     def test_labels_team_opponent_and_home(self, player_log, games):
-        """team/opponent are canonical names; is_home follows games.home_team."""
+        """roster_team/opponent are canonical names; is_home follows games.home_team."""
         lines = build_player_games(
             player_log, games, PLAYER_METADATA, ABBR_TO_TEAM, ATTRIBUTED
         )
@@ -368,7 +368,7 @@ class TestBuildPlayerGames:
             & (pl.col("attributed_player") == "Jayson Tatum"),
             named=True,
         )
-        assert tatum_away["team"] == "Boston Celtics"
+        assert tatum_away["roster_team"] == "Boston Celtics"
         assert tatum_away["opponent"] == "Los Angeles Lakers"
         assert tatum_away["is_home"] is False
         assert tatum_away["pts"] == 25

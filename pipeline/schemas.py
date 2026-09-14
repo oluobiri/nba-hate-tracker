@@ -227,13 +227,13 @@ PLAYER_TEMPORAL_SCHEMA = pl.Schema(
     }
 )
 
-PLAYER_TEAM_SCHEMA = pl.Schema(
-    {"attributed_player": pl.String, "team": pl.String, **_METRIC_COLUMNS}
+PLAYER_FAN_TEAM_SCHEMA = pl.Schema(
+    {"attributed_player": pl.String, "fan_team": pl.String, **_METRIC_COLUMNS}
 )
 
-TEAM_OVERALL_SCHEMA = pl.Schema(
+FAN_TEAM_OVERALL_SCHEMA = pl.Schema(
     {
-        "team": pl.String,
+        "fan_team": pl.String,
         **_METRIC_COLUMNS,
         "abbreviation": pl.String,  # enrichment from config/teams.yaml
         "conference": pl.String,
@@ -262,8 +262,8 @@ GAME_SENTIMENT_SCHEMA = pl.Schema(
 AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_overall": PLAYER_OVERALL_SCHEMA,
     "player_temporal": PLAYER_TEMPORAL_SCHEMA,
-    "player_team": PLAYER_TEAM_SCHEMA,
-    "team_overall": TEAM_OVERALL_SCHEMA,
+    "player_fan_team": PLAYER_FAN_TEAM_SCHEMA,
+    "fan_team_overall": FAN_TEAM_OVERALL_SCHEMA,
     "game_sentiment": GAME_SENTIMENT_SCHEMA,
 }
 
@@ -274,8 +274,8 @@ AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
 # side LEFT JOINs from the season's rosters.parquet on player_id, so
 # snapshot gaps surface as nulls, never dropped rows.
 # NOTE: roster_team is the *roster* role (who the player plays for),
-# role-marked from birth — distinct from the fan-role `team` in
-# player_team/team_overall. See docs/data-model.md §2.
+# distinct from the fan role (fan_team) on player_fan_team and
+# fan_team_overall.
 
 PLAYERS_CONFIG_COLUMNS: dict[str, pl.DataType] = {
     "attributed_player": pl.String,
@@ -305,8 +305,9 @@ PLAYERS_SCHEMA = pl.Schema(
 )
 
 # --- Team dimension (enforced in pipeline/aggregation.py) -------------------
-# One row per franchise — the Team dimension the fan-role `team` FK in
-# player_team/team_overall references (and the roster_team FK in players).
+# One row per franchise — the Team dimension every role-marked FK
+# references (fan_team on the fan views, roster_team on players and
+# player_games, home_team/away_team on games).
 # Pure config export from config/teams.yaml; aliases stay config-only (the
 # dimension describes and slices, it never selects). PK is bare `team`:
 # role-marking (roster_team/fan_team) applies to FK columns on fact tables,
@@ -349,17 +350,17 @@ GAMES_SCHEMA = pl.Schema(
 )
 
 # player_games.parquet: one row per game x tracked player who dressed.
-# `team` is the player's team on that line — the dated roster edge,
-# distinct from players.roster_team (season-end). Absent lines are
+# `roster_team` is the player's team on that line — the dated roster
+# edge, distinct from players.roster_team (season-end). Absent lines are
 # absent, never fabricated. PK (game_id, attributed_player).
 PLAYER_GAMES_SCHEMA = pl.Schema(
     {
         "game_id": pl.String,  # FK -> games.parquet
         "attributed_player": pl.String,  # FK -> players.parquet
         "player_id": pl.Int64,
-        "team": pl.String,  # FK -> teams.parquet, dated roster role
+        "roster_team": pl.String,  # FK -> teams.parquet, dated roster role
         "opponent": pl.String,  # FK -> teams.parquet
-        "is_home": pl.Boolean,  # team == games.home_team; null on a neutral site
+        "is_home": pl.Boolean,  # roster_team == games.home_team; null on a neutral site
         "wl": pl.String,  # nullable
         **_BOX_SCORE_COLUMNS,
     }

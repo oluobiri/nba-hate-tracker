@@ -102,6 +102,16 @@ class TestPlayersContract:
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
 
+    def test_no_unmarked_team_outside_the_dimension(self):
+        """Verify every Team FK on a produced table carries its role
+        (fan_team / roster_team / home_team / away_team); bare `team` is
+        the Team dimension's own PK and nothing else."""
+        for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
+            if name == "teams":
+                assert "team" in schema.names()
+            else:
+                assert "team" not in schema.names(), name
+
 
 class TestTeamsContract:
     """Contract guards for the Team dimension (teams.parquet)."""
@@ -184,10 +194,10 @@ class TestPlayerGamesContract:
             assert PLAYER_GAMES_SCHEMA[col] == PLAYER_GAME_LOG_SCHEMA[col]
             assert PLAYER_GAMES_SCHEMA[col] == TEAM_GAME_LOG_SCHEMA[col]
 
-    def test_team_is_the_dated_roster_role(self):
-        """Verify the line carries `team` and `opponent` as canonical Team
-        FKs plus is_home — never a snapshot abbreviation column."""
-        for col in ("team", "opponent", "is_home"):
+    def test_roster_team_is_the_dated_roster_role(self):
+        """Verify the line carries `roster_team` and `opponent` as canonical
+        Team FKs plus is_home — never a snapshot abbreviation column."""
+        for col in ("roster_team", "opponent", "is_home"):
             assert col in PLAYER_GAMES_SCHEMA.names()
         assert "team_abbr" not in PLAYER_GAMES_SCHEMA.names()
 

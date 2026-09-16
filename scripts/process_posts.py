@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 import polars as pl
 
 from pipeline.games import TEAM_GAME_LOG_FILENAME, build_games
+from pipeline.lineage import config_stamps
 from pipeline.nba_stats import check_snapshot_season
 from pipeline.posts import (
     POSTS_BRIDGE_FILENAME,
@@ -31,7 +32,7 @@ from pipeline.posts import (
 from pipeline.schemas import POSTS_SCHEMA, SCHEMA_VERSION, validate_schema
 from utils.paths import get_raw_dir, get_reference_dir
 from utils.season_config import get_active_season, set_season_override
-from utils.team_config import load_team_config, load_team_config_version
+from utils.team_config import load_team_config
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -109,7 +110,7 @@ def main() -> None:
     stamps = {
         "season": season,
         "processed_at": datetime.now(timezone.utc).date().isoformat(),
-        "teams_config_version": load_team_config_version(),
+        **config_stamps("posts_bridge"),
         "schema_version": str(SCHEMA_VERSION),
     }
     if team_stamps.get("fetched_at") is not None:

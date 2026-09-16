@@ -13,6 +13,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.games import load_game_tables
+from pipeline.lineage import CONFIG_VERSION_LOADERS, OUTPUT_CONFIGS, config_stamp_key
 from pipeline.nba_stats import check_snapshot_season
 from pipeline.posts import load_posts_table
 from pipeline.receipts import (
@@ -33,16 +34,18 @@ from pipeline.schemas import (
     validate_schema,
 )
 from utils.paths import get_reference_dir
-from utils.player_config import (
-    build_alias_to_player_map,
-    load_player_config_version,
-    load_player_metadata,
-)
+from utils.player_config import build_alias_to_player_map, load_player_metadata
 from utils.season_config import get_active_season
 from utils.formatting import slugify
-from utils.team_config import load_team_config, load_team_config_version
+from utils.team_config import load_team_config
 
 logger = logging.getLogger(__name__)
+
+# What each config derives on the fact, for the drift warnings
+FACT_DERIVED_COLUMNS = {
+    "players": "mentioned_players / attributed_player",
+    "teams": "fan_team",
+}
 
 
 def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
@@ -186,20 +189,14 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     # parquet was assembled under; stale attribution is legitimate to
     # read, just not silently.
     parquet_metadata = pl.read_parquet_metadata(input_path)
-    _check_config_stamp(
-        input_path,
-        parquet_metadata,
-        "players_config_version",
-        load_player_config_version(),
-        "mentioned_players / attributed_player",
-    )
-    _check_config_stamp(
-        input_path,
-        parquet_metadata,
-        "teams_config_version",
-        load_team_config_version(),
-        "fan_team",
-    )
+    for config in OUTPUT_CONFIGS["sentiment"]:
+        _check_config_stamp(
+            input_path,
+            parquet_metadata,
+            config_stamp_key(config),
+            CONFIG_VERSION_LOADERS[config](),
+            FACT_DERIVED_COLUMNS[config],
+        )
 
     # Classifier lineage: a birth certificate, not a cache stamp -
     # nothing live to drift against, so only absence is warnable.

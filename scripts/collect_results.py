@@ -57,12 +57,11 @@ from pipeline.results import (
     build_targets_dataframe,
     check_response_models,
 )
+from pipeline.lineage import config_stamp_key, config_stamps
 from pipeline.schemas import SCHEMA_VERSION
 from pipeline.stage import STAGE_NAMES, ClassifierStage, get_stage
 from utils.paths import get_batches_dir, get_filtered_dir, get_processed_dir
-from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
-from utils.team_config import load_team_config_version
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -438,8 +437,7 @@ def main() -> None:
             # Config-lineage stamps: mentioned_players / attributed_player
             # and fan_team are re-derived under the active configs at
             # every assembly
-            metadata["players_config_version"] = load_player_config_version()
-            metadata["teams_config_version"] = load_team_config_version()
+            metadata.update(config_stamps("sentiment"))
             output_df, failed_requests = build_sentiment_dataframe(
                 responses_dir, filtered_path
             )
@@ -447,7 +445,8 @@ def main() -> None:
             # The pool was selected under a config; the sidecar carries the
             # pool's stamp, not the live one, so the two stay coherent
             pool_metadata = pl.read_parquet_metadata(pool_path)
-            metadata["players_config_version"] = pool_metadata["players_config_version"]
+            players_key = config_stamp_key("players")
+            metadata[players_key] = pool_metadata[players_key]
             output_df, failed_requests = build_targets_dataframe(
                 responses_dir, pool_path
             )

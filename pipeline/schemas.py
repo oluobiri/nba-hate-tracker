@@ -550,7 +550,7 @@ class SamplesRule(TypedDict):
     top_n: int
     min_confidence: float  # polar rows only; neutral exempt
     max_body_chars: int
-    requires_target: bool  # polar candidacy needs a named sentiment_player
+    requires_target: bool  # the classifier's named-pick gate; lifted when verified
     pool_k: int  # verifier candidate depth per cell
     admission: str  # "verified" (on the verifier's verdict) | "gate_only"
 

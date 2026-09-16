@@ -30,13 +30,14 @@ from utils.constants import (
     TARGET_POOL_STRATUM_N,
 )
 from pipeline.lineage import CONFIG_VERSION_LOADERS, config_stamp_key
+from pipeline.stage import classifier_stamp_keys
 from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
 
 POLAR_SENTIMENTS = ("pos", "neg")
 CELL = ["attributed_player", "sentiment"]
-TARGET_STAMP_KEYS = ("classifier_target_model", "classifier_target_prompt_version")
+TARGET_STAMP_KEYS = classifier_stamp_keys("target")
 UNRESOLVED_LOG_MIN = 3  # an untracked string is logged once it recurs under a player
 UNRESOLVED_LOG_TOP = 3  # strings logged per player
 

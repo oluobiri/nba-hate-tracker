@@ -13,6 +13,7 @@ import polars as pl
 import pytest
 
 from pipeline.aggregation import (
+    FACT_DERIVED_COLUMNS,
     _build_players_dimension,
     load_attributed_frame,
     aggregate_sentiment,
@@ -26,6 +27,7 @@ from pipeline.aggregation import (
     pivot_bar_race_wide,
 )
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
+from pipeline.lineage import OUTPUT_CONFIGS
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
@@ -622,6 +624,10 @@ class TestAttachPlayerId:
 
 class TestConfigVersionLineage:
     """Tests for the players_config_version drift warning."""
+
+    def test_drift_descriptions_cover_the_facts_configs(self):
+        """Every config the fact is registered under has a drift description."""
+        assert set(FACT_DERIVED_COLUMNS) == set(OUTPUT_CONFIGS["sentiment"])
 
     ROWS = {
         "comment_id": ["c1", "c2"],
@@ -1235,6 +1241,15 @@ class TestBuildManifest:
 
         assert list(manifest["classifiers"]) == ["sentiment"]
 
+    def test_half_stamped_stage_is_absent(self):
+        """A stage needs both stamps to be an identity; one alone is no block."""
+        outputs, metadata, season_config, versions = _manifest_inputs()
+        metadata["classifier_target_prompt_version"] = None
+
+        manifest = build_manifest(outputs, metadata, season_config, versions)
+
+        assert list(manifest["classifiers"]) == ["sentiment"]
+
     def test_rules_publish_the_constants(self):
         """The threshold, samples rule, floors and formulas are the named
         constants, never retyped."""
@@ -1245,7 +1260,7 @@ class TestBuildManifest:
             "top_n": COMMENT_SAMPLES_TOP_N,
             "min_confidence": COMMENT_SAMPLES_MIN_CONFIDENCE,
             "max_body_chars": COMMENT_SAMPLES_MAX_BODY_CHARS,
-            "requires_target": True,
+            "requires_target": False,
             "pool_k": TARGET_POOL_K,
             "admission": "verified",
         }
@@ -1281,6 +1296,7 @@ class TestBuildManifest:
         rules = build_manifest(outputs, metadata, season_config, versions)["rules"]
 
         assert rules["samples"]["admission"] == "gate_only"
+        assert rules["samples"]["requires_target"] is True
         assert rules["receipts"] == {
             "verified": False,
             "coverage": None,

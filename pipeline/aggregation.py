@@ -478,7 +478,8 @@ def build_manifest(
     classifiers = {}
     for stage in STAGE_NAMES:
         model_key, prompt_key = classifier_stamp_keys(stage)
-        if metadata.get(model_key) and metadata.get(prompt_key):
+        stamps = (metadata.get(model_key), metadata.get(prompt_key))
+        if None not in stamps:
             classifiers[stage] = {
                 "model": metadata[model_key],
                 "prompt_version": metadata[prompt_key],
@@ -508,7 +509,7 @@ def build_manifest(
                 "top_n": COMMENT_SAMPLES_TOP_N,
                 "min_confidence": COMMENT_SAMPLES_MIN_CONFIDENCE,
                 "max_body_chars": COMMENT_SAMPLES_MAX_BODY_CHARS,
-                "requires_target": True,
+                "requires_target": not verified,
                 "pool_k": TARGET_POOL_K,
                 "admission": "verified" if verified else "gate_only",
             },

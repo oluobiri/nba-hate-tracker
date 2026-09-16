@@ -7,7 +7,13 @@ from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     COMMENT_INPUT_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
+    CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
+    METRIC_FORMULAS,
+    POPULATIONS,
+    TABLE_POPULATIONS,
+    Corpus,
+    Manifest,
     GAME_SENTIMENT_SCHEMA,
     GAMES_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
@@ -23,6 +29,7 @@ from pipeline.schemas import (
     TEAMS_SCHEMA,
     validate_schema,
 )
+from utils.season_config import CORPUS_KEYS
 
 
 @pytest.fixture
@@ -384,6 +391,71 @@ class TestRostersContract:
     def test_birth_date_is_date_typed(self):
         """Verify birth_date lands as a real Date, not the endpoint's raw string."""
         assert ROSTERS_SCHEMA["birth_date"] == pl.Date
+
+
+class TestManifestContract:
+    """The manifest's typed shape and the vocabularies it publishes."""
+
+    def test_blocks_in_order(self):
+        """Identity, rules, season facts, registry: the four blocks, in
+        that order, so the file reads top-down and the TS type mirrors it."""
+        assert list(Manifest.__annotations__) == [
+            "schema_version",
+            "season",
+            "generated_at",
+            "config_versions",
+            "classifiers",
+            "snapshots",
+            "rules",
+            "calendar",
+            "corpus",
+            "populations",
+            "tables",
+        ]
+
+    def test_table_populations_enumerate_every_output(self):
+        """Every produced table names its population (or None), so a new
+        output can't ship without saying what it sums to."""
+        assert set(TABLE_POPULATIONS) == set(DASHBOARD_OUTPUT_SCHEMAS)
+
+    def test_fact_tables_draw_from_a_defined_population(self):
+        """The fact rollups and the samples subset each name a population
+        that POPULATIONS defines."""
+        for name in [*AGGREGATE_VIEW_SCHEMAS, "comment_samples"]:
+            assert TABLE_POPULATIONS[name] in POPULATIONS, name
+
+    def test_dimensions_hold_no_comments(self):
+        """Dimensions and reference tables have no comment universe."""
+        for name in ("players", "teams", "games", "player_games", "posts"):
+            assert TABLE_POPULATIONS[name] is None, name
+
+    def test_the_three_universes_differ(self):
+        """The populations the spike found disagreeing are three names."""
+        assert TABLE_POPULATIONS["player_overall"] == "attributed"
+        assert TABLE_POPULATIONS["player_fan_team"] == "attributed_flaired"
+        assert TABLE_POPULATIONS["fan_team_overall"] == "flaired"
+        assert TABLE_POPULATIONS["game_sentiment"] == "in_thread"
+
+    def test_corpus_stages_are_the_funnel(self):
+        """The corpus block's keys are the funnel stages, each a defined
+        population; the first stages are the ones season.yaml records."""
+        assert tuple(Corpus.__annotations__) == CORPUS_STAGES
+        assert CORPUS_STAGES[: len(CORPUS_KEYS)] == CORPUS_KEYS
+        for stage in CORPUS_STAGES:
+            assert stage in POPULATIONS, stage
+
+    def test_metric_formulas_cover_the_rate_columns(self):
+        """Every rate measure on the views has a published formula."""
+        rate_columns = {
+            col for col, dtype in PLAYER_OVERALL_SCHEMA.items() if dtype == pl.Float64
+        }
+        assert set(METRIC_FORMULAS) == rate_columns
+
+    def test_polarization_is_the_non_neutral_share(self):
+        """The name promises a split measure; the formula says what it is."""
+        assert (
+            METRIC_FORMULAS["polarization"] == "(pos_count + neg_count) / comment_count"
+        )
 
 
 class TestValidateSchema:

@@ -33,6 +33,7 @@ from pipeline.schemas import (
     TEAMS_SCHEMA,
     validate_schema,
 )
+from utils.constants import QUALIFIED_THRESHOLD
 from utils.paths import get_reference_dir
 from utils.player_config import build_alias_to_player_map, load_player_metadata
 from utils.season_config import get_active_season
@@ -675,7 +676,7 @@ def pivot_bar_race_wide(
     df: pl.DataFrame,
     players: pl.DataFrame,
     top_n: int = 15,
-    min_ranking_comments: int = 5000,
+    min_ranking_comments: int = QUALIFIED_THRESHOLD,
     min_entry_comments: int = 1000,
 ) -> pl.DataFrame:
     """

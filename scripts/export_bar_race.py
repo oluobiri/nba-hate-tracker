@@ -22,6 +22,7 @@ from pipeline.aggregation import (
     compute_cumulative_metrics,
     pivot_bar_race_wide,
 )
+from utils.constants import QUALIFIED_THRESHOLD
 from utils.paths import get_dashboard_dir
 
 # -----------------------------------------------------------------------------
@@ -79,8 +80,9 @@ def main() -> None:
     parser.add_argument(
         "--min-ranking-comments",
         type=int,
-        default=5000,
-        help="Minimum cumulative comments to qualify for top-N ranking (default: 5000)",
+        default=QUALIFIED_THRESHOLD,
+        help="Minimum cumulative comments to qualify for top-N ranking "
+        f"(default: {QUALIFIED_THRESHOLD})",
     )
     parser.add_argument(
         "--min-entry-comments",

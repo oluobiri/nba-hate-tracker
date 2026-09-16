@@ -33,10 +33,15 @@ pipeline produces. Data dictionary first, enforcement second:
 - COMMENT_SAMPLES_SCHEMA describes the comment-samples fact subset
   (comment_samples.parquet): verbatim rows of the fact, selected not
   aggregated; enforced via the same unified loop.
+- Manifest is the typed shape of manifest.json, the front door written
+  beside the parquets (pipeline/aggregation.py builds it): rules,
+  identity and existence, never results.
 
 This module must not import from other pipeline modules (it is imported
 by them).
 """
+
+from typing import TypedDict
 
 import polars as pl
 
@@ -468,6 +473,148 @@ DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     "posts": POSTS_SCHEMA,
     "comment_samples": COMMENT_SAMPLES_SCHEMA,
 }
+
+# --- Manifest (built in pipeline/aggregation.py) ------------------------------
+# The one file the frontend fetches first, which makes everything else
+# self-describing. Invariant: nothing in it is queryable from the tables
+# it fronts, so it can never disagree with them. TypedDicts, so the
+# shape is one JSON-serializable contract and the first TS-codegen
+# target. Key order is block order: identity, rules, season facts,
+# table registry.
+
+# The rate measures as text formulas over the count columns, for the
+# methodology captions. polarization is the non-neutral share.
+METRIC_FORMULAS: dict[str, str] = {
+    "neg_rate": "neg_count / comment_count",
+    "pos_rate": "pos_count / comment_count",
+    "net_sentiment": "(pos_count - neg_count) / comment_count",
+    "polarization": "(pos_count + neg_count) / comment_count",
+}
+
+# The comment populations by name: the corpus funnel's stages, then the
+# universes the fact tables draw from. Every corpus count and every
+# table's population is one of these, so "which total" is never a guess.
+POPULATIONS: dict[str, str] = {
+    "raw_comments": "every r/NBA comment downloaded for the season window",
+    "population_submitted": (
+        "raw comments that mention a tracked player, as submitted to the "
+        "sentiment classifier"
+    ),
+    "classified": (
+        "submitted comments with a classifier response: the rows of sentiment.parquet"
+    ),
+    "usable": "classified comments minus classifier errors",
+    "attributed": "usable comments resolved to one tracked player",
+    "flaired": "usable comments whose author carries a team flair, attributed or not",
+    "attributed_flaired": "attributed comments whose author carries a team flair",
+    "in_thread": "attributed comments posted in a game or post-game thread",
+}
+
+# The funnel, in order. The first stages are relayed from season.yaml;
+# the rest are derived from sentiment.parquet at build, never transcribed.
+CORPUS_STAGES = (
+    "raw_comments",
+    "population_submitted",
+    "classified",
+    "usable",
+    "attributed",
+)
+
+# Which population each produced table draws from. None for the
+# dimensions and reference tables: they hold no comments.
+TABLE_POPULATIONS: dict[str, str | None] = {
+    "player_overall": "attributed",
+    "player_temporal": "attributed",
+    "player_fan_team": "attributed_flaired",
+    "fan_team_overall": "flaired",
+    "game_sentiment": "in_thread",
+    "players": None,
+    "teams": None,
+    "games": None,
+    "player_games": None,
+    "posts": None,
+    "comment_samples": "attributed",
+}
+
+
+class ClassifierIdentity(TypedDict):
+    """One classifier stage's frozen identity, from its birth-certificate stamps."""
+
+    model: str
+    prompt_version: str
+
+
+class SamplesRule(TypedDict):
+    """How comment_samples are selected; the values are utils.constants."""
+
+    top_n: int
+    min_confidence: float  # polar rows only; neutral exempt
+    max_body_chars: int
+    requires_target: bool  # polar candidacy needs a named sentiment_player
+    pool_k: int  # verifier candidate depth per cell
+    admission: str  # "verified" (on the verifier's verdict) | "gate_only"
+
+
+class ReceiptsFigures(TypedDict):
+    """What the verifier measured; null in the gate-only fallback."""
+
+    verified: bool
+    coverage: float | None  # share of the current pool with a verdict
+    precision: float | None  # affirmed share of the would-have-shipped top-n
+    attribution_toward_share: float | None  # affirmed share, random named stratum
+
+
+class Floors(TypedDict):
+    """Consumer-side minimum comment counts per cell."""
+
+    fanbase_min_n: int
+    week_min_n: int
+    belt_min_n: int
+    game_min_n: int
+
+
+class Rules(TypedDict):
+    """The semantic layer: every number a surface states about its method."""
+
+    qualified_threshold: int
+    samples: SamplesRule
+    receipts: ReceiptsFigures
+    floors: Floors
+    metrics: dict[str, str]  # METRIC_FORMULAS
+
+
+class Corpus(TypedDict):
+    """The funnel counts, keyed by CORPUS_STAGES; None where unrecorded."""
+
+    raw_comments: int | None
+    population_submitted: int | None
+    classified: int
+    usable: int
+    attributed: int
+
+
+class TableEntry(TypedDict):
+    """One produced table: where it is, how big, and what it draws from."""
+
+    file: str
+    rows: int
+    population: str | None  # a POPULATIONS key
+
+
+class Manifest(TypedDict):
+    """manifest.json: identity, rules, season facts, table registry."""
+
+    schema_version: int
+    season: str
+    generated_at: str  # the one field a rebuild changes; diff modulo it
+    config_versions: dict[str, str]  # config name -> version, every registered config
+    classifiers: dict[str, ClassifierIdentity]  # by stage; absent until stamped
+    snapshots: dict[str, str | None]  # games_fetched_at, posts_processed_at
+    rules: Rules
+    calendar: dict[str, str | None]  # season.yaml calendar, CALENDAR_KEYS
+    corpus: Corpus
+    populations: dict[str, str]  # POPULATIONS
+    tables: dict[str, TableEntry]  # every DASHBOARD_OUTPUT_SCHEMAS table
 
 
 def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:

@@ -60,6 +60,15 @@ class TestCountByDay:
 
         assert counts.schema == pl.Schema({"day": pl.Date, "n": pl.Int64})
 
+    def test_missing_created_utc_raises(self):
+        """A row with no created_utc fails loudly rather than vanishing from the sums."""
+        epochs = pl.DataFrame(
+            {"created_utc": [MIDNIGHT, None]}, schema={"created_utc": pl.Int64}
+        )
+
+        with pytest.raises(ValueError, match="1 row\\(s\\) carry no created_utc"):
+            count_by_day(epochs, "n")
+
 
 class TestCountSources:
     """Tests for the two source counters (NDJSON download, fact parquet)."""
@@ -75,6 +84,17 @@ class TestCountSources:
         counts = count_ndjson_by_day(path, "raw_comments")
 
         assert counts["raw_comments"].to_list() == [1, 2]
+
+    def test_ndjson_path_with_quote_and_space(self, tmp_path):
+        """The path is passed to DuckDB as a value, never spliced into SQL."""
+        directory = tmp_path / "o'brien drive"
+        directory.mkdir()
+        path = directory / "r_nba_comments.jsonl"
+        path.write_text(json.dumps({"created_utc": MIDNIGHT}) + "\n")
+
+        counts = count_ndjson_by_day(path, "raw_comments")
+
+        assert counts["raw_comments"].to_list() == [1]
 
     def test_fact_counts_usable_and_attributed(self, tmp_path):
         """usable excludes error rows; attributed needs an attributed_player."""
@@ -140,6 +160,20 @@ class TestCountFactWithoutAttribution:
 
 class TestBuildCorpusDaily:
     """Tests for build_corpus_daily (the zero-filled grid)."""
+
+    def test_present_but_empty_stage_zero_fills(self):
+        """An attributed count that exists with no rows is zero, not null:
+        only an absent column is unknown."""
+        raw = _counts("raw_comments", {date(2024, 1, 1): 5})
+        submitted = _counts("population_submitted", {date(2024, 1, 1): 3})
+        fact = pl.DataFrame(
+            {"day": [date(2024, 1, 1)], "usable": [2], "attributed": [None]},
+            schema={"day": pl.Date, "usable": pl.Int64, "attributed": pl.Int64},
+        )
+
+        table = build_corpus_daily(raw, submitted, fact)
+
+        assert table["attributed"].to_list() == [0]
 
     def test_unknown_stage_is_null_not_zero(self):
         """Without an attributed count the column is null on every day,

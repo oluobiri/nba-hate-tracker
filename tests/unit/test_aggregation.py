@@ -1430,6 +1430,26 @@ class TestAggregateCorpusDaily:
             "population": None,
         }
 
+    def test_mismatched_snapshot_aborts_the_build(self, tmp_path, pinned_snapshot):
+        """A snapshot that disagrees with season.yaml fails aggregation
+        outright, before anything could be written."""
+        pl.DataFrame(
+            {
+                "day": [date(2025, 10, 1)],
+                "raw_comments": [1],
+                "population_submitted": [1],
+                "usable": [1],
+                "attributed": [1],
+            },
+            schema=CORPUS_DAILY_SCHEMA,
+        ).write_parquet(
+            pinned_snapshot / CORPUS_DAILY_FILENAME,
+            metadata={"season": get_active_season(), "processed_at": "2026-09-16"},
+        )
+
+        with pytest.raises(ValueError, match="one owner"):
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+
 
 class TestComputeCumulativeMetrics:
     """Tests for compute_cumulative_metrics function."""

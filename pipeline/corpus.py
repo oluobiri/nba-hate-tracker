@@ -41,7 +41,17 @@ def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
 
     Returns:
         Frame (day: Date, <name>: Int64), one row per day present, sorted.
+
+    Raises:
+        ValueError: If any row has no created_utc; a row that can't be
+            bucketed would silently vanish from every sum otherwise.
     """
+    missing = epochs["created_utc"].null_count()
+    if missing:
+        raise ValueError(
+            f"{missing:,} row(s) carry no created_utc and cannot be bucketed "
+            f"by day ({name})"
+        )
     return (
         epochs.select(
             pl.from_epoch("created_utc", time_unit="s").dt.date().alias("day")
@@ -67,9 +77,8 @@ def count_ndjson_by_day(path: Path, name: str) -> pl.DataFrame:
         Frame (day: Date, <name>: Int64), one row per day present, sorted.
     """
     logger.info(f"Counting {path} by day...")
-    epochs = duckdb.sql(
-        f"SELECT created_utc FROM read_json('{path}', "
-        f"columns={{'created_utc': 'BIGINT'}}, format='newline_delimited')"
+    epochs = duckdb.read_json(
+        str(path), columns={"created_utc": "BIGINT"}, format="newline_delimited"
     ).pl()
     counts = count_by_day(epochs, name)
     logger.info(f"{counts[name].sum():,} rows over {counts.height} days")

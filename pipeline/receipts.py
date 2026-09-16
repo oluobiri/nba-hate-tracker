@@ -495,6 +495,32 @@ def measure_precision(
     return result
 
 
+def measure_attribution_toward(verdicts: pl.DataFrame) -> float | None:
+    """
+    Share of the random named stratum the verifier affirmed as directed
+    at the attributed player.
+
+    The stratum is an unbiased sample of the polar rows with a named
+    sentiment_player, so this is the attribution rule's about-vs-toward
+    split at the population level, distinct from precision (which is
+    measured over the score-ranked receipts).
+
+    Args:
+        verdicts: Resolved sidecar from resolve_verdicts.
+
+    Returns:
+        Affirmed share over the stratum's valid verdicts, or None when
+        the sidecar carries no such rows.
+    """
+    stratum = verdicts.filter((pl.col("stratum") == "random_named") & pl.col("valid"))
+    if not stratum.height:
+        return None
+    affirmed = stratum.filter(
+        pl.col("target_player") == pl.col("attributed_player")
+    ).height
+    return affirmed / stratum.height
+
+
 def _log_precision(precision: dict, verdicts: pl.DataFrame, df: pl.DataFrame) -> None:
     """Log the precision breakdown and the top unresolved strings per player."""
     if precision["precision"] is None:
@@ -552,8 +578,8 @@ def load_receipt_verdicts(
 
     Returns:
         Tuple of (resolved verdicts or None; the receipts metadata block:
-        receipts_verified, receipts_coverage, receipts_precision, and the
-        two classifier_target stamps).
+        receipts_verified, receipts_coverage, receipts_precision,
+        attribution_toward_share, and the two classifier_target stamps).
     """
     if targets_path is None or not targets_path.exists():
         logger.warning(
@@ -564,6 +590,7 @@ def load_receipt_verdicts(
             "receipts_verified": False,
             "receipts_coverage": None,
             "receipts_precision": None,
+            "attribution_toward_share": None,
             **dict.fromkeys(TARGET_STAMP_KEYS),
         }
 
@@ -584,11 +611,19 @@ def load_receipt_verdicts(
 
     precision = measure_precision(df, verdicts)
     _log_precision(precision, verdicts, df)
+    toward = measure_attribution_toward(verdicts)
+    if toward is None:
+        logger.info("attribution toward-share: no random named stratum in the sidecar")
+    else:
+        logger.info(
+            f"attribution toward-share: {toward:.1%} of the random named stratum"
+        )
 
     return verdicts, {
         "receipts_verified": True,
         "receipts_coverage": coverage,
         "receipts_precision": precision["precision"],
+        "attribution_toward_share": toward,
         **stamps,
     }
 

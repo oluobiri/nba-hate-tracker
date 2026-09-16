@@ -25,10 +25,12 @@ from pipeline.aggregation import (
     mask_below_threshold,
     pivot_bar_race_wide,
 )
+from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
+    CORPUS_DAILY_SCHEMA,
     CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
     METRIC_FORMULAS,
@@ -66,7 +68,11 @@ from utils.player_config import (
     load_player_metadata,
     resolve_player,
 )
-from utils.season_config import get_active_season, load_season_config_version
+from utils.season_config import (
+    get_active_season,
+    load_season_config,
+    load_season_config_version,
+)
 from utils.team_config import (
     build_alias_to_team_map,
     extract_team_from_flair,
@@ -1167,6 +1173,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict]:
         "classifier_target_prompt_version": "v1",
         "games_fetched_at": "2026-09-12",
         "posts_processed_at": "2026-09-13",
+        "corpus_daily_processed_at": "2026-09-16",
         "receipts_verified": True,
         "receipts_coverage": 0.999,
         "receipts_precision": 0.777,
@@ -1211,6 +1218,7 @@ class TestBuildManifest:
         assert manifest["snapshots"] == {
             "games_fetched_at": "2026-09-12",
             "posts_processed_at": "2026-09-13",
+            "corpus_daily_processed_at": "2026-09-16",
         }
 
     def test_classifiers_by_stage_from_the_stamps(self):
@@ -1375,6 +1383,52 @@ class TestBuildManifest:
         for name in DASHBOARD_OUTPUT_SCHEMAS:
             assert manifest["tables"][name]["rows"] == result[name].height
         json.dumps(manifest)
+
+
+class TestAggregateCorpusDaily:
+    """Tests for the corpus snapshot's passage through aggregate_sentiment."""
+
+    def test_no_snapshot_ships_empty_table(self, tmp_path, pinned_snapshot):
+        """Without a snapshot the table is empty but present and conforming."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["corpus_daily"].schema == CORPUS_DAILY_SCHEMA
+        assert result["corpus_daily"].height == 0
+        assert result["metadata"]["corpus_daily_processed_at"] is None
+        assert result["manifest"]["snapshots"]["corpus_daily_processed_at"] is None
+        assert result["manifest"]["tables"]["corpus_daily"]["rows"] == 0
+
+    def test_snapshot_ships_when_its_totals_match_the_record(
+        self, tmp_path, pinned_snapshot
+    ):
+        """A snapshot whose owned sums equal season.yaml's figures is
+        exported as cached, its build date in the manifest."""
+        corpus = load_season_config()["corpus"]
+        pl.DataFrame(
+            {
+                "day": [date(2025, 10, 1)],
+                "raw_comments": [corpus["raw_comments"]],
+                "population_submitted": [corpus["population_submitted"]],
+                "usable": [1],
+                "attributed": [1],
+            },
+            schema=CORPUS_DAILY_SCHEMA,
+        ).write_parquet(
+            pinned_snapshot / CORPUS_DAILY_FILENAME,
+            metadata={"season": get_active_season(), "processed_at": "2026-09-16"},
+        )
+
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["corpus_daily"].height == 1
+        assert result["manifest"]["snapshots"]["corpus_daily_processed_at"] == (
+            "2026-09-16"
+        )
+        assert result["manifest"]["tables"]["corpus_daily"] == {
+            "file": "corpus_daily.parquet",
+            "rows": 1,
+            "population": None,
+        }
 
 
 class TestComputeCumulativeMetrics:

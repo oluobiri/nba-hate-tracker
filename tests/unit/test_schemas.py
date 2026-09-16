@@ -7,6 +7,7 @@ from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     COMMENT_INPUT_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
+    CORPUS_DAILY_SCHEMA,
     CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
     METRIC_FORMULAS,
@@ -113,6 +114,7 @@ class TestPlayersContract:
             "player_games",
             "posts",
             "comment_samples",
+            "corpus_daily",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
@@ -428,6 +430,13 @@ class TestManifestContract:
         """Dimensions and reference tables have no comment universe."""
         for name in ("players", "teams", "games", "player_games", "posts"):
             assert TABLE_POPULATIONS[name] is None, name
+
+    def test_corpus_daily_columns_are_corpus_stages(self):
+        """Each count column is a funnel stage under the corpus block's own
+        key, so a column sums to the figure of the same name; the table
+        has no single population."""
+        assert TABLE_POPULATIONS["corpus_daily"] is None
+        assert set(CORPUS_DAILY_SCHEMA.names()[1:]) < set(CORPUS_STAGES)
 
     def test_the_three_universes_differ(self):
         """The populations the spike found disagreeing are three names."""

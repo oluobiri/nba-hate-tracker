@@ -131,9 +131,14 @@ def main() -> None:
         fetched_at = result["metadata"]["games_fetched_at"]
         stamps["games"]["fetched_at"] = fetched_at
         stamps["player_games"]["fetched_at"] = fetched_at
-    # The Post bridge carries its build date forward the same way
+    # The Post bridge and the corpus snapshot carry their build dates
+    # forward the same way
     if result["metadata"]["posts_processed_at"] is not None:
         stamps["posts"]["processed_at"] = result["metadata"]["posts_processed_at"]
+    if result["metadata"]["corpus_daily_processed_at"] is not None:
+        stamps["corpus_daily"]["processed_at"] = result["metadata"][
+            "corpus_daily_processed_at"
+        ]
 
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)

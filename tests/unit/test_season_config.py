@@ -228,6 +228,7 @@ class TestLoadSeasonConfig:
             for k in (
                 "opening_night",
                 "play_in_start",
+                "play_in_end",
                 "playoffs_start",
                 "finals_start",
                 "finals_end",
@@ -235,6 +236,24 @@ class TestLoadSeasonConfig:
         ]
         if all(boundaries):
             assert boundaries == sorted(boundaries)
+
+    def test_play_in_ends_before_the_playoffs(self):
+        """play_in_end is the last play-in game, strictly before playoffs_start."""
+        calendar = load_season_config()["calendar"]
+        if calendar["play_in_end"] and calendar["playoffs_start"]:
+            assert calendar["play_in_end"] < calendar["playoffs_start"]
+
+    def test_all_star_weekend_opens_before_the_game(self):
+        """all_star_weekend is the Friday; all_star is the Sunday game."""
+        calendar = load_season_config()["calendar"]
+        if calendar["all_star_weekend"] and calendar["all_star"]:
+            assert calendar["all_star_weekend"] < calendar["all_star"]
+
+    def test_corpus_funnel_ordered(self):
+        """The submitted population is a subset of the raw corpus."""
+        corpus = load_season_config()["corpus"]
+        if corpus["raw_comments"] and corpus["population_submitted"]:
+            assert corpus["population_submitted"] <= corpus["raw_comments"]
 
     def test_corpus_block_shape(self):
         """corpus is a read-only mapping over exactly CORPUS_KEYS, ints or None."""
@@ -349,7 +368,7 @@ class TestLoadSeasonConfigValidation:
     def test_non_integer_corpus_count_raises(self, facts_file):
         """A corpus count that isn't an int is rejected."""
         doc = {**VALID_FACTS, "season": get_active_season()}
-        doc["corpus"] = {"raw_comments": "7.28M"}
+        doc["corpus"] = {**doc["corpus"], "raw_comments": "7.28M"}
         facts_file(doc)
         with pytest.raises(ValueError, match="corpus.raw_comments"):
             load_season_config()

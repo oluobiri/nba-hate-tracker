@@ -47,13 +47,18 @@ CALENDAR_KEYS = (
     "nba_cup_final",
     "christmas",
     "trade_deadline",
+    "all_star_weekend",
     "all_star",
     "play_in_start",
+    "play_in_end",
     "playoffs_start",
     "finals_start",
     "finals_end",
 )
-CORPUS_KEYS = ("raw_comments",)
+# The corpus funnel's recorded stages: what was downloaded and what was
+# submitted to the classifier. The later stages (classified, usable,
+# attributed) are derived from sentiment.parquet at aggregation.
+CORPUS_KEYS = ("raw_comments", "population_submitted")
 
 SEASON_FORMAT = re.compile(r"\d{4}-\d{2}")
 

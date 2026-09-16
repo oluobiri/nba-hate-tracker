@@ -29,13 +29,15 @@ from utils.constants import (
     TARGET_POOL_STRATA,
     TARGET_POOL_STRATUM_N,
 )
-from utils.player_config import load_player_config_version, resolve_sentiment_player
+from pipeline.lineage import check_config_stamps
+from pipeline.stage import classifier_stamp_keys
+from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
 
 POLAR_SENTIMENTS = ("pos", "neg")
 CELL = ["attributed_player", "sentiment"]
-TARGET_STAMP_KEYS = ("classifier_target_model", "classifier_target_prompt_version")
+TARGET_STAMP_KEYS = classifier_stamp_keys("target")
 UNRESOLVED_LOG_MIN = 3  # an untracked string is logged once it recurs under a player
 UNRESOLVED_LOG_TOP = 3  # strings logged per player
 
@@ -202,19 +204,14 @@ def load_target_verdicts(path: Path) -> tuple[pl.DataFrame, dict[str, str | None
     validate_schema(verdicts, SENTIMENT_TARGETS_SCHEMA, str(path))
 
     metadata = pl.read_parquet_metadata(path)
-    stamped = metadata.get("players_config_version")
-    active = load_player_config_version()
-    if stamped is None:
-        logger.warning(
-            f"{path} carries no players_config_version stamp - "
-            f"pool lineage cannot be verified"
-        )
-    elif stamped != active:
-        logger.warning(
-            f"{path}: players_config_version drift - pool built under config "
-            f"{stamped!r} but active config is {active!r}; verdict coverage "
-            f"of the current pool is the measure to watch"
-        )
+    check_config_stamps(
+        path,
+        metadata,
+        "target_pool",
+        subject="pool",
+        remedy="verdict coverage of the current pool is the measure to watch",
+        log=logger,
+    )
     stamps = {key: metadata.get(key) for key in TARGET_STAMP_KEYS}
     if None in stamps.values():
         logger.warning(
@@ -494,6 +491,32 @@ def measure_precision(
     return result
 
 
+def measure_attribution_toward(verdicts: pl.DataFrame) -> float | None:
+    """
+    Share of the random named stratum the verifier affirmed as directed
+    at the attributed player.
+
+    The stratum is an unbiased sample of the polar rows with a named
+    sentiment_player, so this is the attribution rule's about-vs-toward
+    split at the population level, distinct from precision (which is
+    measured over the score-ranked receipts).
+
+    Args:
+        verdicts: Resolved sidecar from resolve_verdicts.
+
+    Returns:
+        Affirmed share over the stratum's valid verdicts, or None when
+        the sidecar carries no such rows.
+    """
+    stratum = verdicts.filter((pl.col("stratum") == "random_named") & pl.col("valid"))
+    if not stratum.height:
+        return None
+    affirmed = stratum.filter(
+        pl.col("target_player") == pl.col("attributed_player")
+    ).height
+    return affirmed / stratum.height
+
+
 def _log_precision(precision: dict, verdicts: pl.DataFrame, df: pl.DataFrame) -> None:
     """Log the precision breakdown and the top unresolved strings per player."""
     if precision["precision"] is None:
@@ -551,8 +574,8 @@ def load_receipt_verdicts(
 
     Returns:
         Tuple of (resolved verdicts or None; the receipts metadata block:
-        receipts_verified, receipts_coverage, receipts_precision, and the
-        two classifier_target stamps).
+        receipts_verified, receipts_coverage, receipts_precision,
+        attribution_toward_share, and the two classifier_target stamps).
     """
     if targets_path is None or not targets_path.exists():
         logger.warning(
@@ -563,6 +586,7 @@ def load_receipt_verdicts(
             "receipts_verified": False,
             "receipts_coverage": None,
             "receipts_precision": None,
+            "attribution_toward_share": None,
             **dict.fromkeys(TARGET_STAMP_KEYS),
         }
 
@@ -583,11 +607,19 @@ def load_receipt_verdicts(
 
     precision = measure_precision(df, verdicts)
     _log_precision(precision, verdicts, df)
+    toward = measure_attribution_toward(verdicts)
+    if toward is None:
+        logger.info("attribution toward-share: no random named stratum in the sidecar")
+    else:
+        logger.info(
+            f"attribution toward-share: {toward:.1%} of the random named stratum"
+        )
 
     return verdicts, {
         "receipts_verified": True,
         "receipts_coverage": coverage,
         "receipts_precision": precision["precision"],
+        "attribution_toward_share": toward,
         **stamps,
     }
 

@@ -11,6 +11,7 @@ from pipeline.receipts import (
     build_target_pool,
     load_receipt_verdicts,
     load_target_verdicts,
+    measure_attribution_toward,
     measure_coverage,
     measure_precision,
     resolve_verdicts,
@@ -1070,6 +1071,56 @@ class TestMeasurePrecision:
         assert result["precision"] is None
 
 
+class TestMeasureAttributionToward:
+    """Tests for measure_attribution_toward (the random named stratum)."""
+
+    def test_share_affirmed_over_the_random_named_stratum(self):
+        """Three valid random_named verdicts, two affirmed: 2/3. Candidate
+        rows and an unparsed verdict are outside the measure."""
+        verdicts = _verdicts(
+            [
+                {
+                    "comment_id": "r1",
+                    "stratum": "random_named",
+                    "rank": None,
+                    "target_raw": "lebron",
+                },
+                {
+                    "comment_id": "r2",
+                    "stratum": "random_named",
+                    "rank": None,
+                    "target_raw": "LeBron James",
+                },
+                {
+                    "comment_id": "r3",
+                    "stratum": "random_named",
+                    "rank": None,
+                    "target_raw": "Anthony Davis",
+                },
+                {
+                    "comment_id": "r4",
+                    "stratum": "random_named",
+                    "rank": None,
+                    "target_raw": None,
+                    "valid": False,
+                },
+                {"comment_id": "c1", "target_raw": None},
+            ]
+        )
+
+        share = measure_attribution_toward(resolve_verdicts(verdicts, _ALIAS_MAP))
+
+        assert share == pytest.approx(2 / 3)
+
+    def test_no_stratum_rows_yields_null(self):
+        """A sidecar without the random named stratum has no figure."""
+        verdicts = _verdicts([{"comment_id": "c1", "target_raw": "lebron"}])
+
+        assert (
+            measure_attribution_toward(resolve_verdicts(verdicts, _ALIAS_MAP)) is None
+        )
+
+
 class TestLoadReceiptVerdicts:
     """Tests for load_receipt_verdicts (the two-level posture)."""
 
@@ -1099,6 +1150,7 @@ class TestLoadReceiptVerdicts:
             "receipts_verified": False,
             "receipts_coverage": None,
             "receipts_precision": None,
+            "attribution_toward_share": None,
             "classifier_target_model": None,
             "classifier_target_prompt_version": None,
         }
@@ -1133,6 +1185,7 @@ class TestLoadReceiptVerdicts:
             "receipts_verified": True,
             "receipts_coverage": 1.0,
             "receipts_precision": 0.5,
+            "attribution_toward_share": None,
             "classifier_target_model": "claude-sonnet-5",
             "classifier_target_prompt_version": "v1",
         }

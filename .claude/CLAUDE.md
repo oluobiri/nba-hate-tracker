@@ -69,7 +69,8 @@ uv run streamlit run app/streamlit_app.py  # Local dev
 - `data/<season>/dashboard/*.parquet` + `manifest.json` — the contract. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
 
 **Schema contracts:**
-- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.
+- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views) and the `Manifest` typed contract (identity, rules, season facts, table registry); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.
+- `pipeline/lineage.py` — the config-lineage registry: which config version stamps which produced file. Stamp keys are spelled there only.
 
 **Conceptual model:**
 - `docs/data-model.md` — the star schema (one `ClassifiedComment` fact + Player/Team/Date dimensions), the role-playing `team` (roster vs. fan), and the view-lineage "cheap / needs-a-join / expensive" map. Read before designing a new aggregate view; it's the relationships behind `schemas.py`'s structure.

@@ -23,6 +23,7 @@ import sys
 
 
 from pipeline.aggregation import load_attributed_frame
+from pipeline.lineage import config_stamps
 from pipeline.batch import (
     REQUESTS_PER_BATCH,
     REQUESTS_SUBDIR,
@@ -34,7 +35,6 @@ from pipeline.schemas import SCHEMA_VERSION
 from pipeline.targets import TARGET_STAGE
 from utils.constants import TARGET_POOL_K, TARGET_POOL_SEED, TARGET_POOL_STRATUM_N
 from utils.paths import get_batches_dir, get_processed_dir
-from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
 
 logging.basicConfig(
@@ -121,7 +121,7 @@ def main() -> None:
     pool.write_parquet(
         pool_path,
         metadata={
-            "players_config_version": load_player_config_version(),
+            **config_stamps("target_pool"),
             "schema_version": str(SCHEMA_VERSION),
             "pool_k": str(args.k),
             "pool_stratum_n": str(args.stratum_n),

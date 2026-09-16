@@ -128,10 +128,23 @@ COMMENT_SAMPLES_MAX_BODY_CHARS = 500
 
 # The target-verifier pool (pipeline/receipts.py): the candidates the
 # verifier screens, plus two random strata carried as evidence only.
-TARGET_POOL_K = 50  # candidate depth per cell; 216/218 full cells fill 10 within it (2025-26)
+TARGET_POOL_K = (
+    50  # candidate depth per cell; 216/218 full cells fill 10 within it (2025-26)
+)
 TARGET_POOL_STRATA = ("candidate", "random_named", "random_null")
 TARGET_POOL_STRATUM_N = 500  # rows per random stratum
 TARGET_POOL_SEED = 7
+
+# =============================================================================
+# Published floors (manifest rules)
+# =============================================================================
+# Consumer-side minimum comment counts. The tables carry every cell; the
+# manifest publishes these so every surface states the same floor.
+QUALIFIED_THRESHOLD = 5000  # season comments for a player to be ranked
+FANBASE_MIN_N = 200  # player x fan_team cell
+WEEK_MIN_N = 30  # player x week cell
+BELT_MIN_N = 300  # the weekly leader ("the belt")
+GAME_MIN_N = 20  # player x game cell
 
 # =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)

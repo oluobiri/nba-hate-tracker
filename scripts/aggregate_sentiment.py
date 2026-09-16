@@ -5,8 +5,8 @@ Reads classified sentiment parquet, computes player rankings, flair
 segmentation, temporal trends, the game layer and the receipts. Writes
 one parquet per produced table (the fact views, the players and teams
 dimensions, the game layer, and the comment_samples fact subset) plus
-manifest.json, the metadata block, into the season's dashboard
-directory for ad-hoc DuckDB queries and the v2 frontend.
+manifest.json, the front door that describes them, into the season's
+dashboard directory for ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -20,12 +20,11 @@ import sys
 from pathlib import Path
 
 from pipeline.aggregation import aggregate_sentiment
+from pipeline.lineage import config_stamps
 from pipeline.receipts import samples_stamps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.paths import get_dashboard_dir, get_processed_dir
-from utils.player_config import load_player_config_version
 from utils.season_config import set_season_override
-from utils.team_config import load_team_config_version
 
 # -----------------------------------------------------------------------------
 # Logging setup
@@ -115,28 +114,26 @@ def main() -> None:
     # written: a bad config version (e.g. an unquoted YAML float) must
     # abort here, never between output writes — a torn output set
     # (fresh dimensions beside stale views) is exactly the inconsistency
-    # the stamps exist to make detectable.
+    # the stamps exist to make detectable. Every output resolves through
+    # the registry, so an unregistered table fails here too.
     stamps: dict[str, dict[str, str]] = {
-        "players": {"players_config_version": load_player_config_version()},
-        "teams": {"teams_config_version": load_team_config_version()},
+        name: config_stamps(name) for name in DASHBOARD_OUTPUT_SCHEMAS
     }
 
     # Run aggregation
     result = aggregate_sentiment(input_path, targets_path)
     # The samples stamp is read back from the sidecar inside aggregation
     # (verified flag + verifier identity), so it joins the set here
-    stamps["comment_samples"] = samples_stamps(result["metadata"])
+    stamps["comment_samples"].update(samples_stamps(result["metadata"]))
     # The game tables carry their snapshot's fetch date forward (None
     # when no snapshot was on disk and the tables are empty)
-    game_stamps = {}
     if result["metadata"]["games_fetched_at"] is not None:
-        game_stamps["fetched_at"] = result["metadata"]["games_fetched_at"]
-    stamps["games"] = stamps["player_games"] = game_stamps
+        fetched_at = result["metadata"]["games_fetched_at"]
+        stamps["games"]["fetched_at"] = fetched_at
+        stamps["player_games"]["fetched_at"] = fetched_at
     # The Post bridge carries its build date forward the same way
-    posts_stamps = {}
     if result["metadata"]["posts_processed_at"] is not None:
-        posts_stamps["processed_at"] = result["metadata"]["posts_processed_at"]
-    stamps["posts"] = posts_stamps
+        stamps["posts"]["processed_at"] = result["metadata"]["posts_processed_at"]
 
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -151,17 +148,16 @@ def main() -> None:
     for name in DASHBOARD_OUTPUT_SCHEMAS:
         parquet_path = output_dir / f"{name}.parquet"
         result[name].write_parquet(
-            parquet_path, metadata={**version_stamp, **stamps.get(name, {})}
+            parquet_path, metadata={**version_stamp, **stamps[name]}
         )
         logger.info(f"Wrote {parquet_path}")
 
-    # Write the metadata block as manifest.json. Seeded verbatim; the
-    # manifest's published shape (identity, semantic layer, season facts,
-    # table registry) is built up in place from here — don't type
-    # consumers against this seed.
+    # The manifest is a rebuild-stable projection except for generated_at;
+    # verify a rebuild as identical modulo that one field
     manifest_path = output_dir / MANIFEST_FILENAME
     with open(manifest_path, "w") as f:
-        json.dump(result["metadata"], f, indent=2, default=str)
+        json.dump(result["manifest"], f, indent=2)
+        f.write("\n")
     logger.info(f"Wrote {manifest_path}")
 
     # Log metadata summary

@@ -54,10 +54,7 @@ class ClassifierStage:
     @property
     def stamp_keys(self) -> tuple[str, str]:
         """Parquet metadata keys for this stage's model and prompt_version."""
-        return (
-            f"classifier_{self.name}_model",
-            f"classifier_{self.name}_prompt_version",
-        )
+        return classifier_stamp_keys(self.name)
 
     def __post_init__(self) -> None:
         """Reject sampling params that would clobber the request's own keys."""
@@ -66,6 +63,24 @@ class ClassifierStage:
             raise ValueError(
                 f"Stage {self.name!r} sampling_params may not set {sorted(clash)}"
             )
+
+
+def classifier_stamp_keys(name: str) -> tuple[str, str]:
+    """
+    Parquet metadata keys carrying a stage's model and prompt_version.
+
+    Args:
+        name: One of STAGE_NAMES.
+
+    Returns:
+        (model key, prompt_version key), e.g. classifier_sentiment_model.
+
+    Raises:
+        ValueError: If name is not a known stage.
+    """
+    if name not in STAGE_NAMES:
+        raise ValueError(f"Unknown classifier stage {name!r}; known: {STAGE_NAMES}")
+    return (f"classifier_{name}_model", f"classifier_{name}_prompt_version")
 
 
 def get_stage(name: str) -> ClassifierStage:

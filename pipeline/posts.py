@@ -20,7 +20,7 @@ import polars as pl
 
 from pipeline.nba_stats import check_snapshot_season
 from pipeline.schemas import POSTS_SCHEMA, validate_schema
-from utils.team_config import load_team_config_version
+from pipeline.lineage import check_config_stamps
 
 logger = logging.getLogger(__name__)
 
@@ -446,14 +446,14 @@ def load_posts_table(
         }
 
     stamps = check_snapshot_season(path, subject="post bridge", log=logger)
-    active_version = load_team_config_version()
-    if stamps.get("teams_config_version") != active_version:
-        logger.warning(
-            f"{path}: teams_config_version drift - bridge built with config "
-            f"{stamps.get('teams_config_version')!r} but active config is "
-            f"{active_version!r}; title spellings may be missed, re-run "
-            "scripts.process_posts"
-        )
+    check_config_stamps(
+        path,
+        stamps,
+        "posts_bridge",
+        subject="bridge",
+        remedy="title spellings may be missed, re-run scripts.process_posts",
+        log=logger,
+    )
     if stamps.get("games_fetched_at") != games_fetched_at:
         logger.warning(
             f"{path} was derived from a game-log fetch of "

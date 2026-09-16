@@ -8,11 +8,15 @@
 #
 # calendar admission test: recurring (exists every season), crisp (one
 # league-published date, zero judgment), consumable (a phase boundary or
-# annotation). One-off storylines stay out. `all_star` is the All-Star
-# Game date (the Sunday), not the weekend's start.
-# corpus: gate-time facts no shipped table can derive.
+# annotation). One-off storylines stay out. `all_star_weekend` is the
+# Friday the weekend opens; `all_star` is the Game (the Sunday).
+# `play_in_end` is the last play-in game, the day before playoffs_start.
+# corpus: facts no shipped table can derive. raw_comments is the
+# download count at gate time; population_submitted is the filtered
+# comment count sent to the sentiment classifier, counted from the
+# batch request files.
 
-version: "1.0"
+version: "2.0"
 season: "2025-26"
 
 start_date: "2025-10-01"
@@ -25,11 +29,14 @@ calendar:
   nba_cup_final: "2025-12-16"
   christmas: "2025-12-25"
   trade_deadline: "2026-02-05"
+  all_star_weekend: "2026-02-13"
   all_star: "2026-02-15"
   play_in_start: "2026-04-14"
+  play_in_end: "2026-04-17"
   playoffs_start: "2026-04-18"
   finals_start: "2026-06-03"
   finals_end: "2026-06-13"
 
 corpus:
   raw_comments: 7283478
+  population_submitted: 2110485

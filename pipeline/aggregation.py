@@ -3,7 +3,8 @@ Sentiment aggregation pipeline.
 
 Transforms the classified sentiment parquet into the published tables:
 the fact rollups, the Player and Team dimensions, the game layer, the
-Post bridge, and the comment-samples subset, plus the metadata block.
+Post bridge, and the comment-samples subset, plus the manifest that
+fronts them.
 """
 
 import logging
@@ -13,7 +14,12 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.games import load_game_tables
-from pipeline.lineage import CONFIG_VERSION_LOADERS, OUTPUT_CONFIGS, config_stamp_key
+from pipeline.lineage import (
+    CONFIG_VERSION_LOADERS,
+    OUTPUT_CONFIGS,
+    config_stamp_key,
+    config_versions,
+)
 from pipeline.nba_stats import check_snapshot_season
 from pipeline.posts import load_posts_table
 from pipeline.receipts import (
@@ -22,21 +28,37 @@ from pipeline.receipts import (
     log_comment_samples_diagnostics,
 )
 from pipeline.schemas import (
+    CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
     FAN_TEAM_OVERALL_SCHEMA,
     GAME_SENTIMENT_SCHEMA,
+    METRIC_FORMULAS,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
+    POPULATIONS,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
+    TABLE_POPULATIONS,
     TEAMS_SCHEMA,
+    Manifest,
     validate_schema,
 )
-from utils.constants import QUALIFIED_THRESHOLD
+from pipeline.stage import STAGE_NAMES, classifier_stamp_keys
+from utils.constants import (
+    BELT_MIN_N,
+    COMMENT_SAMPLES_MAX_BODY_CHARS,
+    COMMENT_SAMPLES_MIN_CONFIDENCE,
+    COMMENT_SAMPLES_TOP_N,
+    FANBASE_MIN_N,
+    GAME_MIN_N,
+    QUALIFIED_THRESHOLD,
+    TARGET_POOL_K,
+    WEEK_MIN_N,
+)
 from utils.paths import get_reference_dir
 from utils.player_config import build_alias_to_player_map, load_player_metadata
-from utils.season_config import get_active_season
+from utils.season_config import get_active_season, load_season_config
 from utils.formatting import slugify
 from utils.team_config import load_team_config
 
@@ -160,6 +182,31 @@ def _check_config_stamp(
         )
 
 
+def read_classifier_stamps(input_path: Path) -> dict[str, str | None]:
+    """
+    Read the sentiment stage's birth-certificate stamps off the fact.
+
+    A birth certificate, not a cache stamp: minted at batch time and
+    carried through every re-assembly, so there is nothing live to
+    drift against and only absence is warnable.
+
+    Args:
+        input_path: Path to sentiment.parquet.
+
+    Returns:
+        The classifier_sentiment_model / classifier_sentiment_prompt_version
+        stamps, None where absent.
+    """
+    metadata = pl.read_parquet_metadata(input_path)
+    stamps = {key: metadata.get(key) for key in classifier_stamp_keys("sentiment")}
+    if None in stamps.values():
+        logger.warning(
+            f"{input_path} carries no classifier identity stamp - "
+            f"classifier lineage cannot be verified"
+        )
+    return stamps
+
+
 def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     """
     Load the fact with its config-versioned attributes.
@@ -197,17 +244,6 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
             config_stamp_key(config),
             CONFIG_VERSION_LOADERS[config](),
             FACT_DERIVED_COLUMNS[config],
-        )
-
-    # Classifier lineage: a birth certificate, not a cache stamp -
-    # nothing live to drift against, so only absence is warnable.
-    if (
-        parquet_metadata.get("classifier_sentiment_model") is None
-        or parquet_metadata.get("classifier_sentiment_prompt_version") is None
-    ):
-        logger.warning(
-            f"{input_path} carries no classifier identity stamp - "
-            f"classifier lineage cannot be verified"
         )
 
     total_rows = len(df)
@@ -251,13 +287,16 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         Dict where player_overall, player_temporal, player_fan_team,
         fan_team_overall, game_sentiment, players, teams, games, player_games,
         posts, and comment_samples hold pl.DataFrames conforming to
-        DASHBOARD_OUTPUT_SCHEMAS; metadata is a dict.
+        DASHBOARD_OUTPUT_SCHEMAS; manifest is the Manifest built from
+        them; metadata is the build's internal block (the stamp source
+        for the write site).
 
     Raises:
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
             or a computed output does not match its schema contract.
     """
     df, excluded_rows = load_attributed_frame(input_path)
+    classifier_stamps = read_classifier_stamps(input_path)
     usable_rows = len(df)
     total_rows = usable_rows + excluded_rows
     player_metadata = load_player_metadata()
@@ -340,6 +379,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         "week_count": unique_weeks,
         "season": get_active_season(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        **classifier_stamps,
     }
 
     # Game layer: the Game dimension and the attributed players' box-score
@@ -399,9 +439,109 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
         validate_schema(outputs[name], schema, name)
 
+    manifest = build_manifest(
+        outputs, metadata, load_season_config(), config_versions()
+    )
     return {
         **outputs,
+        "manifest": manifest,
         "metadata": metadata,
+    }
+
+
+def build_manifest(
+    outputs: dict[str, pl.DataFrame],
+    metadata: dict,
+    season_config: dict,
+    config_versions: dict[str, str],
+) -> Manifest:
+    """
+    Project a build onto the Manifest contract.
+
+    Rules, identity and existence, never results: the published
+    constants, the stamps the build read, the season facts relayed
+    from config, and the table registry generated from
+    DASHBOARD_OUTPUT_SCHEMAS. Counts are the build's own (classified,
+    usable, attributed) or season.yaml's (raw, submitted); nothing is
+    transcribed. A classifier stage with no stamps has no block.
+
+    Args:
+        outputs: The produced tables, keyed as DASHBOARD_OUTPUT_SCHEMAS.
+        metadata: The build's internal block: counts, stamps, receipts
+            figures, snapshot dates, season and generated_at.
+        season_config: The active season's facts (load_season_config()).
+        config_versions: Config name -> version (lineage.config_versions()).
+
+    Returns:
+        The manifest, JSON-serializable, keys in block order.
+    """
+    classifiers = {}
+    for stage in STAGE_NAMES:
+        model_key, prompt_key = classifier_stamp_keys(stage)
+        if metadata.get(model_key) and metadata.get(prompt_key):
+            classifiers[stage] = {
+                "model": metadata[model_key],
+                "prompt_version": metadata[prompt_key],
+            }
+
+    verified = metadata["receipts_verified"]
+    derived_counts = {
+        "classified": metadata["total_comments"],
+        "usable": metadata["usable_comments"],
+        "attributed": metadata["attributed_comments"],
+    }
+    relayed_counts = season_config["corpus"]
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "season": metadata["season"],
+        "generated_at": metadata["generated_at"],
+        "config_versions": dict(config_versions),
+        "classifiers": classifiers,
+        "snapshots": {
+            "games_fetched_at": metadata["games_fetched_at"],
+            "posts_processed_at": metadata["posts_processed_at"],
+        },
+        "rules": {
+            "qualified_threshold": QUALIFIED_THRESHOLD,
+            "samples": {
+                "top_n": COMMENT_SAMPLES_TOP_N,
+                "min_confidence": COMMENT_SAMPLES_MIN_CONFIDENCE,
+                "max_body_chars": COMMENT_SAMPLES_MAX_BODY_CHARS,
+                "requires_target": True,
+                "pool_k": TARGET_POOL_K,
+                "admission": "verified" if verified else "gate_only",
+            },
+            "receipts": {
+                "verified": verified,
+                "coverage": metadata["receipts_coverage"],
+                "precision": metadata["receipts_precision"],
+                "attribution_toward_share": metadata["attribution_toward_share"],
+            },
+            "floors": {
+                "fanbase_min_n": FANBASE_MIN_N,
+                "week_min_n": WEEK_MIN_N,
+                "belt_min_n": BELT_MIN_N,
+                "game_min_n": GAME_MIN_N,
+            },
+            "metrics": dict(METRIC_FORMULAS),
+        },
+        "calendar": dict(season_config["calendar"]),
+        "corpus": {
+            stage: relayed_counts[stage]
+            if stage in relayed_counts
+            else derived_counts[stage]
+            for stage in CORPUS_STAGES
+        },
+        "populations": dict(POPULATIONS),
+        "tables": {
+            name: {
+                "file": f"{name}.parquet",
+                "rows": outputs[name].height,
+                "population": TABLE_POPULATIONS[name],
+            }
+            for name in DASHBOARD_OUTPUT_SCHEMAS
+        },
     }
 
 

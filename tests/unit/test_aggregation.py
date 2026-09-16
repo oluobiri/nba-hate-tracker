@@ -5,6 +5,7 @@ Tests cover compute_metrics, the dimension builders, the attributed
 frame loader, and aggregate_sentiment end to end.
 """
 
+import json
 import logging
 from datetime import date
 
@@ -16,6 +17,7 @@ from pipeline.aggregation import (
     load_attributed_frame,
     aggregate_sentiment,
     attach_player_id,
+    build_manifest,
     build_teams_dimension,
     compute_cumulative_metrics,
     compute_game_sentiment,
@@ -27,6 +29,12 @@ from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
+    CORPUS_STAGES,
+    DASHBOARD_OUTPUT_SCHEMAS,
+    METRIC_FORMULAS,
+    POPULATIONS,
+    TABLE_POPULATIONS,
+    Manifest,
     GAME_SENTIMENT_SCHEMA,
     GAMES_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
@@ -41,13 +49,24 @@ from pipeline.schemas import (
     SENTIMENT_TARGETS_SCHEMA,
     TEAMS_SCHEMA,
 )
+from utils.constants import (
+    BELT_MIN_N,
+    COMMENT_SAMPLES_MAX_BODY_CHARS,
+    COMMENT_SAMPLES_MIN_CONFIDENCE,
+    COMMENT_SAMPLES_TOP_N,
+    FANBASE_MIN_N,
+    GAME_MIN_N,
+    QUALIFIED_THRESHOLD,
+    TARGET_POOL_K,
+    WEEK_MIN_N,
+)
 from utils.player_config import (
     build_alias_to_player_map,
     load_player_config_version,
     load_player_metadata,
     resolve_player,
 )
-from utils.season_config import get_active_season
+from utils.season_config import get_active_season, load_season_config_version
 from utils.team_config import (
     build_alias_to_team_map,
     extract_team_from_flair,
@@ -1109,6 +1128,243 @@ def _make_temporal_records(
     return pl.DataFrame(records).with_columns(
         pl.col("week").str.to_datetime(time_unit="us")
     )
+
+
+def _manifest_inputs() -> tuple[dict, dict, dict, dict]:
+    """Minimal (outputs, metadata, season_config, config_versions) for
+    build_manifest: empty frames except a two-row player_overall, a
+    verified receipts block, both classifier stages stamped."""
+    outputs = {
+        name: pl.DataFrame(schema=schema)
+        for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items()
+    }
+    outputs["player_overall"] = pl.DataFrame(
+        {
+            "attributed_player": ["LeBron James", "Luka Doncic"],
+            "player_id": [2544, 1629029],
+            "neg_count": [1, 2],
+            "pos_count": [1, 0],
+            "neu_count": [0, 0],
+            "comment_count": [2, 2],
+            "neg_rate": [0.5, 1.0],
+            "pos_rate": [0.5, 0.0],
+            "net_sentiment": [0.0, -1.0],
+            "polarization": [1.0, 1.0],
+        },
+        schema=DASHBOARD_OUTPUT_SCHEMAS["player_overall"],
+    )
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "season": "2025-26",
+        "generated_at": "2026-09-16T12:00:00+00:00",
+        "total_comments": 7,
+        "usable_comments": 6,
+        "excluded_comments": 1,
+        "attributed_comments": 4,
+        "classifier_sentiment_model": "claude-haiku-4-5-20251001",
+        "classifier_sentiment_prompt_version": "v2-production+s-hint",
+        "classifier_target_model": "claude-sonnet-5",
+        "classifier_target_prompt_version": "v1",
+        "games_fetched_at": "2026-09-12",
+        "posts_processed_at": "2026-09-13",
+        "receipts_verified": True,
+        "receipts_coverage": 0.999,
+        "receipts_precision": 0.777,
+        "attribution_toward_share": 0.74,
+    }
+    season_config = {
+        "calendar": {"opening_night": "2025-10-21", "finals_end": None},
+        "corpus": {"raw_comments": 100, "population_submitted": 50},
+    }
+    config_versions = {"players": "4.5", "teams": "2.2", "season": "2.0"}
+    return outputs, metadata, season_config, config_versions
+
+
+class TestBuildManifest:
+    """Tests for build_manifest, the pure projection of a build onto the contract."""
+
+    def test_keys_follow_the_contract_in_block_order(self):
+        """The manifest's top-level keys are exactly the Manifest fields, in order."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert list(manifest) == list(Manifest.__annotations__)
+
+    def test_is_json_serializable(self):
+        """Read-only config mappings become plain dicts; the file is plain JSON."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert json.loads(json.dumps(manifest)) == manifest
+
+    def test_identity_block(self):
+        """schema_version, season and generated_at come from the build;
+        config_versions is every registered config's version."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert manifest["schema_version"] == SCHEMA_VERSION
+        assert manifest["season"] == "2025-26"
+        assert manifest["generated_at"] == "2026-09-16T12:00:00+00:00"
+        assert manifest["config_versions"] == {
+            "players": "4.5",
+            "teams": "2.2",
+            "season": "2.0",
+        }
+        assert manifest["snapshots"] == {
+            "games_fetched_at": "2026-09-12",
+            "posts_processed_at": "2026-09-13",
+        }
+
+    def test_classifiers_by_stage_from_the_stamps(self):
+        """Each stamped stage is a {model, prompt_version} block."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert manifest["classifiers"] == {
+            "sentiment": {
+                "model": "claude-haiku-4-5-20251001",
+                "prompt_version": "v2-production+s-hint",
+            },
+            "target": {"model": "claude-sonnet-5", "prompt_version": "v1"},
+        }
+
+    def test_unstamped_stage_is_absent(self):
+        """Feature detection: a stage with no stamps has no block, not nulls."""
+        outputs, metadata, season_config, versions = _manifest_inputs()
+        metadata["classifier_target_model"] = None
+        metadata["classifier_target_prompt_version"] = None
+
+        manifest = build_manifest(outputs, metadata, season_config, versions)
+
+        assert list(manifest["classifiers"]) == ["sentiment"]
+
+    def test_rules_publish_the_constants(self):
+        """The threshold, samples rule, floors and formulas are the named
+        constants, never retyped."""
+        rules = build_manifest(*_manifest_inputs())["rules"]
+
+        assert rules["qualified_threshold"] == QUALIFIED_THRESHOLD
+        assert rules["samples"] == {
+            "top_n": COMMENT_SAMPLES_TOP_N,
+            "min_confidence": COMMENT_SAMPLES_MIN_CONFIDENCE,
+            "max_body_chars": COMMENT_SAMPLES_MAX_BODY_CHARS,
+            "requires_target": True,
+            "pool_k": TARGET_POOL_K,
+            "admission": "verified",
+        }
+        assert rules["floors"] == {
+            "fanbase_min_n": FANBASE_MIN_N,
+            "week_min_n": WEEK_MIN_N,
+            "belt_min_n": BELT_MIN_N,
+            "game_min_n": GAME_MIN_N,
+        }
+        assert rules["metrics"] == METRIC_FORMULAS
+
+    def test_receipts_figures_pass_through(self):
+        """The verifier's figures ride under rules.receipts."""
+        rules = build_manifest(*_manifest_inputs())["rules"]
+
+        assert rules["receipts"] == {
+            "verified": True,
+            "coverage": 0.999,
+            "precision": 0.777,
+            "attribution_toward_share": 0.74,
+        }
+
+    def test_gate_only_fallback_says_so(self):
+        """Without a sidecar the samples admit on the gate and the figures are null."""
+        outputs, metadata, season_config, versions = _manifest_inputs()
+        metadata.update(
+            receipts_verified=False,
+            receipts_coverage=None,
+            receipts_precision=None,
+            attribution_toward_share=None,
+        )
+
+        rules = build_manifest(outputs, metadata, season_config, versions)["rules"]
+
+        assert rules["samples"]["admission"] == "gate_only"
+        assert rules["receipts"] == {
+            "verified": False,
+            "coverage": None,
+            "precision": None,
+            "attribution_toward_share": None,
+        }
+
+    def test_calendar_is_the_season_facts(self):
+        """The calendar block is season.yaml's, nulls kept, as a plain dict."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert manifest["calendar"] == {
+            "opening_night": "2025-10-21",
+            "finals_end": None,
+        }
+
+    def test_corpus_funnel_relayed_then_derived(self):
+        """The recorded stages come from season.yaml, the rest from the
+        build, in CORPUS_STAGES order; classified is every fact row."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert list(manifest["corpus"]) == list(CORPUS_STAGES)
+        assert manifest["corpus"] == {
+            "raw_comments": 100,
+            "population_submitted": 50,
+            "classified": 7,
+            "usable": 6,
+            "attributed": 4,
+        }
+        assert manifest["populations"] == POPULATIONS
+
+    def test_tables_enumerate_every_output_with_rows_and_population(self):
+        """The registry is generated from DASHBOARD_OUTPUT_SCHEMAS: file,
+        row count and the population each table draws from."""
+        manifest = build_manifest(*_manifest_inputs())
+
+        assert list(manifest["tables"]) == list(DASHBOARD_OUTPUT_SCHEMAS)
+        assert manifest["tables"]["player_overall"] == {
+            "file": "player_overall.parquet",
+            "rows": 2,
+            "population": "attributed",
+        }
+        assert manifest["tables"]["players"] == {
+            "file": "players.parquet",
+            "rows": 0,
+            "population": None,
+        }
+        for name, entry in manifest["tables"].items():
+            assert entry["population"] == TABLE_POPULATIONS[name]
+
+    def test_aggregate_sentiment_returns_the_manifest(self, tmp_path):
+        """End to end: the fact's classifier stamps reach the manifest, the
+        counts are the build's, and the table rows match the frames."""
+        path = _make_test_parquet(
+            tmp_path,
+            _lebron_rows_with_error(),
+            metadata={
+                "classifier_sentiment_model": "claude-haiku-4-5-20251001",
+                "classifier_sentiment_prompt_version": "v2-production+s-hint",
+            },
+        )
+
+        result = aggregate_sentiment(path)
+        manifest = result["manifest"]
+
+        assert manifest["season"] == get_active_season()
+        assert manifest["classifiers"] == {
+            "sentiment": {
+                "model": "claude-haiku-4-5-20251001",
+                "prompt_version": "v2-production+s-hint",
+            }
+        }
+        assert manifest["config_versions"] == {
+            "players": load_player_config_version(),
+            "teams": load_team_config_version(),
+            "season": load_season_config_version(),
+        }
+        assert manifest["corpus"]["classified"] == 3
+        assert manifest["corpus"]["usable"] == 2
+        assert manifest["corpus"]["attributed"] == 2
+        assert manifest["rules"]["receipts"]["verified"] is False
+        for name in DASHBOARD_OUTPUT_SCHEMAS:
+            assert manifest["tables"][name]["rows"] == result[name].height
+        json.dumps(manifest)
 
 
 class TestComputeCumulativeMetrics:

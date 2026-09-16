@@ -5,8 +5,8 @@ Reads classified sentiment parquet, computes player rankings, flair
 segmentation, temporal trends, the game layer and the receipts. Writes
 one parquet per produced table (the fact views, the players and teams
 dimensions, the game layer, and the comment_samples fact subset) plus
-manifest.json, the metadata block, into the season's dashboard
-directory for ad-hoc DuckDB queries and the v2 frontend.
+manifest.json, the front door that describes them, into the season's
+dashboard directory for ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -152,13 +152,12 @@ def main() -> None:
         )
         logger.info(f"Wrote {parquet_path}")
 
-    # Write the metadata block as manifest.json. Seeded verbatim; the
-    # manifest's published shape (identity, semantic layer, season facts,
-    # table registry) is built up in place from here — don't type
-    # consumers against this seed.
+    # The manifest is a rebuild-stable projection except for generated_at;
+    # verify a rebuild as identical modulo that one field
     manifest_path = output_dir / MANIFEST_FILENAME
     with open(manifest_path, "w") as f:
-        json.dump(result["metadata"], f, indent=2, default=str)
+        json.dump(result["manifest"], f, indent=2)
+        f.write("\n")
     logger.info(f"Wrote {manifest_path}")
 
     # Log metadata summary

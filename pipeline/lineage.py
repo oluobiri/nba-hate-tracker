@@ -9,7 +9,9 @@ declared: the write sites, the read-side drift checks and the
 manifest's config_versions block all resolve through it.
 """
 
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Mapping
+from pathlib import Path
 
 from utils.player_config import load_player_config_version
 from utils.season_config import load_season_config_version
@@ -101,3 +103,46 @@ def config_stamps(output: str) -> dict[str, str]:
         config_stamp_key(config): CONFIG_VERSION_LOADERS[config]()
         for config in OUTPUT_CONFIGS[output]
     }
+
+
+def check_config_stamps(
+    path: Path,
+    metadata: Mapping[str, str],
+    output: str,
+    *,
+    subject: str,
+    remedy: str,
+    log: logging.Logger,
+) -> None:
+    """
+    Warn when a produced file's config stamps are missing or drifted.
+
+    The read-side counterpart of config_stamps(): for each config the
+    output is registered under, compare the file's stamp with the live
+    version. A stale file is legitimate to read, just not silently.
+    Absence is reported distinctly from drift.
+
+    Args:
+        path: The file the metadata was read from, for the messages.
+        metadata: The file's parquet metadata.
+        output: A registered produced-file name (OUTPUT_CONFIGS key).
+        subject: What the file is, for the messages ("pool", "bridge").
+        remedy: What drift means for the reader and what to do about it.
+        log: The calling module's logger, so warnings carry its name.
+
+    Raises:
+        KeyError: If the output is not registered in OUTPUT_CONFIGS.
+    """
+    for config in OUTPUT_CONFIGS[output]:
+        key = config_stamp_key(config)
+        stamped = metadata.get(key)
+        active = CONFIG_VERSION_LOADERS[config]()
+        if stamped is None:
+            log.warning(
+                f"{path} carries no {key} stamp - {subject} lineage cannot be verified"
+            )
+        elif stamped != active:
+            log.warning(
+                f"{path}: {key} drift - {subject} built under config {stamped!r} "
+                f"but active config is {active!r}; {remedy}"
+            )

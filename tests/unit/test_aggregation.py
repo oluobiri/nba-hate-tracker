@@ -13,7 +13,6 @@ import polars as pl
 import pytest
 
 from pipeline.aggregation import (
-    FACT_DERIVED_COLUMNS,
     _build_players_dimension,
     load_attributed_frame,
     aggregate_sentiment,
@@ -27,7 +26,6 @@ from pipeline.aggregation import (
     pivot_bar_race_wide,
 )
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
-from pipeline.lineage import OUTPUT_CONFIGS
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
@@ -624,10 +622,6 @@ class TestAttachPlayerId:
 
 class TestConfigVersionLineage:
     """Tests for the players_config_version drift warning."""
-
-    def test_drift_descriptions_cover_the_facts_configs(self):
-        """Every config the fact is registered under has a drift description."""
-        assert set(FACT_DERIVED_COLUMNS) == set(OUTPUT_CONFIGS["sentiment"])
 
     ROWS = {
         "comment_id": ["c1", "c2"],

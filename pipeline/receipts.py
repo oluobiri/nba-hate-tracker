@@ -29,7 +29,7 @@ from utils.constants import (
     TARGET_POOL_STRATA,
     TARGET_POOL_STRATUM_N,
 )
-from pipeline.lineage import CONFIG_VERSION_LOADERS, config_stamp_key
+from pipeline.lineage import check_config_stamps
 from pipeline.stage import classifier_stamp_keys
 from utils.player_config import resolve_sentiment_player
 
@@ -204,19 +204,14 @@ def load_target_verdicts(path: Path) -> tuple[pl.DataFrame, dict[str, str | None
     validate_schema(verdicts, SENTIMENT_TARGETS_SCHEMA, str(path))
 
     metadata = pl.read_parquet_metadata(path)
-    players_key = config_stamp_key("players")
-    stamped = metadata.get(players_key)
-    active = CONFIG_VERSION_LOADERS["players"]()
-    if stamped is None:
-        logger.warning(
-            f"{path} carries no {players_key} stamp - pool lineage cannot be verified"
-        )
-    elif stamped != active:
-        logger.warning(
-            f"{path}: {players_key} drift - pool built under config "
-            f"{stamped!r} but active config is {active!r}; verdict coverage "
-            f"of the current pool is the measure to watch"
-        )
+    check_config_stamps(
+        path,
+        metadata,
+        "target_pool",
+        subject="pool",
+        remedy="verdict coverage of the current pool is the measure to watch",
+        log=logger,
+    )
     stamps = {key: metadata.get(key) for key in TARGET_STAMP_KEYS}
     if None in stamps.values():
         logger.warning(

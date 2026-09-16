@@ -6,11 +6,15 @@ declared and spelled; these tests pin that every produced file is
 registered and that an unregistered one fails at the write site.
 """
 
+import logging
+from pathlib import Path
+
 import pytest
 
 from pipeline.lineage import (
     CONFIG_VERSION_LOADERS,
     OUTPUT_CONFIGS,
+    check_config_stamps,
     config_stamp_key,
     config_stamps,
     config_versions,
@@ -98,3 +102,68 @@ class TestConfigStamps:
         instead of shipping unstamped."""
         with pytest.raises(KeyError, match="storylines"):
             config_stamps("storylines")
+
+
+class TestCheckConfigStamps:
+    """The read-side drift check over a registered output's configs."""
+
+    PATH = Path("data/x/sentiment.parquet")
+    LOG = logging.getLogger("tests.lineage")
+
+    def _warnings(self, caplog) -> list[str]:
+        return [r.message for r in caplog.records if r.levelno == logging.WARNING]
+
+    def _check(self, metadata: dict, caplog) -> list[str]:
+        with caplog.at_level(logging.WARNING, logger="tests.lineage"):
+            check_config_stamps(
+                self.PATH,
+                metadata,
+                "sentiment",
+                subject="fact",
+                remedy="reassemble",
+                log=self.LOG,
+            )
+        return self._warnings(caplog)
+
+    def test_matching_stamps_are_silent(self, caplog):
+        """Live versions under the registry keys warn about nothing."""
+        assert self._check(config_stamps("sentiment"), caplog) == []
+
+    def test_drift_names_both_versions_and_the_remedy(self, caplog):
+        """A stale stamp is reported as drift, with the stamped and live
+        versions and the caller's remedy."""
+        stamps = {**config_stamps("sentiment"), "teams_config_version": "0.1"}
+
+        warnings = self._check(stamps, caplog)
+
+        assert len(warnings) == 1
+        assert "teams_config_version drift" in warnings[0]
+        assert "'0.1'" in warnings[0]
+        assert repr(CONFIG_VERSION_LOADERS["teams"]()) in warnings[0]
+        assert warnings[0].endswith("reassemble")
+
+    def test_absence_is_not_drift(self, caplog):
+        """A missing stamp says lineage cannot be verified, not that it drifted."""
+        stamps = {"players_config_version": CONFIG_VERSION_LOADERS["players"]()}
+
+        warnings = self._check(stamps, caplog)
+
+        assert len(warnings) == 1
+        assert "carries no teams_config_version stamp" in warnings[0]
+        assert "drift" not in warnings[0]
+
+    def test_logs_through_the_callers_logger(self, caplog):
+        """Warnings carry the calling module's logger name."""
+        with caplog.at_level(logging.WARNING, logger="tests.lineage"):
+            check_config_stamps(
+                self.PATH, {}, "sentiment", subject="fact", remedy="r", log=self.LOG
+            )
+
+        assert {r.name for r in caplog.records} == {"tests.lineage"}
+
+    def test_unregistered_output_raises(self):
+        """Same registry, same failure: an unknown output has no configs to check."""
+        with pytest.raises(KeyError, match="storylines"):
+            check_config_stamps(
+                self.PATH, {}, "storylines", subject="s", remedy="r", log=self.LOG
+            )

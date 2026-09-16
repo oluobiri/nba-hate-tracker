@@ -14,12 +14,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.games import load_game_tables
-from pipeline.lineage import (
-    CONFIG_VERSION_LOADERS,
-    OUTPUT_CONFIGS,
-    config_stamp_key,
-    config_versions,
-)
+from pipeline.lineage import check_config_stamps, config_versions
 from pipeline.nba_stats import check_snapshot_season
 from pipeline.posts import load_posts_table
 from pipeline.receipts import (
@@ -63,12 +58,6 @@ from utils.formatting import slugify
 from utils.team_config import load_team_config
 
 logger = logging.getLogger(__name__)
-
-# What each config derives on the fact, for the drift warnings
-FACT_DERIVED_COLUMNS = {
-    "players": "mentioned_players / attributed_player",
-    "teams": "fan_team",
-}
 
 
 def compute_metrics(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
@@ -164,24 +153,6 @@ def compute_game_sentiment(df: pl.DataFrame, posts: pl.DataFrame) -> pl.DataFram
     )
 
 
-def _check_config_stamp(
-    input_path: Path, metadata: dict[str, str], key: str, active: str, derived: str
-) -> None:
-    """Warn when a config-lineage stamp is missing or drifted from the active config."""
-    stamped = metadata.get(key)
-    if stamped is None:
-        logger.warning(
-            f"{input_path} carries no {key} stamp - config lineage of {derived} "
-            f"cannot be verified"
-        )
-    elif stamped != active:
-        logger.warning(
-            f"{input_path}: {key} drift - parquet assembled with config "
-            f"{stamped!r} but active config is {active!r}; {derived} may not "
-            f"reflect the current config"
-        )
-
-
 def read_classifier_stamps(input_path: Path) -> dict[str, str | None]:
     """
     Read the sentiment stage's birth-certificate stamps off the fact.
@@ -236,15 +207,15 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     # Config-lineage checks: the derived columns reflect the configs the
     # parquet was assembled under; stale attribution is legitimate to
     # read, just not silently.
-    parquet_metadata = pl.read_parquet_metadata(input_path)
-    for config in OUTPUT_CONFIGS["sentiment"]:
-        _check_config_stamp(
-            input_path,
-            parquet_metadata,
-            config_stamp_key(config),
-            CONFIG_VERSION_LOADERS[config](),
-            FACT_DERIVED_COLUMNS[config],
-        )
+    check_config_stamps(
+        input_path,
+        pl.read_parquet_metadata(input_path),
+        "sentiment",
+        subject="fact",
+        remedy="attributed_player / fan_team may not reflect the current config; "
+        "reassemble sentiment.parquet",
+        log=logger,
+    )
 
     total_rows = len(df)
     logger.info(f"Loaded {total_rows:,} rows")

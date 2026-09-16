@@ -33,6 +33,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - COMMENT_SAMPLES_SCHEMA describes the comment-samples fact subset
   (comment_samples.parquet): verbatim rows of the fact, selected not
   aggregated; enforced via the same unified loop.
+- CORPUS_DAILY_SCHEMA describes the corpus funnel at day grain
+  (corpus_daily.parquet), built from the raw download by
+  pipeline/corpus.py and cached as a reference snapshot.
 - Manifest is the typed shape of manifest.json, the front door written
   beside the parquets (pipeline/aggregation.py builds it): rules,
   identity and existence, never results.
@@ -457,6 +460,24 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
     }
 )
 
+# --- Corpus at day grain (built in pipeline/corpus.py) -----------------------
+# One row per UTC day of the download's extent, zero-filled: the funnel's
+# stages as counts, named exactly as the manifest's corpus block so each
+# column sums to the figure of the same name. Counts only; rolling means
+# are a display choice. The window is ET-midnight and the days are UTC,
+# so the last day is a stub; the grid follows the data, not the
+# calendar, so that the sums hold. attributed is null throughout until
+# the season's fact carries materialized attribution.
+CORPUS_DAILY_SCHEMA = pl.Schema(
+    {
+        "day": pl.Date,
+        "raw_comments": pl.Int64,
+        "population_submitted": pl.Int64,
+        "usable": pl.Int64,
+        "attributed": pl.Int64,  # nullable
+    }
+)
+
 # Every table the aggregation stage produces -> its schema, across the
 # classes of produced table: the fact rollups (AGGREGATE_VIEW_SCHEMAS),
 # the Player and Team dimensions, the game layer (Game dimension +
@@ -472,6 +493,7 @@ DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     "player_games": PLAYER_GAMES_SCHEMA,
     "posts": POSTS_SCHEMA,
     "comment_samples": COMMENT_SAMPLES_SCHEMA,
+    "corpus_daily": CORPUS_DAILY_SCHEMA,
 }
 
 # --- Manifest (built in pipeline/aggregation.py) ------------------------------
@@ -521,7 +543,8 @@ CORPUS_STAGES = (
 )
 
 # Which population each produced table draws from. None for the
-# dimensions and reference tables: they hold no comments.
+# dimensions and reference tables, which hold no comments, and for
+# corpus_daily, whose columns are each their own population.
 TABLE_POPULATIONS: dict[str, str | None] = {
     "player_overall": "attributed",
     "player_temporal": "attributed",
@@ -534,6 +557,7 @@ TABLE_POPULATIONS: dict[str, str | None] = {
     "player_games": None,
     "posts": None,
     "comment_samples": "attributed",
+    "corpus_daily": None,
 }
 
 
@@ -609,7 +633,9 @@ class Manifest(TypedDict):
     generated_at: str  # the one field a rebuild changes; diff modulo it
     config_versions: dict[str, str]  # config name -> version, every registered config
     classifiers: dict[str, ClassifierIdentity]  # by stage; absent until stamped
-    snapshots: dict[str, str | None]  # games_fetched_at, posts_processed_at
+    snapshots: dict[
+        str, str | None
+    ]  # games_fetched_at, posts/corpus_daily processed_at
     rules: Rules
     calendar: dict[str, str | None]  # season.yaml calendar, CALENDAR_KEYS
     corpus: Corpus

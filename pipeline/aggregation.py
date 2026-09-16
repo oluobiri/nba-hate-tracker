@@ -3,8 +3,8 @@ Sentiment aggregation pipeline.
 
 Transforms the classified sentiment parquet into the published tables:
 the fact rollups, the Player and Team dimensions, the game layer, the
-Post bridge, and the comment-samples subset, plus the manifest that
-fronts them.
+Post bridge, the comment-samples subset and the day-grain corpus, plus
+the manifest that fronts them.
 """
 
 import logging
@@ -13,6 +13,7 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_game_tables
 from pipeline.lineage import check_config_stamps, config_versions
 from pipeline.nba_stats import check_snapshot_season
@@ -257,8 +258,8 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     Returns:
         Dict where player_overall, player_temporal, player_fan_team,
         fan_team_overall, game_sentiment, players, teams, games, player_games,
-        posts, and comment_samples hold pl.DataFrames conforming to
-        DASHBOARD_OUTPUT_SCHEMAS; manifest is the Manifest built from
+        posts, comment_samples and corpus_daily hold pl.DataFrames
+        conforming to DASHBOARD_OUTPUT_SCHEMAS; manifest is the Manifest built from
         them; metadata is the build's internal block (the stamp source
         for the write site).
 
@@ -380,6 +381,15 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     )
     metadata.update(posts_metadata)
 
+    # The corpus at day grain: a snapshot of the raw download, exported
+    # only if its totals agree with season.yaml's record
+    logger.info("Loading corpus_daily...")
+    season_config = load_season_config()
+    corpus_daily, corpus_metadata = load_corpus_daily(
+        get_reference_dir(), season_config["corpus"]
+    )
+    metadata.update(corpus_metadata)
+
     # Player x Game: the fact rolled up through the bridge
     logger.info("Computing game_sentiment...")
     game_sentiment = compute_game_sentiment(df, posts)
@@ -406,13 +416,12 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         "player_games": player_games,
         "posts": posts,
         "comment_samples": comment_samples,
+        "corpus_daily": corpus_daily,
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
         validate_schema(outputs[name], schema, name)
 
-    manifest = build_manifest(
-        outputs, metadata, load_season_config(), config_versions()
-    )
+    manifest = build_manifest(outputs, metadata, season_config, config_versions())
     return {
         **outputs,
         "manifest": manifest,
@@ -473,6 +482,7 @@ def build_manifest(
         "snapshots": {
             "games_fetched_at": metadata["games_fetched_at"],
             "posts_processed_at": metadata["posts_processed_at"],
+            "corpus_daily_processed_at": metadata["corpus_daily_processed_at"],
         },
         "rules": {
             "qualified_threshold": QUALIFIED_THRESHOLD,

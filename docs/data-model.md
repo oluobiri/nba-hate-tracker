@@ -53,7 +53,7 @@ erDiagram
 
 The diagram carries **structure only** — entity boxes, the role-playing edges, and each box's grain/key. Full attribute lists live in the entity key below, so the diagram stays readable and so forward-look attributes never appear to already exist.
 
-The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the five aggregate views — `player_overall`, `player_temporal`, `player_fan_team`, `fan_team_overall`, `game_sentiment`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain, and `Post` as `posts`, the bridge at its own grain. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
+The pipeline produces three classes of table from this model: **rollups** of the `ClassifiedComment` fact (the five aggregate views — `player_overall`, `player_temporal`, `player_fan_team`, `fan_team_overall`, `game_sentiment`: measures at a coarser grain), the **dimensions** (`players`, `teams`, `games`), and a **fact subset** (`comment_samples`: verbatim rows of the fact at its own grain, selected not aggregated). `PlayerGame` is materialized as `player_games`, a dimension-side table with its own grain, `Post` as `posts`, the bridge at its own grain, and `Date` as `corpus_daily`, the day grain with the corpus funnel's counts. The subset is not a new entity — it *is* the `ClassifiedComment` box, sliced; the rollups are derived from the fact, not from the subset. The lineage of all of them is the table in §4.
 
 ---
 
@@ -148,13 +148,13 @@ The distinction matters because the two layers age differently: frozen fields st
 
 **Published subset:** every game and post-game thread, plus every post a receipt points at (its title is the receipt's context). A game's room is the **sum** of `num_comments` over its threads — a second-half thread can outgrow the primary.
 
-### `Date` — dimension (modeled target, not yet materialized)
+### `Date` — dimension (materialized at day grain as `corpus_daily`)
 
-**Grain:** one day. **No Date table exists today** — temporal currently lives as a single derived column, `week` (`created_utc` truncated to Monday), on `player_temporal`. This box models the *target* shape that the V2 temporal page and cross-season work are designed against.
+**Grain:** one day. The day grain is materialized as `corpus_daily`: one row per UTC day of the download's extent, carrying the corpus funnel's counts for that day (raw, submitted, usable, attributed) under the same names the manifest's `corpus` block uses, so each column sums to the season figure of that name. It is not player-keyed — the Player × Day grain is the temporal page's *weekly* view, `player_temporal`, whose `week` (`created_utc` truncated to Monday) remains a derived column rather than a join. This box models the rest of the *target* shape the temporal page and cross-season work are designed against.
 
 | Attribute | Status |
 |---|---|
-| `day` (key) | **target** — the modeled day grain |
+| `day` (key) | **present-now** — `corpus_daily.day` |
 | `week` / `week_of_season` | `week` is **present-now** (derived); `week_of_season` is **forward** |
 | `season_phase` (regular / playoffs) | **near-term** — just a date cut, no external data |
 | `event_label` ("what happened this week") | **v3** — needs game data |
@@ -209,6 +209,7 @@ Three classes of produced table: the five views are **rollups** of `ClassifiedCo
 | `fan_team_overall` | `fan_team` | fact → Team(fan) | "Which fanbase is saltiest" |
 | `game_sentiment` | Player × Game | fact → Post → Game, Player | "The room's verdict on Draymond in Game 7" — counts and rates for the player, plus `thread_comment_count`, the fact rows in that game's threads across all players |
 | `comment_samples` | Player × sentiment × rank | fact → Player, Team(fan) | "The receipts: what a Lakers fan actually said about Draymond" |
+| `corpus_daily` | Day | raw download → Date(`day`); fact for `usable` / `attributed` | "How loud was the sub on June 11, and how much of it was about someone" |
 
 Every player-keyed table (`player_overall`, `player_temporal`, `player_fan_team`, `game_sentiment`, `player_games`, `comment_samples`) carries `player_id` right after `attributed_player`: the name is the display key, the id the stable one.
 

@@ -44,6 +44,7 @@ OUTPUT_CONFIGS: dict[str, tuple[str, ...]] = {
     "player_games": (),
     "posts": (),
     "comment_samples": (),
+    "corpus_daily": (),
 }
 
 

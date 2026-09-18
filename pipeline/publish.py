@@ -412,8 +412,9 @@ def publish_season(
     Publish one season's dashboard drop, or plan it.
 
     Pre-flight, list the bucket, diff; a dry run stops there. Otherwise
-    write the plan, invalidate the season path, and confirm the public
-    manifest before returning.
+    write the plan, invalidate the season path if anything changed, and
+    confirm the public manifest before returning. A run that changes
+    nothing (a re-run after a timed-out invalidation) still confirms.
 
     Args:
         dashboard_dir: The season's dashboard directory.
@@ -441,7 +442,10 @@ def publish_season(
         return plan
 
     execute_plan(s3, target.bucket, plan)
-    invalidate(cloudfront, target.distribution_id, key_prefix)
+    if plan.upload or plan.delete:
+        invalidate(cloudfront, target.distribution_id, key_prefix)
+    else:
+        logger.info("Nothing changed - edge not invalidated")
     verify_public_manifest(
         target.base_url, key_prefix, manifest["generated_at"], http_get=http_get
     )

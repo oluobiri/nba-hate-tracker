@@ -615,6 +615,35 @@ class TestPublishSeason:
         assert plan.upload == tuple(objects)
         http_get.assert_called_once()
 
+    def test_unchanged_run_verifies_without_invalidating(
+        self, dashboard_dir, manifest, s3, cloudfront
+    ):
+        """When every object already matches, no PUT, no invalidation (any
+        CloudFront call would hit an unstubbed response), but still verify."""
+        s3_client, s3_stub = s3
+        cf_client, _ = cloudfront
+        _, objects = build_upload_set(dashboard_dir, SEASON, PREFIX)
+        s3_stub.add_response(
+            "list_objects_v2",
+            _listing(objects),
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX},
+        )
+        http_get = _http_get(manifest["generated_at"])
+
+        plan = publish_season(
+            dashboard_dir,
+            SEASON,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=False,
+            http_get=http_get,
+        )
+
+        assert plan.upload == ()
+        assert plan.skip == tuple(objects)
+        http_get.assert_called_once()
+
     def test_pre_flight_failure_touches_nothing(self, dashboard_dir, s3, cloudfront):
         """A failed check aborts before the bucket is even listed."""
         s3_client, _ = s3

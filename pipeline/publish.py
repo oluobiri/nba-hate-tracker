@@ -35,6 +35,13 @@ MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024
 
 SCHEMA_VERSION_STAMP_KEY = "schema_version"
 
+# S3 caps a single DeleteObjects request at this many keys.
+DELETE_BATCH_SIZE = 1000
+
+# CloudFront's own waiter cadence; module constants so tests can zero them.
+INVALIDATION_POLL_SECONDS = 20
+INVALIDATION_MAX_ATTEMPTS = 30
+
 HTTP_TIMEOUT_SECONDS = 30
 
 
@@ -186,10 +193,6 @@ def build_upload_set(
     return manifest, objects
 
 
-# S3 caps a single DeleteObjects request at this many keys.
-DELETE_BATCH_SIZE = 1000
-
-
 @dataclass(frozen=True)
 class PublishPlan:
     """What a run will do, decided before any write.
@@ -302,11 +305,6 @@ def execute_plan(s3: Any, bucket: str, plan: PublishPlan) -> None:
             raise PublishError(f"delete failed for {len(errors)} keys - {described}")
         for key in keys:
             logger.info(f"Deleted {key}")
-
-
-# CloudFront's own waiter cadence; a module constant so tests can zero it.
-INVALIDATION_POLL_SECONDS = 20
-INVALIDATION_MAX_ATTEMPTS = 30
 
 
 def invalidate(cloudfront: Any, distribution_id: str, key_prefix: str) -> str:

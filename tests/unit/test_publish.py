@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import boto3
 import polars as pl
 import pytest
+import requests
 from botocore.stub import ANY, Stubber
 
 from pipeline.publish import (
@@ -372,7 +373,7 @@ class TestExecutePlan:
             )
         stubber.add_response(
             "delete_objects",
-            {"Deleted": [{"Key": KEY_PREFIX + "old"}]},
+            {},
             {
                 "Bucket": BUCKET,
                 "Delete": {"Objects": [{"Key": KEY_PREFIX + "old"}], "Quiet": True},
@@ -478,7 +479,7 @@ def _http_get(generated_at: str, status: int = 200) -> Mock:
     response.status_code = status
     response.json.return_value = {"generated_at": generated_at}
     if status >= 400:
-        response.raise_for_status.side_effect = RuntimeError(f"HTTP {status}")
+        response.raise_for_status.side_effect = requests.HTTPError(f"HTTP {status}")
     return Mock(return_value=response)
 
 
@@ -499,6 +500,18 @@ class TestInvalidate:
         monkeypatch.setattr("pipeline.publish.INVALIDATION_POLL_SECONDS", 0)
 
         invalidate(client, DISTRIBUTION, KEY_PREFIX)
+
+    def test_waiter_timeout_is_a_publish_error(self, cloudfront, monkeypatch):
+        """Running out of polls after the writes landed reports as a
+        PublishError that says so, not a raw botocore error."""
+        client, stubber = cloudfront
+        _stub_invalidation(stubber, "InProgress", "InProgress")
+        monkeypatch.setattr("pipeline.publish.INVALIDATION_POLL_SECONDS", 0)
+        monkeypatch.setattr("pipeline.publish.INVALIDATION_MAX_ATTEMPTS", 2)
+
+        with pytest.raises(PublishError, match="written") as exc:
+            invalidate(client, DISTRIBUTION, KEY_PREFIX)
+        assert exc.value.__cause__ is not None
 
 
 class TestVerifyPublicManifest:

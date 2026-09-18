@@ -17,6 +17,7 @@ from typing import Any
 
 import polars as pl
 import requests
+from botocore.exceptions import WaiterError
 
 from pipeline.schemas import SCHEMA_VERSION, Manifest, load_manifest
 from utils.constants import MANIFEST_FILENAME
@@ -29,8 +30,9 @@ MANIFEST_CONTENT_TYPE = "application/json"
 PARQUET_CACHE_CONTROL = "public, max-age=86400"
 MANIFEST_CACHE_CONTROL = "public, max-age=300"
 
-# Above this boto3's managed transfer goes multipart, and a multipart
-# object's ETag is no longer its MD5; every object here is a single PUT.
+# Every object is one put_object call held in memory, so its ETag is its
+# MD5; the cap keeps the set small and flags a table that has outgrown
+# the contract. It is boto3's own threshold for switching to multipart.
 MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024
 
 SCHEMA_VERSION_STAMP_KEY = "schema_version"
@@ -288,6 +290,10 @@ def execute_plan(s3: Any, bucket: str, plan: PublishPlan) -> None:
         )
         etag = response["ETag"].strip('"')
         if etag != o.md5:
+            logger.error(
+                f"{o.key} was written but not verified; later uploads and the "
+                f"stale-key deletes did not run"
+            )
             raise PublishError(
                 f"{o.key}: S3 returned ETag {etag!r}, local MD5 is {o.md5!r}"
             )
@@ -318,6 +324,10 @@ def invalidate(cloudfront: Any, distribution_id: str, key_prefix: str) -> str:
 
     Returns:
         The invalidation ID, for the log.
+
+    Raises:
+        PublishError: If the invalidation is not complete within the
+            waiter's budget. The objects are already written by then.
     """
     response = cloudfront.create_invalidation(
         DistributionId=distribution_id,
@@ -330,14 +340,21 @@ def invalidate(cloudfront: Any, distribution_id: str, key_prefix: str) -> str:
     logger.info(f"Invalidation {invalidation_id} created for /{key_prefix}*")
 
     waiter = cloudfront.get_waiter("invalidation_completed")
-    waiter.wait(
-        DistributionId=distribution_id,
-        Id=invalidation_id,
-        WaiterConfig={
-            "Delay": INVALIDATION_POLL_SECONDS,
-            "MaxAttempts": INVALIDATION_MAX_ATTEMPTS,
-        },
-    )
+    try:
+        waiter.wait(
+            DistributionId=distribution_id,
+            Id=invalidation_id,
+            WaiterConfig={
+                "Delay": INVALIDATION_POLL_SECONDS,
+                "MaxAttempts": INVALIDATION_MAX_ATTEMPTS,
+            },
+        )
+    except WaiterError as e:
+        raise PublishError(
+            f"invalidation {invalidation_id} not completed within "
+            f"{INVALIDATION_POLL_SECONDS * INVALIDATION_MAX_ATTEMPTS}s; the "
+            f"objects are written, the edge is unconfirmed - check it by hand"
+        ) from e
     logger.info(f"Invalidation {invalidation_id} completed")
     return invalidation_id
 
@@ -370,7 +387,7 @@ def verify_public_manifest(
         response = http_get(url, timeout=HTTP_TIMEOUT_SECONDS)
         response.raise_for_status()
         public_generated_at = response.json()["generated_at"]
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError) as e:
         raise PublishError(f"could not read the public manifest at {url}") from e
 
     if public_generated_at != expected_generated_at:

@@ -44,7 +44,9 @@ This module must not import from other pipeline modules (it is imported
 by them).
 """
 
-from typing import TypedDict
+import json
+from pathlib import Path
+from typing import TypedDict, cast
 
 import polars as pl
 
@@ -641,6 +643,55 @@ class Manifest(TypedDict):
     corpus: Corpus
     populations: dict[str, str]  # POPULATIONS
     tables: dict[str, TableEntry]  # every DASHBOARD_OUTPUT_SCHEMAS table
+
+
+def load_manifest(path: Path) -> Manifest:
+    """
+    Read a manifest.json back as the typed contract.
+
+    Checks presence of every Manifest block and of every field on each
+    registry entry, not the values: the writer is the only producer, so
+    a missing key means the wrong file or an older contract, and either
+    should stop a reader before it trusts the registry.
+
+    Args:
+        path: Path to a manifest.json.
+
+    Returns:
+        The manifest, key order as written.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist.
+        ValueError: If the document is not a JSON object, lacks any
+            Manifest block, registers a table without every TableEntry
+            field, or names a file other than the table's own. The
+            message names the path and the keys.
+    """
+    with open(path) as f:
+        document = json.load(f)
+
+    if not isinstance(document, dict):
+        raise ValueError(f"{path}: manifest must be a JSON object")
+
+    missing = [key for key in Manifest.__required_keys__ if key not in document]
+    if missing:
+        raise ValueError(f"{path} is missing manifest blocks: {sorted(missing)}")
+
+    for name, entry in document["tables"].items():
+        fields = [key for key in TableEntry.__required_keys__ if key not in entry]
+        if fields:
+            raise ValueError(
+                f"{path}: table {name!r} is missing registry fields: {sorted(fields)}"
+            )
+        # The writer names files after their tables; a reader joins the
+        # value to a directory and a key prefix, so nothing else is allowed
+        if entry["file"] != f"{name}.parquet":
+            raise ValueError(
+                f"{path}: table {name!r} registers file {entry['file']!r}, "
+                f"expected {name + '.parquet'!r}"
+            )
+
+    return cast(Manifest, document)
 
 
 def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:

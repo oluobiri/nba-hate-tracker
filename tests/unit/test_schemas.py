@@ -534,6 +534,19 @@ class TestLoadManifest:
             load_manifest(path)
         assert "rows" in str(exc.value)
 
+    def test_registry_file_must_be_the_table_name(self, tmp_path, manifest_dict):
+        """A file value that is not <table>.parquet is refused: readers join
+        it to a directory and a key prefix, so a path could reach outside."""
+        # Arrange
+        manifest_dict["tables"]["player_overall"]["file"] = "../player_overall.parquet"
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_dict))
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="player_overall") as exc:
+            load_manifest(path)
+        assert "../player_overall.parquet" in str(exc.value)
+
     def test_non_object_raises(self, tmp_path):
         """A JSON document that is not an object is not a manifest."""
         # Arrange

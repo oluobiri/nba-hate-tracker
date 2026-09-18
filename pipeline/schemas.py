@@ -663,8 +663,9 @@ def load_manifest(path: Path) -> Manifest:
     Raises:
         FileNotFoundError: If the file doesn't exist.
         ValueError: If the document is not a JSON object, lacks any
-            Manifest block, or registers a table without every TableEntry
-            field. The message names the path and the keys.
+            Manifest block, registers a table without every TableEntry
+            field, or names a file other than the table's own. The
+            message names the path and the keys.
     """
     with open(path) as f:
         document = json.load(f)
@@ -681,6 +682,13 @@ def load_manifest(path: Path) -> Manifest:
         if fields:
             raise ValueError(
                 f"{path}: table {name!r} is missing registry fields: {sorted(fields)}"
+            )
+        # The writer names files after their tables; a reader joins the
+        # value to a directory and a key prefix, so nothing else is allowed
+        if entry["file"] != f"{name}.parquet":
+            raise ValueError(
+                f"{path}: table {name!r} registers file {entry['file']!r}, "
+                f"expected {name + '.parquet'!r}"
             )
 
     return cast(Manifest, document)

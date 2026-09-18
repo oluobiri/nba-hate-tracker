@@ -1,0 +1,11 @@
+# Publish target — where the dashboard drop lands and how the CLI signs in.
+# No credentials live here: `profile` names an ~/.aws/config entry that
+# assumes the publish role with MFA.
+#
+# Public key layout: <base_url>/<prefix>/season=<season>/<file>
+
+bucket: courtsentiment-data
+prefix: data
+distribution_id: E2X7LKN4E54XA2
+base_url: https://courtsentiment.com
+profile: courtsentiment-publish

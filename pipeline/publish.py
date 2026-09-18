@@ -9,14 +9,18 @@ against the registry and the contract before a single byte is written.
 
 import hashlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import polars as pl
+import requests
 
 from pipeline.schemas import SCHEMA_VERSION, Manifest, load_manifest
 from utils.constants import MANIFEST_FILENAME
+from utils.publish_config import PublishTarget
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,8 @@ MANIFEST_CACHE_CONTROL = "public, max-age=300"
 MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024
 
 SCHEMA_VERSION_STAMP_KEY = "schema_version"
+
+HTTP_TIMEOUT_SECONDS = 30
 
 
 class PublishError(Exception):
@@ -296,3 +302,132 @@ def execute_plan(s3: Any, bucket: str, plan: PublishPlan) -> None:
             raise PublishError(f"delete failed for {len(errors)} keys - {described}")
         for key in keys:
             logger.info(f"Deleted {key}")
+
+
+# CloudFront's own waiter cadence; a module constant so tests can zero it.
+INVALIDATION_POLL_SECONDS = 20
+INVALIDATION_MAX_ATTEMPTS = 30
+
+
+def invalidate(cloudfront: Any, distribution_id: str, key_prefix: str) -> str:
+    """
+    Invalidate everything under the season prefix and wait for completion.
+
+    Args:
+        cloudfront: A boto3 CloudFront client.
+        distribution_id: The distribution in front of the bucket.
+        key_prefix: The season's key prefix, from season_prefix().
+
+    Returns:
+        The invalidation ID, for the log.
+    """
+    response = cloudfront.create_invalidation(
+        DistributionId=distribution_id,
+        InvalidationBatch={
+            "Paths": {"Quantity": 1, "Items": [f"/{key_prefix}*"]},
+            "CallerReference": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    invalidation_id = response["Invalidation"]["Id"]
+    logger.info(f"Invalidation {invalidation_id} created for /{key_prefix}*")
+
+    waiter = cloudfront.get_waiter("invalidation_completed")
+    waiter.wait(
+        DistributionId=distribution_id,
+        Id=invalidation_id,
+        WaiterConfig={
+            "Delay": INVALIDATION_POLL_SECONDS,
+            "MaxAttempts": INVALIDATION_MAX_ATTEMPTS,
+        },
+    )
+    logger.info(f"Invalidation {invalidation_id} completed")
+    return invalidation_id
+
+
+def verify_public_manifest(
+    base_url: str,
+    key_prefix: str,
+    expected_generated_at: str,
+    *,
+    http_get: Callable[..., Any] = requests.get,
+) -> None:
+    """
+    Assert the public manifest is the one just uploaded.
+
+    The drop is done when the public URL says so: the manifest's
+    generated_at is the one field a rebuild changes, so equality means
+    the edge serves this build.
+
+    Args:
+        base_url: The public origin, no trailing slash.
+        key_prefix: The season's key prefix, from season_prefix().
+        expected_generated_at: The local manifest's generated_at.
+        http_get: requests.get or a stand-in with the same contract.
+
+    Raises:
+        PublishError: If the fetch fails or generated_at differs.
+    """
+    url = f"{base_url}/{key_prefix}{MANIFEST_FILENAME}"
+    try:
+        response = http_get(url, timeout=HTTP_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        public_generated_at = response.json()["generated_at"]
+    except Exception as e:
+        raise PublishError(f"could not read the public manifest at {url}") from e
+
+    if public_generated_at != expected_generated_at:
+        raise PublishError(
+            f"{url} serves generated_at {public_generated_at!r}, "
+            f"expected {expected_generated_at!r}"
+        )
+    logger.info(f"Public manifest verified: {url} generated_at {public_generated_at}")
+
+
+def publish_season(
+    dashboard_dir: Path,
+    season: str,
+    target: PublishTarget,
+    s3: Any,
+    cloudfront: Any,
+    *,
+    dry_run: bool,
+    http_get: Callable[..., Any] = requests.get,
+) -> PublishPlan:
+    """
+    Publish one season's dashboard drop, or plan it.
+
+    Pre-flight, list the bucket, diff; a dry run stops there. Otherwise
+    write the plan, invalidate the season path, and confirm the public
+    manifest before returning.
+
+    Args:
+        dashboard_dir: The season's dashboard directory.
+        season: The season being published.
+        target: Bucket, prefix, distribution, and base URL.
+        s3: A boto3 S3 client assumed as the publish role.
+        cloudfront: A boto3 CloudFront client, same role.
+        dry_run: Plan only; nothing is written or invalidated.
+        http_get: requests.get or a stand-in, for the post-flight.
+
+    Returns:
+        The plan that was (or would have been) executed.
+
+    Raises:
+        PublishError: From any failed check, write, or verification.
+    """
+    manifest, objects = build_upload_set(dashboard_dir, season, target.prefix)
+    key_prefix = season_prefix(target.prefix, season)
+    remote = list_remote(s3, target.bucket, key_prefix)
+    plan = build_plan(objects, remote)
+    logger.info(f"Plan for s3://{target.bucket}/{key_prefix}\n{plan.describe()}")
+
+    if dry_run:
+        logger.info("Dry run - nothing written")
+        return plan
+
+    execute_plan(s3, target.bucket, plan)
+    invalidate(cloudfront, target.distribution_id, key_prefix)
+    verify_public_manifest(
+        target.base_url, key_prefix, manifest["generated_at"], http_get=http_get
+    )
+    return plan

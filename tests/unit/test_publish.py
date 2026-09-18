@@ -4,12 +4,14 @@ Tests for pipeline/publish.py: the manifest-driven dashboard drop.
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import Mock
 
 import boto3
 import polars as pl
 import pytest
-from botocore.stub import Stubber
+from botocore.stub import ANY, Stubber
 
 from pipeline.publish import (
     MANIFEST_CACHE_CONTROL,
@@ -23,16 +25,29 @@ from pipeline.publish import (
     build_plan,
     build_upload_set,
     execute_plan,
+    invalidate,
     list_remote,
+    publish_season,
     season_prefix,
+    verify_public_manifest,
 )
 from pipeline.schemas import SCHEMA_VERSION
 from utils.constants import MANIFEST_FILENAME
+from utils.publish_config import PublishTarget
 
 SEASON = "2025-26"
 PREFIX = "data"
 BUCKET = "bucket"
 KEY_PREFIX = "data/season=2025-26/"
+DISTRIBUTION = "E1EXAMPLE"
+BASE_URL = "https://example.com"
+TARGET = PublishTarget(
+    bucket=BUCKET,
+    prefix=PREFIX,
+    distribution_id=DISTRIBUTION,
+    base_url=BASE_URL,
+    profile="unused",
+)
 
 
 def _write_table(path: Path, rows: int, schema_version: str | None = None) -> None:
@@ -406,4 +421,194 @@ class TestExecutePlan:
                 client,
                 BUCKET,
                 PublishPlan(upload=(), skip=(), delete=(KEY_PREFIX + "old",)),
+            )
+
+
+@pytest.fixture
+def cloudfront():
+    """A real CloudFront client with every call stubbed; unexpected calls raise."""
+    client = boto3.client(
+        "cloudfront",
+        region_name="us-east-1",
+        aws_access_key_id="stub",
+        aws_secret_access_key="stub",
+    )
+    with Stubber(client) as stubber:
+        yield client, stubber
+        stubber.assert_no_pending_responses()
+
+
+def _invalidation(status: str) -> dict:
+    """An Invalidation block as CloudFront returns it."""
+    return {
+        "Id": "I1EXAMPLE",
+        "Status": status,
+        "CreateTime": datetime(2026, 9, 18, tzinfo=timezone.utc),
+        "InvalidationBatch": {
+            "Paths": {"Quantity": 1, "Items": [f"/{KEY_PREFIX}*"]},
+            "CallerReference": "ref",
+        },
+    }
+
+
+def _stub_invalidation(stubber: Stubber, *statuses: str) -> None:
+    """Expect one create_invalidation, then a get_invalidation per status."""
+    stubber.add_response(
+        "create_invalidation",
+        {"Location": "loc", "Invalidation": _invalidation("InProgress")},
+        {
+            "DistributionId": DISTRIBUTION,
+            "InvalidationBatch": {
+                "Paths": {"Quantity": 1, "Items": [f"/{KEY_PREFIX}*"]},
+                "CallerReference": ANY,
+            },
+        },
+    )
+    for status in statuses:
+        stubber.add_response(
+            "get_invalidation",
+            {"Invalidation": _invalidation(status)},
+            {"DistributionId": DISTRIBUTION, "Id": "I1EXAMPLE"},
+        )
+
+
+def _http_get(generated_at: str, status: int = 200) -> Mock:
+    """A requests.get stand-in serving a public manifest."""
+    response = Mock()
+    response.status_code = status
+    response.json.return_value = {"generated_at": generated_at}
+    if status >= 400:
+        response.raise_for_status.side_effect = RuntimeError(f"HTTP {status}")
+    return Mock(return_value=response)
+
+
+class TestInvalidate:
+    """Tests for invalidate, the edge flush after a drop."""
+
+    def test_invalidates_the_season_path_and_waits(self, cloudfront):
+        """One wildcard path under the season prefix; returns once completed."""
+        client, stubber = cloudfront
+        _stub_invalidation(stubber, "Completed")
+
+        assert invalidate(client, DISTRIBUTION, KEY_PREFIX) == "I1EXAMPLE"
+
+    def test_polls_until_completed(self, cloudfront, monkeypatch):
+        """An in-progress invalidation is polled, not declared done."""
+        client, stubber = cloudfront
+        _stub_invalidation(stubber, "InProgress", "Completed")
+        monkeypatch.setattr("pipeline.publish.INVALIDATION_POLL_SECONDS", 0)
+
+        invalidate(client, DISTRIBUTION, KEY_PREFIX)
+
+
+class TestVerifyPublicManifest:
+    """Tests for verify_public_manifest, the drop's public confirmation."""
+
+    def test_fetches_the_public_manifest_url(self):
+        """The URL is base_url + key prefix + manifest.json."""
+        http_get = _http_get("2026-09-16T12:00:00+00:00")
+
+        verify_public_manifest(
+            BASE_URL, KEY_PREFIX, "2026-09-16T12:00:00+00:00", http_get=http_get
+        )
+
+        url = http_get.call_args.args[0]
+        assert url == f"{BASE_URL}/{KEY_PREFIX}manifest.json"
+
+    def test_generated_at_mismatch_aborts(self):
+        """A public manifest from another build means the drop is not done."""
+        http_get = _http_get("2026-01-01T00:00:00+00:00")
+
+        with pytest.raises(PublishError, match="generated_at") as exc:
+            verify_public_manifest(
+                BASE_URL, KEY_PREFIX, "2026-09-16T12:00:00+00:00", http_get=http_get
+            )
+        assert "2026-01-01" in str(exc.value)
+        assert "2026-09-16" in str(exc.value)
+
+    def test_http_error_aborts(self):
+        """A non-2xx public response is a failed drop, chained from the cause."""
+        http_get = _http_get("x", status=404)
+
+        with pytest.raises(PublishError, match="manifest.json") as exc:
+            verify_public_manifest(BASE_URL, KEY_PREFIX, "x", http_get=http_get)
+        assert exc.value.__cause__ is not None
+
+
+class TestPublishSeason:
+    """Tests for publish_season, the run end to end."""
+
+    def test_dry_run_lists_and_writes_nothing(self, dashboard_dir, s3, cloudfront):
+        """A dry run reads the bucket and returns the plan; any write would
+        hit an unstubbed call and fail the test."""
+        s3_client, s3_stub = s3
+        cf_client, _ = cloudfront
+        s3_stub.add_response(
+            "list_objects_v2",
+            {"IsTruncated": False},
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX},
+        )
+
+        plan = publish_season(
+            dashboard_dir,
+            SEASON,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=True,
+            http_get=Mock(side_effect=AssertionError("no HTTP in a dry run")),
+        )
+
+        assert len(plan.upload) == 3
+        assert plan.delete == ()
+
+    def test_real_run_uploads_invalidates_and_verifies(
+        self, dashboard_dir, manifest, s3, cloudfront
+    ):
+        """Tables, manifest, invalidation, then the public assert."""
+        s3_client, s3_stub = s3
+        cf_client, cf_stub = cloudfront
+        _, objects = build_upload_set(dashboard_dir, SEASON, PREFIX)
+        s3_stub.add_response(
+            "list_objects_v2",
+            {"IsTruncated": False},
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX},
+        )
+        for o in objects:
+            s3_stub.add_response(
+                "put_object",
+                {"ETag": f'"{o.md5}"'},
+                {
+                    "Bucket": BUCKET,
+                    "Key": o.key,
+                    "Body": o.body,
+                    "ContentType": o.content_type,
+                    "CacheControl": o.cache_control,
+                },
+            )
+        _stub_invalidation(cf_stub, "Completed")
+        http_get = _http_get(manifest["generated_at"])
+
+        plan = publish_season(
+            dashboard_dir,
+            SEASON,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=False,
+            http_get=http_get,
+        )
+
+        assert plan.upload == tuple(objects)
+        http_get.assert_called_once()
+
+    def test_pre_flight_failure_touches_nothing(self, dashboard_dir, s3, cloudfront):
+        """A failed check aborts before the bucket is even listed."""
+        s3_client, _ = s3
+        cf_client, _ = cloudfront
+        (dashboard_dir / "teams.parquet").unlink()
+
+        with pytest.raises(PublishError):
+            publish_season(
+                dashboard_dir, SEASON, TARGET, s3_client, cf_client, dry_run=False
             )

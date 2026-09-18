@@ -43,7 +43,9 @@ A run, in order:
 5. **Invalidate** `/data/season=<season>/*` and wait for completion.
 6. **Verify**: fetch the public manifest over HTTPS and require its `generated_at` to equal the local one.
 
-`--dry-run` stops after step 2 and prints the plan. It still lists the bucket, so it still prompts for MFA.
+`--dry-run` stops after step 2 and prints the plan. It still lists the bucket, so it still prompts for MFA. A run that changes nothing skips the invalidation and still verifies.
+
+Objects are overwritten in place, so for the seconds an upload takes the old manifest sits over new tables. Manifest-last guards the opposite order only. The drop is small enough that the window is seconds, and a rebuild with identical tables uploads just the manifest, so it is usually zero. Content-versioned paths are the remedy if that ever matters.
 
 | Object | Content-Type | Cache-Control |
 |---|---|---|

@@ -21,6 +21,7 @@ import logging
 import sys
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 from pipeline.publish import PublishError, publish_season
 from utils.paths import get_dashboard_dir
@@ -74,21 +75,22 @@ def main() -> None:
     logger.info(f"  via:  profile {target.profile}")
     logger.info("=" * 60)
 
-    session = boto3.Session(profile_name=target.profile)
-    s3 = session.client("s3")
-    cloudfront = session.client("cloudfront")
-
     try:
+        session = boto3.Session(profile_name=target.profile)
         plan = publish_season(
             dashboard_dir,
             args.season,
             target,
-            s3,
-            cloudfront,
+            session.client("s3"),
+            session.client("cloudfront"),
             dry_run=args.dry_run,
         )
     except PublishError as e:
         logger.error(f"Publish aborted: {e}")
+        sys.exit(1)
+    except (BotoCoreError, ClientError) as e:
+        # A wrong MFA code, an expired session, a missing profile: re-run
+        logger.error(f"AWS refused the run: {e}")
         sys.exit(1)
 
     logger.info("=" * 60)

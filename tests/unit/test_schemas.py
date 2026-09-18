@@ -522,6 +522,18 @@ class TestLoadManifest:
             load_manifest(path)
         assert str(path) in str(exc.value)
 
+    def test_registry_entry_missing_field_raises(self, tmp_path, manifest_dict):
+        """A table registered without every TableEntry field names the table."""
+        # Arrange
+        del manifest_dict["tables"]["player_overall"]["rows"]
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_dict))
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="player_overall") as exc:
+            load_manifest(path)
+        assert "rows" in str(exc.value)
+
     def test_non_object_raises(self, tmp_path):
         """A JSON document that is not an object is not a manifest."""
         # Arrange

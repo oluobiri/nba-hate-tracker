@@ -46,7 +46,7 @@ by them).
 
 import json
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import polars as pl
 
@@ -649,10 +649,10 @@ def load_manifest(path: Path) -> Manifest:
     """
     Read a manifest.json back as the typed contract.
 
-    Checks presence of every Manifest block, not the values: the writer
-    is the only producer, so a missing block means the wrong file or an
-    older contract, and either should stop a reader before it trusts
-    the registry.
+    Checks presence of every Manifest block and of every field on each
+    registry entry, not the values: the writer is the only producer, so
+    a missing key means the wrong file or an older contract, and either
+    should stop a reader before it trusts the registry.
 
     Args:
         path: Path to a manifest.json.
@@ -662,8 +662,9 @@ def load_manifest(path: Path) -> Manifest:
 
     Raises:
         FileNotFoundError: If the file doesn't exist.
-        ValueError: If the document is not a JSON object, or lacks any
-            Manifest block. The message names the path and the blocks.
+        ValueError: If the document is not a JSON object, lacks any
+            Manifest block, or registers a table without every TableEntry
+            field. The message names the path and the keys.
     """
     with open(path) as f:
         document = json.load(f)
@@ -675,7 +676,14 @@ def load_manifest(path: Path) -> Manifest:
     if missing:
         raise ValueError(f"{path} is missing manifest blocks: {sorted(missing)}")
 
-    return document  # type: ignore[return-value]
+    for name, entry in document["tables"].items():
+        fields = [key for key in TableEntry.__required_keys__ if key not in entry]
+        if fields:
+            raise ValueError(
+                f"{path}: table {name!r} is missing registry fields: {sorted(fields)}"
+            )
+
+    return cast(Manifest, document)
 
 
 def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:

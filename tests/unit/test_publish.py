@@ -6,8 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 
+import boto3
 import polars as pl
 import pytest
+from botocore.stub import Stubber
 
 from pipeline.publish import (
     MANIFEST_CACHE_CONTROL,
@@ -15,8 +17,13 @@ from pipeline.publish import (
     MULTIPART_THRESHOLD_BYTES,
     PARQUET_CACHE_CONTROL,
     PARQUET_CONTENT_TYPE,
+    LocalObject,
     PublishError,
+    PublishPlan,
+    build_plan,
     build_upload_set,
+    execute_plan,
+    list_remote,
     season_prefix,
 )
 from pipeline.schemas import SCHEMA_VERSION
@@ -24,6 +31,8 @@ from utils.constants import MANIFEST_FILENAME
 
 SEASON = "2025-26"
 PREFIX = "data"
+BUCKET = "bucket"
+KEY_PREFIX = "data/season=2025-26/"
 
 
 def _write_table(path: Path, rows: int, schema_version: str | None = None) -> None:
@@ -184,3 +193,217 @@ class TestBuildUploadSet:
     def test_threshold_is_the_boto3_default(self):
         """8 MiB is where boto3's managed transfer would switch to multipart."""
         assert MULTIPART_THRESHOLD_BYTES == 8 * 1024 * 1024
+
+
+def _object(name: str, body: bytes = b"x") -> LocalObject:
+    """A LocalObject under the season prefix with the md5 of its body."""
+    is_manifest = name == MANIFEST_FILENAME
+    return LocalObject(
+        key=KEY_PREFIX + name,
+        path=Path(name),
+        body=body,
+        md5=hashlib.md5(body).hexdigest(),
+        content_type=MANIFEST_CONTENT_TYPE if is_manifest else PARQUET_CONTENT_TYPE,
+        cache_control=MANIFEST_CACHE_CONTROL if is_manifest else PARQUET_CACHE_CONTROL,
+    )
+
+
+@pytest.fixture
+def s3():
+    """A real S3 client with every call stubbed; unexpected calls raise."""
+    client = boto3.client(
+        "s3",
+        region_name="us-east-1",
+        aws_access_key_id="stub",
+        aws_secret_access_key="stub",
+    )
+    with Stubber(client) as stubber:
+        yield client, stubber
+        stubber.assert_no_pending_responses()
+
+
+def _listing(objects: list[LocalObject], **extra) -> dict:
+    """A list_objects_v2 page for the given objects, ETags quoted as S3 does."""
+    return {
+        "Contents": [
+            {"Key": o.key, "ETag": f'"{o.md5}"', "Size": len(o.body)} for o in objects
+        ],
+        "IsTruncated": False,
+        **extra,
+    }
+
+
+class TestListRemote:
+    """Tests for list_remote, the bucket-side state of the season prefix."""
+
+    def test_returns_unquoted_etags_by_key(self, s3):
+        """Keys map to bare hex ETags, comparable to a LocalObject's md5."""
+        client, stubber = s3
+        a, b = _object("a.parquet", b"aaa"), _object("b.parquet", b"bbb")
+        stubber.add_response(
+            "list_objects_v2",
+            _listing([a, b]),
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX},
+        )
+
+        remote = list_remote(client, BUCKET, KEY_PREFIX)
+
+        assert remote == {a.key: a.md5, b.key: b.md5}
+
+    def test_follows_continuation_tokens(self, s3):
+        """Every page is read, not just the first."""
+        client, stubber = s3
+        a, b = _object("a.parquet", b"aaa"), _object("b.parquet", b"bbb")
+        stubber.add_response(
+            "list_objects_v2",
+            _listing([a], IsTruncated=True, NextContinuationToken="t1"),
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX},
+        )
+        stubber.add_response(
+            "list_objects_v2",
+            _listing([b]),
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX, "ContinuationToken": "t1"},
+        )
+
+        remote = list_remote(client, BUCKET, KEY_PREFIX)
+
+        assert set(remote) == {a.key, b.key}
+
+    def test_empty_prefix(self, s3):
+        """A never-published season lists as nothing."""
+        client, stubber = s3
+        stubber.add_response(
+            "list_objects_v2",
+            {"IsTruncated": False},
+            {"Bucket": BUCKET, "Prefix": KEY_PREFIX},
+        )
+
+        assert list_remote(client, BUCKET, KEY_PREFIX) == {}
+
+
+class TestBuildPlan:
+    """Tests for build_plan, the pure diff of local against remote."""
+
+    def test_empty_bucket_uploads_everything(self):
+        """First publish: every object uploads, nothing skips or deletes."""
+        local = [_object("a.parquet"), _object(MANIFEST_FILENAME)]
+
+        plan = build_plan(local, {})
+
+        assert plan.upload == tuple(local)
+        assert plan.skip == ()
+        assert plan.delete == ()
+
+    def test_unchanged_objects_skip(self):
+        """An object whose md5 equals the remote ETag is not re-uploaded."""
+        a, m = _object("a.parquet", b"same"), _object(MANIFEST_FILENAME, b"new")
+        remote = {a.key: a.md5, m.key: hashlib.md5(b"old").hexdigest()}
+
+        plan = build_plan([a, m], remote)
+
+        assert plan.skip == (a,)
+        assert plan.upload == (m,)
+
+    def test_stale_remote_keys_delete(self):
+        """Keys under the prefix that the registry no longer names are removed."""
+        a = _object("a.parquet")
+        remote = {a.key: a.md5, KEY_PREFIX + "old_name.parquet": "abc"}
+
+        plan = build_plan([a], remote)
+
+        assert plan.delete == (KEY_PREFIX + "old_name.parquet",)
+
+    def test_upload_order_is_preserved(self):
+        """The manifest stays last in the upload list."""
+        local = [_object("a.parquet"), _object("b.parquet"), _object(MANIFEST_FILENAME)]
+
+        plan = build_plan(local, {})
+
+        assert plan.upload[-1].key.endswith(MANIFEST_FILENAME)
+
+    def test_describe_counts_each_action(self):
+        """The log line says how many of each, for the dry run to read."""
+        a, b = _object("a.parquet", b"same"), _object("b.parquet", b"new")
+        remote = {a.key: a.md5, KEY_PREFIX + "stale.parquet": "x"}
+
+        text = build_plan([a, b], remote).describe()
+
+        assert "1 upload" in text
+        assert "1 skip" in text
+        assert "1 delete" in text
+        assert "stale.parquet" in text
+
+
+class TestExecutePlan:
+    """Tests for execute_plan against a stubbed S3 client."""
+
+    def test_puts_in_plan_order_with_headers_then_deletes(self, s3):
+        """Uploads happen in plan order with per-object headers; the manifest
+        is the last PUT; stale keys are deleted after it."""
+        client, stubber = s3
+        a, m = _object("a.parquet", b"aaa"), _object(MANIFEST_FILENAME, b"{}")
+        plan = PublishPlan(upload=(a, m), skip=(), delete=(KEY_PREFIX + "old",))
+        for o in (a, m):
+            stubber.add_response(
+                "put_object",
+                {"ETag": f'"{o.md5}"'},
+                {
+                    "Bucket": BUCKET,
+                    "Key": o.key,
+                    "Body": o.body,
+                    "ContentType": o.content_type,
+                    "CacheControl": o.cache_control,
+                },
+            )
+        stubber.add_response(
+            "delete_objects",
+            {"Deleted": [{"Key": KEY_PREFIX + "old"}]},
+            {
+                "Bucket": BUCKET,
+                "Delete": {"Objects": [{"Key": KEY_PREFIX + "old"}], "Quiet": True},
+            },
+        )
+
+        execute_plan(client, BUCKET, plan)
+
+    def test_nothing_to_delete_makes_no_delete_call(self, s3):
+        """An empty delete list never calls delete_objects."""
+        client, stubber = s3
+        a = _object("a.parquet")
+        stubber.add_response(
+            "put_object",
+            {"ETag": f'"{a.md5}"'},
+            {
+                "Bucket": BUCKET,
+                "Key": a.key,
+                "Body": a.body,
+                "ContentType": a.content_type,
+                "CacheControl": a.cache_control,
+            },
+        )
+
+        execute_plan(client, BUCKET, PublishPlan(upload=(a,), skip=(), delete=()))
+
+    def test_etag_mismatch_aborts(self, s3):
+        """S3 confirming a different ETag than the local md5 is a failed write."""
+        client, stubber = s3
+        a = _object("a.parquet", b"aaa")
+        stubber.add_response("put_object", {"ETag": '"not-the-md5"'})
+
+        with pytest.raises(PublishError, match="ETag"):
+            execute_plan(client, BUCKET, PublishPlan(upload=(a,), skip=(), delete=()))
+
+    def test_delete_errors_abort(self, s3):
+        """A per-key delete error in the response is not swallowed."""
+        client, stubber = s3
+        stubber.add_response(
+            "delete_objects",
+            {"Errors": [{"Key": KEY_PREFIX + "old", "Code": "AccessDenied"}]},
+        )
+
+        with pytest.raises(PublishError, match="AccessDenied"):
+            execute_plan(
+                client,
+                BUCKET,
+                PublishPlan(upload=(), skip=(), delete=(KEY_PREFIX + "old",)),
+            )

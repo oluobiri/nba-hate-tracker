@@ -11,6 +11,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -177,3 +178,121 @@ def build_upload_set(
     )
     logger.info(f"Pre-flight passed: {len(objects) - 1} tables + manifest for {season}")
     return manifest, objects
+
+
+# S3 caps a single DeleteObjects request at this many keys.
+DELETE_BATCH_SIZE = 1000
+
+
+@dataclass(frozen=True)
+class PublishPlan:
+    """What a run will do, decided before any write.
+
+    Attributes:
+        upload: Objects to PUT, in order; the manifest is last.
+        skip: Objects whose bytes already sit under the key.
+        delete: Keys under the season prefix the registry no longer names.
+    """
+
+    upload: tuple[LocalObject, ...]
+    skip: tuple[LocalObject, ...]
+    delete: tuple[str, ...]
+
+    def describe(self) -> str:
+        """One block naming every action, for the log and the dry run."""
+        lines = [
+            f"{len(self.upload)} upload, {len(self.skip)} skip, "
+            f"{len(self.delete)} delete"
+        ]
+        lines += [f"  upload  {o.key}  ({len(o.body)} bytes)" for o in self.upload]
+        lines += [f"  skip    {o.key}" for o in self.skip]
+        lines += [f"  delete  {key}" for key in self.delete]
+        return "\n".join(lines)
+
+
+def list_remote(s3: Any, bucket: str, key_prefix: str) -> dict[str, str]:
+    """
+    List what the bucket holds under a season prefix.
+
+    The publish role can list and write but not read objects, so the
+    listing's ETags are the only view of remote state; after a single
+    PUT they equal the object's MD5.
+
+    Args:
+        s3: A boto3 S3 client.
+        bucket: The data bucket.
+        key_prefix: The season's key prefix, from season_prefix().
+
+    Returns:
+        Mapping of key to bare hex ETag for every object under the prefix.
+    """
+    remote: dict[str, str] = {}
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
+        for item in page.get("Contents", []):
+            remote[item["Key"]] = item["ETag"].strip('"')
+    return remote
+
+
+def build_plan(local: list[LocalObject], remote: dict[str, str]) -> PublishPlan:
+    """
+    Diff the upload set against the bucket.
+
+    Args:
+        local: The ordered upload set from build_upload_set().
+        remote: The listing from list_remote() for the same prefix.
+
+    Returns:
+        The plan: unchanged objects skip, the rest upload in the given
+        order, and remote keys the set does not name are deleted.
+    """
+    upload = tuple(o for o in local if remote.get(o.key) != o.md5)
+    skip = tuple(o for o in local if remote.get(o.key) == o.md5)
+    local_keys = {o.key for o in local}
+    delete = tuple(sorted(key for key in remote if key not in local_keys))
+    return PublishPlan(upload=upload, skip=skip, delete=delete)
+
+
+def execute_plan(s3: Any, bucket: str, plan: PublishPlan) -> None:
+    """
+    Write the plan: PUT each upload in order, then delete stale keys.
+
+    Deleting after the last PUT (the manifest) keeps an old manifest's
+    tables readable until the new manifest is in place.
+
+    Args:
+        s3: A boto3 S3 client.
+        bucket: The data bucket.
+        plan: The plan from build_plan().
+
+    Raises:
+        PublishError: If S3 confirms an ETag other than the local MD5,
+            or reports an error for any deleted key.
+    """
+    for o in plan.upload:
+        response = s3.put_object(
+            Bucket=bucket,
+            Key=o.key,
+            Body=o.body,
+            ContentType=o.content_type,
+            CacheControl=o.cache_control,
+        )
+        etag = response["ETag"].strip('"')
+        if etag != o.md5:
+            raise PublishError(
+                f"{o.key}: S3 returned ETag {etag!r}, local MD5 is {o.md5!r}"
+            )
+        logger.info(f"Uploaded {o.key}")
+
+    for start in range(0, len(plan.delete), DELETE_BATCH_SIZE):
+        keys = plan.delete[start : start + DELETE_BATCH_SIZE]
+        response = s3.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": key} for key in keys], "Quiet": True},
+        )
+        errors = response.get("Errors", [])
+        if errors:
+            described = "; ".join(f"{e['Key']}: {e['Code']}" for e in errors)
+            raise PublishError(f"delete failed for {len(errors)} keys - {described}")
+        for key in keys:
+            logger.info(f"Deleted {key}")

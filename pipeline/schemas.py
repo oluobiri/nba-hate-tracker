@@ -44,6 +44,8 @@ This module must not import from other pipeline modules (it is imported
 by them).
 """
 
+import json
+from pathlib import Path
 from typing import TypedDict
 
 import polars as pl
@@ -641,6 +643,39 @@ class Manifest(TypedDict):
     corpus: Corpus
     populations: dict[str, str]  # POPULATIONS
     tables: dict[str, TableEntry]  # every DASHBOARD_OUTPUT_SCHEMAS table
+
+
+def load_manifest(path: Path) -> Manifest:
+    """
+    Read a manifest.json back as the typed contract.
+
+    Checks presence of every Manifest block, not the values: the writer
+    is the only producer, so a missing block means the wrong file or an
+    older contract, and either should stop a reader before it trusts
+    the registry.
+
+    Args:
+        path: Path to a manifest.json.
+
+    Returns:
+        The manifest, key order as written.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist.
+        ValueError: If the document is not a JSON object, or lacks any
+            Manifest block. The message names the path and the blocks.
+    """
+    with open(path) as f:
+        document = json.load(f)
+
+    if not isinstance(document, dict):
+        raise ValueError(f"{path}: manifest must be a JSON object")
+
+    missing = [key for key in Manifest.__required_keys__ if key not in document]
+    if missing:
+        raise ValueError(f"{path} is missing manifest blocks: {sorted(missing)}")
+
+    return document  # type: ignore[return-value]
 
 
 def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:

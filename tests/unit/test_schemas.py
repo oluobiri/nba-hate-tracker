@@ -1,5 +1,7 @@
 """Tests for pipeline/schemas.py schema validation."""
 
+import json
+
 import polars as pl
 import pytest
 
@@ -28,6 +30,7 @@ from pipeline.schemas import (
     SENTIMENT_SCHEMA,
     TEAM_GAME_LOG_SCHEMA,
     TEAMS_SCHEMA,
+    load_manifest,
     validate_schema,
 )
 from utils.season_config import CORPUS_KEYS
@@ -465,6 +468,69 @@ class TestManifestContract:
         assert (
             METRIC_FORMULAS["polarization"] == "(pos_count + neg_count) / comment_count"
         )
+
+
+class TestLoadManifest:
+    """Tests for load_manifest, the contract's read side."""
+
+    @pytest.fixture
+    def manifest_dict(self) -> dict:
+        """Every Manifest block present, values as the writer shapes them."""
+        return {
+            "schema_version": 5,
+            "season": "2025-26",
+            "generated_at": "2026-09-16T12:00:00+00:00",
+            "config_versions": {"players": "4.5"},
+            "classifiers": {},
+            "snapshots": {"games_fetched_at": None},
+            "rules": {},
+            "calendar": {"opening_night": "2025-10-21"},
+            "corpus": {"classified": 6},
+            "populations": {},
+            "tables": {
+                "player_overall": {
+                    "file": "player_overall.parquet",
+                    "rows": 2,
+                    "population": "attributed",
+                }
+            },
+        }
+
+    def test_round_trips_the_written_file(self, tmp_path, manifest_dict):
+        """What the aggregation script writes reads back as the same dict."""
+        # Arrange
+        path = tmp_path / "manifest.json"
+        with open(path, "w") as f:
+            json.dump(manifest_dict, f, indent=2)
+
+        # Act
+        manifest = load_manifest(path)
+
+        # Assert
+        assert manifest == manifest_dict
+        assert list(manifest) == list(Manifest.__annotations__)
+
+    def test_missing_block_raises(self, tmp_path, manifest_dict):
+        """A file without one of the contract's blocks names it and the path."""
+        # Arrange
+        del manifest_dict["tables"]
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_dict))
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="tables") as exc:
+            load_manifest(path)
+        assert str(path) in str(exc.value)
+
+    def test_non_object_raises(self, tmp_path):
+        """A JSON document that is not an object is not a manifest."""
+        # Arrange
+        path = tmp_path / "manifest.json"
+        path.write_text("[]")
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="object"):
+            load_manifest(path)
 
 
 class TestValidateSchema:

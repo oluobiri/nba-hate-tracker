@@ -23,6 +23,7 @@ from pipeline.aggregation import aggregate_sentiment
 from pipeline.lineage import config_stamps
 from pipeline.receipts import samples_stamps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
+from utils.constants import MANIFEST_FILENAME
 from utils.paths import get_dashboard_dir, get_processed_dir
 from utils.season_config import set_season_override
 
@@ -44,7 +45,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INPUT_FILENAME = "sentiment.parquet"
 DEFAULT_TARGETS_FILENAME = "sentiment_targets.parquet"
-MANIFEST_FILENAME = "manifest.json"
 
 
 # -----------------------------------------------------------------------------

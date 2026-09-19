@@ -106,6 +106,12 @@ class TestLeafPathFunctions:
         assert result.parent.name == pinned_season
         assert result.name == "dashboard"
 
+    def test_dashboard_dir_honours_season_arg(self, pinned_season):
+        """An explicit season resolves that season's dashboard, not the active one."""
+        result = get_dashboard_dir("2024-25")
+        assert result.parent.name == "2024-25"
+        assert result.name == "dashboard"
+
     def test_reference_dir_is_season_scoped(self, pinned_season):
         """Reference dir is under the season directory."""
         result = get_reference_dir()

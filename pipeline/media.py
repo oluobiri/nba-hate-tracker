@@ -140,6 +140,70 @@ def logo_name(team_id: int) -> str:
     return f"{MEDIA_LOGOS_SUBDIR}/{team_id}.svg"
 
 
+def expected_media_names(
+    player_ids: Iterable[int],
+    team_ids: Iterable[int],
+    *,
+    widths: tuple[int, ...] = HEADSHOT_VARIANT_WIDTHS,
+) -> list[str]:
+    """
+    Every media name a set of ids implies: what a publish must find and ship.
+
+    Args:
+        player_ids: Player ids to cover.
+        team_ids: Team ids to cover.
+        widths: Variant widths per headshot.
+
+    Returns:
+        Each player's original then its variants in width order, players
+        sorted by id; then each team's logo, sorted by id.
+    """
+    names: list[str] = []
+    for player_id in sorted(player_ids):
+        names.append(headshot_name(player_id))
+        names += [variant_name(player_id, width) for width in widths]
+    names += [logo_name(team_id) for team_id in sorted(team_ids)]
+    return names
+
+
+def public_media_url(base_url: str, media_prefix: str, name: str) -> str:
+    """
+    The first-party URL a media name is served at.
+
+    Args:
+        base_url: Public origin, no trailing slash.
+        media_prefix: Key prefix for media, no slashes.
+        name: A media name relative to the media root.
+
+    Returns:
+        e.g. "https://courtsentiment.com/media/headshots/203500.png".
+    """
+    return f"{base_url}/{media_prefix}/{name}"
+
+
+def first_party_builders(
+    base_url: str, media_prefix: str
+) -> tuple[Callable[[int], str], Callable[[int], str]]:
+    """
+    The expected-URL builders for verify_config_urls once config is first-party.
+
+    Args:
+        base_url: Public origin, no trailing slash.
+        media_prefix: Key prefix for media.
+
+    Returns:
+        (headshot_url, logo_url) builders over the naming convention.
+    """
+
+    def headshot_url(player_id: int) -> str:
+        return public_media_url(base_url, media_prefix, headshot_name(player_id))
+
+    def logo_url(team_id: int) -> str:
+        return public_media_url(base_url, media_prefix, logo_name(team_id))
+
+    return headshot_url, logo_url
+
+
 def verify_config_urls(
     players: dict[str, dict],
     teams: dict[str, dict],

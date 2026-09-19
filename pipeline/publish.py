@@ -1,15 +1,18 @@
 """
-The publish step: a season's dashboard drop to the public bucket.
+The publish steps: a season's dashboard drop and the media drop.
 
-The upload set is manifest.json plus exactly the files its table registry
-names, so nothing else in the dashboard directory ever ships and a season
-without a manifest cannot be published. Pre-flight checks every file
-against the registry and the contract before a single byte is written.
+The dashboard upload set is manifest.json plus exactly the files its table
+registry names, so nothing else in the dashboard directory ever ships and
+a season without a manifest cannot be published. The media upload set is
+exactly the names the dimension tables' ids imply, across every season,
+so a stray file never ships either. Pre-flight checks every file before a
+single byte is written; both drops share the list, diff, write, delete and
+invalidate steps and differ only in the set and the post-flight.
 """
 
 import hashlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +22,7 @@ import polars as pl
 import requests
 from botocore.exceptions import WaiterError
 
+from pipeline.media import expected_media_names
 from pipeline.schemas import SCHEMA_VERSION, Manifest, load_manifest
 from utils.constants import MANIFEST_FILENAME
 from utils.publish_config import PublishTarget
@@ -29,6 +33,22 @@ PARQUET_CONTENT_TYPE = "application/vnd.apache.parquet"
 MANIFEST_CONTENT_TYPE = "application/json"
 PARQUET_CACHE_CONTROL = "public, max-age=86400"
 MANIFEST_CACHE_CONTROL = "public, max-age=300"
+
+MEDIA_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+# Media keys overwrite in place and a headshot changes at most once a
+# season: a week bounds a returning visitor's staleness without a version
+# in the name.
+MEDIA_CACHE_CONTROL = "public, max-age=604800"
+
+# The dimension tables the media set derives from: (file, id column)
+PLAYERS_DIMENSION = ("players.parquet", "player_id")
+TEAMS_DIMENSION = ("teams.parquet", "team_id")
+
+VERIFY_PROGRESS_EVERY = 100
 
 # Every object is one put_object call held in memory, so its ETag is its
 # MD5; the cap keeps the set small and flags a table that has outgrown
@@ -449,4 +469,231 @@ def publish_season(
     verify_public_manifest(
         target.base_url, key_prefix, manifest["generated_at"], http_get=http_get
     )
+    return plan
+
+
+# -----------------------------------------------------------------------------
+# The media drop
+# -----------------------------------------------------------------------------
+
+
+def media_key_prefix(media_prefix: str) -> str:
+    """
+    The key prefix the media files live under.
+
+    Args:
+        media_prefix: The media key prefix from publish.yaml.
+
+    Returns:
+        The prefix with a trailing slash, e.g. "media/".
+    """
+    return f"{media_prefix}/"
+
+
+def dimension_ids(dashboard_dirs: Iterable[Path]) -> tuple[list[int], list[int]]:
+    """
+    The union of player and team ids over every season's dimension tables.
+
+    A directory without either table is a season with no dashboard yet
+    and contributes nothing; one with exactly one table is half-built and
+    aborts. No contributing directory at all aborts too: an empty set
+    would plan deleting every media key.
+
+    Args:
+        dashboard_dirs: One dashboard directory per known season.
+
+    Returns:
+        Sorted, de-duplicated player ids and team ids.
+
+    Raises:
+        PublishError: On a half-built directory or an empty union.
+    """
+    player_ids: set[int] = set()
+    team_ids: set[int] = set()
+    contributing = 0
+    for dashboard_dir in dashboard_dirs:
+        players_path = dashboard_dir / PLAYERS_DIMENSION[0]
+        teams_path = dashboard_dir / TEAMS_DIMENSION[0]
+        if not players_path.exists() and not teams_path.exists():
+            logger.info(f"{dashboard_dir}: no dimension tables, skipped")
+            continue
+        if not (players_path.exists() and teams_path.exists()):
+            missing = teams_path if players_path.exists() else players_path
+            raise PublishError(
+                f"{dashboard_dir}: {missing.name} is missing - a half-built season"
+            )
+        player_ids |= set(
+            pl.read_parquet(players_path, columns=[PLAYERS_DIMENSION[1]])[
+                PLAYERS_DIMENSION[1]
+            ].to_list()
+        )
+        team_ids |= set(
+            pl.read_parquet(teams_path, columns=[TEAMS_DIMENSION[1]])[
+                TEAMS_DIMENSION[1]
+            ].to_list()
+        )
+        contributing += 1
+    if contributing == 0:
+        raise PublishError(
+            "no dashboard directory holds dimension tables - an empty media set "
+            "would delete every media key"
+        )
+    return sorted(player_ids), sorted(team_ids)
+
+
+def build_media_upload_set(
+    media_dir: Path, dashboard_dirs: Iterable[Path], media_prefix: str
+) -> list[LocalObject]:
+    """
+    Pre-flight the media directory against the dimension tables and build the set.
+
+    Every expected file must exist and fit a single PUT; every failure is
+    reported in one error before any object is built.
+
+    Args:
+        media_dir: The media root.
+        dashboard_dirs: One dashboard directory per known season.
+        media_prefix: The media key prefix from publish.yaml.
+
+    Returns:
+        The upload set in name order: each player's original and variants,
+        then the logos.
+
+    Raises:
+        PublishError: If the dimension tables cannot be read, or any
+            expected file is missing or too large for a single PUT.
+    """
+    player_ids, team_ids = dimension_ids(dashboard_dirs)
+    names = expected_media_names(player_ids, team_ids)
+
+    problems: list[str] = []
+    for name in names:
+        path = media_dir / name
+        if not path.exists():
+            problems.append(f"{name}: missing")
+            continue
+        size = path.stat().st_size
+        if size >= MULTIPART_THRESHOLD_BYTES:
+            problems.append(
+                f"{name}: {size} bytes, at or above the single-PUT limit of "
+                f"{MULTIPART_THRESHOLD_BYTES} bytes"
+            )
+    if problems:
+        listed = "\n  ".join(problems)
+        raise PublishError(
+            f"{len(problems)} media files failed pre-flight:\n  {listed}"
+        )
+
+    key_prefix = media_key_prefix(media_prefix)
+    objects = [
+        _local_object(
+            key_prefix + name,
+            media_dir / name,
+            MEDIA_CONTENT_TYPES[Path(name).suffix],
+            MEDIA_CACHE_CONTROL,
+        )
+        for name in names
+    ]
+    logger.info(
+        f"Pre-flight passed: {len(objects)} media files for {len(player_ids)} "
+        f"players and {len(team_ids)} teams"
+    )
+    return objects
+
+
+def verify_public_media(
+    base_url: str,
+    objects: Sequence[LocalObject],
+    *,
+    http_head: Callable[..., Any] = requests.head,
+) -> None:
+    """
+    Assert every media key is served publicly with its Content-Type.
+
+    There is no manifest to compare, so the public state itself is the
+    assertion: one HEAD per key, every failure collected.
+
+    Args:
+        base_url: The public origin, no trailing slash.
+        objects: The full upload set, skipped objects included.
+        http_head: requests.head or a stand-in with the same contract.
+
+    Raises:
+        PublishError: Listing every key that failed to fetch, was not 200,
+            or came back with another Content-Type.
+    """
+    failures: list[str] = []
+    for i, o in enumerate(objects, 1):
+        url = f"{base_url}/{o.key}"
+        try:
+            response = http_head(url, timeout=HTTP_TIMEOUT_SECONDS)
+        except requests.RequestException as e:
+            failures.append(f"{o.key}: {type(e).__name__}: {e}")
+            continue
+        content_type = response.headers.get("Content-Type", "").split(";")[0].strip()
+        if response.status_code != 200:
+            failures.append(f"{o.key}: HTTP {response.status_code}")
+        elif content_type != o.content_type:
+            failures.append(
+                f"{o.key}: Content-Type {content_type!r}, expected {o.content_type!r}"
+            )
+        if i % VERIFY_PROGRESS_EVERY == 0:
+            logger.info(f"Verified {i}/{len(objects)} public media URLs")
+
+    if failures:
+        listed = "\n  ".join(failures)
+        raise PublishError(
+            f"{len(failures)} of {len(objects)} public media URLs failed:\n  {listed}"
+        )
+    logger.info(f"Public media verified: {len(objects)} URLs under {base_url}/")
+
+
+def publish_media(
+    media_dir: Path,
+    dashboard_dirs: Iterable[Path],
+    target: PublishTarget,
+    s3: Any,
+    cloudfront: Any,
+    *,
+    dry_run: bool,
+    http_head: Callable[..., Any] = requests.head,
+) -> PublishPlan:
+    """
+    Publish the media drop, or plan it.
+
+    Pre-flight, list the bucket, diff; a dry run stops there. Otherwise
+    write the plan, invalidate the media path if anything changed, and
+    HEAD every key before returning.
+
+    Args:
+        media_dir: The media root.
+        dashboard_dirs: One dashboard directory per known season.
+        target: Bucket, media prefix, distribution, and base URL.
+        s3: A boto3 S3 client assumed as the publish role.
+        cloudfront: A boto3 CloudFront client, same role.
+        dry_run: Plan only; nothing is written or invalidated.
+        http_head: requests.head or a stand-in, for the post-flight.
+
+    Returns:
+        The plan that was (or would have been) executed.
+
+    Raises:
+        PublishError: From any failed check, write, or verification.
+    """
+    objects = build_media_upload_set(media_dir, dashboard_dirs, target.media_prefix)
+    key_prefix = media_key_prefix(target.media_prefix)
+    remote = list_remote(s3, target.bucket, key_prefix)
+    plan = build_plan(objects, remote)
+    logger.info(f"Plan for s3://{target.bucket}/{key_prefix}\n{plan.describe()}")
+
+    if dry_run:
+        logger.info("Dry run - nothing written")
+        return plan
+
+    execute_plan(s3, target.bucket, plan)
+    if plan.upload or plan.delete:
+        invalidate(cloudfront, target.distribution_id, key_prefix)
+    else:
+        logger.info("Nothing changed - edge not invalidated")
+    verify_public_media(target.base_url, objects, http_head=http_head)
     return plan

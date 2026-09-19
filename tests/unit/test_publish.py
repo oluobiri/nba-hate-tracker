@@ -8,28 +8,35 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock
 
-import boto3
 import polars as pl
 import pytest
 import requests
 from botocore.stub import ANY, Stubber
 
+from pipeline.media import expected_media_names
 from pipeline.publish import (
     MANIFEST_CACHE_CONTROL,
     MANIFEST_CONTENT_TYPE,
+    MEDIA_CACHE_CONTROL,
+    MEDIA_CONTENT_TYPES,
     MULTIPART_THRESHOLD_BYTES,
     PARQUET_CACHE_CONTROL,
     PARQUET_CONTENT_TYPE,
     LocalObject,
     PublishError,
     PublishPlan,
+    build_media_upload_set,
     build_plan,
     build_upload_set,
+    dimension_ids,
     execute_plan,
     invalidate,
     list_remote,
+    media_key_prefix,
+    publish_media,
     publish_season,
     season_prefix,
+    verify_public_media,
     verify_public_manifest,
 )
 from pipeline.schemas import SCHEMA_VERSION
@@ -225,20 +232,6 @@ def _object(name: str, body: bytes = b"x") -> LocalObject:
     )
 
 
-@pytest.fixture
-def s3():
-    """A real S3 client with every call stubbed; unexpected calls raise."""
-    client = boto3.client(
-        "s3",
-        region_name="us-east-1",
-        aws_access_key_id="stub",
-        aws_secret_access_key="stub",
-    )
-    with Stubber(client) as stubber:
-        yield client, stubber
-        stubber.assert_no_pending_responses()
-
-
 def _listing(objects: list[LocalObject], **extra) -> dict:
     """A list_objects_v2 page for the given objects, ETags quoted as S3 does."""
     return {
@@ -426,42 +419,30 @@ class TestExecutePlan:
             )
 
 
-@pytest.fixture
-def cloudfront():
-    """A real CloudFront client with every call stubbed; unexpected calls raise."""
-    client = boto3.client(
-        "cloudfront",
-        region_name="us-east-1",
-        aws_access_key_id="stub",
-        aws_secret_access_key="stub",
-    )
-    with Stubber(client) as stubber:
-        yield client, stubber
-        stubber.assert_no_pending_responses()
-
-
-def _invalidation(status: str) -> dict:
+def _invalidation(status: str, key_prefix: str = KEY_PREFIX) -> dict:
     """An Invalidation block as CloudFront returns it."""
     return {
         "Id": "I1EXAMPLE",
         "Status": status,
         "CreateTime": datetime(2026, 9, 18, tzinfo=timezone.utc),
         "InvalidationBatch": {
-            "Paths": {"Quantity": 1, "Items": [f"/{KEY_PREFIX}*"]},
+            "Paths": {"Quantity": 1, "Items": [f"/{key_prefix}*"]},
             "CallerReference": "ref",
         },
     }
 
 
-def _stub_invalidation(stubber: Stubber, *statuses: str) -> None:
+def _stub_invalidation(
+    stubber: Stubber, *statuses: str, key_prefix: str = KEY_PREFIX
+) -> None:
     """Expect one create_invalidation, then a get_invalidation per status."""
     stubber.add_response(
         "create_invalidation",
-        {"Location": "loc", "Invalidation": _invalidation("InProgress")},
+        {"Location": "loc", "Invalidation": _invalidation("InProgress", key_prefix)},
         {
             "DistributionId": DISTRIBUTION,
             "InvalidationBatch": {
-                "Paths": {"Quantity": 1, "Items": [f"/{KEY_PREFIX}*"]},
+                "Paths": {"Quantity": 1, "Items": [f"/{key_prefix}*"]},
                 "CallerReference": ANY,
             },
         },
@@ -654,4 +635,364 @@ class TestPublishSeason:
         with pytest.raises(PublishError):
             publish_season(
                 dashboard_dir, SEASON, TARGET, s3_client, cf_client, dry_run=False
+            )
+
+
+# -----------------------------------------------------------------------------
+# The media drop
+# -----------------------------------------------------------------------------
+
+MEDIA_KEY_PREFIX = "media/"
+SEASON_IDS = {"2024-25": ([1], [10]), "2025-26": ([1, 2], [10, 11])}
+
+
+def _write_dimensions(
+    dashboard_dir: Path, player_ids: list[int], team_ids: list[int]
+) -> None:
+    """Write the two dimension parquets the media set derives from."""
+    dashboard_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"player_id": player_ids, "x": player_ids}).write_parquet(
+        dashboard_dir / "players.parquet"
+    )
+    pl.DataFrame({"team_id": team_ids, "x": team_ids}).write_parquet(
+        dashboard_dir / "teams.parquet"
+    )
+
+
+@pytest.fixture
+def dashboard_dirs(tmp_path) -> list[Path]:
+    """Two seasons' dashboard dirs; the older one's ids are a subset of the newer."""
+    dirs = []
+    for season, (player_ids, team_ids) in SEASON_IDS.items():
+        d = tmp_path / season / "dashboard"
+        _write_dimensions(d, player_ids, team_ids)
+        dirs.append(d)
+    return dirs
+
+
+@pytest.fixture
+def media_dir(tmp_path) -> Path:
+    """Every expected media file for the two seasons' ids, plus two strays."""
+    d = tmp_path / "media"
+    for name in expected_media_names([1, 2], [10, 11]):
+        path = d / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+    (d / "headshots" / "999.png").write_bytes(b"not in any dimension")
+    (d / "logos" / "notes.txt").write_text("stray")
+    return d
+
+
+def _http_head(failures: dict[str, tuple[int, str]] | None = None) -> Mock:
+    """A requests.head stand-in: 200 with the right type unless the URL is in failures."""
+    failures = failures or {}
+
+    def head(url: str, **_) -> Mock:
+        status, content_type = failures.get(
+            url, (200, MEDIA_CONTENT_TYPES[Path(url).suffix])
+        )
+        return Mock(status_code=status, headers={"Content-Type": content_type})
+
+    return Mock(side_effect=head)
+
+
+def _put_stub(stubber: Stubber, objects: list[LocalObject]) -> None:
+    """Expect one put_object per object, in order, with its headers."""
+    for o in objects:
+        stubber.add_response(
+            "put_object",
+            {"ETag": f'"{o.md5}"'},
+            {
+                "Bucket": BUCKET,
+                "Key": o.key,
+                "Body": o.body,
+                "ContentType": o.content_type,
+                "CacheControl": o.cache_control,
+            },
+        )
+
+
+class TestMediaKeyPrefix:
+    """Tests for media_key_prefix, the one spelling of the media prefix."""
+
+    def test_trailing_slash(self):
+        """The prefix is listed and invalidated with a trailing slash."""
+        assert media_key_prefix("media") == "media/"
+
+
+class TestDimensionIds:
+    """Tests for dimension_ids, the union of every season's dimension tables."""
+
+    def test_unions_across_seasons(self, dashboard_dirs):
+        """Ids are the sorted union, without duplicates."""
+        assert dimension_ids(dashboard_dirs) == ([1, 2], [10, 11])
+
+    def test_dir_without_tables_is_skipped(self, dashboard_dirs, tmp_path):
+        """A season with no dashboard yet contributes nothing."""
+        empty = tmp_path / "2026-27" / "dashboard"
+        empty.mkdir(parents=True)
+        assert dimension_ids([*dashboard_dirs, empty]) == ([1, 2], [10, 11])
+
+    def test_half_built_dir_aborts(self, dashboard_dirs):
+        """One dimension without the other is a half-built season, not a subset."""
+        (dashboard_dirs[0] / "teams.parquet").unlink()
+        with pytest.raises(PublishError, match="teams.parquet"):
+            dimension_ids(dashboard_dirs)
+
+    def test_no_contributing_dir_aborts(self, tmp_path):
+        """An empty union would plan deleting every media key; refuse it."""
+        with pytest.raises(PublishError, match="no dashboard"):
+            dimension_ids([tmp_path / "nothing"])
+
+
+class TestBuildMediaUploadSet:
+    """Tests for build_media_upload_set, the dimension-derived allowlist."""
+
+    def test_set_is_the_expected_names_only(self, media_dir, dashboard_dirs):
+        """Keys are exactly media/ + every expected name; strays never ship."""
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        expected = [
+            MEDIA_KEY_PREFIX + n for n in expected_media_names([1, 2], [10, 11])
+        ]
+        assert [o.key for o in objects] == expected
+        assert not any("999" in o.key or "notes" in o.key for o in objects)
+
+    def test_headers_by_extension(self, media_dir, dashboard_dirs):
+        """Each format gets its Content-Type; one cache policy for all."""
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        by_suffix = {o.path.suffix: o.content_type for o in objects}
+        assert by_suffix == {
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".svg": "image/svg+xml",
+        }
+        assert {o.cache_control for o in objects} == {MEDIA_CACHE_CONTROL}
+        assert MEDIA_CACHE_CONTROL == "public, max-age=604800"
+
+    def test_body_and_md5_are_the_file_bytes(self, media_dir, dashboard_dirs):
+        """The upload is the file's bytes, with the md5 S3 will echo as the ETag."""
+        o = build_media_upload_set(media_dir, dashboard_dirs, "media")[0]
+        assert o.body == o.path.read_bytes()
+        assert o.md5 == hashlib.md5(o.body).hexdigest()
+
+    def test_missing_files_are_listed_together(self, media_dir, dashboard_dirs):
+        """Every missing file is named in one error, before anything is built."""
+        (media_dir / "headshots" / "2-420.webp").unlink()
+        (media_dir / "logos" / "11.svg").unlink()
+        with pytest.raises(PublishError, match="2 media files") as exc:
+            build_media_upload_set(media_dir, dashboard_dirs, "media")
+        assert "headshots/2-420.webp" in str(exc.value)
+        assert "logos/11.svg" in str(exc.value)
+
+    def test_oversize_file_aborts(self, media_dir, dashboard_dirs, monkeypatch):
+        """A file at the single-PUT threshold is refused, as for the tables."""
+        monkeypatch.setattr("pipeline.publish.MULTIPART_THRESHOLD_BYTES", 8)
+        with pytest.raises(PublishError, match="bytes"):
+            build_media_upload_set(media_dir, dashboard_dirs, "media")
+
+
+class TestVerifyPublicMedia:
+    """Tests for verify_public_media, the HEAD of every key after a drop."""
+
+    def test_heads_every_key_through_the_base_url(self, media_dir, dashboard_dirs):
+        """One HEAD per object at base_url/key; nothing raised when all pass."""
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        http_head = _http_head()
+
+        verify_public_media(BASE_URL, objects, http_head=http_head)
+
+        urls = [c.args[0] for c in http_head.call_args_list]
+        assert urls == [f"{BASE_URL}/{o.key}" for o in objects]
+
+    def test_status_and_type_failures_are_collected(self, media_dir, dashboard_dirs):
+        """A 404 and a wrong Content-Type are reported together, once."""
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        failures = {
+            f"{BASE_URL}/media/headshots/1.png": (404, "text/html"),
+            f"{BASE_URL}/media/logos/10.svg": (200, "text/html"),
+        }
+        with pytest.raises(PublishError, match="2 of") as exc:
+            verify_public_media(BASE_URL, objects, http_head=_http_head(failures))
+        assert "headshots/1.png: HTTP 404" in str(exc.value)
+        assert "logos/10.svg: Content-Type" in str(exc.value)
+
+    def test_content_type_parameters_are_ignored(self, media_dir, dashboard_dirs):
+        """image/svg+xml; charset=utf-8 is still image/svg+xml."""
+        objects = [
+            o
+            for o in build_media_upload_set(media_dir, dashboard_dirs, "media")
+            if o.path.suffix == ".svg"
+        ]
+        failures = {
+            f"{BASE_URL}/{o.key}": (200, "image/svg+xml; charset=utf-8")
+            for o in objects
+        }
+        verify_public_media(BASE_URL, objects, http_head=_http_head(failures))
+
+    def test_request_exception_is_a_failure(self, media_dir, dashboard_dirs):
+        """A connection error on one URL is collected, not raised bare."""
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")[:2]
+        http_head = Mock(
+            side_effect=[
+                requests.ConnectionError("reset"),
+                Mock(
+                    status_code=200, headers={"Content-Type": objects[1].content_type}
+                ),
+            ]
+        )
+        with pytest.raises(PublishError, match="1 of 2") as exc:
+            verify_public_media(BASE_URL, objects, http_head=http_head)
+        assert "ConnectionError" in str(exc.value)
+
+
+class TestPublishMedia:
+    """Tests for publish_media, the media drop end to end."""
+
+    def _list_stub(self, stubber: Stubber, listing: dict) -> None:
+        stubber.add_response(
+            "list_objects_v2", listing, {"Bucket": BUCKET, "Prefix": MEDIA_KEY_PREFIX}
+        )
+
+    def test_dry_run_lists_and_writes_nothing(
+        self, media_dir, dashboard_dirs, s3, cloudfront
+    ):
+        """A dry run reads the bucket and returns the plan; any write or HEAD fails."""
+        s3_client, s3_stub = s3
+        cf_client, _ = cloudfront
+        self._list_stub(s3_stub, {"IsTruncated": False})
+
+        plan = publish_media(
+            media_dir,
+            dashboard_dirs,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=True,
+            http_head=Mock(side_effect=AssertionError("no HTTP in a dry run")),
+        )
+
+        assert len(plan.upload) == len(expected_media_names([1, 2], [10, 11]))
+        assert plan.delete == ()
+
+    def test_real_run_uploads_invalidates_and_verifies(
+        self, media_dir, dashboard_dirs, s3, cloudfront
+    ):
+        """Every object, the media invalidation, then a HEAD per object."""
+        s3_client, s3_stub = s3
+        cf_client, cf_stub = cloudfront
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        self._list_stub(s3_stub, {"IsTruncated": False})
+        _put_stub(s3_stub, objects)
+        _stub_invalidation(cf_stub, "Completed", key_prefix=MEDIA_KEY_PREFIX)
+        http_head = _http_head()
+
+        plan = publish_media(
+            media_dir,
+            dashboard_dirs,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=False,
+            http_head=http_head,
+        )
+
+        assert plan.upload == tuple(objects)
+        assert http_head.call_count == len(objects)
+
+    def test_stale_keys_delete_after_the_uploads(
+        self, media_dir, dashboard_dirs, s3, cloudfront
+    ):
+        """A key under media/ the set no longer names is deleted, then invalidated."""
+        s3_client, s3_stub = s3
+        cf_client, cf_stub = cloudfront
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        stale = LocalObject(
+            key=MEDIA_KEY_PREFIX + "headshots/999.png",
+            path=Path("999.png"),
+            body=b"old",
+            md5=hashlib.md5(b"old").hexdigest(),
+            content_type="image/png",
+            cache_control=MEDIA_CACHE_CONTROL,
+        )
+        self._list_stub(s3_stub, _listing([*objects, stale]))
+        s3_stub.add_response(
+            "delete_objects",
+            {},
+            {
+                "Bucket": BUCKET,
+                "Delete": {"Objects": [{"Key": stale.key}], "Quiet": True},
+            },
+        )
+        _stub_invalidation(cf_stub, "Completed", key_prefix=MEDIA_KEY_PREFIX)
+
+        plan = publish_media(
+            media_dir,
+            dashboard_dirs,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=False,
+            http_head=_http_head(),
+        )
+
+        assert plan.upload == ()
+        assert plan.delete == (stale.key,)
+
+    def test_unchanged_run_verifies_without_invalidating(
+        self, media_dir, dashboard_dirs, s3, cloudfront
+    ):
+        """Every ETag matches: no PUT, no invalidation, but every key is still HEADed."""
+        s3_client, s3_stub = s3
+        cf_client, _ = cloudfront
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        self._list_stub(s3_stub, _listing(objects))
+        http_head = _http_head()
+
+        plan = publish_media(
+            media_dir,
+            dashboard_dirs,
+            TARGET,
+            s3_client,
+            cf_client,
+            dry_run=False,
+            http_head=http_head,
+        )
+
+        assert plan.skip == tuple(objects)
+        assert http_head.call_count == len(objects)
+
+    def test_pre_flight_failure_touches_nothing(
+        self, media_dir, dashboard_dirs, s3, cloudfront
+    ):
+        """A missing file aborts before the bucket is even listed."""
+        s3_client, _ = s3
+        cf_client, _ = cloudfront
+        (media_dir / "logos" / "10.svg").unlink()
+
+        with pytest.raises(PublishError, match="logos/10.svg"):
+            publish_media(
+                media_dir, dashboard_dirs, TARGET, s3_client, cf_client, dry_run=False
+            )
+
+    def test_verification_failure_surfaces_after_the_writes(
+        self, media_dir, dashboard_dirs, s3, cloudfront
+    ):
+        """The writes and the invalidation ran (every stub consumed); the HEAD failure is the error."""
+        s3_client, s3_stub = s3
+        cf_client, cf_stub = cloudfront
+        objects = build_media_upload_set(media_dir, dashboard_dirs, "media")
+        self._list_stub(s3_stub, {"IsTruncated": False})
+        _put_stub(s3_stub, objects)
+        _stub_invalidation(cf_stub, "Completed", key_prefix=MEDIA_KEY_PREFIX)
+        failures = {f"{BASE_URL}/media/logos/11.svg": (404, "text/html")}
+
+        with pytest.raises(PublishError, match="logos/11.svg"):
+            publish_media(
+                media_dir,
+                dashboard_dirs,
+                TARGET,
+                s3_client,
+                cf_client,
+                dry_run=False,
+                http_head=_http_head(failures),
             )

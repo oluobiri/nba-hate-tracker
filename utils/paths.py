@@ -5,7 +5,9 @@ All data directory paths should be obtained through this module to ensure
 consistent handling of the DATA_DIR environment variable and active season.
 
 Paths are season-scoped: get_raw_dir() returns data/{season}/raw/, where
-{season} defaults to the active season in config/season.yaml.
+{season} defaults to the active season in config/season.yaml. The one
+exception is get_media_dir(): media assets serve every season, so they
+sit beside the season directories.
 
 Functions (not module-level constants) ensure environment is read at runtime,
 not import time.
@@ -23,8 +25,20 @@ from utils.constants import (
     PROCESSED_DATA_SUBDIR,
     DASHBOARD_DATA_SUBDIR,
     REFERENCE_DATA_SUBDIR,
+    MEDIA_DATA_SUBDIR,
 )
 from utils.season_config import get_active_season
+
+
+def _data_root() -> Path:
+    """
+    The data root: DATA_DIR from the environment (with .env support).
+
+    Returns:
+        Path to the data root (default: ./data).
+    """
+    load_dotenv()
+    return Path(os.getenv("DATA_DIR", "./data"))
 
 
 def get_data_dir(season: str | None = None) -> Path:
@@ -41,11 +55,9 @@ def get_data_dir(season: str | None = None) -> Path:
     Returns:
         Path to season data directory (e.g., data/2024-25/).
     """
-    load_dotenv()
-    data_root = os.getenv("DATA_DIR", "./data")
     if season is None:
         season = get_active_season()
-    return Path(data_root) / season
+    return _data_root() / season
 
 
 def get_raw_dir() -> Path:
@@ -110,3 +122,16 @@ def get_reference_dir() -> Path:
         Path to reference directory (e.g., data/2024-25/reference/).
     """
     return get_data_dir() / REFERENCE_DATA_SUBDIR
+
+
+def get_media_dir() -> Path:
+    """
+    Get the media directory for headshot and logo assets.
+
+    Season-independent: one set of originals and variants serves every
+    season, so the directory sits beside the season directories.
+
+    Returns:
+        Path to the media directory (e.g., data/media/).
+    """
+    return _data_root() / MEDIA_DATA_SUBDIR

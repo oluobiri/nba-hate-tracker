@@ -1,10 +1,11 @@
 """
 Tests for season-aware data path construction.
 
-Tests verify that path functions return season-scoped directories
-and that get_data_dir accepts an explicit season override. The active
-season is pinned to a synthetic value so tests exercise the plumbing
-without depending on the real config/season.yaml.
+Tests verify that path functions return season-scoped directories,
+that get_data_dir accepts an explicit season override, and that the
+media directory is the one season-independent path. The active season
+is pinned to a synthetic value so tests exercise the plumbing without
+depending on the real config/season.yaml.
 """
 
 from pathlib import Path
@@ -17,6 +18,7 @@ from utils.paths import (
     get_dashboard_dir,
     get_data_dir,
     get_filtered_dir,
+    get_media_dir,
     get_processed_dir,
     get_raw_dir,
     get_reference_dir,
@@ -109,3 +111,20 @@ class TestLeafPathFunctions:
         result = get_reference_dir()
         assert result.parent.name == pinned_season
         assert result.name == "reference"
+
+
+class TestGetMediaDir:
+    """Tests for the season-independent media directory."""
+
+    def test_is_media_under_the_data_root(self, monkeypatch, tmp_path):
+        """The media dir is DATA_DIR/media, read from the environment."""
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        assert get_media_dir() == tmp_path / "media"
+
+    def test_has_no_season_component(self, pinned_season):
+        """Media assets serve every season, so no season appears in the path."""
+        assert pinned_season not in get_media_dir().parts
+
+    def test_shares_root_with_data_dir(self, pinned_season):
+        """The media dir sits beside the season directories, not under them."""
+        assert get_media_dir().parent == get_data_dir().parent

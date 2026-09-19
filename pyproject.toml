@@ -23,6 +23,7 @@ dependencies = [
     "pandas>=2.3.3",
     "duckdb>=1.5.4",
     "nba-api>=1.11.4",
+    "pillow>=12.0.0",
 ]
 
 [tool.ruff]

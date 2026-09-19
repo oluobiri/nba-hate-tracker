@@ -385,10 +385,17 @@ class TestFetchAsset:
         assert asset.path.read_bytes() == PNG
 
     def test_exhaustion_raises_the_last_error(self, media_dir, sleep):
-        """After max_attempts the last transient error propagates."""
+        """After max_attempts the last transient error propagates, not the first."""
         asset = headshot_asset(PLAYER, media_dir)
-        http_get = Mock(side_effect=requests.Timeout("hang"))
-        with pytest.raises(requests.Timeout):
+        http_get = Mock(
+            side_effect=[
+                requests.ConnectionError("first"),
+                requests.Timeout("second"),
+                requests.ConnectionError("third"),
+                requests.Timeout("final"),
+            ]
+        )
+        with pytest.raises(requests.Timeout, match="final"):
             fetch_asset(asset, http_get=http_get, max_attempts=4, retry_backoff=2.0)
         assert http_get.call_count == 4
         assert sleep.call_args_list == [call(2.0), call(4.0), call(8.0)]
@@ -417,8 +424,9 @@ class TestFetchOriginals:
     def test_sleeps_the_delay_after_each_request(self, media_dir, sleep):
         """Polite spacing between every request, misses included."""
         assets = [headshot_asset(PLAYER, media_dir), logo_asset(TEAM, media_dir)]
-        http_get = Mock(side_effect=[_response(PNG), _response(SVG)])
-        fetch_originals(assets, http_get=http_get, delay=0.5)
+        http_get = Mock(side_effect=[_response(b"", 404), _response(SVG)])
+        misses = fetch_originals(assets, http_get=http_get, delay=0.5)
+        assert len(misses) == 1
         assert sleep.call_args_list == [call(0.5), call(0.5)]
 
     def test_no_misses_on_success(self, media_dir, sleep):

@@ -117,6 +117,52 @@ NBA_STATS_CUP_SEASON_TYPE = "IST"
 
 
 # =============================================================================
+# NBA CDN CONFIGURATION (cdn.nba.com - headshots and team logos)
+# =============================================================================
+
+# Source URLs derive from the ids in players.yaml / teams.yaml
+NBA_CDN_HEADSHOT_URL = (
+    "https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png"
+)
+NBA_CDN_LOGO_URL = "https://cdn.nba.com/logos/nba/{team_id}/primary/L/logo.svg"
+
+# The CDN's bot signatures refuse a User-Agent containing "fetch" or a URL
+# (HTTP/2 stream reset, or an indefinite hang over HTTP/1.1); a bare
+# product token passes.
+NBA_CDN_USER_AGENT = "courtsentiment-media/1.0"
+
+# Pinned so the CDN serves the PNG: an Accept naming image/webp gets its
+# own WebP back instead.
+NBA_CDN_HEADSHOT_ACCEPT = "image/png"
+
+# Delay between requests in seconds. ~253 requests per full run against
+# an edge cache, not the rate-limited stats origin.
+NBA_CDN_REQUEST_DELAY = 0.5
+
+# Per-request timeout in seconds. A refused request hangs rather than
+# erroring; the timeout is what turns a hang into a retryable Timeout.
+NBA_CDN_TIMEOUT = 30
+
+# Total attempts per asset (1 initial + retries): 4 -> 2+4+8 = 14s of
+# backoff, then a reported miss on a resumable run rather than a dead run.
+NBA_CDN_MAX_ATTEMPTS = 4
+
+# Base seconds for exponential backoff between retries (2s -> 4s -> 8s)
+NBA_CDN_RETRY_BACKOFF = 2.0
+
+
+# =============================================================================
+# MEDIA VARIANTS (the naming convention the site's srcset is built from)
+# =============================================================================
+
+# Headshot WebP widths: 180 covers every row at 3x; 420 the player page
+# at 2x and the hero at 1x; 840 the hero at 2x (3x would exceed the source).
+HEADSHOT_VARIANT_WIDTHS = (180, 420, 840)
+HEADSHOT_WEBP_QUALITY = 82
+HEADSHOT_WEBP_METHOD = 6  # slowest, smallest encoder setting; ~670 files, run once
+
+
+# =============================================================================
 # AGGREGATION - comment_samples selection (pipeline/aggregation.py)
 # =============================================================================
 # Keyword defaults of build_comment_samples(); named so the manifest can

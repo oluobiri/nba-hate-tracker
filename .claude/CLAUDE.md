@@ -23,7 +23,8 @@ data/             → Not committed
   │   ├── processed/  → sentiment.parquet
   │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + posts_bridge.parquet + corpus_daily.parquet
   │   └── dashboard/  → per-table Parquet files + manifest.json
-  └── 2025-26/    → V2 season data (same structure)
+  ├── 2025-26/    → V2 season data (same structure)
+  └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed
 ```
 
 ## Commands
@@ -46,6 +47,10 @@ uv run ruff format .                 # Format
 
 # Streamlit
 uv run streamlit run app/streamlit_app.py  # Local dev
+
+# Media (headshots + logos from cdn.nba.com into data/media/, WebP variants derived; resumable)
+uv run python -m scripts.fetch_media --dry-run  # Plan only, no request
+uv run python -m scripts.fetch_media            # Fetch what is missing, exit 1 on any miss
 
 # Publishing (assumes the publish role; prompts for an MFA code, dry runs included)
 uv run python -m scripts.publish_dashboard --season 2025-26 --dry-run  # Plan only

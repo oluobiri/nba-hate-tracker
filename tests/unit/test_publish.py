@@ -45,6 +45,7 @@ BASE_URL = "https://example.com"
 TARGET = PublishTarget(
     bucket=BUCKET,
     prefix=PREFIX,
+    media_prefix="media",
     distribution_id=DISTRIBUTION,
     base_url=BASE_URL,
     profile="unused",

@@ -2,8 +2,9 @@
 Publish target loading from YAML.
 
 This module provides cached access to config/publish.yaml: the bucket,
-key prefix, CloudFront distribution, public base URL, and AWS profile
-the publish step writes through. The file holds no credentials.
+the data and media key prefixes, CloudFront distribution, public base
+URL, and AWS profile the publish steps write through. The file holds no
+credentials.
 """
 
 from dataclasses import dataclass
@@ -15,16 +16,25 @@ import yaml
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "publish.yaml"
 
-REQUIRED_KEYS = ("bucket", "prefix", "distribution_id", "base_url", "profile")
+REQUIRED_KEYS = (
+    "bucket",
+    "prefix",
+    "media_prefix",
+    "distribution_id",
+    "base_url",
+    "profile",
+)
 
 
 @dataclass(frozen=True)
 class PublishTarget:
-    """Where a season's dashboard drop lands and how the CLI signs in.
+    """Where the dashboard and media drops land and how the CLI signs in.
 
     Attributes:
-        bucket: S3 bucket behind the distribution's data behaviors.
-        prefix: Top-level key prefix; the public path is the S3 key.
+        bucket: S3 bucket behind the distribution's data and media behaviors.
+        prefix: Top-level key prefix for the season drops; the public path
+            is the S3 key.
+        media_prefix: Key prefix for first-party media: <base_url>/<media_prefix>/<name>.
         distribution_id: CloudFront distribution to invalidate.
         base_url: Public origin, scheme included, no trailing slash.
         profile: ~/.aws/config profile that assumes the publish role.
@@ -32,6 +42,7 @@ class PublishTarget:
 
     bucket: str
     prefix: str
+    media_prefix: str
     distribution_id: str
     base_url: str
     profile: str
@@ -71,6 +82,7 @@ def load_publish_config() -> PublishTarget:
     return PublishTarget(
         bucket=str(config["bucket"]),
         prefix=str(config["prefix"]).strip("/"),
+        media_prefix=str(config["media_prefix"]).strip("/"),
         distribution_id=str(config["distribution_id"]),
         base_url=base_url,
         profile=str(config["profile"]),

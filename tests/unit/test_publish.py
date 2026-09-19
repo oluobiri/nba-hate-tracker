@@ -744,6 +744,25 @@ class TestDimensionIds:
         with pytest.raises(PublishError, match="no dashboard"):
             dimension_ids([tmp_path / "nothing"])
 
+    def test_present_but_empty_tables_abort(self, tmp_path):
+        """Tables with no rows are the same empty union, and the same refusal."""
+        d = tmp_path / "2026-27" / "dashboard"
+        _write_dimensions(d, [], [])
+        with pytest.raises(PublishError, match="no dashboard"):
+            dimension_ids([d])
+
+    def test_null_id_aborts_by_name(self, tmp_path):
+        """A null id is a broken table, named, not a TypeError from sorting."""
+        d = tmp_path / "2026-27" / "dashboard"
+        d.mkdir(parents=True)
+        pl.DataFrame({"player_id": [1, None], "x": [1, 2]}).write_parquet(
+            d / "players.parquet"
+        )
+        pl.DataFrame({"team_id": [10], "x": [1]}).write_parquet(d / "teams.parquet")
+        with pytest.raises(PublishError, match="players.parquet") as exc:
+            dimension_ids([d])
+        assert "null" in str(exc.value)
+
 
 class TestBuildMediaUploadSet:
     """Tests for build_media_upload_set, the dimension-derived allowlist."""

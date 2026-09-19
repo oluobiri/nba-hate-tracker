@@ -490,14 +490,23 @@ def media_key_prefix(media_prefix: str) -> str:
     return f"{media_prefix}/"
 
 
+def _read_ids(path: Path, column: str) -> set[int]:
+    """One dimension table's ids; a null is a broken table, named here."""
+    series = pl.read_parquet(path, columns=[column])[column]
+    if series.null_count():
+        raise PublishError(f"{path}: {series.null_count()} null {column} values")
+    return set(series.to_list())
+
+
 def dimension_ids(dashboard_dirs: Iterable[Path]) -> tuple[list[int], list[int]]:
     """
     The union of player and team ids over every season's dimension tables.
 
     A directory without either table is a season with no dashboard yet
     and contributes nothing; one with exactly one table is half-built and
-    aborts. No contributing directory at all aborts too: an empty set
-    would plan deleting every media key.
+    aborts. An empty union aborts too, whether no directory contributed
+    or the tables held no rows: an empty set would plan deleting every
+    media key.
 
     Args:
         dashboard_dirs: One dashboard directory per known season.
@@ -506,11 +515,10 @@ def dimension_ids(dashboard_dirs: Iterable[Path]) -> tuple[list[int], list[int]]
         Sorted, de-duplicated player ids and team ids.
 
     Raises:
-        PublishError: On a half-built directory or an empty union.
+        PublishError: On a half-built directory, a null id, or an empty union.
     """
     player_ids: set[int] = set()
     team_ids: set[int] = set()
-    contributing = 0
     for dashboard_dir in dashboard_dirs:
         players_path = dashboard_dir / PLAYERS_DIMENSION[0]
         teams_path = dashboard_dir / TEAMS_DIMENSION[0]
@@ -522,21 +530,12 @@ def dimension_ids(dashboard_dirs: Iterable[Path]) -> tuple[list[int], list[int]]
             raise PublishError(
                 f"{dashboard_dir}: {missing.name} is missing - a half-built season"
             )
-        player_ids |= set(
-            pl.read_parquet(players_path, columns=[PLAYERS_DIMENSION[1]])[
-                PLAYERS_DIMENSION[1]
-            ].to_list()
-        )
-        team_ids |= set(
-            pl.read_parquet(teams_path, columns=[TEAMS_DIMENSION[1]])[
-                TEAMS_DIMENSION[1]
-            ].to_list()
-        )
-        contributing += 1
-    if contributing == 0:
+        player_ids |= _read_ids(players_path, PLAYERS_DIMENSION[1])
+        team_ids |= _read_ids(teams_path, TEAMS_DIMENSION[1])
+    if not player_ids or not team_ids:
         raise PublishError(
-            "no dashboard directory holds dimension tables - an empty media set "
-            "would delete every media key"
+            "no dashboard directory contributed both player and team ids - an "
+            "empty media set would delete every media key"
         )
     return sorted(player_ids), sorted(team_ids)
 
@@ -556,7 +555,7 @@ def build_media_upload_set(
         media_prefix: The media key prefix from publish.yaml.
 
     Returns:
-        The upload set in name order: each player's original and variants,
+        The upload set in id order: each player's original and variants,
         then the logos.
 
     Raises:

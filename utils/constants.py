@@ -158,3 +158,9 @@ PROCESSED_DATA_SUBDIR = "processed"
 DASHBOARD_DATA_SUBDIR = "dashboard"
 MANIFEST_FILENAME = "manifest.json"
 REFERENCE_DATA_SUBDIR = "reference"
+
+# Season-independent: one set of originals and variants serves every
+# season, so it sits beside the season directories, not under them.
+MEDIA_DATA_SUBDIR = "media"
+MEDIA_HEADSHOTS_SUBDIR = "headshots"
+MEDIA_LOGOS_SUBDIR = "logos"

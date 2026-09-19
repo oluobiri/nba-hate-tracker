@@ -110,7 +110,7 @@ def main() -> None:
     if not report.ok:
         for miss in report.misses:
             logger.error(f"  miss  {miss.name}: {miss.reason}")
-        logger.error("Re-run to retry the misses; nothing present is refetched")
+        logger.error("Re-run without --force to retry only the misses")
         sys.exit(1)
     logger.info("=" * 60)
 

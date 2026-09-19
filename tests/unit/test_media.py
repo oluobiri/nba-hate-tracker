@@ -5,19 +5,24 @@ Nothing here touches the network: the CDN is a requests.get stand-in,
 and every file lands in tmp_path.
 """
 
+import io
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
 import pytest
 import requests
+from PIL import Image
 
 from pipeline.media import (
     PNG_MAGIC,
     TMP_SUFFIX,
     MediaError,
+    Variant,
     build_plan,
     fetch_asset,
     fetch_originals,
+    generate_variant,
+    generate_variants,
     headshot_asset,
     headshot_name,
     headshot_source_url,
@@ -26,6 +31,8 @@ from pipeline.media import (
     logo_asset,
     logo_name,
     logo_source_url,
+    sync_media,
+    variant_height,
     variant_name,
     verify_config_urls,
 )
@@ -74,6 +81,49 @@ def _response(body: bytes, status: int = 200) -> Mock:
 def _http_get(body: bytes, status: int = 200) -> Mock:
     """A requests.get stand-in serving one body for every URL."""
     return Mock(return_value=_response(body, status))
+
+
+def _png_image(mode: str = "P") -> bytes:
+    """A 104x76 cutout: opaque square on a transparent field, like the CDN's."""
+    image = Image.new("RGBA", (104, 76), (0, 0, 0, 0))
+    for x in range(20, 80):
+        for y in range(10, 70):
+            image.putpixel((x, y), (200, 30, 30, 255))
+    if mode == "P":
+        image = image.quantize(colors=4)
+    out = io.BytesIO()
+    image.save(out, "PNG")
+    return out.getvalue()
+
+
+@pytest.fixture(scope="module")
+def png_palette() -> bytes:
+    """The CDN's shape: a palette PNG with a transparency entry."""
+    return _png_image("P")
+
+
+@pytest.fixture(scope="module")
+def png_rgba() -> bytes:
+    """A straight RGBA PNG."""
+    return _png_image("RGBA")
+
+
+def _variant(media_dir: Path, width: int, player_id: int = PLAYER) -> Variant:
+    """A variant record for the test player."""
+    return Variant(
+        player_id=player_id,
+        width=width,
+        source=media_dir / headshot_name(player_id),
+        name=variant_name(player_id, width),
+        path=media_dir / variant_name(player_id, width),
+    )
+
+
+def _routing_http_get(png: bytes) -> Mock:
+    """A requests.get stand-in serving the PNG for headshots, SVG for logos."""
+    return Mock(
+        side_effect=lambda url, **_: _response(png if url.endswith(".png") else SVG)
+    )
 
 
 @pytest.fixture
@@ -377,3 +427,162 @@ class TestFetchOriginals:
             fetch_originals([logo_asset(TEAM, media_dir)], http_get=_http_get(SVG))
             == []
         )
+
+
+class TestGenerateVariant:
+    """One WebP from one PNG: geometry, alpha, and the no-upscale rule."""
+
+    def test_writes_webp_at_target_width_and_rounded_height(
+        self, media_dir, png_palette
+    ):
+        """104x76 at width 42 gives 42x31 (76 * 42 / 104 = 30.7)."""
+        variant = _variant(media_dir, 42)
+        media_dir.joinpath("headshots").mkdir(parents=True)
+        variant.source.write_bytes(png_palette)
+        generate_variant(variant)
+        with Image.open(variant.path) as out:
+            assert out.format == "WEBP"
+            assert out.size == (42, 31)
+        assert not list(media_dir.rglob(f"*{TMP_SUFFIX}"))
+
+    def test_alpha_is_kept_from_a_palette_source(self, media_dir, png_palette):
+        """The transparent field stays transparent; the cutout stays opaque."""
+        variant = _variant(media_dir, 42)
+        media_dir.joinpath("headshots").mkdir(parents=True)
+        variant.source.write_bytes(png_palette)
+        generate_variant(variant)
+        with Image.open(variant.path) as out:
+            out = out.convert("RGBA")
+            assert out.getpixel((0, 0))[3] == 0
+            assert out.getpixel((21, 15))[3] == 255
+
+    def test_rgba_source_also_works(self, media_dir, png_rgba):
+        """A straight RGBA PNG converts the same way."""
+        variant = _variant(media_dir, 18)
+        media_dir.joinpath("headshots").mkdir(parents=True)
+        variant.source.write_bytes(png_rgba)
+        generate_variant(variant)
+        with Image.open(variant.path) as out:
+            assert out.size == (18, 13)
+            assert out.convert("RGBA").getpixel((0, 0))[3] == 0
+
+    def test_source_narrower_than_target_raises(self, media_dir, png_palette):
+        """Never upscale: a 104px source cannot make an 840px variant."""
+        variant = _variant(media_dir, 840)
+        media_dir.joinpath("headshots").mkdir(parents=True)
+        variant.source.write_bytes(png_palette)
+        with pytest.raises(MediaError, match="104") as exc:
+            generate_variant(variant)
+        assert "840" in str(exc.value)
+        assert not variant.path.exists()
+
+    @pytest.mark.parametrize("width,expected", [(180, 132), (420, 307), (840, 614)])
+    def test_real_source_geometry(self, width, expected):
+        """The 1040x760 source at each planned width."""
+        assert variant_height(1040, 760, width) == expected
+
+
+class TestGenerateVariants:
+    """Phase two over a plan: originals that missed are skipped, not reported twice."""
+
+    def test_skips_variants_whose_original_missed(self, media_dir, png_palette):
+        """A missed original's variants are neither attempted nor a Miss."""
+        missing = _variant(media_dir, 18, player_id=1)
+        present = _variant(media_dir, 18)
+        media_dir.joinpath("headshots").mkdir(parents=True)
+        present.source.write_bytes(png_palette)
+        misses = generate_variants([missing, present], missing_sources={missing.source})
+        assert misses == []
+        assert present.path.exists()
+        assert not missing.path.exists()
+
+    def test_generation_error_is_a_miss_and_siblings_continue(
+        self, media_dir, png_palette
+    ):
+        """A narrow source is a Miss; the width that fits still generates."""
+        too_wide = _variant(media_dir, 840)
+        fits = _variant(media_dir, 18)
+        media_dir.joinpath("headshots").mkdir(parents=True)
+        fits.source.write_bytes(png_palette)
+        misses = generate_variants([too_wide, fits], missing_sources=set())
+        assert [m.name for m in misses] == [too_wide.name]
+        assert fits.path.exists()
+
+
+class TestSyncMedia:
+    """Both phases end to end, resumable, with misses reported once."""
+
+    def test_two_phases_end_to_end(self, media_dir, png_palette, sleep):
+        """Originals and every variant land; the report is clean."""
+        report = sync_media(
+            [PLAYER],
+            [TEAM],
+            media_dir,
+            widths=WIDTHS,
+            http_get=_routing_http_get(png_palette),
+        )
+        assert report.ok
+        assert (media_dir / headshot_name(PLAYER)).read_bytes() == png_palette
+        assert (media_dir / logo_name(TEAM)).read_bytes() == SVG
+        for width in WIDTHS:
+            assert (media_dir / variant_name(PLAYER, width)).exists()
+        assert report.fetched == [headshot_name(PLAYER), logo_name(TEAM)]
+        assert report.generated == [variant_name(PLAYER, w) for w in WIDTHS]
+
+    def test_rerun_touches_nothing(self, media_dir, png_palette, sleep):
+        """A second run makes no request and writes nothing."""
+        sync_media(
+            [PLAYER],
+            [TEAM],
+            media_dir,
+            widths=WIDTHS,
+            http_get=_routing_http_get(png_palette),
+        )
+        refusing = Mock(side_effect=AssertionError("network on a resumed run"))
+        report = sync_media(
+            [PLAYER], [TEAM], media_dir, widths=WIDTHS, http_get=refusing
+        )
+        assert report.ok
+        assert report.fetched == [] and report.generated == []
+
+    def test_missing_variant_regenerates_without_a_refetch(
+        self, media_dir, png_palette, sleep
+    ):
+        """Delete one WebP: only that file is regenerated, no request made."""
+        sync_media(
+            [PLAYER],
+            [],
+            media_dir,
+            widths=WIDTHS,
+            http_get=_routing_http_get(png_palette),
+        )
+        (media_dir / variant_name(PLAYER, 42)).unlink()
+        refusing = Mock(side_effect=AssertionError("network on a resumed run"))
+        report = sync_media([PLAYER], [], media_dir, widths=WIDTHS, http_get=refusing)
+        assert report.generated == [variant_name(PLAYER, 42)]
+        assert (media_dir / variant_name(PLAYER, 42)).exists()
+
+    def test_missed_headshot_reports_once(self, media_dir, sleep):
+        """A 404 headshot is one Miss; its variants are not counted again."""
+        report = sync_media(
+            [PLAYER], [], media_dir, widths=WIDTHS, http_get=_http_get(b"", status=404)
+        )
+        assert not report.ok
+        assert [m.name for m in report.misses] == [headshot_name(PLAYER)]
+        assert not list(media_dir.rglob("*.webp"))
+
+    def test_force_refetches_everything(self, media_dir, png_palette, sleep):
+        """--force: every original is requested again even though present."""
+        sync_media(
+            [PLAYER],
+            [TEAM],
+            media_dir,
+            widths=WIDTHS,
+            http_get=_routing_http_get(png_palette),
+        )
+        http_get = _routing_http_get(png_palette)
+        report = sync_media(
+            [PLAYER], [TEAM], media_dir, widths=WIDTHS, http_get=http_get, force=True
+        )
+        assert http_get.call_count == 2
+        assert len(report.generated) == len(WIDTHS)

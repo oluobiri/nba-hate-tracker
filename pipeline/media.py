@@ -32,9 +32,12 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from PIL import Image
 
 from utils.constants import (
     HEADSHOT_VARIANT_WIDTHS,
+    HEADSHOT_WEBP_METHOD,
+    HEADSHOT_WEBP_QUALITY,
     MEDIA_HEADSHOTS_SUBDIR,
     MEDIA_LOGOS_SUBDIR,
     NBA_CDN_HEADSHOT_ACCEPT,
@@ -536,3 +539,186 @@ def fetch_originals(
             misses.append(Miss(name=asset.name, reason=reason))
         time.sleep(delay)
     return misses
+
+
+# -----------------------------------------------------------------------------
+# Phase two: variants
+# -----------------------------------------------------------------------------
+
+
+def variant_height(source_width: int, source_height: int, width: int) -> int:
+    """
+    The height that keeps a source's aspect ratio at a target width.
+
+    Args:
+        source_width: Original width in pixels.
+        source_height: Original height in pixels.
+        width: Target width in pixels.
+
+    Returns:
+        The rounded target height.
+    """
+    return round(source_height * width / source_width)
+
+
+def generate_variant(
+    variant: Variant,
+    *,
+    quality: int = HEADSHOT_WEBP_QUALITY,
+    method: int = HEADSHOT_WEBP_METHOD,
+) -> None:
+    """
+    Write one WebP variant of a headshot original, alpha kept.
+
+    Args:
+        variant: The variant to write.
+        quality: WebP quality.
+        method: WebP encoder effort (0 fastest, 6 smallest).
+
+    Raises:
+        MediaError: If the source is narrower than the target width; a
+            variant is never upscaled.
+        OSError: If the source cannot be read as an image.
+    """
+    with Image.open(variant.source) as source:
+        if source.width < variant.width:
+            raise MediaError(
+                f"{variant.name}: source is {source.width}px wide, "
+                f"narrower than the {variant.width}px variant"
+            )
+        size = (
+            variant.width,
+            variant_height(source.width, source.height, variant.width),
+        )
+        image = source.convert("RGBA").resize(size, Image.Resampling.LANCZOS)
+
+    variant.path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = variant.path.with_name(variant.path.name + TMP_SUFFIX)
+    image.save(tmp, "WEBP", quality=quality, method=method)
+    os.replace(tmp, variant.path)
+
+
+def generate_variants(
+    variants: Iterable[Variant],
+    *,
+    missing_sources: set[Path],
+    quality: int = HEADSHOT_WEBP_QUALITY,
+    method: int = HEADSHOT_WEBP_METHOD,
+) -> list[Miss]:
+    """
+    Write every planned variant whose original is on disk.
+
+    A variant of an original that missed in phase one is skipped, not
+    reported: the miss is already on the original.
+
+    Args:
+        variants: The plan's generate set, in order.
+        missing_sources: Original paths that phase one could not produce.
+        quality: WebP quality.
+        method: WebP encoder effort.
+
+    Returns:
+        One Miss per variant that could not be written.
+    """
+    misses: list[Miss] = []
+    for variant in variants:
+        if variant.source in missing_sources:
+            logger.info(f"Skipped {variant.name} - its original missed")
+            continue
+        try:
+            generate_variant(variant, quality=quality, method=method)
+            logger.info(f"Generated {variant.name}")
+        except (MediaError, OSError) as e:
+            reason = f"{type(e).__name__}: {e}"
+            logger.warning(f"Missed {variant.name} - {reason}")
+            misses.append(Miss(name=variant.name, reason=reason))
+    return misses
+
+
+# -----------------------------------------------------------------------------
+# The run
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class MediaReport:
+    """What a run produced and what it could not.
+
+    Attributes:
+        fetched: Names of originals downloaded this run.
+        generated: Names of variants written this run.
+        misses: Every asset that could not be produced.
+    """
+
+    fetched: list[str]
+    generated: list[str]
+    misses: list[Miss]
+
+    @property
+    def ok(self) -> bool:
+        """True when nothing missed."""
+        return not self.misses
+
+
+def sync_media(
+    player_ids: Iterable[int],
+    team_ids: Iterable[int],
+    media_dir: Path,
+    *,
+    widths: tuple[int, ...] = HEADSHOT_VARIANT_WIDTHS,
+    force: bool = False,
+    http_get: Callable[..., Any] = requests.get,
+    delay: float = NBA_CDN_REQUEST_DELAY,
+    timeout: int = NBA_CDN_TIMEOUT,
+    max_attempts: int = NBA_CDN_MAX_ATTEMPTS,
+    retry_backoff: float = NBA_CDN_RETRY_BACKOFF,
+    quality: int = HEADSHOT_WEBP_QUALITY,
+    method: int = HEADSHOT_WEBP_METHOD,
+) -> MediaReport:
+    """
+    Bring the media directory up to date: fetch originals, then variants.
+
+    Resumable: only what is missing on disk is fetched or generated
+    unless force is set.
+
+    Args:
+        player_ids: Player ids to cover.
+        team_ids: Team ids to cover.
+        media_dir: The media root.
+        widths: Variant widths per headshot.
+        force: Refetch and regenerate everything already on disk.
+        http_get: requests.get or a stand-in with the same contract.
+        delay: Seconds to wait after each request.
+        timeout: Per-request timeout in seconds.
+        max_attempts: Total attempts per asset.
+        retry_backoff: Base seconds for the backoff between retries.
+        quality: WebP quality.
+        method: WebP encoder effort.
+
+    Returns:
+        The report: what landed and what missed.
+    """
+    plan = build_plan(player_ids, team_ids, media_dir, widths=widths, force=force)
+    logger.info(f"Plan for {media_dir}\n{plan.describe()}")
+
+    misses = fetch_originals(
+        plan.fetch,
+        delay=delay,
+        http_get=http_get,
+        timeout=timeout,
+        max_attempts=max_attempts,
+        retry_backoff=retry_backoff,
+    )
+    missing_sources = {media_dir / m.name for m in misses}
+    fetched = [a.name for a in plan.fetch if a.path not in missing_sources]
+
+    misses += generate_variants(
+        plan.generate, missing_sources=missing_sources, quality=quality, method=method
+    )
+    missed_names = {m.name for m in misses}
+    generated = [
+        v.name
+        for v in plan.generate
+        if v.source not in missing_sources and v.name not in missed_names
+    ]
+    return MediaReport(fetched=fetched, generated=generated, misses=misses)

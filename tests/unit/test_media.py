@@ -281,9 +281,20 @@ class TestBuildPlan:
         assert [a.name for a in plan.present] == [headshot_name(PLAYER)]
         assert [v.width for v in plan.generate] == list(WIDTHS)
 
-    def test_only_the_missing_width_generates(self, media_dir):
-        """A variant on disk is up to date; its missing sibling generates."""
+    def test_refetched_original_regenerates_its_variants(self, media_dir):
+        """An original about to be fetched invalidates whatever sits beside it."""
         (media_dir / "headshots").mkdir(parents=True)
+        for width in WIDTHS:
+            (media_dir / variant_name(PLAYER, width)).write_bytes(b"stale")
+        plan = build_plan([PLAYER], [], media_dir, widths=WIDTHS)
+        assert [a.name for a in plan.fetch] == [headshot_name(PLAYER)]
+        assert [v.width for v in plan.generate] == list(WIDTHS)
+        assert plan.up_to_date == ()
+
+    def test_only_the_missing_width_generates(self, media_dir):
+        """With the original present, a variant on disk is up to date; its missing sibling generates."""
+        (media_dir / "headshots").mkdir(parents=True)
+        (media_dir / headshot_name(PLAYER)).write_bytes(PNG)
         (media_dir / variant_name(PLAYER, 18)).write_bytes(b"webp")
         plan = build_plan([PLAYER], [], media_dir, widths=WIDTHS)
         assert [v.width for v in plan.generate] == [42]

@@ -391,10 +391,12 @@ def build_plan(
     Decide what a run will fetch and generate from what is on disk.
 
     Headshots then logos, each sorted by id. An original fetches unless
-    it is present (or force); a variant generates unless it is present
-    (or force). A variant is planned against its original's expected
-    path whether or not the original exists yet: the executor drops the
-    variants of an original that missed.
+    it is present (or force). A variant generates unless it is present
+    (or force), and always when its original is being fetched: a fresh
+    original invalidates whatever sat beside it. A variant is planned
+    against its original's expected path whether or not the original
+    exists yet: the executor drops the variants of an original that
+    missed.
 
     Args:
         player_ids: Player ids to cover.
@@ -423,11 +425,16 @@ def build_plan(
     def present(path: Path) -> bool:
         return not force and path.exists()
 
+    fetching = {a.path for a in assets if not present(a.path)}
+
+    def up_to_date(variant: Variant) -> bool:
+        return variant.source not in fetching and present(variant.path)
+
     return MediaPlan(
-        fetch=tuple(a for a in assets if not present(a.path)),
-        present=tuple(a for a in assets if present(a.path)),
-        generate=tuple(v for v in variants if not present(v.path)),
-        up_to_date=tuple(v for v in variants if present(v.path)),
+        fetch=tuple(a for a in assets if a.path in fetching),
+        present=tuple(a for a in assets if a.path not in fetching),
+        generate=tuple(v for v in variants if not up_to_date(v)),
+        up_to_date=tuple(v for v in variants if up_to_date(v)),
     )
 
 

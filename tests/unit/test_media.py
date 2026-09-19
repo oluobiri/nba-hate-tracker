@@ -647,3 +647,22 @@ class TestFirstPartyUrls:
             "https://example.com", "media", headshot_name(PLAYER)
         )
         assert logo_url(TEAM) == "https://example.com/media/logos/1610612737.svg"
+
+    def test_committed_configs_pass_the_cross_check(self, season_override):
+        """Both seasons' players.yaml and teams.yaml carry the first-party form."""
+        from utils.player_config import load_player_metadata
+        from utils.publish_config import load_publish_config
+        from utils.team_config import load_team_config
+
+        target = load_publish_config()
+        headshot_url, logo_url = first_party_builders(
+            target.base_url, target.media_prefix
+        )
+        for season in ("2025-26", "2024-25"):
+            season_override(season)
+            verify_config_urls(
+                load_player_metadata(),
+                load_team_config(),
+                headshot_url=headshot_url,
+                logo_url=logo_url,
+            )

@@ -875,10 +875,10 @@ class TestAggregateTeamConference:
 
         result = aggregate_sentiment(path)
 
+        team_config = load_team_config()
         for row in result["fan_team_overall"].to_dicts():
             assert "logo_url" in row, f"Missing logo_url for {row['fan_team']}"
-            assert row["logo_url"] is not None
-            assert "cdn.nba.com/logos" in row["logo_url"]
+            assert row["logo_url"] == team_config[row["fan_team"]]["logo_url"]
 
 
 class TestAggregateViews:

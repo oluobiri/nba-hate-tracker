@@ -304,7 +304,9 @@ class TestLoadPlayerMetadata:
             assert "team" in player_meta, f"{player_name} missing 'team'"
             assert "conference" in player_meta, f"{player_name} missing 'conference'"
             assert "player_id" in player_meta, f"{player_name} missing 'player_id'"
-            assert "headshot_url" in player_meta, f"{player_name} missing 'headshot_url'"
+            assert "headshot_url" in player_meta, (
+                f"{player_name} missing 'headshot_url'"
+            )
 
     def test_conference_values_valid(self):
         """Conference is 'East' or 'West'; None only for teamless players.
@@ -323,8 +325,7 @@ class TestLoadPlayerMetadata:
                 )
             else:
                 assert player_meta["conference"] in {"East", "West"}, (
-                    f"{player_name} has invalid conference: "
-                    f"{player_meta['conference']}"
+                    f"{player_name} has invalid conference: {player_meta['conference']}"
                 )
 
     def test_lebron_metadata(self):
@@ -407,8 +408,9 @@ class TestLoadPlayerConfigVersion:
     def test_honors_season_override(self, season_override):
         """Assembly under --season resolves the override season's version.
 
-        Pins the archived 2024-25 config's version exactly — frozen
-        config, safe to pin (unlike the active season's).
+        Pins the archived 2024-25 config's version exactly: its roster is
+        frozen, so it moves only on a value-only MINOR bump (2.1: the
+        first-party headshot URLs), never on the active season's cadence.
         """
         season_override("2024-25")
-        assert load_player_config_version() == "2.0"
+        assert load_player_config_version() == "2.1"

@@ -12,14 +12,14 @@
 #   - Disney bubble hotel flairs (GD, YC, SP8, GFL)
 #   - Multi-team flairs (Mavs & Magic)
 
-version: "2.2"
+version: "2.3"
 
 teams:
   Atlanta Hawks:
     abbreviation: ATL
     conference: East
     team_id: 1610612737
-    logo_url: https://cdn.nba.com/logos/nba/1610612737/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612737.svg
     aliases:
       - atl
       - hawks
@@ -28,7 +28,7 @@ teams:
     abbreviation: BOS
     conference: East
     team_id: 1610612738
-    logo_url: https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612738.svg
     aliases:
       - bos
       - celtics
@@ -37,7 +37,7 @@ teams:
     abbreviation: BKN
     conference: East
     team_id: 1610612751
-    logo_url: https://cdn.nba.com/logos/nba/1610612751/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612751.svg
     aliases:
       - bkn
       - brk
@@ -49,7 +49,7 @@ teams:
     abbreviation: CHA
     conference: East
     team_id: 1610612766
-    logo_url: https://cdn.nba.com/logos/nba/1610612766/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612766.svg
     aliases:
       - cha
       - cho
@@ -59,7 +59,7 @@ teams:
     abbreviation: CHI
     conference: East
     team_id: 1610612741
-    logo_url: https://cdn.nba.com/logos/nba/1610612741/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612741.svg
     aliases:
       - chi
       - bulls
@@ -68,7 +68,7 @@ teams:
     abbreviation: CLE
     conference: East
     team_id: 1610612739
-    logo_url: https://cdn.nba.com/logos/nba/1610612739/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612739.svg
     aliases:
       - cle
       - cavaliers
@@ -78,7 +78,7 @@ teams:
     abbreviation: DAL
     conference: West
     team_id: 1610612742
-    logo_url: https://cdn.nba.com/logos/nba/1610612742/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612742.svg
     aliases:
       - dal
       - mavericks
@@ -88,7 +88,7 @@ teams:
     abbreviation: DEN
     conference: West
     team_id: 1610612743
-    logo_url: https://cdn.nba.com/logos/nba/1610612743/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612743.svg
     aliases:
       - den
       - nuggets
@@ -97,7 +97,7 @@ teams:
     abbreviation: DET
     conference: East
     team_id: 1610612765
-    logo_url: https://cdn.nba.com/logos/nba/1610612765/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612765.svg
     aliases:
       - det
       - pistons
@@ -106,7 +106,7 @@ teams:
     abbreviation: GSW
     conference: West
     team_id: 1610612744
-    logo_url: https://cdn.nba.com/logos/nba/1610612744/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612744.svg
     aliases:
       - gsw
       - warriors
@@ -116,7 +116,7 @@ teams:
     abbreviation: HOU
     conference: West
     team_id: 1610612745
-    logo_url: https://cdn.nba.com/logos/nba/1610612745/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612745.svg
     aliases:
       - hou
       - rockets
@@ -125,7 +125,7 @@ teams:
     abbreviation: IND
     conference: East
     team_id: 1610612754
-    logo_url: https://cdn.nba.com/logos/nba/1610612754/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612754.svg
     aliases:
       - ind
       - pacers
@@ -134,7 +134,7 @@ teams:
     abbreviation: LAC
     conference: West
     team_id: 1610612746
-    logo_url: https://cdn.nba.com/logos/nba/1610612746/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612746.svg
     aliases:
       - lac
       - clippers
@@ -145,7 +145,7 @@ teams:
     abbreviation: LAL
     conference: West
     team_id: 1610612747
-    logo_url: https://cdn.nba.com/logos/nba/1610612747/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612747.svg
     aliases:
       - lal
       - lakers
@@ -155,7 +155,7 @@ teams:
     abbreviation: MEM
     conference: West
     team_id: 1610612763
-    logo_url: https://cdn.nba.com/logos/nba/1610612763/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612763.svg
     aliases:
       - mem
       - grizzlies
@@ -165,7 +165,7 @@ teams:
     abbreviation: MIA
     conference: East
     team_id: 1610612748
-    logo_url: https://cdn.nba.com/logos/nba/1610612748/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612748.svg
     aliases:
       - mia
       - heat
@@ -174,7 +174,7 @@ teams:
     abbreviation: MIL
     conference: East
     team_id: 1610612749
-    logo_url: https://cdn.nba.com/logos/nba/1610612749/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612749.svg
     aliases:
       - mil
       - mke
@@ -184,7 +184,7 @@ teams:
     abbreviation: MIN
     conference: West
     team_id: 1610612750
-    logo_url: https://cdn.nba.com/logos/nba/1610612750/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612750.svg
     aliases:
       - min
       - timberwolves
@@ -194,7 +194,7 @@ teams:
     abbreviation: NOP
     conference: West
     team_id: 1610612740
-    logo_url: https://cdn.nba.com/logos/nba/1610612740/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612740.svg
     aliases:
       - nop
       - nol
@@ -204,7 +204,7 @@ teams:
     abbreviation: NYK
     conference: East
     team_id: 1610612752
-    logo_url: https://cdn.nba.com/logos/nba/1610612752/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612752.svg
     aliases:
       - nyk
       - knicks
@@ -213,7 +213,7 @@ teams:
     abbreviation: OKC
     conference: West
     team_id: 1610612760
-    logo_url: https://cdn.nba.com/logos/nba/1610612760/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612760.svg
     aliases:
       - okc
       - thunder
@@ -223,7 +223,7 @@ teams:
     abbreviation: ORL
     conference: East
     team_id: 1610612753
-    logo_url: https://cdn.nba.com/logos/nba/1610612753/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612753.svg
     aliases:
       - orl
       - magic
@@ -233,7 +233,7 @@ teams:
     abbreviation: PHI
     conference: East
     team_id: 1610612755
-    logo_url: https://cdn.nba.com/logos/nba/1610612755/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612755.svg
     aliases:
       - phi
       - 76ers
@@ -244,7 +244,7 @@ teams:
     abbreviation: PHX
     conference: West
     team_id: 1610612756
-    logo_url: https://cdn.nba.com/logos/nba/1610612756/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612756.svg
     aliases:
       - phx
       - pho
@@ -254,7 +254,7 @@ teams:
     abbreviation: POR
     conference: West
     team_id: 1610612757
-    logo_url: https://cdn.nba.com/logos/nba/1610612757/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612757.svg
     aliases:
       - por
       - pdx
@@ -266,7 +266,7 @@ teams:
     abbreviation: SAC
     conference: West
     team_id: 1610612758
-    logo_url: https://cdn.nba.com/logos/nba/1610612758/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612758.svg
     aliases:
       - sac
       - kings
@@ -275,7 +275,7 @@ teams:
     abbreviation: SAS
     conference: West
     team_id: 1610612759
-    logo_url: https://cdn.nba.com/logos/nba/1610612759/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612759.svg
     aliases:
       - sas
       - spurs
@@ -284,7 +284,7 @@ teams:
     abbreviation: TOR
     conference: East
     team_id: 1610612761
-    logo_url: https://cdn.nba.com/logos/nba/1610612761/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612761.svg
     aliases:
       - tor
       - tbr
@@ -295,7 +295,7 @@ teams:
     abbreviation: UTA
     conference: West
     team_id: 1610612762
-    logo_url: https://cdn.nba.com/logos/nba/1610612762/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612762.svg
     aliases:
       - uta
       - jazz
@@ -304,7 +304,7 @@ teams:
     abbreviation: WAS
     conference: East
     team_id: 1610612764
-    logo_url: https://cdn.nba.com/logos/nba/1610612764/primary/L/logo.svg
+    logo_url: https://courtsentiment.com/media/logos/1610612764.svg
     aliases:
       - was
       - wizards

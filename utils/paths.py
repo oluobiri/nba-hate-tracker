@@ -104,14 +104,18 @@ def get_processed_dir() -> Path:
     return get_data_dir() / PROCESSED_DATA_SUBDIR
 
 
-def get_dashboard_dir() -> Path:
+def get_dashboard_dir(season: str | None = None) -> Path:
     """
     Get dashboard directory for precomputed aggregates.
+
+    Args:
+        season: Season identifier (e.g., "2024-25"). Defaults to the
+            active season; the media publish passes every known season.
 
     Returns:
         Path to dashboard directory (e.g., data/2024-25/dashboard/).
     """
-    return get_data_dir() / DASHBOARD_DATA_SUBDIR
+    return get_data_dir(season) / DASHBOARD_DATA_SUBDIR
 
 
 def get_reference_dir() -> Path:

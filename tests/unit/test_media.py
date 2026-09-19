@@ -19,8 +19,10 @@ from pipeline.media import (
     MediaError,
     Variant,
     build_plan,
+    expected_media_names,
     fetch_asset,
     fetch_originals,
+    first_party_builders,
     generate_variant,
     generate_variants,
     headshot_asset,
@@ -31,6 +33,7 @@ from pipeline.media import (
     logo_asset,
     logo_name,
     logo_source_url,
+    public_media_url,
     sync_media,
     variant_height,
     variant_name,
@@ -605,3 +608,61 @@ class TestSyncMedia:
         )
         assert http_get.call_count == 2
         assert len(report.generated) == len(WIDTHS)
+
+
+class TestExpectedMediaNames:
+    """The full name set for a set of ids: what a publish must find and ship."""
+
+    def test_headshots_then_logos_by_id(self):
+        """Each player's original and variants in width order, sorted by id, then logos."""
+        names = expected_media_names([2, 1], [10], widths=WIDTHS)
+        assert names == [
+            "headshots/1.png",
+            "headshots/1-18.webp",
+            "headshots/1-42.webp",
+            "headshots/2.png",
+            "headshots/2-18.webp",
+            "headshots/2-42.webp",
+            "logos/10.svg",
+        ]
+
+    def test_every_width_per_headshot(self):
+        """One original plus one name per width per player, one per team."""
+        names = expected_media_names([PLAYER, 1, 2], [TEAM, 5])
+        assert len(names) == 3 * 4 + 2
+
+
+class TestFirstPartyUrls:
+    """The one spelling of a first-party media URL."""
+
+    def test_public_media_url_joins_with_one_slash(self):
+        """base_url / media_prefix / name, no doubled or missing slashes."""
+        url = public_media_url("https://example.com", "media", "headshots/1.png")
+        assert url == "https://example.com/media/headshots/1.png"
+
+    def test_builders_wrap_the_naming_helpers(self):
+        """The builders verify_config_urls takes derive from the same names."""
+        headshot_url, logo_url = first_party_builders("https://example.com", "media")
+        assert headshot_url(PLAYER) == public_media_url(
+            "https://example.com", "media", headshot_name(PLAYER)
+        )
+        assert logo_url(TEAM) == "https://example.com/media/logos/1610612737.svg"
+
+    def test_committed_configs_pass_the_cross_check(self, season_override):
+        """Both seasons' players.yaml and teams.yaml carry the first-party form."""
+        from utils.player_config import load_player_metadata
+        from utils.publish_config import load_publish_config
+        from utils.team_config import load_team_config
+
+        target = load_publish_config()
+        headshot_url, logo_url = first_party_builders(
+            target.base_url, target.media_prefix
+        )
+        for season in ("2025-26", "2024-25"):
+            season_override(season)
+            verify_config_urls(
+                load_player_metadata(),
+                load_team_config(),
+                headshot_url=headshot_url,
+                logo_url=logo_url,
+            )

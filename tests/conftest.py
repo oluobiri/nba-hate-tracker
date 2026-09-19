@@ -10,7 +10,9 @@ from collections.abc import Callable, Generator
 from datetime import date
 from unittest.mock import Mock
 
+import boto3
 import pytest
+from botocore.stub import Stubber
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -439,7 +441,11 @@ def markdown_wrapped_responses() -> list[tuple[str, str, str | None]]:
     Returns list of (raw_response, expected_sentiment, expected_player) tuples.
     """
     return [
-        ('```json\n{"s": "pos", "c": 0.9, "p": "LeBron James"}\n```', "pos", "LeBron James"),
+        (
+            '```json\n{"s": "pos", "c": 0.9, "p": "LeBron James"}\n```',
+            "pos",
+            "LeBron James",
+        ),
         ('```\n{"s": "neg", "c": 0.75, "p": null}\n```', "neg", None),
         ('```json{"s": "neu", "c": 0.5, "p": "Curry"}```', "neu", "Curry"),
     ]
@@ -591,3 +597,36 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
     yield _set
     clear_season_override()
     _clear_caches()
+
+
+# ---------------------------------------------------------------------------
+# Stubbed AWS clients (the dashboard and media publish steps)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def s3():
+    """A real S3 client with every call stubbed; unexpected calls raise."""
+    client = boto3.client(
+        "s3",
+        region_name="us-east-1",
+        aws_access_key_id="stub",
+        aws_secret_access_key="stub",
+    )
+    with Stubber(client) as stubber:
+        yield client, stubber
+        stubber.assert_no_pending_responses()
+
+
+@pytest.fixture
+def cloudfront():
+    """A real CloudFront client with every call stubbed; unexpected calls raise."""
+    client = boto3.client(
+        "cloudfront",
+        region_name="us-east-1",
+        aws_access_key_id="stub",
+        aws_secret_access_key="stub",
+    )
+    with Stubber(client) as stubber:
+        yield client, stubber
+        stubber.assert_no_pending_responses()

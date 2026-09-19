@@ -65,6 +65,25 @@ SEASON_FORMAT = re.compile(r"\d{4}-\d{2}")
 _season_override: str | None = None
 
 
+def known_seasons() -> list[str]:
+    """
+    Every season the config directory registers, oldest first.
+
+    A season is a config/<season>/ directory holding a season.yaml; the
+    directory is the registry, so no list is kept anywhere else.
+
+    Returns:
+        Sorted season labels, e.g. ["2024-25", "2025-26"].
+    """
+    return sorted(
+        entry.name
+        for entry in CONFIG_DIR.iterdir()
+        if entry.is_dir()
+        and SEASON_FORMAT.fullmatch(entry.name)
+        and (entry / "season.yaml").is_file()
+    )
+
+
 def _season_facts_path(season: str) -> Path:
     """Resolve the per-season facts file for a season."""
     return CONFIG_DIR / season / "season.yaml"

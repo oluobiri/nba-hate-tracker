@@ -8,9 +8,10 @@ reported at the end and make the exit code non-zero; a re-run picks up
 where the misses left off.
 
 Ids come from the season's players.yaml (the active season's file is
-the superset) and teams.yaml; the config URLs are checked against the
-derived source URLs before any request. --dry-run prints the plan and
-makes no request.
+the superset) and teams.yaml. The config URLs are first-party values;
+they are checked against the naming convention before any request, and
+the source URLs on the league CDN derive from the ids. --dry-run prints
+the plan and makes no request.
 
 Usage:
     uv run python -m scripts.fetch_media --dry-run
@@ -23,9 +24,16 @@ import argparse
 import logging
 import sys
 
-from pipeline.media import MediaError, build_plan, sync_media, verify_config_urls
+from pipeline.media import (
+    MediaError,
+    build_plan,
+    first_party_builders,
+    sync_media,
+    verify_config_urls,
+)
 from utils.paths import get_media_dir
 from utils.player_config import load_player_metadata
+from utils.publish_config import load_publish_config
 from utils.season_config import get_active_season, set_season_override
 from utils.team_config import load_team_config
 
@@ -79,8 +87,10 @@ def main() -> None:
     teams = load_team_config()
     media_dir = get_media_dir()
 
+    target = load_publish_config()
+    headshot_url, logo_url = first_party_builders(target.base_url, target.media_prefix)
     try:
-        verify_config_urls(players, teams)
+        verify_config_urls(players, teams, headshot_url=headshot_url, logo_url=logo_url)
     except MediaError as e:
         logger.error(f"Config check failed: {e}")
         sys.exit(1)

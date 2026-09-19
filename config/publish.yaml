@@ -3,9 +3,11 @@
 # assumes the publish role with MFA.
 #
 # Public key layout: <base_url>/<prefix>/season=<season>/<file>
+#                    <base_url>/<media_prefix>/<name>   (headshots/..., logos/...)
 
 bucket: courtsentiment-data
 prefix: data
+media_prefix: media
 distribution_id: E2X7LKN4E54XA2
 base_url: https://courtsentiment.com
 profile: courtsentiment-publish

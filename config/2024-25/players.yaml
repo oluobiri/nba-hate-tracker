@@ -1,7 +1,7 @@
 # NBA Player Aliases for Hate Detection
 # Optimized: shortest unique fragments + non-overlapping nicknames only
 
-version: "2.0"
+version: "2.1"
 season: "2024-25"
 
 # Aliases requiring word boundary matching (\b) to avoid false positives
@@ -70,7 +70,7 @@ players:
     team: Miami Heat
     conference: East
     player_id: 1628389
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628389.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628389.png
     aliases:
       - adebayo
       - bam
@@ -79,7 +79,7 @@ players:
     team: Milwaukee Bucks
     conference: East
     player_id: 203507
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203507.png
+    headshot_url: https://courtsentiment.com/media/headshots/203507.png
     aliases:
       - giannis
       - greek freak
@@ -91,7 +91,7 @@ players:
     team: New York Knicks
     conference: East
     player_id: 1628384
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628384.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628384.png
     aliases:
       - anunoby
       - og
@@ -100,7 +100,7 @@ players:
     team: Portland Trail Blazers
     conference: West
     player_id: 1629028
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629028.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629028.png
     aliases:
       - deandre ayton
       - ayton
@@ -109,7 +109,7 @@ players:
     team: Memphis Grizzlies
     conference: West
     player_id: 1628963
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628963.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628963.png
     aliases:
       - bagley
 
@@ -117,7 +117,7 @@ players:
     team: Chicago Bulls
     conference: East
     player_id: 1628366
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628366.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628366.png
     aliases:
       - lonzo
       - zo
@@ -128,7 +128,7 @@ players:
     team: Charlotte Hornets
     conference: East
     player_id: 1630163
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630163.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630163.png
     aliases:
       - lamelo
       # Negative
@@ -137,7 +137,7 @@ players:
     team: Orlando Magic
     conference: East
     player_id: 1631094
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631094.png
+    headshot_url: https://courtsentiment.com/media/headshots/1631094.png
     aliases:
       - banchero
       - paolo
@@ -147,7 +147,7 @@ players:
     team: Memphis Grizzlies
     conference: West
     player_id: 1630217
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630217.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630217.png
     aliases:
       - bane
       - desmond
@@ -156,7 +156,7 @@ players:
     team: San Antonio Spurs
     conference: West
     player_id: 203084
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203084.png
+    headshot_url: https://courtsentiment.com/media/headshots/203084.png
     aliases:
       - harrison barnes
 
@@ -164,7 +164,7 @@ players:
     team: Toronto Raptors
     conference: East
     player_id: 1630567
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630567.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630567.png
     aliases:
       - barnes
       - scottie
@@ -173,7 +173,7 @@ players:
     team: Phoenix Suns
     conference: West
     player_id: 203078
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203078.png
+    headshot_url: https://courtsentiment.com/media/headshots/203078.png
     aliases:
       - bradley beal
       - beal
@@ -182,7 +182,7 @@ players:
     team: Milwaukee Bucks
     conference: East
     player_id: 201976
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201976.png
+    headshot_url: https://courtsentiment.com/media/headshots/201976.png
     aliases:
       - beverley
       - pat bev
@@ -192,7 +192,7 @@ players:
     team: Phoenix Suns
     conference: West
     player_id: 1626164
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626164.png
+    headshot_url: https://courtsentiment.com/media/headshots/1626164.png
     aliases:
       - booker
       - dbook
@@ -205,7 +205,7 @@ players:
     team: New York Knicks
     conference: East
     player_id: 1628969
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628969.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628969.png
     aliases:
       - mikal bridges
       - mikal
@@ -215,7 +215,7 @@ players:
     team: Houston Rockets
     conference: West
     player_id: 1628415
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628415.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628415.png
     aliases:
       - dillon brooks
       - dillon
@@ -224,7 +224,7 @@ players:
     team: Boston Celtics
     conference: East
     player_id: 1627759
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627759.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627759.png
     aliases:
       - jaylen brown
       - jaylen
@@ -235,7 +235,7 @@ players:
     team: New York Knicks
     conference: East
     player_id: 1628973
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628973.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628973.png
     aliases:
       - brunson
 
@@ -243,7 +243,7 @@ players:
     team: Golden State Warriors
     conference: West
     player_id: 202710
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202710.png
+    headshot_url: https://courtsentiment.com/media/headshots/202710.png
     aliases:
       - jimmy butler
       - butler
@@ -258,7 +258,7 @@ players:
     team: Atlanta Hawks
     conference: East
     player_id: 203991
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203991.png
+    headshot_url: https://courtsentiment.com/media/headshots/203991.png
     aliases:
       - capela
 
@@ -266,7 +266,7 @@ players:
     team: Oklahoma City Thunder
     conference: West
     player_id: 1627936
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627936.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627936.png
     aliases:
       - caruso
       - the accountant
@@ -277,7 +277,7 @@ players:
     team: Minnesota Timberwolves
     conference: West
     player_id: 201144
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201144.png
+    headshot_url: https://courtsentiment.com/media/headshots/201144.png
     aliases:
       - mike conley
       - conley
@@ -287,7 +287,7 @@ players:
     team: Golden State Warriors
     conference: West
     player_id: 201939
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201939.png
+    headshot_url: https://courtsentiment.com/media/headshots/201939.png
     aliases:
       - steph
       - steph curry
@@ -304,7 +304,7 @@ players:
     team: Detroit Pistons
     conference: East
     player_id: 1630595
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630595.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630595.png
     aliases:
       - cunningham
       - cade
@@ -314,7 +314,7 @@ players:
     team: Dallas Mavericks
     conference: West
     player_id: 203076
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203076.png
+    headshot_url: https://courtsentiment.com/media/headshots/203076.png
     aliases:
       - ad
       - davis
@@ -330,7 +330,7 @@ players:
     team: Sacramento Kings
     conference: West
     player_id: 201942
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201942.png
+    headshot_url: https://courtsentiment.com/media/headshots/201942.png
     aliases:
       - derozan
       - demar
@@ -341,7 +341,7 @@ players:
     team: Minnesota Timberwolves
     conference: West
     player_id: 1628978
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628978.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628978.png
     aliases:
       - donte divincenzo
       - divincenzo
@@ -351,7 +351,7 @@ players:
     team: Los Angeles Lakers
     conference: West
     player_id: 1629029
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629029.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629029.png
     aliases:
       - luka
       - doncic
@@ -366,7 +366,7 @@ players:
     team: Oklahoma City Thunder
     conference: West
     player_id: 1629652
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629652.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629652.png
     aliases:
       - lu dort
       - dort
@@ -376,7 +376,7 @@ players:
     team: Phoenix Suns
     conference: West
     player_id: 201142
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201142.png
+    headshot_url: https://courtsentiment.com/media/headshots/201142.png
     aliases:
       - kd
       - durant
@@ -391,7 +391,7 @@ players:
     team: Memphis Grizzlies
     conference: West
     player_id: 1641744
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641744.png
+    headshot_url: https://courtsentiment.com/media/headshots/1641744.png
     aliases:
       - zach edey
       - edey
@@ -400,7 +400,7 @@ players:
     team: Minnesota Timberwolves
     conference: West
     player_id: 1630162
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630162.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630162.png
     aliases:
       - ant
       - edwards
@@ -413,7 +413,7 @@ players:
     team: Philadelphia 76ers
     conference: East
     player_id: 203954
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203954.png
+    headshot_url: https://courtsentiment.com/media/headshots/203954.png
     aliases:
       - embiid
       - joel
@@ -429,7 +429,7 @@ players:
     team: San Antonio Spurs
     conference: West
     player_id: 1628368
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628368.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628368.png
     aliases:
       - de'aaron
       - fox
@@ -439,7 +439,7 @@ players:
     team: Cleveland Cavaliers
     conference: East
     player_id: 1629636
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629636.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629636.png
     aliases:
       - garland
       - dg
@@ -448,7 +448,7 @@ players:
     team: Philadelphia 76ers
     conference: East
     player_id: 202331
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202331.png
+    headshot_url: https://courtsentiment.com/media/headshots/202331.png
     aliases:
       - pg
       - paul george
@@ -464,7 +464,7 @@ players:
     team: Chicago Bulls
     conference: East
     player_id: 1630581
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630581.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630581.png
     aliases:
       - josh giddey
       - giddey
@@ -475,7 +475,7 @@ players:
     team: Oklahoma City Thunder
     conference: West
     player_id: 1628983
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628983.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628983.png
     aliases:
       - sga
       - shai
@@ -485,7 +485,7 @@ players:
     team: Minnesota Timberwolves
     conference: West
     player_id: 203497
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203497.png
+    headshot_url: https://courtsentiment.com/media/headshots/203497.png
     aliases:
       - gobert
       - rudy
@@ -497,7 +497,7 @@ players:
     team: Denver Nuggets
     conference: West
     player_id: 203932
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203932.png
+    headshot_url: https://courtsentiment.com/media/headshots/203932.png
     aliases:
       - aaron gordon
       - gordon
@@ -506,7 +506,7 @@ players:
     team: Houston Rockets
     conference: West
     player_id: 1630224
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630224.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630224.png
     aliases:
       - jalen green
 
@@ -514,7 +514,7 @@ players:
     team: Golden State Warriors
     conference: West
     player_id: 203110
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203110.png
+    headshot_url: https://courtsentiment.com/media/headshots/203110.png
     aliases:
       - draymond
       - dray
@@ -529,7 +529,7 @@ players:
     team: Los Angeles Lakers
     conference: West
     player_id: 1629060
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629060.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629060.png
     aliases:
       - rui hachimura
       - rui
@@ -539,7 +539,7 @@ players:
     team: Indiana Pacers
     conference: East
     player_id: 1630169
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630169.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630169.png
     aliases:
       - haliburton
       - hali
@@ -550,7 +550,7 @@ players:
     team: Los Angeles Clippers
     conference: West
     player_id: 201935
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201935.png
+    headshot_url: https://courtsentiment.com/media/headshots/201935.png
     aliases:
       - harden
       - the beard
@@ -563,7 +563,7 @@ players:
     team: Detroit Pistons
     conference: East
     player_id: 202699
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202699.png
+    headshot_url: https://courtsentiment.com/media/headshots/202699.png
     aliases:
       - tobias harris
       - tobias
@@ -572,7 +572,7 @@ players:
     team: New York Knicks
     conference: East
     player_id: 1628404
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628404.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628404.png
     aliases:
       - hart
 
@@ -580,7 +580,7 @@ players:
     team: Portland Trail Blazers
     conference: West
     player_id: 1630703
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630703.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630703.png
     aliases:
       - scoot henderson
       - scoot
@@ -589,7 +589,7 @@ players:
     team: Miami Heat
     conference: East
     player_id: 1629639
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629639.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629639.png
     aliases:
       - herro
       - boy wonder
@@ -598,7 +598,7 @@ players:
     team: Golden State Warriors
     conference: West
     player_id: 1627741
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627741.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627741.png
     aliases:
       - buddy hield
       - hield
@@ -609,7 +609,7 @@ players:
     team: Oklahoma City Thunder
     conference: West
     player_id: 1631096
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631096.png
+    headshot_url: https://courtsentiment.com/media/headshots/1631096.png
     aliases:
       - chet
       - holmgren
@@ -621,7 +621,7 @@ players:
     team: Boston Celtics
     conference: East
     player_id: 201950
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201950.png
+    headshot_url: https://courtsentiment.com/media/headshots/201950.png
     aliases:
       - jrue
       - holiday
@@ -630,7 +630,7 @@ players:
     team: Boston Celtics
     conference: East
     player_id: 201143
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201143.png
+    headshot_url: https://courtsentiment.com/media/headshots/201143.png
     aliases:
       - al horford
       - horford
@@ -639,7 +639,7 @@ players:
     team: Toronto Raptors
     conference: East
     player_id: 1627742
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627742.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627742.png
     aliases:
       - ingram
       - bi
@@ -650,7 +650,7 @@ players:
     team: Dallas Mavericks
     conference: West
     player_id: 202681
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202681.png
+    headshot_url: https://courtsentiment.com/media/headshots/202681.png
     aliases:
       - kyrie
       - irving
@@ -667,7 +667,7 @@ players:
     team: Memphis Grizzlies
     conference: West
     player_id: 1628991
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628991.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628991.png
     aliases:
       - jaren jackson
       - jjj
@@ -677,7 +677,7 @@ players:
     team: Los Angeles Lakers
     conference: West
     player_id: 1642355
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1642355.png
+    headshot_url: https://courtsentiment.com/media/headshots/1642355.png
     aliases:
       - bronny james
       - bronny
@@ -687,7 +687,7 @@ players:
     team: Los Angeles Lakers
     conference: West
     player_id: 2544
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png
+    headshot_url: https://courtsentiment.com/media/headshots/2544.png
     aliases:
       - lebron
       - bron
@@ -715,7 +715,7 @@ players:
     team: Denver Nuggets
     conference: West
     player_id: 203999
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203999.png
+    headshot_url: https://courtsentiment.com/media/headshots/203999.png
     aliases:
       - jokic
       - joker
@@ -727,7 +727,7 @@ players:
     team: Chicago Bulls
     conference: East
     player_id: 1630200
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630200.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630200.png
     aliases:
       - tre jones
 
@@ -735,7 +735,7 @@ players:
     team: Golden State Warriors
     conference: West
     player_id: 1630228
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630228.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630228.png
     aliases:
       - kuminga
       - jonathan kuminga
@@ -745,7 +745,7 @@ players:
     team: Atlanta Hawks
     conference: East
     player_id: 1627747
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627747.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627747.png
     aliases:
       - levert
       - caris
@@ -754,7 +754,7 @@ players:
     team: Los Angeles Clippers
     conference: West
     player_id: 202695
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202695.png
+    headshot_url: https://courtsentiment.com/media/headshots/202695.png
     aliases:
       - kawhi
       - leonard
@@ -766,7 +766,7 @@ players:
     team: Milwaukee Bucks
     conference: East
     player_id: 203081
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203081.png
+    headshot_url: https://courtsentiment.com/media/headshots/203081.png
     aliases:
       - lillard
       - dame
@@ -778,7 +778,7 @@ players:
     team: Sacramento Kings
     conference: West
     player_id: 203897
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203897.png
+    headshot_url: https://courtsentiment.com/media/headshots/203897.png
     aliases:
       - lavine
       - zach
@@ -787,7 +787,7 @@ players:
     team: Golden State Warriors
     conference: West
     player_id: 1626172
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626172.png
+    headshot_url: https://courtsentiment.com/media/headshots/1626172.png
     aliases:
       - looney
       - loon
@@ -796,7 +796,7 @@ players:
     team: Milwaukee Bucks
     conference: East
     player_id: 201572
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201572.png
+    headshot_url: https://courtsentiment.com/media/headshots/201572.png
     aliases:
       - brook lopez
       - lopez
@@ -806,7 +806,7 @@ players:
     team: Utah Jazz
     conference: West
     player_id: 1628374
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628374.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628374.png
     aliases:
       - lauri markkanen
       - markkanen
@@ -816,7 +816,7 @@ players:
     team: Philadelphia 76ers
     conference: East
     player_id: 1630178
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630178.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630178.png
     aliases:
       - maxey
 
@@ -824,7 +824,7 @@ players:
     team: Brooklyn Nets
     conference: East
     player_id: 1629001
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629001.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629001.png
     aliases:
       - melton
 
@@ -832,7 +832,7 @@ players:
     team: Washington Wizards
     conference: East
     player_id: 203114
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203114.png
+    headshot_url: https://courtsentiment.com/media/headshots/203114.png
     aliases:
       - middleton
       - khris
@@ -842,7 +842,7 @@ players:
     team: Cleveland Cavaliers
     conference: East
     player_id: 1628378
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628378.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628378.png
     aliases:
       - donovan mitchell
       - mitchell
@@ -852,7 +852,7 @@ players:
     team: Cleveland Cavaliers
     conference: East
     player_id: 1630596
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630596.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630596.png
     aliases:
       - evan mobley
       - mobley
@@ -861,7 +861,7 @@ players:
     team: Memphis Grizzlies
     conference: West
     player_id: 1629630
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629630.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629630.png
     aliases:
       - morant
       - ja
@@ -875,7 +875,7 @@ players:
     team: Sacramento Kings
     conference: West
     player_id: 1631099
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631099.png
+    headshot_url: https://courtsentiment.com/media/headshots/1631099.png
     aliases:
       - keegan murray
       - keegan
@@ -884,7 +884,7 @@ players:
     team: New Orleans Pelicans
     conference: West
     player_id: 1627749
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627749.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627749.png
     aliases:
       - dejounte
 
@@ -892,7 +892,7 @@ players:
     team: Denver Nuggets
     conference: West
     player_id: 1627750
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627750.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627750.png
     aliases:
       - jamal murray
       - jamal
@@ -903,7 +903,7 @@ players:
     team: San Antonio Spurs
     conference: West
     player_id: 101108
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/101108.png
+    headshot_url: https://courtsentiment.com/media/headshots/101108.png
     aliases:
       - cp3
       - cp
@@ -918,7 +918,7 @@ players:
     team: Washington Wizards
     conference: East
     player_id: 1629673
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629673.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629673.png
     aliases:
       - poole
       - jp
@@ -928,7 +928,7 @@ players:
     team: Denver Nuggets
     conference: West
     player_id: 1629008
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629008.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629008.png
     aliases:
       - michael porter
       - mpj
@@ -939,7 +939,7 @@ players:
     team: Boston Celtics
     conference: East
     player_id: 204001
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/204001.png
+    headshot_url: https://courtsentiment.com/media/headshots/204001.png
     aliases:
       - porzingis
       - kristaps
@@ -950,7 +950,7 @@ players:
     team: Milwaukee Bucks
     conference: East
     player_id: 1626171
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626171.png
+    headshot_url: https://courtsentiment.com/media/headshots/1626171.png
     aliases:
       - portis
       - crazy eyes
@@ -959,7 +959,7 @@ players:
     team: Minnesota Timberwolves
     conference: West
     player_id: 203944
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203944.png
+    headshot_url: https://courtsentiment.com/media/headshots/203944.png
     aliases:
       - randle
       - julius
@@ -969,7 +969,7 @@ players:
     team: Los Angeles Lakers
     conference: West
     player_id: 1630559
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630559.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630559.png
     aliases:
       - reaves
       - ar15
@@ -979,7 +979,7 @@ players:
     team: Minnesota Timberwolves
     conference: West
     player_id: 1629675
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629675.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629675.png
     aliases:
       - naz reid
       - naz
@@ -988,7 +988,7 @@ players:
     team: New York Knicks
     conference: East
     player_id: 1629011
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629011.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629011.png
     aliases:
       - mitchell robinson
       - mitch rob
@@ -997,7 +997,7 @@ players:
     team: Brooklyn Nets
     conference: East
     player_id: 1626156
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626156.png
+    headshot_url: https://courtsentiment.com/media/headshots/1626156.png
     aliases:
       - dlo
       - d'angelo
@@ -1009,7 +1009,7 @@ players:
     team: Sacramento Kings
     conference: West
     player_id: 1627734
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627734.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627734.png
     aliases:
       - sabonis
       - domas
@@ -1018,7 +1018,7 @@ players:
     team: Houston Rockets
     conference: West
     player_id: 1630578
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630578.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630578.png
     aliases:
       - sengun
       - alperen
@@ -1029,7 +1029,7 @@ players:
     team: Indiana Pacers
     conference: East
     player_id: 1627783
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627783.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627783.png
     aliases:
       - siakam
       - pascal
@@ -1040,7 +1040,7 @@ players:
     team: Los Angeles Clippers
     conference: West
     player_id: 1627732
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627732.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627732.png
     aliases:
       - simmons
       - ben
@@ -1052,7 +1052,7 @@ players:
     team: Washington Wizards
     conference: East
     player_id: 203935
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203935.png
+    headshot_url: https://courtsentiment.com/media/headshots/203935.png
     aliases:
       - marcus smart
       - marcus dumb
@@ -1061,7 +1061,7 @@ players:
     team: Chicago Bulls
     conference: East
     player_id: 1630188
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630188.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630188.png
     aliases:
       - jalen smith
       - stix
@@ -1070,7 +1070,7 @@ players:
     team: Boston Celtics
     conference: East
     player_id: 1628369
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628369.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628369.png
     aliases:
       - tatum
       - jt
@@ -1080,7 +1080,7 @@ players:
     team: Houston Rockets
     conference: West
     player_id: 1641708
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641708.png
+    headshot_url: https://courtsentiment.com/media/headshots/1641708.png
     aliases:
       - amen thompson
       - amen
@@ -1089,7 +1089,7 @@ players:
     team: Detroit Pistons
     conference: East
     player_id: 1641709
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641709.png
+    headshot_url: https://courtsentiment.com/media/headshots/1641709.png
     aliases:
       - ausar thompson
       - ausar
@@ -1098,7 +1098,7 @@ players:
     team: Dallas Mavericks
     conference: West
     player_id: 202691
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202691.png
+    headshot_url: https://courtsentiment.com/media/headshots/202691.png
     aliases:
       - klay
       - splash brother
@@ -1111,7 +1111,7 @@ players:
     team: New York Knicks
     conference: East
     player_id: 1626157
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626157.png
+    headshot_url: https://courtsentiment.com/media/headshots/1626157.png
     aliases:
       - towns
       - kat
@@ -1121,7 +1121,7 @@ players:
     team: Indiana Pacers
     conference: East
     player_id: 1626167
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1626167.png
+    headshot_url: https://courtsentiment.com/media/headshots/1626167.png
     aliases:
       - turner
       - myles
@@ -1130,7 +1130,7 @@ players:
     team: Houston Rockets
     conference: West
     player_id: 1627832
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627832.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627832.png
     aliases:
       - vanvleet
       - fvv
@@ -1140,7 +1140,7 @@ players:
     team: Orlando Magic
     conference: East
     player_id: 1630532
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630532.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630532.png
     aliases:
       - franz wagner
       - franz
@@ -1149,7 +1149,7 @@ players:
     team: Chicago Bulls
     conference: East
     player_id: 202696
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/202696.png
+    headshot_url: https://courtsentiment.com/media/headshots/202696.png
     aliases:
       - vucevic
       - vooch
@@ -1158,7 +1158,7 @@ players:
     team: San Antonio Spurs
     conference: West
     player_id: 1641705
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1641705.png
+    headshot_url: https://courtsentiment.com/media/headshots/1641705.png
     aliases:
       - wembanyama
       - victor
@@ -1170,7 +1170,7 @@ players:
     team: Denver Nuggets
     conference: West
     player_id: 201566
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/201566.png
+    headshot_url: https://courtsentiment.com/media/headshots/201566.png
     aliases:
       - westbrook
       - russ
@@ -1185,7 +1185,7 @@ players:
     team: Boston Celtics
     conference: East
     player_id: 1628401
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1628401.png
+    headshot_url: https://courtsentiment.com/media/headshots/1628401.png
     aliases:
       - derrick white
 
@@ -1193,7 +1193,7 @@ players:
     team: Oklahoma City Thunder
     conference: West
     player_id: 1630598
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1630598.png
+    headshot_url: https://courtsentiment.com/media/headshots/1630598.png
     aliases:
       - aaron wiggins
 
@@ -1201,7 +1201,7 @@ players:
     team: Miami Heat
     conference: East
     player_id: 203952
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/203952.png
+    headshot_url: https://courtsentiment.com/media/headshots/203952.png
     aliases:
       - wiggins
       - wiggs
@@ -1212,7 +1212,7 @@ players:
     team: Oklahoma City Thunder
     conference: West
     player_id: 1631114
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1631114.png
+    headshot_url: https://courtsentiment.com/media/headshots/1631114.png
     aliases:
       - jalen williams
       - j-dub
@@ -1221,7 +1221,7 @@ players:
     team: New Orleans Pelicans
     conference: West
     player_id: 1629627
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629627.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629627.png
     aliases:
       - zion
       - williamson
@@ -1234,7 +1234,7 @@ players:
     team: Atlanta Hawks
     conference: East
     player_id: 1629027
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1629027.png
+    headshot_url: https://courtsentiment.com/media/headshots/1629027.png
     aliases:
       - trae
       - ice trae
@@ -1246,7 +1246,7 @@ players:
     team: Los Angeles Clippers
     conference: West
     player_id: 1627826
-    headshot_url: https://cdn.nba.com/headshots/nba/latest/1040x760/1627826.png
+    headshot_url: https://courtsentiment.com/media/headshots/1627826.png
     aliases:
       - zubac
       - zu

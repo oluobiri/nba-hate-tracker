@@ -25,6 +25,7 @@ from utils.season_config import (
     CORPUS_KEYS,
     clear_season_override,
     get_active_season,
+    known_seasons,
     load_season_config,
     load_season_config_version,
     load_season_pointer,
@@ -472,3 +473,23 @@ class TestSeasonOverride:
         warming_call()
         with pytest.raises(RuntimeError, match="script entry"):
             set_season_override("2024-25")
+
+
+class TestKnownSeasons:
+    """Tests for the config-directory season registry."""
+
+    def test_lists_season_dirs_sorted(self, tmp_path, monkeypatch):
+        """Only season-named directories holding a season.yaml count, oldest first."""
+        for season in ("2025-26", "2024-25"):
+            (tmp_path / season).mkdir()
+            (tmp_path / season / "season.yaml").write_text("version: '1.0'\n")
+        (tmp_path / "2023-24").mkdir()  # no season.yaml: not registered
+        (tmp_path / "notes").mkdir()
+        (tmp_path / "2022-23").write_text("a file, not a season dir")
+        monkeypatch.setattr("utils.season_config.CONFIG_DIR", tmp_path)
+
+        assert known_seasons() == ["2024-25", "2025-26"]
+
+    def test_committed_registry(self):
+        """The repo registers exactly the two seasons the pipeline has run."""
+        assert known_seasons() == ["2024-25", "2025-26"]

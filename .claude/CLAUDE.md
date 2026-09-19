@@ -55,6 +55,8 @@ uv run python -m scripts.fetch_media            # Fetch what is missing, exit 1 
 # Publishing (assumes the publish role; prompts for an MFA code, dry runs included)
 uv run python -m scripts.publish_dashboard --season 2025-26 --dry-run  # Plan only
 uv run python -m scripts.publish_dashboard --season 2025-26            # The drop
+uv run python -m scripts.publish_media --dry-run                       # Media plan (all seasons' ids)
+uv run python -m scripts.publish_media                                 # Media drop, before a season that points at it
 ```
 
 ## Code Patterns

@@ -1,6 +1,6 @@
 # Publishing
 
-How a season's dashboard drop reaches `https://courtsentiment.com/data/season=<season>/`, what sits behind that URL, and how to run, verify, and undo a publish.
+How a season's dashboard drop reaches `https://courtsentiment.com/data/season=<season>/` and the media drop reaches `https://courtsentiment.com/media/`, what sits behind those URLs, and how to run, verify, and undo a publish.
 
 ## The published surface
 
@@ -10,7 +10,7 @@ One hostname, split by path, over two private buckets and one CloudFront distrib
 |---|---|---|
 | `/` (default) | `courtsentiment-web` | The site. A CloudFront Function rewrites directory requests to `index.html`. |
 | `/data/*` | `courtsentiment-data` | The published data contract: one `season=<season>/` prefix per season holding the manifest and its parquets. |
-| `/media/*` | `courtsentiment-data` | First-party images (headshots, logos). |
+| `/media/*` | `courtsentiment-data` | First-party images: headshots and logos, key = `media/<name>`. |
 
 - Both buckets block all public access at the account and bucket level. CloudFront reads them through one Origin Access Control; each bucket policy grants the CloudFront service principal `GetObject` and `ListBucket` conditioned on the distribution ARN. `ListBucket` is what makes a missing key a 404 rather than a 403.
 - The data bucket is versioned and uses SSE-S3. A single-PUT object's ETag is therefore its MD5, which the publish step relies on.
@@ -30,7 +30,7 @@ The CLI profile `courtsentiment-publish` in `~/.aws/config` names the publish ro
 
 ## The publish step
 
-`scripts/publish_dashboard.py` is the entry point; `pipeline/publish.py` holds the logic; `config/publish.yaml` names the bucket, prefix, distribution, base URL, and profile. The file holds no credentials.
+`scripts/publish_dashboard.py` is the entry point; `pipeline/publish.py` holds the logic; `config/publish.yaml` names the bucket, the data and media prefixes, distribution, base URL, and profile. The file holds no credentials.
 
 The upload set is `manifest.json` plus exactly the files its table registry names. Nothing else in the dashboard directory ships, and a season without a manifest cannot be published.
 
@@ -51,6 +51,44 @@ Objects are overwritten in place, so for the seconds an upload takes the old man
 |---|---|---|
 | `*.parquet` | `application/vnd.apache.parquet` | `public, max-age=86400` |
 | `manifest.json` | `application/json` | `public, max-age=300` |
+
+## The media drop
+
+`scripts/publish_media.py` is the entry point, over the same logic module. The images are the league's; the repository never holds them, and `scripts/fetch_media.py` fetches them into the gitignored `data/media/` (season-independent) and derives the variants.
+
+Naming, relative to the media root; the S3 key is `media/` plus the name, and the site builds its `srcset` from the id alone:
+
+| Name | What |
+|---|---|
+| `headshots/<player_id>.png` | The original, 1040x760 |
+| `headshots/<player_id>-<width>.webp` | WebP with alpha at widths 180, 420, 840 |
+| `logos/<team_id>.svg` | The primary logo, untouched |
+
+The upload set is exactly the names the dimension tables' ids imply: the union of `player_id` from `players.parquet` and `team_id` from `teams.parquet` across every season under `config/`. A season with no dashboard yet contributes nothing; a season with one table but not the other aborts; no contributing season at all aborts, since an empty set would plan deleting every media key. Nothing in the media directory ships unless a table names its id.
+
+A run, in order: **pre-flight** (every expected file present and under 8 MiB, every failure listed at once); **diff** against the listing under `media/`; **write** in name order; **delete** keys the set no longer names; **invalidate** `/media/*`; **verify** by a HEAD of every key through the public origin, requiring a 200 and the object's Content-Type. There is no manifest to compare, so the public state is the assertion. `--dry-run` stops after the diff.
+
+| Object | Content-Type | Cache-Control |
+|---|---|---|
+| `*.png` | `image/png` | `public, max-age=604800` |
+| `*.webp` | `image/webp` | `public, max-age=604800` |
+| `*.svg` | `image/svg+xml` | `public, max-age=604800` |
+
+Keys are overwritten in place, so a version is never part of the name; a week bounds a returning visitor's staleness, and the invalidation clears the edge on every drop.
+
+The tables point at these URLs (`headshot_url`, `logo_url` are first-party literals in config), so the order across the two drops matters: media first, then rebuild, then the season. A roster change is `fetch_media`, then `publish_media`, then the season publish. After a fetch, scan the headshots for duplicate bodies: the CDN substituting a generic silhouette is the one failure the byte sniff cannot catch.
+
+```bash
+# 1. Plan. Reads the bucket; writes nothing.
+uv run python -m scripts.publish_media --dry-run
+
+# 2. Publish. Ends with every public URL verified, or exits 1.
+uv run python -m scripts.publish_media
+
+# 3. Confirm by hand.
+curl -sI https://courtsentiment.com/media/headshots/203500-180.webp
+curl -sI https://courtsentiment.com/media/logos/1610612737.svg
+```
 
 ## Runbook
 
@@ -97,6 +135,8 @@ aws cloudfront create-invalidation --profile courtsentiment-publish \
 ```
 
 Restore the tables before the manifest, for the same reason the publish step writes them first. The copy is a new version of the object, so the history records the rollback too.
+
+Media keys are versioned the same way. The same copy recipe restores one, with its image content type and `public, max-age=604800`, followed by an invalidation of `/media/*`.
 
 ## When the repository is renamed
 

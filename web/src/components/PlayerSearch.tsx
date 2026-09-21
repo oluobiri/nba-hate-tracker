@@ -48,6 +48,7 @@ export function PlayerSearch({ players }: { players: SearchPlayer[] }) {
         break
       case 'ArrowUp':
         e.preventDefault()
+        setOpen(true)
         setActive((i) => Math.max(i - 1, 0))
         break
       case 'Home':

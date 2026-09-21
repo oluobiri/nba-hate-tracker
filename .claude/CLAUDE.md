@@ -22,7 +22,7 @@ data/             → Not committed
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
   │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + posts_bridge.parquet + corpus_daily.parquet
-  │   └── dashboard/  → per-table Parquet files + manifest.json
+  │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json
   ├── 2025-26/    → V2 season data (same structure)
   └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed
 ```
@@ -77,12 +77,13 @@ uv run python -m scripts.publish_media                                 # Media d
 - `data/2024-25/batches/<stage>/responses/*.jsonl`
 
 **Published outputs (safe to load):**
-- `data/<season>/dashboard/*.parquet` + `manifest.json` — the contract. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
+- `data/<season>/dashboard/*.parquet` + `manifest.json` + `schema.json` — the contract; `schema.json` is generated from `pipeline/schemas.py` (columns, dtypes, nullability, and the manifest's own shape) and is what the frontend generates its types from. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
 
 **Schema contracts:**
-- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views) and the `Manifest` typed contract (identity, rules, season facts, table registry); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.
+- `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views), the per-table nullable sets (`NULLABLE_COLUMNS`, enforced at the write boundary) and the `Manifest` typed contract (identity, rules, season facts, table registry); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.
+- `pipeline/contract.py` — renders `schemas.py` as `schema.json`; the publish pre-flight requires the file on disk to equal its output.
 - `pipeline/lineage.py` — the config-lineage registry: which config version stamps which produced file. Stamp keys are spelled there only.
-- `pipeline/publish.py` — the publish step: the upload set is `manifest.json` plus exactly its table registry, pre-flighted against the contract before any write. `docs/publishing.md` has the as-built AWS shape and the runbook.
+- `pipeline/publish.py` — the publish step: the upload set is `manifest.json`, `schema.json` and exactly the manifest's table registry, pre-flighted against the contract before any write. `docs/publishing.md` has the as-built AWS shape and the runbook.
 
 **Conceptual model:**
 - `docs/data-model.md` — the star schema (one `ClassifiedComment` fact + Player/Team/Date dimensions), the role-playing `team` (roster vs. fan), and the view-lineage "cheap / needs-a-join / expensive" map. Read before designing a new aggregate view; it's the relationships behind `schemas.py`'s structure.

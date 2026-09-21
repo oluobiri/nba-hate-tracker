@@ -36,6 +36,9 @@ pipeline produces. Data dictionary first, enforcement second:
 - CORPUS_DAILY_SCHEMA describes the corpus funnel at day grain
   (corpus_daily.parquet), built from the raw download by
   pipeline/corpus.py and cached as a reference snapshot.
+- NULLABLE_COLUMNS declares, per produced table, which columns may hold
+  nulls; every other column is enforced null-free at the same write
+  boundary (validate_nullability).
 - Manifest is the typed shape of manifest.json, the front door written
   beside the parquets (pipeline/aggregation.py builds it): rules,
   identity and existence, never results.
@@ -370,9 +373,9 @@ GAMES_SCHEMA = pl.Schema(
         "home_score": pl.Int64,
         "away_score": pl.Int64,
         "winner": pl.String,  # FK -> teams.parquet
-        "playoff_round": pl.Int64,  # nullable
-        "playoff_series": pl.Int64,  # nullable
-        "playoff_game": pl.Int64,  # nullable
+        "playoff_round": pl.Int64,
+        "playoff_series": pl.Int64,
+        "playoff_game": pl.Int64,
     }
 )
 
@@ -388,7 +391,7 @@ PLAYER_GAMES_SCHEMA = pl.Schema(
         "roster_team": pl.String,  # FK -> teams.parquet, dated roster role
         "opponent": pl.String,  # FK -> teams.parquet
         "is_home": pl.Boolean,  # roster_team == games.home_team; null on a neutral site
-        "wl": pl.String,  # nullable
+        "wl": pl.String,
         **_BOX_SCORE_COLUMNS,
     }
 )
@@ -408,7 +411,7 @@ POSTS_SCHEMA = pl.Schema(
         "created_utc": pl.Int64,  # epoch seconds, as the source
         "score": pl.Int64,
         "num_comments": pl.Int64,  # whole-room size; sum per game for a game's room
-        "link_flair_text": pl.String,  # nullable, as the source
+        "link_flair_text": pl.String,  # as the source
         "post_type": pl.String,  # game_thread | post_game_thread | other
         "game_id": pl.String,  # FK -> games.parquet; null when unlinked
         "is_primary": pl.Boolean,  # false whenever game_id is null
@@ -430,7 +433,7 @@ COMMENT_SAMPLES_SCHEMA = pl.Schema(
         "body": pl.String,  # the receipt, verbatim
         "score": pl.Int64,
         "created_utc": pl.Int64,  # epoch seconds, as the fact
-        "fan_team": pl.String,  # nullable; fan role of Team, role-marked
+        "fan_team": pl.String,  # fan role of Team, role-marked
     }
 )
 
@@ -476,7 +479,7 @@ CORPUS_DAILY_SCHEMA = pl.Schema(
         "raw_comments": pl.Int64,
         "population_submitted": pl.Int64,
         "usable": pl.Int64,
-        "attributed": pl.Int64,  # nullable
+        "attributed": pl.Int64,
     }
 )
 
@@ -496,6 +499,28 @@ DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     "posts": POSTS_SCHEMA,
     "comment_samples": COMMENT_SAMPLES_SCHEMA,
     "corpus_daily": CORPUS_DAILY_SCHEMA,
+}
+
+# Which columns of each produced table may hold nulls. Polars schemas
+# carry names and dtypes only, and parquet marks every column nullable,
+# so this registry is the contract's one declaration: enforced at the
+# write boundary (validate_nullability) and published in schema.json.
+# Every output is enumerated; an empty set means no column may be null.
+NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
+    "player_overall": frozenset(),
+    "player_temporal": frozenset(),
+    "player_fan_team": frozenset(),
+    "fan_team_overall": frozenset(),
+    "game_sentiment": frozenset(),
+    # A player off every roster at season end has no team, no conference
+    # and no snapshot line: config and snapshot sides null together
+    "players": frozenset({"roster_team", "conference", *PLAYERS_SNAPSHOT_COLUMNS}),
+    "teams": frozenset(),
+    "games": frozenset({"playoff_round", "playoff_series", "playoff_game"}),
+    "player_games": frozenset({"is_home"}),  # neutral site: nobody hosted
+    "posts": frozenset({"game_id", "link_flair_text"}),
+    "comment_samples": frozenset({"fan_team"}),  # unflaired commenter
+    "corpus_daily": frozenset({"attributed"}),
 }
 
 # --- Manifest (built in pipeline/aggregation.py) ------------------------------
@@ -739,3 +764,33 @@ def validate_schema(df: pl.DataFrame, expected: pl.Schema, name: str) -> None:
             f"column order mismatch: expected {expected.names()}, got {actual.names()}"
         )
     raise ValueError(f"Schema validation failed for {name!r}: " + "; ".join(problems))
+
+
+def validate_nullability(df: pl.DataFrame, nullable: frozenset[str], name: str) -> None:
+    """
+    Fail if any column not declared nullable holds a null.
+
+    The companion to validate_schema at the write boundary: names and
+    dtypes there, null-freedom here. A column that legitimately holds
+    nulls is declared in NULLABLE_COLUMNS, never patched around.
+
+    Args:
+        df: DataFrame to validate.
+        nullable: The columns allowed to hold nulls (NULLABLE_COLUMNS[name]).
+        name: Human-readable target name for error messages.
+
+    Raises:
+        ValueError: If an undeclared column holds nulls. The message names
+            the target and every offending column with its null count.
+    """
+    null_counts = df.null_count().row(0, named=True)
+    offending = {
+        col: count
+        for col, count in null_counts.items()
+        if count > 0 and col not in nullable
+    }
+    if offending:
+        detail = ", ".join(f"{col} ({count})" for col, count in offending.items())
+        raise ValueError(
+            f"Nullability validation failed for {name!r}: undeclared nulls in {detail}"
+        )

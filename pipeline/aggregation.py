@@ -29,6 +29,7 @@ from pipeline.schemas import (
     FAN_TEAM_OVERALL_SCHEMA,
     GAME_SENTIMENT_SCHEMA,
     METRIC_FORMULAS,
+    NULLABLE_COLUMNS,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
@@ -38,6 +39,7 @@ from pipeline.schemas import (
     TABLE_POPULATIONS,
     TEAMS_SCHEMA,
     Manifest,
+    validate_nullability,
     validate_schema,
 )
 from pipeline.stage import STAGE_NAMES, classifier_stamp_keys
@@ -420,6 +422,7 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
         validate_schema(outputs[name], schema, name)
+        validate_nullability(outputs[name], NULLABLE_COLUMNS[name], name)
 
     manifest = build_manifest(outputs, metadata, season_config, config_versions())
     return {

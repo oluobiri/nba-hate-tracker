@@ -8,6 +8,7 @@ frame loader, and aggregate_sentiment end to end.
 import json
 import logging
 from datetime import date
+from unittest.mock import patch
 
 import polars as pl
 import pytest
@@ -34,6 +35,7 @@ from pipeline.schemas import (
     CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
     METRIC_FORMULAS,
+    NULLABLE_COLUMNS,
     POPULATIONS,
     TABLE_POPULATIONS,
     Manifest,
@@ -1383,6 +1385,22 @@ class TestBuildManifest:
         for name in DASHBOARD_OUTPUT_SCHEMAS:
             assert manifest["tables"][name]["rows"] == result[name].height
         json.dumps(manifest)
+
+
+class TestNullabilityEnforcement:
+    """The write boundary checks every output against the nullable registry."""
+
+    def test_every_output_is_checked_with_its_declared_set(self, tmp_path):
+        """aggregate_sentiment validates nullability once per produced
+        table, passing that table's declared nullable columns."""
+        path = _lebron_parquet(tmp_path)
+
+        with patch("pipeline.aggregation.validate_nullability") as check:
+            aggregate_sentiment(path)
+
+        checked = {call.args[2]: call.args[1] for call in check.call_args_list}
+        assert checked == NULLABLE_COLUMNS
+        assert check.call_count == len(DASHBOARD_OUTPUT_SCHEMAS)
 
 
 class TestAggregateCorpusDaily:

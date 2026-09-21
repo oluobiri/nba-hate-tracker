@@ -1,6 +1,7 @@
 """Tests for pipeline/schemas.py schema validation."""
 
 import json
+from datetime import date
 
 import polars as pl
 import pytest
@@ -13,6 +14,7 @@ from pipeline.schemas import (
     CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
     METRIC_FORMULAS,
+    NULLABLE_COLUMNS,
     POPULATIONS,
     TABLE_POPULATIONS,
     Corpus,
@@ -31,6 +33,7 @@ from pipeline.schemas import (
     TEAM_GAME_LOG_SCHEMA,
     TEAMS_SCHEMA,
     load_manifest,
+    validate_nullability,
     validate_schema,
 )
 from utils.season_config import CORPUS_KEYS
@@ -398,6 +401,53 @@ class TestRostersContract:
         assert ROSTERS_SCHEMA["birth_date"] == pl.Date
 
 
+class TestNullableColumns:
+    """The nullable registry: which produced columns may hold nulls."""
+
+    def test_enumerates_every_output(self):
+        """Every produced table declares its nullable set (empty allowed),
+        so a new output can't ship without saying what may be null."""
+        assert set(NULLABLE_COLUMNS) == set(DASHBOARD_OUTPUT_SCHEMAS)
+
+    def test_declared_columns_exist(self):
+        """A nullable declaration names a real column of its table."""
+        for name, columns in NULLABLE_COLUMNS.items():
+            unknown = columns - set(DASHBOARD_OUTPUT_SCHEMAS[name].names())
+            assert not unknown, f"{name}: {sorted(unknown)}"
+
+    def test_unrostered_player_nulls_config_and_snapshot_together(self):
+        """A player off every roster has no roster team, no conference and
+        no snapshot line: one edge state, declared as one."""
+        assert {"roster_team", "conference", *PLAYERS_SNAPSHOT_COLUMNS} <= (
+            NULLABLE_COLUMNS["players"]
+        )
+
+    def test_keys_and_measures_are_never_null(self):
+        """Display keys, ids and the count/rate measures hold on every row."""
+        assert NULLABLE_COLUMNS["player_overall"] == frozenset()
+        assert NULLABLE_COLUMNS["player_temporal"] == frozenset()
+        assert NULLABLE_COLUMNS["player_fan_team"] == frozenset()
+        assert NULLABLE_COLUMNS["fan_team_overall"] == frozenset()
+        assert NULLABLE_COLUMNS["game_sentiment"] == frozenset()
+        assert NULLABLE_COLUMNS["teams"] == frozenset()
+
+    def test_structural_nulls_follow_their_condition_column(self):
+        """Playoff fields null outside the playoffs, is_home on a neutral
+        site, game_id on an unlinked post; wl holds on every published line."""
+        assert NULLABLE_COLUMNS["games"] == frozenset(
+            {"playoff_round", "playoff_series", "playoff_game"}
+        )
+        assert NULLABLE_COLUMNS["player_games"] == frozenset({"is_home"})
+        assert "wl" not in NULLABLE_COLUMNS["player_games"]
+        assert NULLABLE_COLUMNS["posts"] == frozenset({"game_id", "link_flair_text"})
+
+    def test_fan_role_and_corpus_attribution_are_nullable(self):
+        """An unflaired commenter has no fan team; a season without
+        materialized attribution has no attributed count per day."""
+        assert NULLABLE_COLUMNS["comment_samples"] == frozenset({"fan_team"})
+        assert NULLABLE_COLUMNS["corpus_daily"] == frozenset({"attributed"})
+
+
 class TestManifestContract:
     """The manifest's typed shape and the vocabularies it publishes."""
 
@@ -610,3 +660,74 @@ class TestValidateSchema:
         with pytest.raises(ValueError, match="sentiment.parquet") as exc:
             validate_schema(df, SENTIMENT_SCHEMA, "sentiment.parquet")
         assert "column order" in str(exc.value)
+
+
+class TestValidateNullability:
+    """Tests for validate_nullability: undeclared nulls fail the write."""
+
+    @pytest.fixture
+    def games_frame(self) -> pl.DataFrame:
+        """Two games, one in the playoffs, in GAMES_SCHEMA shape."""
+        return pl.DataFrame(
+            {
+                "game_id": ["0022500001", "0042500101"],
+                "game_date": [date(2025, 10, 21), date(2026, 4, 18)],
+                "season_type": ["regular_season", "playoffs"],
+                "nba_cup_final": [False, False],
+                "neutral_site": [False, False],
+                "home_team": ["Boston Celtics", "Boston Celtics"],
+                "away_team": ["New York Knicks", "New York Knicks"],
+                "home_score": [110, 101],
+                "away_score": [100, 99],
+                "winner": ["Boston Celtics", "Boston Celtics"],
+                "playoff_round": [None, 1],
+                "playoff_series": [None, 1],
+                "playoff_game": [None, 1],
+            },
+            schema=GAMES_SCHEMA,
+        )
+
+    def test_declared_nulls_pass(self, games_frame):
+        """Nulls in declared columns are the contract, not a defect."""
+        validate_nullability(games_frame, NULLABLE_COLUMNS["games"], "games")
+
+    def test_undeclared_null_raises_naming_column_and_count(self, games_frame):
+        """A null in a column not declared nullable is reported with its
+        table, column and count."""
+        # Arrange
+        df = games_frame.with_columns(
+            pl.when(pl.col("game_id") == "0022500001")
+            .then(None)
+            .otherwise(pl.col("winner"))
+            .alias("winner")
+        )
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="games") as exc:
+            validate_nullability(df, NULLABLE_COLUMNS["games"], "games")
+        message = str(exc.value)
+        assert "winner" in message
+        assert "1" in message
+        assert "playoff_round" not in message
+
+    def test_all_null_declared_column_passes(self):
+        """An all-null declared column pinned by schema= is accepted (the
+        2024-25 corpus_daily.attributed case)."""
+        df = pl.DataFrame(
+            {
+                "day": [date(2024, 10, 1)],
+                "raw_comments": [10],
+                "population_submitted": [4],
+                "usable": [4],
+                "attributed": [None],
+            },
+            schema=CORPUS_DAILY_SCHEMA,
+        )
+
+        validate_nullability(df, NULLABLE_COLUMNS["corpus_daily"], "corpus_daily")
+
+    def test_empty_frame_passes(self):
+        """An empty output has no nulls to report."""
+        df = pl.DataFrame(schema=PLAYER_OVERALL_SCHEMA)
+
+        validate_nullability(df, NULLABLE_COLUMNS["player_overall"], "player_overall")

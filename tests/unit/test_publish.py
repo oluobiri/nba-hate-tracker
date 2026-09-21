@@ -13,10 +13,11 @@ import pytest
 import requests
 from botocore.stub import ANY, Stubber
 
+from pipeline.contract import build_contract_schema
 from pipeline.media import expected_media_names
 from pipeline.publish import (
-    MANIFEST_CACHE_CONTROL,
-    MANIFEST_CONTENT_TYPE,
+    JSON_CACHE_CONTROL,
+    JSON_CONTENT_TYPE,
     MEDIA_CACHE_CONTROL,
     MEDIA_CONTENT_TYPES,
     MULTIPART_THRESHOLD_BYTES,
@@ -40,7 +41,7 @@ from pipeline.publish import (
     verify_public_manifest,
 )
 from pipeline.schemas import SCHEMA_VERSION
-from utils.constants import MANIFEST_FILENAME
+from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
 from utils.publish_config import PublishTarget
 
 SEASON = "2025-26"
@@ -67,11 +68,16 @@ def _write_table(path: Path, rows: int, schema_version: str | None = None) -> No
     )
 
 
-def _write_manifest(dashboard_dir: Path, manifest: dict) -> None:
-    """Write the manifest the way scripts/aggregate_sentiment.py does."""
-    with open(dashboard_dir / MANIFEST_FILENAME, "w") as f:
-        json.dump(manifest, f, indent=2)
+def _write_json(path: Path, document: dict) -> None:
+    """Write a JSON document the way scripts/aggregate_sentiment.py does."""
+    with open(path, "w") as f:
+        json.dump(document, f, indent=2)
         f.write("\n")
+
+
+def _write_manifest(dashboard_dir: Path, manifest: dict) -> None:
+    """Write the manifest beside the tables."""
+    _write_json(dashboard_dir / MANIFEST_FILENAME, manifest)
 
 
 @pytest.fixture
@@ -101,10 +107,12 @@ def manifest() -> dict:
 
 @pytest.fixture
 def dashboard_dir(tmp_path, manifest) -> Path:
-    """A dashboard directory: the manifest, its two tables, and a stray CSV."""
+    """A dashboard directory: the manifest, the schema, its two tables,
+    and a stray CSV."""
     _write_table(tmp_path / "player_overall.parquet", rows=3)
     _write_table(tmp_path / "teams.parquet", rows=2)
     (tmp_path / "bar_race.csv").write_text("not,a,contract,file\n")
+    _write_json(tmp_path / SCHEMA_FILENAME, build_contract_schema())
     _write_manifest(tmp_path, manifest)
     return tmp_path
 
@@ -120,8 +128,9 @@ class TestSeasonPrefix:
 class TestBuildUploadSet:
     """Tests for build_upload_set, the pre-flight and the allowlist."""
 
-    def test_upload_set_is_the_registry_plus_manifest(self, dashboard_dir):
-        """Exactly the registered files ship; the stray CSV never does."""
+    def test_upload_set_is_the_registry_plus_schema_plus_manifest(self, dashboard_dir):
+        """Exactly the registered files, the schema and the manifest ship,
+        in that order; the stray CSV never does."""
         # Act
         _, objects = build_upload_set(dashboard_dir, SEASON, PREFIX)
 
@@ -129,11 +138,12 @@ class TestBuildUploadSet:
         assert [o.key for o in objects] == [
             "data/season=2025-26/player_overall.parquet",
             "data/season=2025-26/teams.parquet",
+            "data/season=2025-26/schema.json",
             "data/season=2025-26/manifest.json",
         ]
 
     def test_manifest_is_last(self, dashboard_dir):
-        """A reader never sees a new manifest over old tables."""
+        """A reader never sees a new manifest over old tables or an old schema."""
         _, objects = build_upload_set(dashboard_dir, SEASON, PREFIX)
         assert objects[-1].path.name == MANIFEST_FILENAME
 
@@ -143,14 +153,36 @@ class TestBuildUploadSet:
         assert loaded["generated_at"] == manifest["generated_at"]
 
     def test_headers_per_object_type(self, dashboard_dir):
-        """Parquet and manifest carry their own content type and cache policy."""
+        """Parquet carries its own content type and cache policy; the two
+        JSON files share theirs."""
         _, objects = build_upload_set(dashboard_dir, SEASON, PREFIX)
-        parquet, manifest_object = objects[0], objects[-1]
+        parquet, schema_object, manifest_object = objects[0], objects[-2], objects[-1]
 
         assert parquet.content_type == PARQUET_CONTENT_TYPE
         assert parquet.cache_control == PARQUET_CACHE_CONTROL
-        assert manifest_object.content_type == MANIFEST_CONTENT_TYPE
-        assert manifest_object.cache_control == MANIFEST_CACHE_CONTROL
+        for o in (schema_object, manifest_object):
+            assert o.content_type == JSON_CONTENT_TYPE
+            assert o.cache_control == JSON_CACHE_CONTROL
+
+    def test_missing_schema_aborts(self, dashboard_dir):
+        """A season without its schema cannot be published."""
+        (dashboard_dir / SCHEMA_FILENAME).unlink()
+
+        with pytest.raises(PublishError, match="schema.json"):
+            build_upload_set(dashboard_dir, SEASON, PREFIX)
+
+    def test_stale_schema_aborts(self, dashboard_dir):
+        """The schema on disk must be what the running contract generates:
+        a file from an older checkout, or a hand edit, never ships."""
+        stale = build_contract_schema()
+        stale["tables"]["players"]["columns"][2]["nullable"] = not (
+            stale["tables"]["players"]["columns"][2]["nullable"]
+        )
+        _write_json(dashboard_dir / SCHEMA_FILENAME, stale)
+
+        with pytest.raises(PublishError, match="schema.json") as exc:
+            build_upload_set(dashboard_dir, SEASON, PREFIX)
+        assert "rebuild" in str(exc.value)
 
     def test_body_and_md5_are_the_file_bytes(self, dashboard_dir):
         """The md5 is of the exact bytes uploaded, so it compares to the ETag."""
@@ -221,14 +253,14 @@ class TestBuildUploadSet:
 
 def _object(name: str, body: bytes = b"x") -> LocalObject:
     """A LocalObject under the season prefix with the md5 of its body."""
-    is_manifest = name == MANIFEST_FILENAME
+    is_json = name in (MANIFEST_FILENAME, SCHEMA_FILENAME)
     return LocalObject(
         key=KEY_PREFIX + name,
         path=Path(name),
         body=body,
         md5=hashlib.md5(body).hexdigest(),
-        content_type=MANIFEST_CONTENT_TYPE if is_manifest else PARQUET_CONTENT_TYPE,
-        cache_control=MANIFEST_CACHE_CONTROL if is_manifest else PARQUET_CACHE_CONTROL,
+        content_type=JSON_CONTENT_TYPE if is_json else PARQUET_CONTENT_TYPE,
+        cache_control=JSON_CACHE_CONTROL if is_json else PARQUET_CACHE_CONTROL,
     )
 
 
@@ -554,7 +586,7 @@ class TestPublishSeason:
             http_get=Mock(side_effect=AssertionError("no HTTP in a dry run")),
         )
 
-        assert len(plan.upload) == 3
+        assert len(plan.upload) == 4
         assert plan.delete == ()
 
     def test_real_run_uploads_invalidates_and_verifies(

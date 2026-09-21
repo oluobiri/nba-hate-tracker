@@ -4,7 +4,7 @@
 
 **How to read it:** The core model below — the ER diagram, the entity key, and the view-lineage table — is the authoritative *"is"*: what the pipeline produces today. The single fenced section at the very end, **Forward look (v3)**, is *"will be"* — direction, not built. Nothing in that section touches the core diagram or the present-now key.
 
-`pipeline/schemas.py` is the source of truth for column *structure* (names + dtypes). This doc is the source of truth for the *relationships* between those structures.
+`pipeline/schemas.py` is the source of truth for column *structure* (names, dtypes and nullability), published as `schema.json` beside the manifest. This doc is the source of truth for the *relationships* between those structures.
 
 ---
 

@@ -1,0 +1,22 @@
+---
+import { PRODUCTION_DATA_BASE } from '../data/env'
+import { AUTHOR, CURRENT_SEASON, GITHUB_URL, LINKEDIN_URL } from '../site'
+
+const manifestUrl = `${PRODUCTION_DATA_BASE}/season=${CURRENT_SEASON}/manifest.json`
+---
+
+<footer class="ftr">
+  <div class="wrap ftr__wrap">
+    <p class="ftr__method">
+      Every r/NBA comment about a tracked player, classified negative, neutral or positive. Rates are counts ÷ total.
+      <a href="/how-it-works/">How it works</a>
+    </p>
+    <p class="ftr__links">
+      <a href={manifestUrl}>Data</a>
+      <a href={GITHUB_URL}>GitHub</a>
+      <span>
+        Built by {LINKEDIN_URL ? <a href={LINKEDIN_URL}>{AUTHOR}</a> : AUTHOR}
+      </span>
+    </p>
+  </div>
+</footer>

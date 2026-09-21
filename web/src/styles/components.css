@@ -1,0 +1,246 @@
+/* The core components (brief §2.4). One rule set each; pages inherit. */
+
+/* SentimentBar: neg → neu → pos, ink gaps, ink labels. */
+.sb {
+  --sb-h: 20px;
+  --sb-label: 11px;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+.sb--hero {
+  --sb-h: 44px;
+  --sb-label: 15px;
+}
+.sb--mini {
+  --sb-h: 8px;
+}
+.sb__track {
+  display: flex;
+  gap: 2px;
+  height: var(--sb-h);
+  width: calc(var(--sb-scale, 1) * 100%);
+  background: var(--ink);
+}
+.sb__seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  flex: 0 0 auto;
+  container-type: inline-size;
+}
+/* A label never renders clipped: below the text's width it disappears. */
+@container (width < 44px) {
+  .sb__label {
+    display: none;
+  }
+}
+@container (width < 56px) {
+  .sb--hero .sb__label {
+    display: none;
+  }
+}
+.sb__seg--neg {
+  background: var(--heat);
+  justify-content: flex-start;
+}
+.sb__seg--neu {
+  background: var(--neu);
+}
+.sb__seg--pos {
+  background: var(--ice);
+  justify-content: flex-end;
+}
+.sb__label {
+  padding-inline: 6px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--sb-label);
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.sb__outside {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.sb__outside li::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  vertical-align: 0;
+  background: var(--sb-swatch);
+}
+
+/* RankNumeral: official is solid bone; below the official minimum it is hollow. */
+.rank {
+  font-family: var(--display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--bone);
+}
+.rank--hollow {
+  color: transparent;
+  -webkit-text-stroke: 1px var(--bone-2);
+}
+.rank--lg {
+  font-size: 56px;
+}
+.rank--md {
+  font-size: 28px;
+}
+
+/* MethodNote: the one place yellow appears. */
+.note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--hl);
+  background: var(--ink-2);
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.note__eyebrow {
+  padding-top: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--hl);
+}
+.note__body > :last-child {
+  margin-bottom: 0;
+}
+@media (max-width: 480px) {
+  .note {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+/* Stamp: a method mark, never a verdict. */
+.stamp {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1.5px solid var(--hl);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hl);
+  transform: rotate(-3deg);
+}
+
+/* Exhibit: a numbered receipt. Verbatim body, source, never a username. */
+.exhibit {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.exhibit__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.exhibit__sent {
+  margin-left: auto;
+}
+.exhibit__sent--neg {
+  color: var(--heat);
+}
+.exhibit__sent--neu {
+  color: var(--neu);
+}
+.exhibit__sent--pos {
+  color: var(--ice);
+}
+.exhibit__body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--bone);
+}
+.exhibit__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.exhibit__post {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.exhibit__post--missing {
+  color: var(--mute);
+  font-style: italic;
+}
+.exhibit__score {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* StatFigure: one number, its label, quiet detail. */
+.stat {
+  display: grid;
+  gap: 2px;
+}
+.stat__figure {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--bone);
+}
+.stat--neg .stat__figure {
+  color: var(--heat);
+}
+.stat--pos .stat__figure {
+  color: var(--ice);
+}
+.stat--neu .stat__figure {
+  color: var(--neu);
+}
+.stat__label {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.stat__detail {
+  font-size: 13px;
+  color: var(--mute);
+}

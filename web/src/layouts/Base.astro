@@ -1,0 +1,44 @@
+---
+import '@fontsource/barlow-condensed/500.css'
+import '@fontsource/barlow-condensed/700.css'
+import '@fontsource/barlow-condensed/800.css'
+import '@fontsource/barlow/400.css'
+import '@fontsource/barlow/500.css'
+import '@fontsource/barlow/600.css'
+import '@fontsource/ibm-plex-mono/400.css'
+import '@fontsource/ibm-plex-mono/500.css'
+import '@fontsource/ibm-plex-mono/600.css'
+import '../styles/tokens.css'
+import '../styles/global.css'
+import '../styles/components.css'
+import '../styles/shell.css'
+
+import Footer from '../components/Footer.astro'
+import Nav from '../components/Nav.astro'
+import { SITE_DESCRIPTION, SITE_INDEXABLE, SITE_NAME } from '../site'
+
+interface Props {
+  title: string
+  description?: string
+}
+
+const { title, description = SITE_DESCRIPTION } = Astro.props
+const fullTitle = title === SITE_NAME ? title : `${title} · ${SITE_NAME}`
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {!SITE_INDEXABLE && <meta name="robots" content="noindex" />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Nav />
+    <slot />
+    <Footer />
+  </body>
+</html>

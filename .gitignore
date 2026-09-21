@@ -28,9 +28,10 @@ build/
 Thumbs.db
 
 # Project specific
-data/
+/data/
 *.jsonl
 *.json
+!web/**/*.json
 *.csv
 
 # Dashboard data (committed for Streamlit Cloud)
@@ -49,3 +50,10 @@ docs/internal/
 
 # uv
 .python-version
+
+# web/ (Astro site) — build output is covered by dist/ above
+web/node_modules/
+web/.astro/
+web/walk/out/
+web/test-results/
+web/playwright-report/

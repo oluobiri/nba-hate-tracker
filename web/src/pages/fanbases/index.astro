@@ -1,0 +1,36 @@
+---
+import { getSeason } from '../../data'
+import Base from '../../layouts/Base.astro'
+
+const { tables } = await getSeason()
+const teams = tables.teams.toSorted((a, b) => a.team.localeCompare(b.team))
+---
+
+<Base title="Fanbases" description="What each fanbase thinks, and who thinks what about them.">
+  <main id="main" class="wrap page">
+    <header>
+      <h1>Fanbases</h1>
+      <p class="page__lede">Pick a fanbase. The full landing is on its way.</p>
+    </header>
+    <ul class="teams">
+      {teams.map((t) => <li><a href={`/fanbases/${t.abbreviation.toLowerCase()}/`}>{t.team}</a></li>)}
+    </ul>
+  </main>
+</Base>
+
+<style>
+  .teams {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px 24px;
+  }
+  .teams a {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    text-decoration: none;
+  }
+</style>

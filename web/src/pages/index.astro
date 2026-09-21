@@ -1,0 +1,144 @@
+---
+import { RankNumeral } from '../components/RankNumeral'
+import { SentimentBar } from '../components/SentimentBar'
+import { getSeason } from '../data'
+import Base from '../layouts/Base.astro'
+import { fmtInt, fmtPct } from '../lib/format'
+import { countsOf, negRate, rankBy } from '../lib/metrics'
+import { SITE_NAME } from '../site'
+
+// The end-to-end proof: the official top 25 by negative rate, as a table.
+const { manifest, tables } = await getSeason()
+const threshold = manifest.rules.qualified_threshold
+const slugs = new Map(tables.players.map((p) => [p.attributed_player, p.slug]))
+const rows = tables.player_overall.map((r) => ({ ...r, ...countsOf(r) }))
+const ranked = rankBy(rows, 'neg', threshold)
+const official = ranked.filter((r) => r.rank !== null)
+const top = official.slice(0, 25)
+---
+
+<Base title={SITE_NAME} description={`r/NBA's most hated players of ${manifest.season}, by negative comment rate.`}>
+  <main id="main" class="wrap page">
+    <header>
+      <p class="eyebrow">{manifest.season} · Official · min. {fmtInt(threshold)} comments · {official.length} of {ranked.length} ranked</p>
+      <h1>Leaderboard</h1>
+    </header>
+    <table class="board">
+      <thead>
+        <tr>
+          <th scope="col">Rank</th>
+          <th scope="col">Player</th>
+          <th scope="col">Negative · neutral · positive</th>
+          <th scope="col" class="num">Comments</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          top.map((r) => (
+            <tr>
+              <td class="board__rank">
+                <RankNumeral rank={r.rank ?? 0} official />
+              </td>
+              <td class="board__player">
+                <a href={`/player/${slugs.get(r.row.attributed_player)}/`}>{r.row.attributed_player}</a>
+                <span class="board__rate mono">{fmtPct(negRate(r.row))}</span>
+              </td>
+              <td class="board__bar">
+                <SentimentBar counts={r.row} size="row" subject={r.row.attributed_player} />
+              </td>
+              <td class="board__n num">{fmtInt(r.row.total)}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </main>
+</Base>
+
+<style>
+  .board {
+    width: 100%;
+  }
+  .board th {
+    padding: 0 8px 8px;
+    text-align: left;
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+    border-bottom: 1px solid var(--line);
+  }
+  .board th.num {
+    text-align: right;
+  }
+  .board td {
+    padding: 10px 8px;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--line);
+  }
+  .board__rank {
+    width: 56px;
+  }
+  .board__player {
+    width: 30%;
+    min-width: 140px;
+  }
+  .board__player a {
+    display: block;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 20px;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+  .board__player a:hover {
+    text-decoration: underline;
+  }
+  .board__rate {
+    font-size: 12px;
+    color: var(--heat);
+  }
+  .board__n {
+    text-align: right;
+    white-space: nowrap;
+    color: var(--bone-2);
+  }
+  @media (max-width: 640px) {
+    /* n stays visible on phones: second line of the row. */
+    .board thead {
+      display: none;
+    }
+    .board tr {
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      grid-template-areas:
+        'rank player n'
+        'rank bar bar';
+      gap: 6px 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .board td {
+      padding: 0;
+      border: 0;
+    }
+    .board__rank {
+      grid-area: rank;
+      width: auto;
+    }
+    .board__player {
+      grid-area: player;
+      width: auto;
+    }
+    .board__bar {
+      grid-area: bar;
+    }
+    .board__n {
+      grid-area: n;
+      align-self: start;
+      font-size: 13px;
+    }
+  }
+</style>

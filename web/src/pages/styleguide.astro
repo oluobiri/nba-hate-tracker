@@ -1,0 +1,261 @@
+---
+import { Exhibit, commentUrl } from '../components/Exhibit'
+import { MethodNote } from '../components/MethodNote'
+import { RankNumeral } from '../components/RankNumeral'
+import { SentimentBar } from '../components/SentimentBar'
+import { Stamp } from '../components/Stamp'
+import { StatFigure } from '../components/StatFigure'
+import { getSeason } from '../data'
+import Base from '../layouts/Base.astro'
+import { fmtInt, fmtPct } from '../lib/format'
+import { countsOf, negRate, posRate, rankBy } from '../lib/metrics'
+import type { Sentiment } from '../lib/types'
+
+// Every variant on real data, the awkward cases chosen by rule so the page
+// keeps showing them as the data moves.
+const { manifest, tables } = await getSeason()
+const threshold = manifest.rules.qualified_threshold
+
+const overall = tables.player_overall.map((r) => ({ ...r, ...countsOf(r) }))
+const qualified = overall.filter((r) => r.total >= threshold)
+const byNeg = rankBy(overall, 'neg', threshold)
+const top = byNeg.find((r) => r.rank === 1)!.row
+const leastPositive = qualified.toSorted((a, b) => posRate(a) - posRate(b))[0]!
+const unofficial = byNeg.find((r) => r.rank === null)!.row
+const byVolume = rankBy(overall, 'volume', threshold).slice(0, 5)
+const maxVolume = byVolume[0]!.value
+
+const players = new Map(tables.players.map((p) => [p.attributed_player, p]))
+const noRoster = tables.players.find((p) => p.roster_team === null)!
+const posts = new Map(tables.posts.map((p) => [p.post_id, p.title]))
+const receipt = tables.comment_samples.find((r) => r.sentiment === 'neg' && posts.has(r.link_id) && r.body.length < 240)!
+const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
+const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
+
+const sizes = ['hero', 'row', 'mini'] as const
+---
+
+<Base title="Style guide" description="Every core component in every variant, on real data.">
+  <main class="wrap guide">
+    <header class="guide__head">
+      <p class="eyebrow">Style guide · {manifest.season} · schema v{manifest.schema_version}</p>
+      <h1>Components</h1>
+      <p>
+        Each component once, every variant, on the published drop. A colour, size or component change is made here
+        and every page inherits it.
+      </p>
+    </header>
+
+    <section class="guide__section">
+      <h2>SentimentBar</h2>
+      <p class="eyebrow">Negative → neutral → positive, always. Ink labels, 2 px ink gaps. Full length, 0–100.</p>
+      {
+        sizes.map((size) => (
+          <figure class="guide__fig">
+            <SentimentBar counts={top} size={size} subject={top.attributed_player} />
+            <figcaption>
+              size={size} · {top.attributed_player}, n={fmtInt(top.total)}
+            </figcaption>
+          </figure>
+        ))
+      }
+      <figure class="guide__fig">
+        <SentimentBar counts={leastPositive} size="hero" subject={leastPositive.attributed_player} />
+        <figcaption>
+          narrow segment: {leastPositive.attributed_player} is {fmtPct(posRate(leastPositive))} positive, the smallest
+          share among qualified players, so its label moves outside
+        </figcaption>
+      </figure>
+      <figure class="guide__fig">
+        <SentimentBar counts={leastPositive} size="row" subject={leastPositive.attributed_player} />
+        <figcaption>the same row-size</figcaption>
+      </figure>
+      <p class="eyebrow">Relative length: total against #1 by volume, segmented by sentiment.</p>
+      {
+        byVolume.map((r) => (
+          <figure class="guide__fig">
+            <SentimentBar counts={r.row} size="row" length="relative" scale={r.value / maxVolume} subject={r.row.attributed_player} />
+            <figcaption>
+              #{r.rank} {r.row.attributed_player} · n={fmtInt(r.row.total)}
+            </figcaption>
+          </figure>
+        ))
+      }
+    </section>
+
+    <section class="guide__section">
+      <h2>RankNumeral</h2>
+      <p class="eyebrow">Official is solid; below the official minimum it is hollow, so a crop still reads.</p>
+      <div class="guide__row">
+        <figure class="guide__fig"><RankNumeral rank={1} official size="lg" /><figcaption>official · lg</figcaption></figure>
+        <figure class="guide__fig"><RankNumeral rank={1} official={false} size="lg" /><figcaption>hollow · lg</figcaption></figure>
+        <figure class="guide__fig"><RankNumeral rank={17} official /><figcaption>official · md</figcaption></figure>
+        <figure class="guide__fig"><RankNumeral rank={17} official={false} /><figcaption>hollow · md</figcaption></figure>
+      </div>
+      <figure class="guide__fig guide__fig--row">
+        <RankNumeral rank={byNeg.length} official={false} />
+        <span>{unofficial.attributed_player}</span>
+        <SentimentBar counts={unofficial} size="row" subject={unofficial.attributed_player} />
+        <span class="mono">n={fmtInt(unofficial.total)}</span>
+        <figcaption>an unofficial row: below the official minimum of {fmtInt(threshold)} comments</figcaption>
+      </figure>
+    </section>
+
+    <section class="guide__section">
+      <h2>MethodNote</h2>
+      <p class="eyebrow">The one place yellow appears.</p>
+      <div class="guide__stack">
+        <MethodNote kind="read-first">
+          A rate, not a count. #1 {top.attributed_player} is on n={fmtInt(top.total)}. Read n before you post the
+          screenshot.
+        </MethodNote>
+        <MethodNote kind="rule">
+          Official rankings need at least {fmtInt(threshold)} comments; {qualified.length} of {overall.length} players
+          qualify.
+        </MethodNote>
+        <MethodNote kind="caveat">Sentiment is not hate. A negative comment can be criticism of one game.</MethodNote>
+        <MethodNote kind="method">
+          Negative rate = {manifest.rules.metrics.neg_rate}. Rates are re-derived from counts, never averaged.
+        </MethodNote>
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Stamp</h2>
+      <div class="guide__row"><Stamp kind="verified" /><Stamp kind="unofficial" /></div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Exhibit</h2>
+      <p class="eyebrow">A receipt: verbatim body, the post it lived in, score, source. No username, ever.</p>
+      <div class="guide__stack">
+        <Exhibit
+          number={1}
+          body={receipt.body}
+          sentiment={receipt.sentiment as Sentiment}
+          score={receipt.score}
+          sourceUrl={commentUrl(receipt.link_id, receipt.comment_id)}
+          postTitle={posts.get(receipt.link_id) ?? null}
+          stamp={manifest.rules.receipts.verified ? 'verified' : undefined}
+        />
+        <Exhibit
+          number={2}
+          body={neutral.body}
+          sentiment={neutral.sentiment as Sentiment}
+          score={neutral.score}
+          sourceUrl={commentUrl(neutral.link_id, neutral.comment_id)}
+          postTitle={posts.get(neutral.link_id) ?? null}
+        />
+        {
+          orphan && (
+            <Exhibit
+              number={3}
+              body={orphan.body}
+              sentiment={orphan.sentiment as Sentiment}
+              score={orphan.score}
+              sourceUrl={commentUrl(orphan.link_id, orphan.comment_id)}
+              postTitle={null}
+              stamp={manifest.rules.receipts.verified ? 'verified' : undefined}
+            />
+          )
+        }
+      </div>
+      <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge.</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>StatFigure</h2>
+      <div class="guide__row guide__row--stats">
+        <StatFigure figure={fmtPct(negRate(top))} label="Negative" detail={`of ${fmtInt(top.total)} comments`} tone="neg" />
+        <StatFigure figure={fmtPct(posRate(top))} label="Positive" tone="pos" />
+        <StatFigure figure={fmtInt(top.total)} label="Comments" detail="attributed to one player" />
+        <StatFigure figure={String(qualified.length)} label="Ranked" detail={`of ${overall.length} tracked`} />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Edge states</h2>
+      <p class="eyebrow">Data the pages must render without a sentinel.</p>
+      <dl class="guide__dl mono">
+        <dt>No roster team</dt>
+        <dd>{noRoster.attributed_player} · roster_team is null → "No roster team"</dd>
+        <dt>Team FK</dt>
+        <dd>{players.get(top.attributed_player)?.roster_team} · a canonical name, never an abbreviation</dd>
+      </dl>
+    </section>
+  </main>
+</Base>
+
+<style>
+  .guide {
+    padding-block: 32px 96px;
+    display: grid;
+    gap: 48px;
+  }
+  .guide__head p:last-child {
+    max-width: 60ch;
+    color: var(--bone-2);
+  }
+  .guide__section {
+    display: grid;
+    gap: 16px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+  }
+  .guide__fig {
+    margin: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .guide__fig figcaption,
+  .guide__dl dd {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--mute);
+  }
+  .guide__fig--row {
+    grid-template-columns: auto minmax(120px, 1fr) minmax(160px, 2fr) auto;
+    align-items: center;
+    gap: 12px;
+  }
+  .guide__fig--row figcaption {
+    grid-column: 1 / -1;
+  }
+  .guide__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 24px;
+  }
+  .guide__row--stats {
+    align-items: start;
+    gap: 40px;
+  }
+  .guide__stack {
+    display: grid;
+    gap: 12px;
+  }
+  .guide__dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    font-size: 13px;
+  }
+  .guide__dl dd {
+    margin: 0;
+    color: var(--bone-2);
+  }
+  @media (max-width: 520px) {
+    .guide__fig--row {
+      grid-template-columns: auto 1fr;
+    }
+    .guide__fig--row .sb,
+    .guide__fig--row .mono {
+      grid-column: 1 / -1;
+    }
+    .guide__dl {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

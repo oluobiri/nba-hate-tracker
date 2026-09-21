@@ -1,0 +1,32 @@
+---
+import { getSeason } from '../data'
+import { NAV, SITE_NAME } from '../site'
+import { PlayerSearch, type SearchPlayer } from './PlayerSearch'
+
+const { tables } = await getSeason()
+const abbr = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+const players: SearchPlayer[] = tables.players
+  .map((p) => ({ name: p.attributed_player, slug: p.slug, abbr: p.roster_team ? (abbr.get(p.roster_team) ?? null) : null }))
+  .toSorted((a, b) => a.name.localeCompare(b.name))
+
+const path = Astro.url.pathname
+const current = (href: string) => (href === '/' ? path === '/' : path.startsWith(href))
+---
+
+<header class="hdr">
+  <div class="wrap hdr__wrap">
+    <a class="hdr__wordmark" href="/">{SITE_NAME}</a>
+    <nav class="hdr__nav" aria-label="Primary">
+      {NAV.map((item) => <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>{item.label}</a>)}
+    </nav>
+    <div class="hdr__search">
+      <PlayerSearch client:idle players={players} />
+    </div>
+    <details class="hdr__menu">
+      <summary>Menu</summary>
+      <nav aria-label="Primary, menu">
+        {NAV.map((item) => <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>{item.label}</a>)}
+      </nav>
+    </details>
+  </div>
+</header>

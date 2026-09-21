@@ -51,11 +51,10 @@ export async function loadSeason(season: string, base: string = resolveDataBase(
   const manifest = await readJson<Manifest>(loc, 'manifest.json')
   assertManifest(manifest, season)
 
-  const tables = {} as Tables
-  for (const [name, entry] of Object.entries(manifest.tables)) {
-    const table = name as TableName
-    ;(tables as unknown as Record<string, RawRow[]>)[table] = await loadTable(loc, table, entry.file)
-  }
+  const loaded = await Promise.all(
+    Object.entries(manifest.tables).map(async ([name, entry]) => [name, await loadTable(loc, name as TableName, entry.file)] as const),
+  )
+  const tables = Object.fromEntries(loaded) as unknown as Tables
 
   const warnings = assertTables(tables, manifest)
   return { season, source: loc.root, manifest, tables, warnings }

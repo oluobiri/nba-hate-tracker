@@ -5,8 +5,9 @@ Reads classified sentiment parquet, computes player rankings, flair
 segmentation, temporal trends, the game layer and the receipts. Writes
 one parquet per produced table (the fact views, the players and teams
 dimensions, the game layer, and the comment_samples fact subset) plus
-manifest.json, the front door that describes them, into the season's
-dashboard directory for ad-hoc DuckDB queries and the v2 frontend.
+manifest.json, the front door that describes them, and schema.json, the
+contract's own description, into the season's dashboard directory for
+ad-hoc DuckDB queries and the v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -20,10 +21,11 @@ import sys
 from pathlib import Path
 
 from pipeline.aggregation import aggregate_sentiment
+from pipeline.contract import build_contract_schema
 from pipeline.lineage import config_stamps
 from pipeline.receipts import samples_stamps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
-from utils.constants import MANIFEST_FILENAME
+from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
 from utils.paths import get_dashboard_dir, get_processed_dir
 from utils.season_config import set_season_override
 
@@ -164,6 +166,14 @@ def main() -> None:
         json.dump(result["manifest"], f, indent=2)
         f.write("\n")
     logger.info(f"Wrote {manifest_path}")
+
+    # The contract beside the manifest: what shape the bytes are, so a
+    # consumer generates its types instead of writing them
+    schema_path = output_dir / SCHEMA_FILENAME
+    with open(schema_path, "w") as f:
+        json.dump(build_contract_schema(), f, indent=2)
+        f.write("\n")
+    logger.info(f"Wrote {schema_path}")
 
     # Log metadata summary
     meta = result["metadata"]

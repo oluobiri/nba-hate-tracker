@@ -203,6 +203,7 @@ BATCHES_DATA_SUBDIR = "batches"
 PROCESSED_DATA_SUBDIR = "processed"
 DASHBOARD_DATA_SUBDIR = "dashboard"
 MANIFEST_FILENAME = "manifest.json"
+SCHEMA_FILENAME = "schema.json"
 REFERENCE_DATA_SUBDIR = "reference"
 
 # Season-independent: one set of originals and variants serves every

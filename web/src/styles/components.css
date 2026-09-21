@@ -33,12 +33,12 @@
   container-type: inline-size;
 }
 /* A label never renders clipped: below the text's width it disappears. */
-@container (width < 46px) {
+@container (width < 44px) {
   .sb__label {
     display: none;
   }
 }
-@container (width < 60px) {
+@container (width < 56px) {
   .sb--hero .sb__label {
     display: none;
   }

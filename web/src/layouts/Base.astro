@@ -11,7 +11,10 @@ import '@fontsource/ibm-plex-mono/600.css'
 import '../styles/tokens.css'
 import '../styles/global.css'
 import '../styles/components.css'
+import '../styles/shell.css'
 
+import Footer from '../components/Footer.astro'
+import Nav from '../components/Nav.astro'
 import { SITE_DESCRIPTION, SITE_INDEXABLE, SITE_NAME } from '../site'
 
 interface Props {
@@ -33,6 +36,9 @@ const fullTitle = title === SITE_NAME ? title : `${title} · ${SITE_NAME}`
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Nav />
     <slot />
+    <Footer />
   </body>
 </html>

@@ -1,0 +1,22 @@
+---
+import { getSeason } from '../../data'
+import Base from '../../layouts/Base.astro'
+
+export async function getStaticPaths() {
+  const { tables } = await getSeason()
+  return tables.teams.map((team) => ({ params: { abbr: team.abbreviation.toLowerCase() }, props: { team } }))
+}
+
+const { team } = Astro.props
+const title = `${team.team} fans`
+---
+
+<Base title={title} description={`What ${team.team} fans think of the league, and what the league thinks of them.`}>
+  <main id="main" class="wrap page">
+    <header>
+      <p class="eyebrow">{team.abbreviation} · {team.conference}</p>
+      <h1>{title}</h1>
+    </header>
+    <p class="page__lede">The team page is on its way.</p>
+  </main>
+</Base>

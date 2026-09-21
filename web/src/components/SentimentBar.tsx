@@ -21,10 +21,11 @@ export interface SentimentBarProps {
 const NAMES: Record<Sentiment, string> = { neg: 'negative', neu: 'neutral', pos: 'positive' }
 const RATES: Record<Sentiment, (c: Counts) => number> = { neg: negRate, neu: neuRate, pos: posRate }
 
-// Below this share of the bar a label moves to the outside list. The rule is
-// set for a phone-width bar (~370 px); components.css also hides any label
-// whose segment is narrower than the text, so nothing ever renders clipped.
-const INSIDE_MIN: Record<BarSize, number> = { hero: 0.16, row: 0.13, mini: Number.POSITIVE_INFINITY }
+// Below this share of the bar a label moves to the outside list. Set for a
+// phone-width bar (~330 px in a table row, ~370 px alone), where a label is
+// ~45 px at row size and ~57 px at hero size; components.css hides a label
+// whose segment is narrower than that, so nothing ever renders clipped.
+const INSIDE_MIN: Record<BarSize, number> = { hero: 0.16, row: 0.15, mini: Number.POSITIVE_INFINITY }
 
 /** Negative → neutral → positive, on an absolute 0–100 scale unless `length` is relative. */
 export function SentimentBar({ counts, length = 'full', scale = 1, size = 'row', subject }: SentimentBarProps) {

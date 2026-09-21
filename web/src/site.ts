@@ -25,3 +25,7 @@ export const NAV: readonly NavItem[] = [
   { label: 'Recaps', href: '/recaps/' },
   { label: 'How it works', href: '/how-it-works/' },
 ]
+
+export const GITHUB_URL = 'https://github.com/oluobiri/nba-hate-tracker'
+export const LINKEDIN_URL = ''
+export const AUTHOR = 'Olu Obiri'

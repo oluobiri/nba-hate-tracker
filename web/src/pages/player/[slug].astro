@@ -1,0 +1,39 @@
+---
+import { SentimentBar } from '../../components/SentimentBar'
+import { getSeason } from '../../data'
+import Base from '../../layouts/Base.astro'
+import { fmtInt } from '../../lib/format'
+import { countsOf } from '../../lib/metrics'
+
+export async function getStaticPaths() {
+  const { tables } = await getSeason()
+  const overall = new Map(tables.player_overall.map((r) => [r.attributed_player, r]))
+  return tables.players.map((player) => ({
+    params: { slug: player.slug },
+    props: { player, overall: overall.get(player.attributed_player) ?? null },
+  }))
+}
+
+const { player, overall } = Astro.props
+const roster = player.roster_team ?? 'No roster team'
+---
+
+<Base title={player.attributed_player} description={`What r/NBA says about ${player.attributed_player}.`}>
+  <main id="main" class="wrap page">
+    <header>
+      <p class="eyebrow">{roster}</p>
+      <h1>{player.attributed_player}</h1>
+    </header>
+    {
+      overall ? (
+        <>
+          <SentimentBar counts={countsOf(overall)} size="hero" subject={player.attributed_player} />
+          <p class="page__lede mono">n={fmtInt(overall.comment_count)} comments attributed</p>
+        </>
+      ) : (
+        <p class="page__lede">No attributed comments this season.</p>
+      )
+    }
+    <p class="page__lede">The full player page is on its way.</p>
+  </main>
+</Base>

@@ -27,5 +27,5 @@ export const NAV: readonly NavItem[] = [
 ]
 
 export const GITHUB_URL = 'https://github.com/oluobiri/nba-hate-tracker'
-export const LINKEDIN_URL = ''
+export const LINKEDIN_URL = 'https://www.linkedin.com/in/oluobiri/'
 export const AUTHOR = 'Olu Obiri'

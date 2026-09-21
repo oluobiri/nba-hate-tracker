@@ -6,9 +6,10 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import type { ContractSchema } from '../src/data/contract'
 import { readJson, resolveDataBase, seasonLocation } from '../src/data/env'
 import { CURRENT_SEASON } from '../src/site'
-import { type ContractSchema, renderTypes } from './render-types'
+import { renderTypes } from './render-types'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SNAPSHOT = path.resolve(here, '../src/data/schema.json')

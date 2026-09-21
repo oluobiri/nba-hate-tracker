@@ -1,23 +1,6 @@
 // Render schema.json as TypeScript. Pure: same document in, same text
 // out, so the committed types.gen.ts can be diffed against a re-render.
-
-export interface ColumnSpec {
-  name: string
-  dtype: string
-  nullable: boolean
-}
-
-export interface FieldSpec {
-  type: string
-  nullable: boolean
-  values?: FieldSpec
-}
-
-export interface ContractSchema {
-  schema_version: number
-  tables: Record<string, { columns: ColumnSpec[] }>
-  manifest: { root: string; types: Record<string, Record<string, FieldSpec>> }
-}
+import type { ColumnSpec, ContractSchema, FieldSpec } from '../src/data/contract'
 
 // Parquet-side dtype vocabulary → TS. INT64 becomes number at the loader,
 // date and datetime become strings there too.

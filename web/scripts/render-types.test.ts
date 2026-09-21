@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { type ContractSchema, renderTypes, rowTypeName } from './render-types'
+import type { ContractSchema } from '../src/data/contract'
+import { renderTypes, rowTypeName } from './render-types'
 
 const fixture: ContractSchema = {
   schema_version: 5,

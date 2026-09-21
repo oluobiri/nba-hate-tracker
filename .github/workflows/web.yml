@@ -1,0 +1,37 @@
+name: web
+
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - run: npm test
+      # Builds against the published contract, the same bytes a stranger gets.
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run walk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: walk
+          path: web/walk/out
+          if-no-files-found: ignore

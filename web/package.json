@@ -14,7 +14,9 @@
     "check": "astro check",
     "lint": "oxlint",
     "test": "vitest run",
-    "codegen": "tsx scripts/codegen.ts"
+    "codegen": "tsx scripts/codegen.ts",
+    "walk": "playwright test",
+    "shot": "node scripts/shot.mjs"
   },
   "dependencies": {
     "@astrojs/react": "^6.0.6",

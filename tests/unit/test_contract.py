@@ -189,6 +189,29 @@ class TestManifestBlock:
             "nullable": False,
         }
 
+    def test_optional_ref_and_optional_map(self, monkeypatch):
+        """A nullable nested type and a nullable map render as their node
+        with nullable true; the nested type is still registered."""
+
+        class Leaf(TypedDict):
+            value: int
+
+        class Root(TypedDict):
+            leaf: Leaf | None
+            lookup: dict[str, str] | None
+
+        monkeypatch.setattr("pipeline.contract.MANIFEST_ROOT", Root)
+
+        manifest = build_contract_schema()["manifest"]
+
+        assert list(manifest["types"]) == ["Root", "Leaf"]
+        assert manifest["types"]["Root"]["leaf"] == {"type": "Leaf", "nullable": True}
+        assert manifest["types"]["Root"]["lookup"] == {
+            "type": "map",
+            "values": {"type": "string", "nullable": False},
+            "nullable": True,
+        }
+
     def test_unsupported_hint_raises(self, monkeypatch):
         """A field type outside the vocabulary fails the build by name."""
 

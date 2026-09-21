@@ -1,9 +1,10 @@
 """
 The publish steps: a season's dashboard drop and the media drop.
 
-The dashboard upload set is manifest.json plus exactly the files its table
-registry names, so nothing else in the dashboard directory ever ships and
-a season without a manifest cannot be published. The media upload set is
+The dashboard upload set is manifest.json, schema.json and exactly the
+files the manifest's table registry names, so nothing else in the
+dashboard directory ever ships and a season without a manifest cannot be
+published. The media upload set is
 exactly the names the dimension tables' ids imply, across every season,
 so a stray file never ships either. Pre-flight checks every file before a
 single byte is written; both drops share the list, diff, write, delete and
@@ -11,6 +12,7 @@ invalidate steps and differ only in the set and the post-flight.
 """
 
 import hashlib
+import json
 import logging
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -22,17 +24,20 @@ import polars as pl
 import requests
 from botocore.exceptions import WaiterError
 
+from pipeline.contract import build_contract_schema
 from pipeline.media import expected_media_names
 from pipeline.schemas import SCHEMA_VERSION, Manifest, load_manifest
-from utils.constants import MANIFEST_FILENAME
+from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
 from utils.publish_config import PublishTarget
 
 logger = logging.getLogger(__name__)
 
 PARQUET_CONTENT_TYPE = "application/vnd.apache.parquet"
-MANIFEST_CONTENT_TYPE = "application/json"
+JSON_CONTENT_TYPE = "application/json"
 PARQUET_CACHE_CONTROL = "public, max-age=86400"
-MANIFEST_CACHE_CONTROL = "public, max-age=300"
+# One rule for both JSON files: the manifest changes every drop and the
+# schema must never lag it
+JSON_CACHE_CONTROL = "public, max-age=300"
 
 MEDIA_CONTENT_TYPES = {
     ".png": "image/png",
@@ -132,6 +137,21 @@ def _check_table(path: Path, expected_rows: int) -> None:
         )
 
 
+def _check_contract_schema(path: Path) -> None:
+    """Fail unless schema.json exists and is what the running contract generates."""
+    if not path.exists():
+        raise PublishError(
+            f"{path} not found - a season without its schema cannot be published"
+        )
+    with open(path) as f:
+        on_disk = json.load(f)
+    if on_disk != build_contract_schema():
+        raise PublishError(
+            f"{path} does not match the running contract - rebuild the season "
+            f"before publishing"
+        )
+
+
 def _local_object(
     key: str, path: Path, content_type: str, cache_control: str
 ) -> LocalObject:
@@ -155,8 +175,8 @@ def build_upload_set(
 
     Every check runs before any object is built, so a failure leaves
     nothing half-prepared. The set is the registry's files in registry
-    order, then the manifest, so a reader never sees a new manifest
-    over old tables.
+    order, then the schema, then the manifest, so a reader never sees a
+    new manifest over old tables or an old schema.
 
     Args:
         dashboard_dir: The season's dashboard directory.
@@ -168,8 +188,9 @@ def build_upload_set(
 
     Raises:
         PublishError: If the manifest is missing, names another season
-            or contract version, or any registered file is missing,
-            mis-stamped, mis-counted, or too large for a single PUT.
+            or contract version, any registered file is missing,
+            mis-stamped, mis-counted, or too large for a single PUT, or
+            the schema is missing or stale against the running contract.
     """
     manifest_path = dashboard_dir / MANIFEST_FILENAME
     if not manifest_path.exists():
@@ -192,6 +213,8 @@ def build_upload_set(
 
     for entry in manifest["tables"].values():
         _check_table(dashboard_dir / entry["file"], entry["rows"])
+    schema_path = dashboard_dir / SCHEMA_FILENAME
+    _check_contract_schema(schema_path)
 
     key_prefix = season_prefix(prefix, season)
     objects = [
@@ -203,15 +226,16 @@ def build_upload_set(
         )
         for entry in manifest["tables"].values()
     ]
-    objects.append(
-        _local_object(
-            key_prefix + MANIFEST_FILENAME,
-            manifest_path,
-            MANIFEST_CONTENT_TYPE,
-            MANIFEST_CACHE_CONTROL,
+    for path in (schema_path, manifest_path):
+        objects.append(
+            _local_object(
+                key_prefix + path.name, path, JSON_CONTENT_TYPE, JSON_CACHE_CONTROL
+            )
         )
+    logger.info(
+        f"Pre-flight passed: {len(manifest['tables'])} tables + schema + manifest "
+        f"for {season}"
     )
-    logger.info(f"Pre-flight passed: {len(objects) - 1} tables + manifest for {season}")
     return manifest, objects
 
 

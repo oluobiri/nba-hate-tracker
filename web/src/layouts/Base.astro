@@ -1,0 +1,25 @@
+---
+import { SITE_DESCRIPTION, SITE_INDEXABLE, SITE_NAME } from '../site'
+
+interface Props {
+  title: string
+  description?: string
+}
+
+const { title, description = SITE_DESCRIPTION } = Astro.props
+const fullTitle = title === SITE_NAME ? title : `${title} · ${SITE_NAME}`
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {!SITE_INDEXABLE && <meta name="robots" content="noindex" />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

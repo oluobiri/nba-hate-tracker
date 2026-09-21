@@ -31,6 +31,7 @@
 | `sentiment` | Classification logic, prompts |
 | `api` | Anthropic Batch API integration |
 | `app` | Streamlit dashboard |
+| `web` | Astro site under `web/` (data layer, components, pages, walk) |
 | `config` | Environment, pyproject.toml, settings |
 | `tests` | Test files, fixtures |
 | `docs` | README, strategy docs |

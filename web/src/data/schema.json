@@ -1,0 +1,937 @@
+{
+  "schema_version": 5,
+  "tables": {
+    "player_overall": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
+          "nullable": false
+        }
+      ]
+    },
+    "player_temporal": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "week",
+          "dtype": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
+          "nullable": false
+        }
+      ]
+    },
+    "player_fan_team": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fan_team",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
+          "nullable": false
+        }
+      ]
+    },
+    "fan_team_overall": {
+      "columns": [
+        {
+          "name": "fan_team",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "abbreviation",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "conference",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "logo_url",
+          "dtype": "string",
+          "nullable": false
+        }
+      ]
+    },
+    "game_sentiment": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "game_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "thread_comment_count",
+          "dtype": "int64",
+          "nullable": false
+        }
+      ]
+    },
+    "players": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "slug",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "roster_team",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "conference",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "headshot_url",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "position",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "birth_date",
+          "dtype": "date",
+          "nullable": true
+        },
+        {
+          "name": "experience",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "school",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "jersey_number",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "height",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "weight",
+          "dtype": "string",
+          "nullable": true
+        }
+      ]
+    },
+    "teams": {
+      "columns": [
+        {
+          "name": "team",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "abbreviation",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "conference",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "team_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "logo_url",
+          "dtype": "string",
+          "nullable": false
+        }
+      ]
+    },
+    "games": {
+      "columns": [
+        {
+          "name": "game_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "game_date",
+          "dtype": "date",
+          "nullable": false
+        },
+        {
+          "name": "season_type",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "nba_cup_final",
+          "dtype": "bool",
+          "nullable": false
+        },
+        {
+          "name": "neutral_site",
+          "dtype": "bool",
+          "nullable": false
+        },
+        {
+          "name": "home_team",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "away_team",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "home_score",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "away_score",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "winner",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "playoff_round",
+          "dtype": "int64",
+          "nullable": true
+        },
+        {
+          "name": "playoff_series",
+          "dtype": "int64",
+          "nullable": true
+        },
+        {
+          "name": "playoff_game",
+          "dtype": "int64",
+          "nullable": true
+        }
+      ]
+    },
+    "player_games": {
+      "columns": [
+        {
+          "name": "game_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "roster_team",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "opponent",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "is_home",
+          "dtype": "bool",
+          "nullable": true
+        },
+        {
+          "name": "wl",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "minutes",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fgm",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fga",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fg3m",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fg3a",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "ftm",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fta",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "oreb",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "dreb",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "reb",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "ast",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "stl",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "blk",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "tov",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pf",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pts",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "plus_minus",
+          "dtype": "int64",
+          "nullable": false
+        }
+      ]
+    },
+    "posts": {
+      "columns": [
+        {
+          "name": "post_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "created_utc",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "score",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "num_comments",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "link_flair_text",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "post_type",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "game_id",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "is_primary",
+          "dtype": "bool",
+          "nullable": false
+        }
+      ]
+    },
+    "comment_samples": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "sentiment",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "rank",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "link_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "body",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "score",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "created_utc",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "fan_team",
+          "dtype": "string",
+          "nullable": true
+        }
+      ]
+    },
+    "corpus_daily": {
+      "columns": [
+        {
+          "name": "day",
+          "dtype": "date",
+          "nullable": false
+        },
+        {
+          "name": "raw_comments",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "population_submitted",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "usable",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "attributed",
+          "dtype": "int64",
+          "nullable": true
+        }
+      ]
+    }
+  },
+  "manifest": {
+    "root": "Manifest",
+    "types": {
+      "Manifest": {
+        "schema_version": {
+          "type": "int",
+          "nullable": false
+        },
+        "season": {
+          "type": "string",
+          "nullable": false
+        },
+        "generated_at": {
+          "type": "string",
+          "nullable": false
+        },
+        "config_versions": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "nullable": false
+          },
+          "nullable": false
+        },
+        "classifiers": {
+          "type": "map",
+          "values": {
+            "type": "ClassifierIdentity",
+            "nullable": false
+          },
+          "nullable": false
+        },
+        "snapshots": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "nullable": true
+          },
+          "nullable": false
+        },
+        "rules": {
+          "type": "Rules",
+          "nullable": false
+        },
+        "calendar": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "nullable": true
+          },
+          "nullable": false
+        },
+        "corpus": {
+          "type": "Corpus",
+          "nullable": false
+        },
+        "populations": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "nullable": false
+          },
+          "nullable": false
+        },
+        "tables": {
+          "type": "map",
+          "values": {
+            "type": "TableEntry",
+            "nullable": false
+          },
+          "nullable": false
+        }
+      },
+      "ClassifierIdentity": {
+        "model": {
+          "type": "string",
+          "nullable": false
+        },
+        "prompt_version": {
+          "type": "string",
+          "nullable": false
+        }
+      },
+      "Rules": {
+        "qualified_threshold": {
+          "type": "int",
+          "nullable": false
+        },
+        "samples": {
+          "type": "SamplesRule",
+          "nullable": false
+        },
+        "receipts": {
+          "type": "ReceiptsFigures",
+          "nullable": false
+        },
+        "floors": {
+          "type": "Floors",
+          "nullable": false
+        },
+        "metrics": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "nullable": false
+          },
+          "nullable": false
+        }
+      },
+      "SamplesRule": {
+        "top_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "min_confidence": {
+          "type": "float",
+          "nullable": false
+        },
+        "max_body_chars": {
+          "type": "int",
+          "nullable": false
+        },
+        "requires_target": {
+          "type": "bool",
+          "nullable": false
+        },
+        "pool_k": {
+          "type": "int",
+          "nullable": false
+        },
+        "admission": {
+          "type": "string",
+          "nullable": false
+        }
+      },
+      "ReceiptsFigures": {
+        "verified": {
+          "type": "bool",
+          "nullable": false
+        },
+        "coverage": {
+          "type": "float",
+          "nullable": true
+        },
+        "precision": {
+          "type": "float",
+          "nullable": true
+        },
+        "attribution_toward_share": {
+          "type": "float",
+          "nullable": true
+        }
+      },
+      "Floors": {
+        "fanbase_min_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "week_min_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "belt_min_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "game_min_n": {
+          "type": "int",
+          "nullable": false
+        }
+      },
+      "Corpus": {
+        "raw_comments": {
+          "type": "int",
+          "nullable": true
+        },
+        "population_submitted": {
+          "type": "int",
+          "nullable": true
+        },
+        "classified": {
+          "type": "int",
+          "nullable": false
+        },
+        "usable": {
+          "type": "int",
+          "nullable": false
+        },
+        "attributed": {
+          "type": "int",
+          "nullable": false
+        }
+      },
+      "TableEntry": {
+        "file": {
+          "type": "string",
+          "nullable": false
+        },
+        "rows": {
+          "type": "int",
+          "nullable": false
+        },
+        "population": {
+          "type": "string",
+          "nullable": true
+        }
+      }
+    }
+  }
+}

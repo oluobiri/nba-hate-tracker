@@ -9,11 +9,12 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "tsx scripts/codegen.ts --check && astro build",
     "preview": "astro preview",
     "check": "astro check",
     "lint": "oxlint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "codegen": "tsx scripts/codegen.ts"
   },
   "dependencies": {
     "@astrojs/react": "^6.0.6",

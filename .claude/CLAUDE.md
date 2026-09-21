@@ -12,7 +12,8 @@ scripts/          → CLI entry points (download, filter, batch, aggregate, publ
 pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
 config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts; teams.yaml; publish.yaml target)
-app/              → Streamlit dashboard
+app/              → Streamlit dashboard (V1 lab, retires in #114)
+web/              → The site: Astro + React islands, built from the published contract (web/README.md)
 tests/            → pytest (unit/, conftest.py)
 notebooks/        → EDA and exploration, season-scoped (2024-25/, 2025-26/)
 data/             → Not committed
@@ -47,6 +48,13 @@ uv run ruff format .                 # Format
 
 # Streamlit
 uv run streamlit run app/streamlit_app.py  # Local dev
+
+# Site (from web/; Node 22 via .nvmrc; see web/README.md)
+npm run dev                          # Dev server, --host for the phone
+npm run build                        # codegen --check + astro build → dist/
+npm run codegen                      # Refresh src/data/schema.json + types.gen.ts from DATA_BASE
+npm run check && npm run lint && npm test   # The pre-commit gate for web/
+npm run walk                         # Playwright over dist/ at 1280 and 400
 
 # Media (headshots + logos from cdn.nba.com into data/media/, WebP variants derived; resumable)
 uv run python -m scripts.fetch_media --dry-run  # Plan only, no request

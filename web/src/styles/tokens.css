@@ -1,0 +1,53 @@
+/*
+ * Design tokens. Values are the spike's, verbatim. One job per colour:
+ *
+ *   --heat / --heat-2   negative sentiment; brand moments (masthead, hero)
+ *                       never: wins/losses, dates, clocks, phase bands, buttons
+ *   --ice               positive sentiment
+ *                       never: wins, teams, "winning weeks" tiles
+ *   --neu / --bone      neutral sentiment; text; interactive elements
+ *                       (links, buttons, focus rings, sliders, scrubbers)
+ *   --hl                methodology only: threshold, Read this first, Caveat,
+ *                       Rule, Method, stamps about method
+ *                       never: ranks, verdict numbers, scores, team names,
+ *                       active-state dots, upvote arrows, own-team highlight
+ *
+ * Light text on a sentiment fill fails contrast: labels inside segments are
+ * ink. Adjacent segments fail 3:1 against each other: a 2 px ink gap sits
+ * between them. --mute-2 is never used for text (3.0:1).
+ */
+:root {
+  --ink: #0b0b0d;
+  --ink-2: #121215;
+  --surface: #17171b;
+  --surface-2: #1f1f24;
+  --line: #2a2a31;
+  --line-2: #3a3a43;
+
+  --bone: #ede8dc;
+  --bone-2: #c9c4b8;
+  --mute: #8b887f;
+  --mute-2: #5f5d56;
+
+  --heat: #ff3d1f;
+  --heat-2: #ff6a4d;
+  --heat-dim: rgba(255, 61, 31, 0.16);
+  --ice: #5cc8ff;
+  --ice-dim: rgba(92, 200, 255, 0.16);
+  --neu: #a8a497;
+  --neu-dim: rgba(168, 164, 151, 0.16);
+
+  --hl: #ffd21f;
+  --hl-dim: rgba(255, 210, 31, 0.14);
+
+  --focus: var(--bone);
+
+  --display: 'Barlow Condensed', 'Arial Narrow', Impact, sans-serif;
+  --body: 'Barlow', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --gutter: clamp(16px, 4vw, 48px);
+  --maxw: 1180px;
+
+  color-scheme: dark;
+}

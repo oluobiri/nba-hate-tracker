@@ -1,9 +1,20 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "unicorn"],
+  "plugins": [
+    "typescript",
+    "react",
+    "unicorn"
+  ],
   "categories": {
     "correctness": "error",
     "suspicious": "warn"
   },
-  "ignorePatterns": ["dist", ".astro", "src/data/types.gen.ts"]
+  "ignorePatterns": [
+    "dist",
+    ".astro",
+    "src/data/types.gen.ts"
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off"
+  }
 }

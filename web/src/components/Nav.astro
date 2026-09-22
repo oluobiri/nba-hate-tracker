@@ -9,13 +9,20 @@ const players: SearchPlayer[] = tables.players
   .map((p) => ({ name: p.attributed_player, slug: p.slug, abbr: p.roster_team ? (abbr.get(p.roster_team) ?? null) : null }))
   .toSorted((a, b) => a.name.localeCompare(b.name))
 
+// The mark is the favicon itself: one file, one drawing. First word heat,
+// the rest ice; the link still reads as the whole name.
+const [first, ...rest] = SITE_NAME.split(' ')
+
 const path = Astro.url.pathname
 const current = (href: string) => (href === '/' ? path === '/' : path.startsWith(href))
 ---
 
 <header class="hdr">
   <div class="wrap hdr__wrap">
-    <a class="hdr__wordmark" href="/">{SITE_NAME}</a>
+    <a class="hdr__wordmark" href="/">
+      <img class="hdr__mark" src="/favicon.svg" alt="" width="28" height="28" />
+      <span>{first} <span class="hdr__wordmark-2">{rest.join(' ')}</span></span>
+    </a>
     <nav class="hdr__nav" aria-label="Primary">
       {NAV.map((item) => <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>{item.label}</a>)}
     </nav>

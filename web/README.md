@@ -47,6 +47,7 @@ every PR touching `web/`; the pre-commit hook runs check, lint and test on commi
 
 ## What ships
 
-Static HTML per route (`<route>/index.html`, plus `404.html`). One island hydrates on every page: `PlayerSearch`
+Static HTML per route (`<route>/index.html`, plus `404.html`). `public/favicon.svg` is the mark, drawn once and
+reused as the header glyph; its colours are pinned to `tokens.css` by a test. One island hydrates on every page: `PlayerSearch`
 in the header, which carries the React runtime. Nothing else runs JavaScript. `/styleguide/` renders every core
 component in every variant on real data; a colour, size or component change is made there once.

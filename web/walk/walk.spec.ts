@@ -48,6 +48,14 @@ for (const route of ROUTES) {
   })
 }
 
+test('the header mark decodes', async ({ page }) => {
+  // A malformed SVG is a broken image, not a console error; ask the image.
+  await page.goto('/', { waitUntil: 'networkidle' })
+  const mark = page.locator('.hdr__mark')
+  await expect(mark).toBeVisible()
+  expect(await mark.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+})
+
 test('an unknown route serves the 404 page', async ({ page }) => {
   const errors = watchErrors(page)
   const res = await page.goto('/no-such-page/')

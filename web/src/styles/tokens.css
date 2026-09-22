@@ -3,7 +3,7 @@
  *
  *   --heat / --heat-2   negative sentiment; brand moments (masthead, hero)
  *                       never: wins/losses, dates, clocks, phase bands, buttons
- *   --ice               positive sentiment
+ *   --ice               positive sentiment; brand moments (masthead)
  *                       never: wins, teams, "winning weeks" tiles
  *   --neu / --bone      neutral sentiment; text; interactive elements
  *                       (links, buttons, focus rings, sliders, scrubbers)

@@ -1,0 +1,101 @@
+name: deploy-web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy-web.yml'
+  # Also how the site picks up a new data drop: pages are built from the
+  # published contract, and a season publish never touches web/.
+  workflow_dispatch:
+
+# The role trusts this repository's main ref only. Bucket and distribution
+# are the ones docs/publishing.md describes.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  BUCKET: courtsentiment-web
+  DISTRIBUTION_ID: E2X7LKN4E54XA2
+  ORIGIN: https://courtsentiment.com
+  # Launch switch: every page carries noindex until this is 'true'.
+  SITE_INDEXABLE: 'false'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_WEB_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # Three passes so no page ever references a missing asset: hashed
+      # assets land first, then the pages (pruning stale routes), then the
+      # assets are pruned once nothing points at them.
+      - name: Sync hashed assets
+        run: >
+          aws s3 sync web/dist "s3://$BUCKET"
+          --exclude '*' --include '_astro/*'
+          --cache-control 'public, max-age=31536000, immutable'
+      - name: Sync pages
+        run: >
+          aws s3 sync web/dist "s3://$BUCKET"
+          --exclude '_astro/*'
+          --cache-control 'public, max-age=300'
+          --delete
+      - name: Prune stale assets
+        run: >
+          aws s3 sync web/dist "s3://$BUCKET"
+          --exclude '*' --include '_astro/*'
+          --cache-control 'public, max-age=31536000, immutable'
+          --delete
+
+      - name: Invalidate
+        run: |
+          id=$(aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" --paths '/*' \
+            --query Invalidation.Id --output text)
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$DISTRIBUTION_ID" --id "$id"
+
+      - name: Verify
+        run: |
+          set -euo pipefail
+          status() { curl -sS -o /dev/null -w '%{http_code}' "$ORIGIN$1"; }
+          header() { curl -sSI "$ORIGIN$1" | tr -d '\r' | grep -i "^$2:" | cut -d' ' -f2-; }
+          expect() {
+            local what=$1 got=$2 want=$3
+            if [ "$got" != "$want" ]; then
+              echo "::error::$what: got '$got', want '$want'"; exit 1
+            fi
+            echo "ok  $what: $got"
+          }
+          css=$(cd web/dist/_astro && ls -- *.css | head -n1)
+          font=$(cd web/dist/_astro && ls -- *.woff2 | head -n1)
+          expect "GET /"                      "$(status /)"                    200
+          expect "GET /how-it-works/"         "$(status /how-it-works/)"       200
+          expect "GET /404.html"              "$(status /404.html)"            200
+          expect "GET /no-such-route/"        "$(status /no-such-route/)"      404
+          expect "index cache-control"        "$(header / cache-control)"      "public, max-age=300"
+          expect "asset cache-control"        "$(header "/_astro/$css" cache-control)" "public, max-age=31536000, immutable"
+          expect "asset content-type"         "$(header "/_astro/$css" content-type)"  "text/css"
+          expect "font content-type"          "$(header "/_astro/$font" content-type)" "font/woff2"

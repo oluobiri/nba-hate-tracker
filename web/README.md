@@ -43,7 +43,7 @@ npm run shot -- <url> out.png [w] [h]   # one screenshot of a running server
 
 The walk needs Chromium once: `npx playwright install chromium`. It writes screenshots of `/styleguide/` (normal,
 grayscale, deuteranopia) to `walk/out/`. CI (`.github/workflows/web.yml`) runs check, lint, test, build and walk on
-every PR touching `web/`; the pre-commit hook runs check, lint and test on commits touching `web/`.
+every PR, and is a required check on `main` alongside `python`; the pre-commit hook runs check, lint and test on commits touching `web/`.
 
 ## What ships
 

@@ -66,7 +66,7 @@
 <type>/<descriptive-name>
 ```
 
-Prefixes: `feature/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`
+Prefixes: `feature/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `build/`
 
 Examples: `feature/arctic-shift-client`, `fix/rate-limit-handling`, `refactor/season-config`
 

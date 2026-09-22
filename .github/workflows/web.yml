@@ -1,10 +1,10 @@
 name: web
 
+# Every PR, not only those touching web/: the site is built from the
+# published contract, so a pipeline change can break it, and a required
+# check that a path filter skips leaves the PR pending forever.
 on:
   pull_request:
-    paths:
-      - 'web/**'
-      - '.github/workflows/web.yml'
 
 defaults:
   run:

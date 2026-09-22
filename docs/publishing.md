@@ -96,7 +96,7 @@ curl -sI https://courtsentiment.com/media/logos/1610612737.svg
 
 - **Identity:** GitHub Actions assumes `github-courtsentiment-web-deploy` through OIDC. The job holds `id-token: write` and `contents: read`, nothing else, and no long-lived key exists. The role ARN is the repository secret `AWS_WEB_DEPLOY_ROLE_ARN` (it carries the account id; the repository is public). Bucket and distribution are literals in the workflow.
 - **Build:** `npm ci`, then `npm run build` against the published contract, the same bytes a visitor's build would read. `SITE_INDEXABLE` is set in the workflow file; every page is `noindex` until it says `true`, so that line is the launch switch.
-- **Sync**, three passes, so no page ever references a missing asset: hashed assets under `_astro/` first, without delete; then everything else, with delete, which removes stale routes; then `_astro/` again with delete, which uploads nothing and prunes the assets no page names any more.
+- **Sync**, three passes, so no page at the origin ever references a missing asset: hashed assets under `_astro/` first, without delete; then everything else, with delete, which removes stale routes; then `_astro/` again with delete, which uploads nothing and prunes the assets no page names any more. A visitor holding a page cached in the five minutes before a deploy can miss one pruned asset until that copy expires; the short page lifetime bounds it.
 - **Invalidate** `/*` and wait for completion.
 - **Verify** through the public origin, failing the job on any miss: `/`, one route and `/404.html` return 200, an unknown route 404, and the headers on the index, a stylesheet and a font are the ones below.
 
@@ -107,7 +107,7 @@ One run at a time (a concurrency group, no cancellation): two close merges queue
 | `_astro/*` (hashed) | `public, max-age=31536000, immutable` |
 | everything else | `public, max-age=300` |
 
-Content types are guessed from the extension by the sync; the verify step checks a stylesheet and a font because those are the guesses that vary by machine.
+Content types are guessed from the extension by the sync, except `.woff2`, whose guess varies by machine and is set explicitly; the verify step checks a stylesheet and a font.
 
 ### Running it by hand
 
@@ -118,7 +118,7 @@ gh workflow run deploy-web
 gh run watch
 ```
 
-The same applies after a media drop that changed ids. The role trusts the `main` ref only, so a dispatch from any other branch fails at the credentials step by design.
+The same applies after a media drop that changed ids. The job runs on the `main` ref only, matching the role's trust policy; a dispatch from any other branch is skipped.
 
 ## Runbook
 

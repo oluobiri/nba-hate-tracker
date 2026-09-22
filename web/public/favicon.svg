@@ -1,1 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#0b0b0d"/><rect x="6" y="20" width="6" height="6" fill="#ff3d1f"/><rect x="13" y="14" width="6" height="12" fill="#a8a497"/><rect x="20" y="8" width="6" height="18" fill="#5cc8ff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The mark: a ball whose body is the sentiment bar. Colours are the ink,
+       heat, neu and ice tokens, pinned by src/mark.test.ts. An XML comment
+       cannot contain a double hyphen, so the token names are spelled bare.
+       Ball r=12.5 at centre; bands split at 0.38 r; seams 0.9 wide, the
+       curved pair circular arcs through the 45 degree points, apex on the
+       band edge. Nothing is clipped: bands and seams overshoot the ball and
+       one ink path (the rounded square minus the ball, even-odd) covers
+       everything outside it, so the edge is one antialiased boundary and
+       the seam ends sit under solid ink. -->
+  <rect x="3" y="3" width="26" height="26" fill="#a8a497"/>
+  <rect x="3" y="3" width="8.25" height="26" fill="#ff3d1f"/>
+  <rect x="20.75" y="3" width="8.25" height="26" fill="#5cc8ff"/>
+  <g fill="none" stroke="#0b0b0d" stroke-width="0.9">
+    <path d="M16 3v26M3 16h26"/>
+    <path d="M5.12 5.5A12.55 12.55 0 0 1 5.12 26.5M26.88 5.5A12.55 12.55 0 0 0 26.88 26.5"/>
+  </g>
+  <path fill="#0b0b0d" fill-rule="evenodd" d="M5 0h22a5 5 0 0 1 5 5v22a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5V5a5 5 0 0 1 5-5ZM16 3.5a12.5 12.5 0 1 0 0 25a12.5 12.5 0 1 0 0-25Z"/>
+</svg>

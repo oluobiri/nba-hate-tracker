@@ -30,12 +30,14 @@ export interface DeltaDotProps {
   averageLabel?: string
   /** Print each row's distance from the tick, in points, as a last column. */
   showDelta?: boolean
+  /** The first row's rank, when the list continues one shown above it. */
+  start?: number
 }
 
 // Within this share of either end, the tick's label hangs inward instead of centred.
 const EDGE = 22
 
-export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false }: DeltaDotProps) {
+export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false, start = 1 }: DeltaDotProps) {
   const [lo, hi] = domain
   const pct = (v: number): number => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 50)
   const style = (v: number): CSSProperties => ({ '--dd-x': `${pct(v)}%`, '--dd-avg': `${pct(average)}%` }) as CSSProperties
@@ -58,7 +60,7 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
           return (
             <li key={r.key} className={`dd__row${r.tag ? ' dd__row--tagged' : ''}`}>
               <a className="dd__link" href={r.href} aria-label={text}>
-                <span className="dd__rank mono">{i + 1}</span>
+                <span className="dd__rank mono">{start + i}</span>
                 {r.logo ? <img className="dd__logo" src={r.logo} alt="" width="20" height="20" loading="lazy" decoding="async" /> : <span className="dd__logo" />}
                 <span className="dd__label">
                   {r.label}

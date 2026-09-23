@@ -32,6 +32,11 @@ const nested = (m: Map<string, Map<string, Counts>>, a: string, b: string, c: Co
   m.set(a, inner)
 }
 
+/** One side of the matrix as cells keyed by the other side, one key left out (the team's own row or column). */
+export function sideCells(side: Map<string, Counts> | undefined, except: string): (Counts & { key: string })[] {
+  return [...(side ?? [])].filter(([k]) => k !== except).map(([key, counts]) => ({ key, ...counts }))
+}
+
 /** The whole matrix from player-grain rows, once per build. */
 export function fanRosterMatrix(rows: readonly MatrixRow[]): Matrix {
   const byFan = new Map<string, Map<string, Counts>>()

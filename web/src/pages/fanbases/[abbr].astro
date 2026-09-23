@@ -1,22 +1,424 @@
 ---
+// One fanbase as a row and a column of the fan × roster matrix, told as
+// lists: what these fans say about everyone, what everyone says about
+// their players. Four sections behind a rail; no island, the two show-all
+// controls are <details>.
+import type { InferGetStaticPropsType } from 'astro'
+
+import { DeltaDot, type DeltaDotRow } from '../../components/DeltaDot'
+import { GapTable } from '../../components/GapTable'
+import { MethodNote } from '../../components/MethodNote'
+import { RankNumeral } from '../../components/RankNumeral'
+import SectionRail from '../../components/SectionRail.astro'
+import { SentimentBar } from '../../components/SentimentBar'
+import { StatFigure } from '../../components/StatFigure'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
+import { type DeltaLists, type DeltaRow, deltaLists, fanbaseVerdict, fanRosterMatrix, gapRows, gapSummary, leagueSummary, sideCells, targetsSummary } from '../../lib/fanbase'
+import { nickname, possessive } from '../../lib/fans'
+import { fmtInt, fmtPct, fmtSigned, ordinal } from '../../lib/format'
+import { groupBy } from '../../lib/group'
+import { countsOf, negRate, neighbours, neuRate, posRate, rankBy, sumCounts } from '../../lib/metrics'
+import type { Counts } from '../../lib/types'
+
+// Rows shown before "Show all".
+const LIST_TOP = 5
 
 export async function getStaticPaths() {
-  const { tables } = await getSeason()
-  return tables.teams.map((team) => ({ params: { abbr: team.abbreviation.toLowerCase() }, props: { team } }))
+  const { manifest, tables } = await getSeason()
+  const floor = manifest.rules.floors.fanbase_min_n
+  const players = new Map(tables.players.map((p) => [p.attributed_player, p]))
+  const teams = new Map(tables.teams.map((t) => [t.team, t]))
+  const fanRows = tables.player_fan_team.map((r) => ({ ...countsOf(r), fan: r.fan_team, player: r.attributed_player, roster: players.get(r.attributed_player)?.roster_team ?? null }))
+  const byPlayer = groupBy(fanRows, (r) => r.player)
+  const rosters = groupBy(tables.players.filter((p) => p.roster_team !== null), (p) => p.roster_team!)
+  const matrix = fanRosterMatrix(fanRows)
+  // Rank 1 is the highest negative rate; every fanbase is ranked, there is no minimum here.
+  const ranked = rankBy(tables.fan_team_overall.map((r) => ({ ...countsOf(r), team: r })), 'neg', 0)
+  const link = (team: string) => `/fanbases/${teams.get(team)!.abbreviation.toLowerCase()}/`
+  const describeRoster = (roster: string) => ({ label: nickname(roster), href: link(roster), logo: teams.get(roster)!.logo_url })
+  const describeFans = (fan: string) => ({ label: possessive(fan), href: link(fan), logo: teams.get(fan)!.logo_url })
+
+  return ranked.map((r) => {
+    const team = r.row.team.fan_team
+    const { prev, next } = neighbours(ranked, (x) => x.team.fan_team, team)
+    const neighbour = (x: typeof prev) => (x ? { team: x.row.team.fan_team, href: link(x.row.team.fan_team), rank: x.rank! } : null)
+    const rosterAverage = matrix.rosterAverage.get(team) ?? sumCounts([])
+    const { team: _row, ...counts } = r.row
+    return {
+      params: { abbr: r.row.team.abbreviation.toLowerCase() },
+      props: {
+        team: r.row.team,
+        counts: counts as Counts,
+        rank: r.rank!,
+        of: ranked.length,
+        prev: neighbour(prev),
+        next: neighbour(next),
+        gap: gapRows(team, rosters.get(team) ?? [], byPlayer, floor),
+        targets: deltaLists(sideCells(matrix.byFan.get(team), team), (roster) => matrix.rosterAverage.get(roster) ?? sumCounts([]), floor, describeRoster),
+        league: deltaLists(sideCells(matrix.byRoster.get(team), team), () => rosterAverage, floor, describeFans),
+      },
+    }
+  })
 }
 
-const { team } = Astro.props
-const title = `${team.team} fans`
+type Props = InferGetStaticPropsType<typeof getStaticPaths>
+const { team, counts, rank, of, prev, next, gap, targets, league } = Astro.props
+const { manifest } = await getSeason()
+const floor = manifest.rules.floors.fanbase_min_n
+const name = team.fan_team
+const fans = possessive(name)
+const title = fans
+const verdict = fanbaseVerdict(name, counts, { rank, of })
+
+const SECTIONS = [
+  { id: 'verdict', label: 'Verdict' },
+  { id: 'own', label: 'Their own players' },
+  { id: 'targets', label: 'Grudges and flowers' },
+  { id: 'league', label: 'The league on them' },
+]
+
+// Δ lists plot the Δ itself, the tick at zero; each link speaks the raw rate too.
+const pts = (v: number): string => fmtSigned(v, 0)
+const spoken = (r: DeltaRow, subject: string, object: string, word: string): string => {
+  const points = Math.abs(Math.round(100 * r.delta))
+  const against = points === 0 ? 'at' : `${points} points ${r.delta > 0 ? 'above' : 'below'}`
+  return `${subject} on ${object}: ${fmtPct(r.rate, 0)} ${word}, ${against} the usual ${fmtPct(r.baseline, 0)}, from ${fmtInt(r.n)} comments.`
+}
+const dotRows = (rows: readonly DeltaRow[], text: (r: DeltaRow) => string): DeltaDotRow[] =>
+  rows.map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, text: text(r) }))
+const targetRows = (lists: DeltaLists, which: 'grudges' | 'flowers') =>
+  dotRows(lists[which], (r) => spoken(r, fans, `${r.label} players`, which === 'grudges' ? 'negative' : 'positive'))
+const leagueRows = (lists: DeltaLists, which: 'grudges' | 'flowers') =>
+  dotRows(lists[which], (r) => spoken(r, r.label, `${nickname(name)} players`, which === 'grudges' ? 'negative' : 'positive'))
+const lists = [
+  { id: 'targets', data: targets, rows: targetRows, lede: targetsSummary(name, targets, floor), heads: ['Grudges', 'Flowers'] },
+  { id: 'league', data: league, rows: leagueRows, lede: leagueSummary(name, league, floor), heads: ['Hardest on them', 'Warmest to them'] },
+] as const
 ---
 
-<Base title={title} description={`What ${team.team} fans think of the league, and what the league thinks of them.`}>
-  <main id="main" class="wrap page">
-    <header>
-      <p class="eyebrow">{team.abbreviation} · {team.conference}</p>
-      <h1>{title}</h1>
+<Base title={title} description={verdict}>
+  <main id="main" class="wrap page tp">
+    <header class="tp__head">
+      <div class="tp__head-text">
+        <p class="eyebrow">{team.abbreviation} · {team.conference} · {manifest.season}</p>
+        <h1 class="tp__name">{title}</h1>
+        <p class="tp__verdict">{verdict}</p>
+      </div>
+      <img class="tp__logo" src={team.logo_url} alt="" width="72" height="72" decoding="async" />
     </header>
-    <p class="page__lede">The team page is on its way.</p>
+
+    <div class="tp__grid">
+      <div class="tp__rail"><SectionRail sections={SECTIONS} /></div>
+      <div class="tp__sections">
+        <section id="verdict" class="tp__section" aria-labelledby="verdict-h">
+          <h2 id="verdict-h">Verdict</h2>
+          <SentimentBar counts={counts} size="hero" subject={fans} />
+          <div class="tp__figures">
+            <StatFigure figure={fmtPct(negRate(counts))} label="Negative" detail={`${fmtInt(counts.neg)} comments`} tone="neg" />
+            <StatFigure figure={fmtPct(neuRate(counts))} label="Neutral" detail={`${fmtInt(counts.neu)} comments`} tone="neu" />
+            <StatFigure figure={fmtPct(posRate(counts))} label="Positive" detail={`${fmtInt(counts.pos)} comments`} tone="pos" />
+          </div>
+          <p class="tp__n mono">n={fmtInt(counts.total)} comments by {fans} about tracked players</p>
+          <p class="tp__chip" aria-label={`${ordinal(rank)} saltiest fanbase of ${fmtInt(of)}, by negative rate`}>
+            <span class="tp__chip-rank">
+              <span class="tp__chip-hash" aria-hidden="true">#</span>
+              <RankNumeral rank={rank} official />
+            </span>
+            <span class="tp__chip-text">saltiest of {fmtInt(of)}</span>
+          </p>
+          <nav class="tp__pn" aria-label="Neighbours by negative rate">
+            {
+              prev ? (
+                <a class="tp__pn-link" href={prev.href} rel="prev">
+                  <span class="tp__pn-dir mono">← {ordinal(prev.rank)}</span>
+                  <span class="tp__pn-name">{possessive(prev.team)}</span>
+                </a>
+              ) : (
+                <span class="tp__pn-link tp__pn-link--none mono">Saltiest of {fmtInt(of)}</span>
+              )
+            }
+            {
+              next ? (
+                <a class="tp__pn-link tp__pn-link--next" href={next.href} rel="next">
+                  <span class="tp__pn-dir mono">{ordinal(next.rank)} →</span>
+                  <span class="tp__pn-name">{possessive(next.team)}</span>
+                </a>
+              ) : (
+                <span class="tp__pn-link tp__pn-link--next tp__pn-link--none mono">Least salty of {fmtInt(of)}</span>
+              )
+            }
+          </nav>
+          <MethodNote kind="method">
+            A fanbase is the r/NBA flair its commenters wear, the team badge beside a username; comments with no flair are not counted here. A fanbase needs at
+            least {fmtInt(floor)} comments about a player or a roster to be read against it, and every rate is from summed counts, never a mean of rates.
+          </MethodNote>
+        </section>
+
+        <section id="own" class="tp__section" aria-labelledby="own-h">
+          <h2 id="own-h">Their own players</h2>
+          <p class="tp__lede">{gapSummary(name, gap, floor)}</p>
+          {gap.length > 0 && <GapTable rows={gap} caption={`${fans} on their own players, against every other fanbase`} floor={floor} />}
+          <p class="tp__note mono">Rival fans: every other flaired fanbase, summed. Δ in points, own fans minus rivals.</p>
+        </section>
+
+        {
+          lists.map((l) => (
+            <section id={l.id} class="tp__section" aria-labelledby={`${l.id}-h`}>
+              <h2 id={`${l.id}-h`}>{SECTIONS.find((s) => s.id === l.id)!.label}</h2>
+              <p class="tp__lede">{l.lede}</p>
+              {l.data.eligible >= 2 && (
+                <div class="tp__lists">
+                  {(['grudges', 'flowers'] as const).map((which, i) => {
+                    const rows = l.rows(l.data, which)
+                    const rest = rows.slice(LIST_TOP)
+                    return (
+                      <div class="tp__list">
+                        <h3>{l.heads[i]}</h3>
+                        <DeltaDot rows={rows.slice(0, LIST_TOP)} average={0} domain={l.data.domain} format={pts} tone={which === 'grudges' ? 'neg' : 'pos'} averageLabel="Roster average, pts" />
+                        {rest.length > 0 && (
+                          <details class="tp__more">
+                            <summary>Show all {fmtInt(rows.length)}</summary>
+                            <DeltaDot rows={rest} average={0} domain={l.data.domain} format={pts} tone={which === 'grudges' ? 'neg' : 'pos'} averageLabel="Roster average, pts" start={LIST_TOP + 1} />
+                          </details>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          ))
+        }
+      </div>
+    </div>
   </main>
 </Base>
+
+<style>
+  .tp {
+    gap: 24px;
+  }
+  .tp__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 24px;
+    align-items: end;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tp__head-text {
+    display: grid;
+    gap: 10px;
+    align-content: end;
+    min-width: 0;
+  }
+  .tp__head-text .eyebrow {
+    margin: 0;
+  }
+  .tp__name {
+    font-size: clamp(44px, 7vw, 96px);
+    overflow-wrap: anywhere;
+  }
+  .tp__verdict {
+    margin: 0;
+    max-width: 48ch;
+    font-size: clamp(18px, 2.2vw, 24px);
+    line-height: 1.3;
+    color: var(--bone-2);
+    text-wrap: balance;
+  }
+  /* The logo sits beside the name: gray, as every logo beside a team name. */
+  .tp__logo {
+    width: 72px;
+    height: 72px;
+    align-self: start;
+    margin-top: 28px;
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+  .tp__grid {
+    display: contents;
+  }
+  .tp__rail {
+    display: contents;
+  }
+  .tp__sections {
+    display: grid;
+    gap: 40px;
+    min-width: 0;
+  }
+  .tp__section {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    scroll-margin-top: 112px;
+  }
+  .tp__lede {
+    margin: 0;
+    max-width: 70ch;
+    font-size: 16px;
+    color: var(--bone-2);
+  }
+  .tp__note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--mute);
+  }
+  .tp__figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .tp__n {
+    margin: 0;
+    font-size: 13px;
+    color: var(--bone-2);
+  }
+  .tp__chip {
+    --chip-line: var(--bone);
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: max-content;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--line-2);
+  }
+  .tp__chip::after {
+    content: '';
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    height: 3px;
+    background: var(--chip-line);
+  }
+  .tp__chip-rank {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 2px;
+  }
+  .tp__chip-hash {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--mute);
+  }
+  .tp__chip-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bone-2);
+  }
+  .tp__pn {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .tp__pn-link {
+    display: grid;
+    gap: 2px;
+    min-height: 44px;
+    padding: 8px 0;
+    text-decoration: none;
+    color: inherit;
+    border-top: 1px solid var(--line);
+  }
+  .tp__pn-link--next {
+    text-align: right;
+  }
+  .tp__pn-link--none {
+    font-size: 12px;
+    color: var(--mute);
+    align-content: center;
+  }
+  .tp__pn-dir {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+  }
+  .tp__pn-name {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 20px;
+    text-transform: uppercase;
+  }
+  .tp__pn-link:hover .tp__pn-name {
+    text-decoration: underline;
+  }
+  .tp__lists {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px 32px;
+  }
+  .tp__list {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  .tp__more {
+    display: grid;
+    gap: 10px;
+  }
+  .tp__more summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    list-style: none;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bone-2);
+    border-top: 1px solid var(--line);
+  }
+  .tp__more summary::-webkit-details-marker {
+    display: none;
+  }
+  .tp__more summary::before {
+    content: '+';
+    font-size: 16px;
+    color: var(--mute);
+  }
+  .tp__more[open] summary::before {
+    content: '−';
+  }
+  .tp__more summary:hover {
+    color: var(--bone);
+  }
+  @media (max-width: 760px) {
+    .tp__head {
+      grid-template-columns: minmax(0, 1fr) 56px;
+      gap: 0 12px;
+      align-items: start;
+    }
+    .tp__logo {
+      width: 56px;
+      height: 56px;
+    }
+    .tp__figures {
+      gap: 8px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .tp__grid {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 40px;
+      align-items: start;
+    }
+    .tp__rail {
+      display: block;
+      align-self: stretch;
+    }
+    .tp__section {
+      scroll-margin-top: 80px;
+    }
+  }
+</style>

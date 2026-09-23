@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deltaLists, fanbaseVerdict, fanRosterMatrix, fewEligibleSentence, type GapRow, gapRows, gapSummary, leagueSummary, type MatrixRow, targetsSummary } from './fanbase'
+import { deltaLists, fanbaseVerdict, fanRosterMatrix, fewEligibleSentence, type GapRow, gapRows, gapSummary, leagueSummary, type MatrixRow, sideCells, targetsSummary } from './fanbase'
 import { groupBy } from './group'
 import type { Counts } from './types'
 
@@ -39,6 +39,11 @@ describe('fanRosterMatrix', () => {
 
   it('reads a roster average over every fanbase from summed counts', () => {
     expect(m.rosterAverage.get(BOS)).toEqual(c(110, 105, 85))
+  })
+
+  it('reads one side as cells, the own key left out', () => {
+    expect(sideCells(m.byFan.get(LAL), LAL).map((cell) => cell.key).toSorted()).toEqual([BOS, MIA])
+    expect(sideCells(undefined, LAL)).toEqual([])
   })
 
   it('drops free agents: no roster, no column', () => {
@@ -80,8 +85,9 @@ describe('gapRows', () => {
   })
 })
 
+const gap = (name: string, delta: number | null, ownN = 100): GapRow => ({ name, slug: name, position: null, headshot: '', own: c(0, ownN, 0), rivals: c(1, 1, 1), delta })
+
 describe('gapSummary', () => {
-  const gap = (name: string, delta: number | null, ownN = 100): GapRow => ({ name, slug: name, position: null, headshot: '', own: c(0, ownN, 0), rivals: c(1, 1, 1), delta })
 
   it('counts the players own fans are kinder to and names both extremes', () => {
     const rows = [gap('A', -0.19), gap('B', -0.12), gap('C', 0.02)]
@@ -105,10 +111,7 @@ describe('gapSummary', () => {
 
 const m = fanRosterMatrix(MATRIX_ROWS)
 const describeRoster = (team: string) => ({ label: team.split(' ').at(-1)!, href: `/fanbases/${team.slice(0, 3).toLowerCase()}/`, logo: `${team}.svg` })
-const targets = () => {
-  const cells = [...m.byFan.get(LAL)!].filter(([roster]) => roster !== LAL).map(([key, counts]) => ({ key, ...counts }))
-  return deltaLists(cells, (roster) => m.rosterAverage.get(roster)!, FLOOR, describeRoster)
-}
+const targets = () => deltaLists(sideCells(m.byFan.get(LAL), LAL), (roster) => m.rosterAverage.get(roster)!, FLOOR, describeRoster)
 
 describe('deltaLists', () => {
   it('ranks each cell by its Δ against its own key\'s baseline, both sentiments', () => {

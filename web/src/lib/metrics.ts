@@ -58,6 +58,94 @@ export function rankBy<T extends Counts>(rows: readonly T[], lens: Lens, thresho
   return sorted.map((x) => ({ ...x, rank: x.row.total >= threshold ? ++r : null }))
 }
 
+/** The ranked neighbours of one row: the row a place above and a place below, over ranked rows only. */
+export function neighbours<T extends Counts>(
+  ranked: readonly Ranked<T>[],
+  key: (row: T) => string,
+  k: string,
+): { prev: Ranked<T> | null; next: Ranked<T> | null } {
+  const rows = ranked.filter((r) => r.rank !== null)
+  const i = rows.findIndex((r) => key(r.row) === k)
+  if (i < 0) return { prev: null, next: null }
+  return { prev: rows[i - 1] ?? null, next: rows[i + 1] ?? null }
+}
+
+/**
+ * Trailing window over a spined series: entry i sums the counts of rows
+ * i-k+1..i. A null row is a week with no comments. Windows short of k at the
+ * start still sum what they have; a window with no comments at all is null.
+ */
+export function rollingCounts(rows: readonly (Counts | null)[], k: number): (Counts | null)[] {
+  return rows.map((_, i) => {
+    const window = rows.slice(Math.max(0, i - k + 1), i + 1).filter((r): r is Counts => r !== null)
+    const c = sumCounts(window)
+    return c.total ? c : null
+  })
+}
+
+/** A rate over each trailing window, null where the window has fewer than `floor` comments. */
+export function rollingRate(
+  rows: readonly (Counts | null)[],
+  k: number,
+  rate: (c: Counts) => number,
+  floor: number,
+): (number | null)[] {
+  return rollingCounts(rows, k).map((c) => (c && c.total >= floor ? rate(c) : null))
+}
+
+/** Pearson correlation; null with fewer than three points or no variance on either side. */
+export function pearson(xs: readonly number[], ys: readonly number[]): number | null {
+  const n = Math.min(xs.length, ys.length)
+  if (n < 3) return null
+  const mean = (v: readonly number[]) => v.slice(0, n).reduce((a, b) => a + b, 0) / n
+  const mx = mean(xs)
+  const my = mean(ys)
+  let sxy = 0
+  let sxx = 0
+  let syy = 0
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i]! - mx
+    const dy = ys[i]! - my
+    sxy += dx * dy
+    sxx += dx * dx
+    syy += dy * dy
+  }
+  if (!sxx || !syy) return null
+  return sxy / Math.sqrt(sxx * syy)
+}
+
+export interface BoxLine {
+  pts: number
+  fgm: number
+  fga: number
+  ftm: number
+  fta: number
+  oreb: number
+  dreb: number
+  stl: number
+  ast: number
+  blk: number
+  pf: number
+  tov: number
+}
+
+/** Hollinger's Game Score: one number for a night's box line. */
+export function gameScore(g: BoxLine): number {
+  return (
+    g.pts +
+    0.4 * g.fgm -
+    0.7 * g.fga -
+    0.4 * (g.fta - g.ftm) +
+    0.7 * g.oreb +
+    0.3 * g.dreb +
+    g.stl +
+    0.7 * g.ast +
+    0.7 * g.blk -
+    0.4 * g.pf -
+    g.tov
+  )
+}
+
 /** Rank movement per row between two views of the same lens: official rank minus current rank, null when either is unranked. */
 export function rankDeltas<T extends Counts>(
   current: readonly Ranked<T>[],

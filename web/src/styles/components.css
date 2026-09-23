@@ -713,6 +713,11 @@
   .dd__label {
     font-size: 14px;
   }
+  /* The value column already carries the extremes; only the tick keeps its label. */
+  .dd__lo,
+  .dd__hi {
+    display: none;
+  }
 }
 
 /* FanbaseIndex: the toggle above a DeltaDot. */

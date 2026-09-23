@@ -1,5 +1,6 @@
 ---
 import { BoardRow } from '../components/BoardRow'
+import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
@@ -12,7 +13,7 @@ import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitle
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
-import { countsOf, negRate, posRate, rankBy } from '../lib/metrics'
+import { countsOf, negRate, posRate, rankBy, sumCounts } from '../lib/metrics'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
 import type { Sentiment } from '../lib/types'
@@ -61,6 +62,10 @@ const belt = weeklyHolders(temporal, 'neg', manifest.rules.floors.belt_min_n)
 const flowers = weeklyHolders(temporal, 'pos', manifest.rules.floors.belt_min_n)
 const strongest = belt.toSorted((a, b) => b.rate - a.rate)[0]!
 const weakest = flowers.toSorted((a, b) => a.rate - b.rate)[0]!
+const fans = tables.fan_team_overall.map((r) => ({ ...r, ...countsOf(r) })).toSorted((a, b) => negRate(b) - negRate(a))
+const leagueNeg = negRate(sumCounts(fans))
+const fanRows = fans.slice(0, 8).map((r) => ({ key: r.abbreviation, label: `${r.abbreviation} fans`, href: `/fanbases/${r.abbreviation.toLowerCase()}/`, value: negRate(r), n: r.total, logo: r.logo_url }))
+const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate))] as const
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -250,6 +255,12 @@ const weakest = flowers.toSorted((a, b) => a.rate - b.rate)[0]!
         <WeekAxis weeks={weeks} />
         <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" merge />
       </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>DeltaDot</h2>
+      <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Ranks read down.</p>
+      <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
     </section>
 
     <section class="guide__section">

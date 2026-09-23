@@ -587,3 +587,126 @@
   overscroll-behavior-x: contain;
   padding-bottom: 8px;
 }
+
+/* DeltaDot: dots on one zoomed axis, an average tick through every row. */
+.dd {
+  --dd-cols: 28px 20px minmax(110px, 1fr) minmax(120px, 3fr) 56px;
+  --dd-ink: var(--bone);
+  display: grid;
+  gap: 4px;
+}
+.dd--neg {
+  --dd-ink: var(--heat);
+}
+.dd--pos {
+  --dd-ink: var(--ice);
+}
+.dd__head {
+  display: grid;
+  grid-template-columns: var(--dd-cols);
+  align-items: end;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--mute);
+}
+.dd__lo,
+.dd__hi,
+.dd__avg {
+  grid-column: 4;
+  grid-row: 1;
+  white-space: nowrap;
+}
+.dd__hi {
+  justify-self: end;
+}
+.dd__avg {
+  justify-self: start;
+  margin-left: var(--dd-avg);
+  transform: translateX(-50%);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--bone-2);
+  color: var(--bone-2);
+}
+.dd__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dd__row {
+  border-top: 1px solid var(--line);
+}
+.dd__link {
+  display: grid;
+  grid-template-columns: var(--dd-cols);
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  text-decoration: none;
+  color: inherit;
+}
+.dd__link:hover {
+  background: var(--ink-2);
+}
+.dd__link:hover .dd__label {
+  text-decoration: underline;
+}
+.dd__rank {
+  font-size: 12px;
+  text-align: right;
+  color: var(--mute);
+}
+.dd__logo {
+  width: 20px;
+  height: 20px;
+  filter: grayscale(1);
+  opacity: 0.8;
+}
+.dd__label {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dd__track {
+  position: relative;
+  height: 24px;
+  min-width: 0;
+}
+.dd__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--dd-avg);
+  border-left: 1px solid var(--bone-2);
+}
+.dd__dot {
+  position: absolute;
+  top: 50%;
+  left: var(--dd-x);
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--dd-ink);
+  outline: 2px solid var(--ink);
+}
+.dd__value {
+  font-size: 13px;
+  text-align: right;
+  color: var(--bone-2);
+}
+@media (max-width: 640px) {
+  .dd {
+    --dd-cols: 24px 18px minmax(64px, 1fr) minmax(90px, 2fr) 48px;
+  }
+  .dd__link,
+  .dd__head {
+    gap: 6px;
+  }
+  .dd__label {
+    font-size: 14px;
+  }
+}

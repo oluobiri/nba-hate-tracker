@@ -150,8 +150,8 @@
   .lb__hero-figure {
     height: auto;
     min-height: 0;
-    align-self: start;
-    margin-top: 26px;
+    /* Beside the name, not the kicker: centred on the hero text. */
+    align-self: center;
     /* The lens switch slides the mug sideways; at the viewport's edge that must clip, not scroll. */
     overflow: hidden;
   }

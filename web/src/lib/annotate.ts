@@ -3,7 +3,7 @@
 // arguments. The output doubles as the board's text alternative.
 import { fmtInt, fmtPct, ordinal } from './format'
 import { LENS_META, negRate, polarization, posRate, rankBy, type Ranked } from './metrics'
-import type { Counts, Lens } from './types'
+import { LENSES, type Counts, type Lens } from './types'
 
 export interface Named extends Counts {
   name: string
@@ -95,4 +95,73 @@ export function heroParts<T extends Named>({ ranked, lens, threshold, official }
 export function heroSentence<T extends Named>(input: AnnotateInput<T>): string {
   const { before, leader, after } = heroParts(input)
   return `${before}${leader?.row.name ?? ''}${after}`
+}
+
+// The player page's verdict: one sentence from his official ranks, with
+// the contrast the numbers alone do not say: hated and defended, or
+// hated and alone. Copy is the owner's; the tests pin it so a rewrite is
+// one commit.
+
+export interface VerdictInput {
+  name: string
+  counts: Counts
+  /** The official minimum, from the manifest. */
+  official: number
+  /** His official rank per lens; null when he is below the minimum. */
+  ranks: Record<Lens, number | null>
+  /** His rank per lens over every tracked player, no minimum. */
+  allRanks: Record<Lens, number>
+  /** How many players are tracked. */
+  tracked: number
+  /** The room's own counts: every official player summed. */
+  league: Counts
+}
+
+export type Standing = 'hated-defended' | 'hated-alone' | 'loved-argued' | 'loved-settled' | 'unofficial'
+
+/** The verdict sentence and which of the four standings it names. */
+export function playerVerdict(i: VerdictInput): { sentence: string; standing: Standing } {
+  const neg = i.ranks.neg
+  const pos = i.ranks.pos
+  if (neg === null || pos === null) return { sentence: unofficialNote(i), standing: 'unofficial' }
+  if (neg <= pos) {
+    const defended = posRate(i.counts) >= posRate(i.league)
+    return defended
+      ? { sentence: `r/NBA's ${ordinal(neg)} most hated player, and its ${ordinal(pos)} most loved: hated and defended.`, standing: 'hated-defended' }
+      : { sentence: `r/NBA's ${ordinal(neg)} most hated player, and only its ${ordinal(pos)} most loved: hated and alone.`, standing: 'hated-alone' }
+  }
+  const argued = negRate(i.counts) >= negRate(i.league)
+  return argued
+    ? { sentence: `r/NBA's ${ordinal(pos)} most loved player, and its ${ordinal(neg)} most hated: loved and argued about.`, standing: 'loved-argued' }
+    : { sentence: `r/NBA's ${ordinal(pos)} most loved player, and only its ${ordinal(neg)} most hated: loved, no argument.`, standing: 'loved-settled' }
+}
+
+/** The sentence for a player under the official minimum: how far short, and where he would rank among everyone tracked. */
+export function unofficialNote(i: VerdictInput): string {
+  const short = i.official - i.counts.total
+  return `Unofficial: ${fmtInt(i.counts.total)} comments, ${fmtInt(short)} short of the official minimum of ${fmtInt(i.official)}. Among all ${fmtInt(i.tracked)} tracked players he would rank ${ordinal(i.allRanks.neg)} most hated.`
+}
+
+export interface RankChip {
+  lens: Lens
+  rank: number
+  /** False when the rank is over every tracked player rather than the official board. */
+  official: boolean
+  /** "3rd most hated". */
+  label: string
+  /** The leaderboard in that lens; an unofficial player's chip opens the board with every row shown. */
+  href: string
+}
+
+/** Four chips, one per lens, each linking to the leaderboard in that lens. */
+export function rankChips(i: VerdictInput): RankChip[] {
+  return LENSES.map((lens) => {
+    const official = i.ranks[lens] !== null
+    const rank = i.ranks[lens] ?? i.allRanks[lens]
+    const q = new URLSearchParams()
+    if (lens !== 'neg') q.set('lens', lens)
+    if (!official) q.set('all', '1')
+    const s = q.toString()
+    return { lens, rank, official, label: `${ordinal(rank)} ${LENS_META[lens].hero}`, href: s ? `/?${s}` : '/' }
+  })
 }

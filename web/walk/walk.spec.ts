@@ -200,6 +200,44 @@ test('a week of the timeline opens its readout on focus', async ({ page }) => {
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
+// The team page: no island; a rail, and a <details> under each list for the rest of it.
+test('the team page controls are touch-sized', async ({ page }) => {
+  await page.goto('/fanbases/lal/', { waitUntil: 'networkidle' })
+  const controls = [
+    ...(await page.locator('.rail__link').all()),
+    ...(await page.locator('.tp__chip').all()),
+    ...(await page.locator('.tp__pn-link').all()),
+    ...(await page.locator('.tp__more summary').all()),
+    ...(await page.locator('.gap__link').all()),
+  ]
+  for (const c of controls) expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+})
+
+test('show all opens the rest of a list on the same axis, with no script', async ({ browser }, info) => {
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: info.project.use.viewport })
+  const page = await context.newPage()
+  await page.goto('/fanbases/lal/', { waitUntil: 'load' })
+  const more = page.locator('#targets .tp__more').first()
+  const summary = more.locator('summary')
+  await expect(summary).toHaveText(/^Show all \d+$/)
+  const total = Number(/\d+/.exec((await summary.textContent())!)![0])
+  const shown = await page.locator('#targets .tp__list').first().locator('> .dd .dd__row').count()
+  await expect(more.locator('.dd__row').first()).toBeHidden()
+  await summary.click()
+  await expect(more).toHaveAttribute('open', '')
+  expect(await more.locator('.dd__row').count()).toBe(total - shown)
+  await expect(more.locator('.dd__rank').first()).toHaveText(String(shown + 1))
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+  await context.close()
+})
+
+test('the team rail marks the section in view', async ({ page }) => {
+  await page.goto('/fanbases/lal/', { waitUntil: 'networkidle' })
+  await page.locator('#league').scrollIntoViewIfNeeded()
+  await page.evaluate(() => window.scrollBy(0, 200))
+  await expect(page.locator('.rail__link[href="#league"]')).toHaveAttribute('aria-current', 'location')
+})
+
 // Edge states, one route each. The names are the data's, not a rule's.
 test('a free agent has no roster line and still gets fans', async ({ page }) => {
   await page.goto('/player/chris-paul/', { waitUntil: 'networkidle' })
@@ -237,4 +275,32 @@ test('a thin receipt cell shows all it has, with no show-all', async ({ page }) 
   await page.goto('/player/aaron-wiggins/', { waitUntil: 'networkidle' })
   expect(await page.locator('.rc .exhibit').count()).toBe(1)
   await expect(page.getByRole('button', { name: /^Show all/ })).toHaveCount(0)
+})
+
+test('a one-player roster is still a table, and two fanbases still rank', async ({ page }) => {
+  await page.goto('/fanbases/bkn/', { waitUntil: 'networkidle' })
+  expect(await page.locator('#own .gap tbody tr').count()).toBe(1)
+  await expect(page.locator('#own .tp__lede')).toContainText('their one tracked player')
+  expect(await page.locator('#league .dd').count()).toBe(2)
+  await expect(page.locator('#league .tp__more')).toHaveCount(0)
+})
+
+test('the saltiest fanbase has no one above it', async ({ page }) => {
+  await page.goto('/fanbases/sac/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.tp__verdict')).toContainText('The saltiest fanbase')
+  await expect(page.locator('.tp__pn-link[rel="prev"]')).toHaveCount(0)
+  await expect(page.locator('.tp__pn-link--none').first()).toContainText('Saltiest of')
+})
+
+test('the least salty fanbase has no one below it', async ({ page }) => {
+  await page.goto('/fanbases/uta/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.tp__verdict')).toContainText('The least salty fanbase')
+  await expect(page.locator('.tp__pn-link[rel="next"]')).toHaveCount(0)
+  await expect(page.locator('.tp__pn-link--none').first()).toContainText('Least salty of')
+})
+
+test('a long team name wraps inside the team header', async ({ page }) => {
+  await page.goto('/fanbases/por/', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Blazers fans')
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
 })

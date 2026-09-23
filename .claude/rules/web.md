@@ -34,5 +34,14 @@ the design brief is `docs/internal/ux-review.md`.
   and 400.
 - **Where a rule is checkable, write the test, not the paragraph.** `no-literal-rules` and
   `islands` are the models.
+- **A page composes in its frontmatter.** `getSeason()` once, joins done there, and every
+  island receives plain props: counts plus the strings it renders, rule numbers by name.
+  Page layout CSS lives in the page's scoped `<style>`; an island's layout CSS is a
+  stylesheet the island imports, since scoped styles never reach React-rendered markup.
+- **URL state through `useViewState`** (`useSyncExternalStore` over the query string): the
+  first render is the default view on both server and client, and a deep link takes over
+  after hydration. Slider drags write with `replace`, everything else pushes.
+- **A new component lands with its style-guide section in the same commit**, its awkward
+  cases chosen by rule from live data. Look at `dist/` before the next component.
 - **Gate:** the pre-commit hook runs check, lint and vitest for any staged `web/` file;
   build and walk run in CI. Commit scope is `web`.

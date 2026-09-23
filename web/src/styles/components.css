@@ -889,3 +889,73 @@
   background: var(--bone);
   border-color: var(--bone);
 }
+
+/* SectionRail: sticky anchors. A strip under the header; a column on a wide screen. */
+.rail {
+  position: sticky;
+  top: 57px;
+  z-index: 15;
+  /* A grid item: without this the strip's content width becomes the page's. */
+  min-width: 0;
+  max-width: 100%;
+  background: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.rail__list {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.rail__list::-webkit-scrollbar {
+  display: none;
+}
+.rail__link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--mute);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.rail__link:hover {
+  color: var(--bone-2);
+}
+.rail__link[aria-current='location'] {
+  color: var(--bone);
+  border-bottom-color: var(--bone);
+}
+@media (min-width: 1024px) {
+  .rail {
+    top: 80px;
+    align-self: start;
+    border-bottom: 0;
+    background: none;
+  }
+  .rail__list {
+    flex-direction: column;
+    gap: 0;
+    overflow: visible;
+    border-left: 1px solid var(--line);
+  }
+  .rail__link {
+    padding: 8px 14px;
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+    margin: 0 0 0 -1px;
+  }
+  .rail__link[aria-current='location'] {
+    border-left-color: var(--bone);
+  }
+}

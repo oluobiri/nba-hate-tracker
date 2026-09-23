@@ -5,6 +5,7 @@ import { Exhibit, commentUrl } from '../components/Exhibit'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
+import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
@@ -264,6 +265,24 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
     </section>
 
     <section class="guide__section">
+      <h2>SectionRail</h2>
+      <p class="eyebrow">Anchors down a long page; sticky as a strip, a column past 1024 px. The marked one is the section in view.</p>
+      <div class="guide__stack guide__rail">
+        <SectionRail
+          sections={[
+            { id: 'verdict', label: 'Verdict' },
+            { id: 'receipts', label: 'Receipts' },
+            { id: 'fans', label: 'Fans' },
+            { id: 'timeline', label: 'Timeline' },
+            { id: 'games', label: 'Games' },
+          ]}
+          current="fans"
+          label="On this page (demo)"
+        />
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>Mark</h2>
       <p class="eyebrow">The favicon, drawn once. A ball whose body is the sentiment bar; the header reuses the file.</p>
       <div class="guide__row">
@@ -346,6 +365,10 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  /* The rail demo sits in flow; the real one sticks. */
+  .guide__rail .rail {
+    position: static;
   }
   .guide__rows {
     margin: 0;

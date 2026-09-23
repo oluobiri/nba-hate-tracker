@@ -93,3 +93,43 @@ for (const [mode, deficiency] of [
     await page.screenshot({ path: path.join(OUT, `styleguide-${info.project.name}-${mode}.png`), fullPage: true })
   })
 }
+
+// The leaderboard: one island, its state in the URL.
+test('a deep link shows its lens, and the tabs work by keyboard', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?lens=volume', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('tab', { name: 'Volume' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.lb__sentence')).toContainText('most discussed')
+  await expect(page.locator('html')).not.toHaveClass(/has-view/)
+  await page.getByRole('tab', { name: 'Volume' }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: 'Polarization' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/lens=polar/)
+  await page.goBack()
+  await expect(page.getByRole('tab', { name: 'Volume' })).toHaveAttribute('aria-selected', 'true')
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a custom threshold is stamped unofficial and draws hollow ranks', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?n=500&all=1', { waitUntil: 'networkidle' })
+  await expect(page.locator('.thr--custom .stamp--unofficial')).toBeVisible()
+  await expect(page.locator('.lb__sentence .stamp--unofficial')).toBeVisible()
+  expect(await page.locator('.rank--hollow').count()).toBeGreaterThan(0)
+  expect(await page.locator('.row--ghost').count()).toBeGreaterThan(0)
+  await page.getByRole('button', { name: 'Reset to official' }).click()
+  await expect(page).not.toHaveURL(/n=/)
+  await expect(page.locator('.thr--closed, .thr--open').first()).not.toHaveClass(/thr--custom/)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('the leaderboard controls are touch-sized', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' })
+  for (const name of ['Copy link', /^Show all/, 'Adjust']) {
+    const box = await page.getByRole('button', { name }).boundingBox()
+    expect(box?.height ?? 0, String(name)).toBeGreaterThanOrEqual(44)
+  }
+  for (const tab of await page.getByRole('tab').all()) expect((await tab.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+})

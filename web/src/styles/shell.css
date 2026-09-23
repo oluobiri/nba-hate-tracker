@@ -117,7 +117,26 @@
     display: block;
   }
   .hdr__search {
-    flex: 1 1 auto;
+    flex: 1 1 120px;
+    min-width: 0;
+  }
+}
+/* A phone: the wordmark keeps its two words, the search takes what is left. */
+@media (max-width: 520px) {
+  .hdr__wrap {
+    gap: 10px;
+  }
+  .hdr__wordmark {
+    font-size: 19px;
+    gap: 7px;
+  }
+  .hdr__mark {
+    width: 24px;
+    height: 24px;
+  }
+  .search__input {
+    min-width: 0;
+    padding-inline: 8px;
   }
 }
 

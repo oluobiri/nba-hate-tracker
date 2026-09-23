@@ -49,5 +49,7 @@ every PR, and is a required check on `main` alongside `python`; the pre-commit h
 
 Static HTML per route (`<route>/index.html`, plus `404.html`). `public/favicon.svg` is the mark, drawn once and
 reused as the header glyph; its colours are pinned to `tokens.css` by a test. One island hydrates on every page: `PlayerSearch`
-in the header, which carries the React runtime. Nothing else runs JavaScript. `/styleguide/` renders every core
-component in every variant on real data; a colour, size or component change is made there once.
+in the header, which carries the React runtime. The leaderboard adds two: the board (`client:load`, its state in
+the query string, `motion` for the lens transitions) and the fanbase index (`client:visible`, local state). `src/islands.test.ts` pins that list.
+Nothing else runs JavaScript. `/styleguide/` renders every core component in every variant on real data; a colour,
+size or component change is made there once.

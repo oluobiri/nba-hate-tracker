@@ -1,0 +1,182 @@
+/* The leaderboard island's layout. Component looks live in components.css. */
+.lb {
+  display: grid;
+  gap: 20px;
+}
+/* A deep link with state: the prerendered default stays hidden until the
+   island has read the URL (the inline script in index.astro sets the class). */
+.has-view .lb {
+  visibility: hidden;
+}
+.lb__hero {
+  display: grid;
+  grid-template-columns: 1fr minmax(240px, 400px);
+  gap: 24px;
+  align-items: end;
+  min-height: 460px;
+  border-bottom: 1px solid var(--line);
+}
+.lb__hero-text {
+  display: grid;
+  gap: 18px;
+  align-content: end;
+  min-width: 0;
+}
+.lb__kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.lb__hero-body {
+  display: grid;
+  gap: 16px;
+}
+/* The sentence keeps one height in every lens, so the switch never jumps. */
+.lb__sentence {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  min-height: 2.3em;
+  font-size: clamp(48px, 9vw, 112px);
+  line-height: 0.88;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+.lb__lead {
+  font-weight: 500;
+  font-size: 0.42em;
+  letter-spacing: 0.04em;
+  color: var(--bone-2);
+  text-wrap: balance;
+}
+.lb__who {
+  font-weight: 800;
+  text-decoration: none;
+  color: var(--bone);
+  overflow-wrap: anywhere;
+}
+.lb__who:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 0.04em;
+}
+.lb__hero--neg .lb__who {
+  color: var(--heat);
+}
+.lb__hero--pos .lb__who {
+  color: var(--ice);
+}
+.lb__who-heat {
+  color: var(--heat);
+}
+.lb__who-ice {
+  color: var(--ice);
+}
+.lb__sentence .stamp {
+  font-size: 12px;
+  transform: rotate(-3deg) translateY(-0.4em);
+}
+.lb__figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 20px;
+  margin: 0;
+}
+.lb__big {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(56px, 8vw, 96px);
+  line-height: 0.92;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone);
+}
+.lb__unit {
+  max-width: 220px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.lb__meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.lb__hero-figure {
+  position: relative;
+  align-self: end;
+  height: 100%;
+  min-height: 380px;
+}
+.lb__hero-figure img {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: bottom;
+  filter: grayscale(1) contrast(1.15) brightness(0.92);
+  mask-image: linear-gradient(to top, transparent 0, #000 22%);
+  -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22%);
+}
+.lb__rank-ghost {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 220px;
+  line-height: 0.8;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--line-2);
+  user-select: none;
+}
+@media (max-width: 760px) {
+  .lb__hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .lb__hero-figure {
+    display: none;
+  }
+  .lb__sentence {
+    font-size: clamp(40px, 12vw, 64px);
+  }
+}
+.lb__rows {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.lb__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+.lb__btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.lb__btn:hover {
+  border-color: var(--bone-2);
+}
+.lb__copied {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bone-2);
+}

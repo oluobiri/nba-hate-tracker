@@ -1,14 +1,21 @@
 ---
+import { BoardRow } from '../components/BoardRow'
+import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
+import { ThresholdControl } from '../components/ThresholdControl'
+import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
-import { countsOf, negRate, posRate, rankBy } from '../lib/metrics'
+import { countsOf, negRate, posRate, rankBy, sumCounts } from '../lib/metrics'
+import { thresholdStops } from '../lib/threshold'
+import { weeklyHolders } from '../lib/titles'
 import type { Sentiment } from '../lib/types'
 
 // Every variant on real data, the awkward cases chosen by rule so the page
@@ -33,6 +40,32 @@ const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
 
 const sizes = ['hero', 'row', 'mini'] as const
+const maxN = Math.max(...overall.map((r) => r.total))
+const stops = thresholdStops(manifest.rules.floors.fanbase_min_n, maxN, threshold)
+const customN = stops.find((s) => s < threshold) ?? threshold
+const customRanked = overall.filter((r) => r.total >= customN).length
+const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+const rowProps = (name: string) => {
+  const p = players.get(name)!
+  return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, position: p.position, headshot: p.headshot_url }
+}
+const freeAgent = byNeg.find((r) => r.rank !== null && players.get(r.row.attributed_player)?.roster_team === null)
+const byCustom = rankBy(overall, 'neg', customN)
+const hollow = byCustom.find((r) => r.rank !== null && r.row.total < threshold)!
+const ghost = byCustom.find((r) => r.rank === null)!
+const temporal: TitleRow[] = tables.player_temporal.map((r) => {
+  const p = players.get(r.attributed_player)!
+  return { ...countsOf(r), week: r.week, name: r.attributed_player, slug: p.slug, headshot: p.headshot_url }
+})
+const weeks = [...new Set(temporal.map((r) => r.week))].toSorted()
+const belt = weeklyHolders(temporal, 'neg', manifest.rules.floors.belt_min_n)
+const flowers = weeklyHolders(temporal, 'pos', manifest.rules.floors.belt_min_n)
+const strongest = belt.toSorted((a, b) => b.rate - a.rate)[0]!
+const weakest = flowers.toSorted((a, b) => a.rate - b.rate)[0]!
+const fans = tables.fan_team_overall.map((r) => ({ ...r, ...countsOf(r) })).toSorted((a, b) => negRate(b) - negRate(a))
+const leagueNeg = negRate(sumCounts(fans))
+const fanRows = fans.slice(0, 8).map((r) => ({ key: r.abbreviation, label: `${r.abbreviation} fans`, href: `/fanbases/${r.abbreviation.toLowerCase()}/`, value: negRate(r), n: r.total, logo: r.logo_url }))
+const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate))] as const
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -63,7 +96,7 @@ const sizes = ['hero', 'row', 'mini'] as const
         <SentimentBar counts={leastPositive} size="hero" subject={leastPositive.attributed_player} />
         <figcaption>
           narrow segment: {leastPositive.attributed_player} is {fmtPct(posRate(leastPositive))} positive, the smallest
-          share among qualified players, so its label moves outside
+          share among qualified players, so its label moves under the bar
         </figcaption>
       </figure>
       <figure class="guide__fig">
@@ -164,6 +197,38 @@ const sizes = ['hero', 'row', 'mini'] as const
     </section>
 
     <section class="guide__section">
+      <h2>LensTabs</h2>
+      <p class="eyebrow">Underline heat / ice / bone / split. Arrow keys move; the subtitle names the metric.</p>
+      <div class="guide__stack">
+        <LensTabs lens="neg" onChange={() => {}} id="guide-neg" />
+        <LensTabs lens="polar" onChange={() => {}} id="guide-polar" />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>BoardRow</h2>
+      <p class="eyebrow">The whole row is the link. Rank, mug, who, bar, value, n; chip for unofficial and for rank movement.</p>
+      <ol class="guide__rows">
+        <BoardRow rank={1} official {...rowProps(top.attributed_player)} counts={top} lens="neg" />
+        {freeAgent && <BoardRow rank={freeAgent.rank} official {...rowProps(freeAgent.row.attributed_player)} counts={freeAgent.row} lens="neg" delta={2} />}
+        <BoardRow rank={hollow.rank} official={false} {...rowProps(hollow.row.attributed_player)} counts={hollow.row} lens="neg" />
+        <BoardRow rank={null} official={false} {...rowProps(ghost.row.attributed_player)} counts={ghost.row} lens="neg" />
+        {byVolume.slice(0, 2).map((r) => <BoardRow rank={r.rank} official {...rowProps(r.row.attributed_player)} counts={r.row} lens="volume" scale={r.value / maxVolume} />)}
+      </ol>
+      <p class="eyebrow">Official · free agent with a rank-delta chip · hollow (below the official minimum) · ghosted (below the custom threshold) · volume lens.</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>ThresholdControl</h2>
+      <p class="eyebrow">Collapsed by default; open on tap; open, loud and stamped once moved. Reset returns to the manifest value.</p>
+      <div class="guide__stack">
+        <ThresholdControl value={threshold} official={threshold} stops={stops} ranked={qualified.length} total={overall.length} onChange={() => {}} />
+        <ThresholdControl value={threshold} official={threshold} stops={stops} ranked={qualified.length} total={overall.length} onChange={() => {}} defaultOpen />
+        <ThresholdControl value={customN} official={threshold} stops={stops} ranked={customRanked} total={overall.length} onChange={() => {}} />
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>StatFigure</h2>
       <div class="guide__row guide__row--stats">
         <StatFigure figure={fmtPct(negRate(top))} label="Negative" detail={`of ${fmtInt(top.total)} comments`} tone="neg" />
@@ -171,6 +236,31 @@ const sizes = ['hero', 'row', 'mini'] as const
         <StatFigure figure={fmtInt(top.total)} label="Comments" detail="attributed to one player" />
         <StatFigure figure={String(qualified.length)} label="Ranked" detail={`of ${overall.length} tracked`} />
       </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>WeeklyTitles</h2>
+      <p class="eyebrow">
+        Belt above, Flowers below, one axis, one scroller. Intensity follows the rate: {strongest.row.name}'s{' '}
+        {fmtPct(strongest.rate)} week is the strongest Belt win; {weakest.row.name}'s {fmtPct(weakest.rate)} the weakest Flowers win.
+      </p>
+      <div class="wk-scroller">
+        <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" />
+        <WeekAxis weeks={weeks} />
+        <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" />
+      </div>
+      <p class="eyebrow">Prototype: reign blocks, consecutive weeks by one holder merged.</p>
+      <div class="wk-scroller">
+        <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" merge />
+        <WeekAxis weeks={weeks} />
+        <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" merge />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>DeltaDot</h2>
+      <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Ranks read down.</p>
+      <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
     </section>
 
     <section class="guide__section">
@@ -256,6 +346,11 @@ const sizes = ['hero', 'row', 'mini'] as const
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  .guide__rows {
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
   }
   .guide__dl {
     margin: 0;

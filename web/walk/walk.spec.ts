@@ -140,7 +140,7 @@ test('a receipts deep link shows its tab, and the tabs work by keyboard', async 
   await page.goto('/player/james-harden/?tab=pos', { waitUntil: 'networkidle' })
   await expect(page.getByRole('tab', { name: /^Positive/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('html')).not.toHaveClass(/has-receipts-view/)
-  await expect(page.locator('.exhibit__sent--pos').first()).toBeVisible()
+  await expect(page.locator('.rc .exhibit--pos').first()).toBeVisible()
   await page.getByRole('tab', { name: /^Positive/ }).focus()
   await page.keyboard.press('ArrowLeft')
   await expect(page.getByRole('tab', { name: /^Neutral/ })).toHaveAttribute('aria-selected', 'true')
@@ -203,7 +203,7 @@ test('a week of the timeline opens its readout on focus', async ({ page }) => {
 // Edge states, one route each. The names are the data's, not a rule's.
 test('a free agent has no roster line and still gets fans', async ({ page }) => {
   await page.goto('/player/chris-paul/', { waitUntil: 'networkidle' })
-  await expect(page.locator('.pp__head .eyebrow')).toContainText('Free agent')
+  await expect(page.locator('.pp__id')).toContainText('Free agent')
   await expect(page.locator('#fans .pp__tile')).toHaveCount(2)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })

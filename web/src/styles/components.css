@@ -419,7 +419,7 @@
 }
 .row__link {
   display: grid;
-  grid-template-columns: 48px 40px minmax(140px, 1fr) minmax(160px, 2fr) 64px 72px 20px;
+  grid-template-columns: 48px 44px minmax(140px, 1fr) minmax(160px, 2fr) 64px 72px 20px;
   grid-template-areas: 'rank mug who bar value n chev';
   align-items: center;
   gap: 12px;
@@ -442,23 +442,34 @@
   color: var(--mute-2);
   font-size: 20px;
 }
+/* The card: a square mug with a hairline, the spike's form. */
 .row__mug {
   grid-area: mug;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
   object-fit: cover;
   object-position: top;
   background: var(--surface-2);
-  filter: grayscale(1);
+  filter: grayscale(0.85) contrast(1.05);
 }
 .row__who {
   grid-area: who;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-areas:
+    'name name name'
+    'team chip chip';
   align-items: baseline;
-  gap: 2px 8px;
+  gap: 3px 8px;
   min-width: 0;
+}
+.row__name {
+  grid-area: name;
+}
+.row__team {
+  grid-area: team;
 }
 .row__name {
   font-family: var(--display);
@@ -518,7 +529,7 @@
 @media (max-width: 640px) {
   /* n stays visible on phones: the second line of the row. */
   .row__link {
-    grid-template-columns: 36px 36px 1fr auto 16px;
+    grid-template-columns: 36px 36px minmax(0, 1fr) auto 16px;
     grid-template-areas:
       'rank mug who value chev'
       'rank mug bar n chev';
@@ -531,6 +542,9 @@
   }
   .row__name {
     font-size: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .row__value {
     font-size: 14px;

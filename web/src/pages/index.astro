@@ -22,6 +22,7 @@ const players: BoardPlayer[] = tables.player_overall.map((r) => {
     name: r.attributed_player,
     slug: p.slug,
     abbr: p.roster_team ? (abbr.get(p.roster_team) ?? null) : null,
+    position: p.position,
     headshot: p.headshot_url,
   }
 })

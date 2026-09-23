@@ -23,6 +23,7 @@ export interface BoardPlayer extends Counts {
   name: string
   slug: string
   abbr: string | null
+  position: string | null
   headshot: string
 }
 
@@ -152,6 +153,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
             name={r.row.name}
             slug={r.row.slug}
             abbr={r.row.abbr}
+            position={r.row.position}
             headshot={r.row.headshot}
             counts={r.row}
             lens={lens}

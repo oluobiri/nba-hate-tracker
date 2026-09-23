@@ -47,7 +47,7 @@ const customRanked = overall.filter((r) => r.total >= customN).length
 const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
 const rowProps = (name: string) => {
   const p = players.get(name)!
-  return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, headshot: p.headshot_url }
+  return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, position: p.position, headshot: p.headshot_url }
 }
 const freeAgent = byNeg.find((r) => r.rank !== null && players.get(r.row.attributed_player)?.roster_team === null)
 const byCustom = rankBy(overall, 'neg', customN)

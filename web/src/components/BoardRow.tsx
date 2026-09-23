@@ -1,5 +1,6 @@
 // One leaderboard row, the whole row a link. Rank numeral (hollow below
-// the official minimum), grayscale mug, name and team, the bar, the lens
+// the official minimum), square grayscale mug, name over team and
+// position, the bar, the lens
 // value (the n column already is the value in the volume lens), n, and
 // the rank-delta chip in a custom view.
 import { motion } from 'motion/react'
@@ -19,6 +20,7 @@ export interface BoardRowProps {
   name: string
   slug: string
   abbr: string | null
+  position: string | null
   headshot: string
   counts: Counts
   lens: Lens
@@ -30,7 +32,7 @@ export interface BoardRowProps {
 
 const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
 
-export function BoardRow({ rank, official, name, slug, abbr, headshot, counts, lens, scale = 1, delta = null }: BoardRowProps) {
+export function BoardRow({ rank, official, name, slug, abbr, position, headshot, counts, lens, scale = 1, delta = null }: BoardRowProps) {
   const meta = LENS_META[lens]
   const value = meta.value(counts)
   const ghost = rank === null
@@ -38,10 +40,10 @@ export function BoardRow({ rank, official, name, slug, abbr, headshot, counts, l
     <motion.li className={`row${ghost ? ' row--ghost' : ''}`} layout="position" transition={{ type: 'spring', stiffness: 380, damping: 36, mass: 0.8 }}>
       <a className="row__link" href={`/player/${slug}/`}>
         <span className="row__rank">{rank === null ? <span className="row__unranked mono">—</span> : <RankNumeral rank={rank} official={official} />}</span>
-        <img className="row__mug" src={headshot} srcSet={headshotSrcSet(headshot)} sizes="40px" width="40" height="40" alt="" loading="lazy" decoding="async" />
+        <img className="row__mug" src={headshot} srcSet={headshotSrcSet(headshot)} sizes="44px" width="44" height="44" alt="" loading="lazy" decoding="async" />
         <span className="row__who">
           <span className="row__name">{name}</span>
-          <span className="row__team mono">{abbr ?? 'Free agent'}</span>
+          <span className="row__team mono">{[abbr ?? 'Free agent', position].filter(Boolean).join(' · ')}</span>
           {!official && rank !== null && <span className="row__chip row__chip--unofficial mono">Unofficial</span>}
           {delta !== null && delta !== 0 && (
             <span className="row__chip mono" title="Rank change against the official view">

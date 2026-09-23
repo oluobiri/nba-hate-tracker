@@ -29,6 +29,9 @@ the design brief is `docs/internal/ux-review.md`.
 - **Cross-page state lives in the query string** via `src/lib/url.ts`; defaults come from
   the manifest so short links serialise short.
 - **Charts are SVG rendered at build.** No chart library.
+- **Motion lives inside islands only** (`motion/react`), wrapped in `MotionConfig
+  reducedMotion="user"`; static regions animate with CSS transitions, which the global
+  reduced-motion rule already stops. A lens switch keeps every row's identity (`layout`).
 - **Judge output from `dist/`** (`npm run build && npm run preview`), not the dev server.
   The walk asserts zero console errors and no horizontal overflow on every route at 1280
   and 400.

@@ -1061,3 +1061,118 @@
   font-size: 10px;
   color: var(--mute);
 }
+
+/* GamesTable: the log as a table. Wide columns go on a phone; the line collapses to P/R/A. */
+.gt {
+  width: 100%;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+}
+.gt th,
+.gt td {
+  padding: 8px 6px;
+  text-align: right;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.gt thead th {
+  padding-block: 6px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gt abbr {
+  text-decoration: none;
+}
+.gt .gt__date,
+.gt .gt__opp,
+.gt .gt__res,
+.gt thead th:nth-child(-n + 3),
+.gt .gt__verdict,
+.gt .gt__verdict-h {
+  text-align: left;
+}
+/* The verdict takes the slack; every other column hugs its content. */
+.gt thead th:not(.gt__verdict-h) {
+  width: 1%;
+}
+.gt__date {
+  font-weight: 400;
+  color: var(--bone-2);
+}
+.gt__phase {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--line-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gt__opp {
+  color: var(--bone-2);
+}
+/* Decision 8: a win is bold bone, a loss gray, never a colour. */
+.gt__row--w .gt__res {
+  font-weight: 600;
+  color: var(--bone);
+}
+.gt__row--l .gt__res {
+  color: var(--bone-2);
+}
+.gt__row--dnp td:not(.gt__verdict) {
+  color: var(--mute);
+}
+.gt__narrow {
+  display: none;
+}
+.gt__verdict {
+  padding-block: 4px;
+}
+@media (max-width: 640px) {
+  .gt {
+    table-layout: fixed;
+    font-size: 12px;
+  }
+  .gt th,
+  .gt td {
+    padding: 6px 4px;
+  }
+  .gt__wide {
+    display: none;
+  }
+  .gt__narrow {
+    display: table-cell;
+  }
+  .gt thead th:nth-child(1) {
+    width: 54px;
+  }
+  .gt thead th.gt__narrow {
+    width: auto;
+  }
+  .gt thead th:nth-child(2) {
+    width: 52px;
+  }
+  .gt thead th:nth-child(3) {
+    width: 72px;
+  }
+  .gt__verdict-h {
+    width: 104px;
+  }
+  .gt__phase {
+    display: block;
+    width: max-content;
+    margin: 2px 0 0;
+  }
+  .gt .vd {
+    grid-template-columns: 32px minmax(36px, 56px);
+    column-gap: 6px;
+  }
+  .gt .vd__figure {
+    font-size: 13px;
+  }
+}

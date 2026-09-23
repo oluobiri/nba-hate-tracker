@@ -2,6 +2,7 @@
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { GamesTable } from '../components/GamesTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
@@ -86,6 +87,9 @@ const judged = topLog.filter((g) => g.delta !== null)
 const harshest = judged.toSorted((a, b) => b.delta! - a.delta!)[0]
 const kindest = judged.toSorted((a, b) => a.delta! - b.delta!)[0]
 const quiet = topLog.find((g) => !g.talked)
+// Ten rows for the table: talked games plus a DNP line and a neutral-site game when he has them.
+const tableRows = [...new Set([...topLog.filter((g) => g.talked).slice(0, 8), topLog.find((g) => g.dnp), topLog.find((g) => g.home === null), quiet].filter((g) => g !== undefined))]
+  .toSorted((a, b) => b.date.localeCompare(a.date))
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -294,6 +298,17 @@ const quiet = topLog.find((g) => !g.talked)
         <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
         {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
       </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>GamesTable</h2>
+      <p class="eyebrow">A real table, newest first. Wins bold, losses gray. On a phone: date, opponent, result, P/R/A, verdict; nothing scrolls sideways.</p>
+      <GamesTable rows={tableRows} caption={`${top.attributed_player}'s game log, a sample`} />
+      <p class="eyebrow">
+        {topLog.some((g) => g.dnp) ? 'Includes a DNP line. ' : 'He has no DNP line this season. '}
+        {topLog.some((g) => g.home === null) ? 'Includes a neutral-site game. ' : 'He has no neutral-site game this season. '}
+        {quiet ? 'Includes a game under the floor.' : ''}
+      </p>
     </section>
 
     <section class="guide__section">

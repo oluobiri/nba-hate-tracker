@@ -67,6 +67,7 @@ const fans = tables.fan_team_overall.map((r) => ({ ...r, ...countsOf(r) })).toSo
 const leagueNeg = negRate(sumCounts(fans))
 const fanRows = fans.slice(0, 8).map((r) => ({ key: r.abbreviation, label: `${r.abbreviation} fans`, href: `/fanbases/${r.abbreviation.toLowerCase()}/`, value: negRate(r), n: r.total, logo: r.logo_url }))
 const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate))] as const
+const taggedRows = fanRows.slice(0, 5).map((r, i) => (i === 2 ? { ...r, tag: 'own fans' } : r))
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -262,6 +263,8 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
       <h2>DeltaDot</h2>
       <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Ranks read down.</p>
       <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
+      <p class="eyebrow">With a Δ column and a tagged row: the player page's "who hates him most", the tick his own average.</p>
+      <DeltaDot rows={taggedRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" averageLabel="His average" showDelta />
     </section>
 
     <section class="guide__section">

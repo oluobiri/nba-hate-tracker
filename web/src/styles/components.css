@@ -847,9 +847,55 @@
   text-align: right;
   color: var(--bone-2);
 }
+/* With a Δ column: each row's distance from the tick, in points. */
+.dd--delta {
+  --dd-cols: 28px 20px minmax(110px, 1fr) minmax(120px, 3fr) 56px 52px;
+}
+.dd__dhead {
+  grid-column: 6;
+  justify-self: end;
+  white-space: nowrap;
+}
+.dd__delta {
+  font-size: 13px;
+  text-align: right;
+  color: var(--bone-2);
+}
+/* A tagged row (his own fans): bone outline and the tag, never yellow. */
+.dd__tag {
+  margin-left: 8px;
+  padding: 1px 5px;
+  border: 1px solid var(--bone-2);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: var(--bone-2);
+}
+.dd__row--tagged .dd__link {
+  outline: 1px solid var(--bone-2);
+  outline-offset: -1px;
+}
 @media (max-width: 640px) {
-  .dd {
+  .dd,
+  .dd--delta {
     --dd-cols: 24px 18px minmax(64px, 1fr) minmax(90px, 2fr) 48px;
+  }
+  /* The Δ stays in the row's text alternative; the value column carries the rate. */
+  .dd__delta,
+  .dd__dhead {
+    display: none;
+  }
+  /* The tag takes its own line rather than an ellipsis. */
+  .dd__row--tagged .dd__label {
+    white-space: normal;
+    line-height: 1.05;
+  }
+  .dd__row--tagged .dd__tag {
+    display: block;
+    width: max-content;
+    margin: 3px 0 0;
   }
   .dd__link,
   .dd__head {

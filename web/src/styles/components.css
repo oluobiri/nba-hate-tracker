@@ -1273,3 +1273,243 @@
   border: 1.5px solid var(--bone);
 }
 
+/* Timeline: rolling lines over weekly dots; every word is HTML. */
+.tl {
+  --tl-h: 260px;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.tl__summary {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--bone);
+  text-wrap: pretty;
+}
+.tl__chart {
+  position: relative;
+  height: var(--tl-h);
+  border-bottom: 1px solid var(--line-2);
+}
+.tl__bands,
+.tl__dots,
+.tl__svg,
+.tl__marks,
+.tl__ends,
+.tl__weeks {
+  position: absolute;
+  inset: 0;
+}
+.tl__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* Phase bands: neutral surfaces, never heat. */
+.tl__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: var(--ink-2);
+}
+.tl__band:not(.tl__band--wide) .tl__band-label {
+  display: none;
+}
+.tl__band--regular_season,
+.tl__band--playoffs {
+  background: var(--surface);
+}
+.tl__band-label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--mute);
+}
+.tl__dot {
+  position: absolute;
+  width: var(--tl-d);
+  height: var(--tl-d);
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  opacity: 0.28;
+}
+.tl__dot--neg {
+  background: var(--heat);
+}
+.tl__dot--pos {
+  background: var(--ice);
+}
+.tl__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.tl__line--neg {
+  stroke: var(--heat);
+}
+.tl__line--pos {
+  stroke: var(--ice);
+}
+.tl__mark {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, 50%);
+  border-radius: 50%;
+  border: 2px solid var(--bone);
+  background: var(--ink);
+}
+.tl__mark-text {
+  position: absolute;
+  bottom: 14px;
+  left: -4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--bone);
+  background: var(--ink);
+  border: 1px solid var(--line-2);
+}
+.tl__mark--late .tl__mark-text {
+  left: auto;
+  right: -4px;
+}
+.tl__mark--below .tl__mark-text {
+  bottom: auto;
+  top: 14px;
+}
+.tl__ends {
+  pointer-events: none;
+}
+.tl__end {
+  position: absolute;
+  right: 4px;
+  transform: translateY(50%);
+  padding: 1px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--ink);
+}
+.tl__end--neg {
+  color: var(--heat);
+}
+.tl__end--pos {
+  color: var(--ice);
+}
+/* Week columns: focusable, each with a readout that lands below the axis. */
+.tl__weeks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tl__week {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(100% / var(--tl-n));
+  cursor: default;
+}
+.tl__week:hover,
+.tl__week:focus {
+  background: rgba(237, 232, 220, 0.06);
+  outline: none;
+}
+.tl__week:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.tl__tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 26px);
+  left: calc(-100% * var(--tl-i));
+  width: calc(100% * var(--tl-n));
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--bone-2);
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  z-index: 2;
+}
+.tl__week:hover .tl__tip,
+.tl__week:focus .tl__tip,
+.tl__week:focus-within .tl__tip {
+  display: grid;
+  gap: 4px;
+}
+.tl__tip-head {
+  font-size: 12px;
+}
+.tl__tip-head b {
+  color: var(--bone);
+}
+.tl__tip-neg {
+  color: var(--heat);
+}
+.tl__tip-pos {
+  color: var(--ice);
+}
+.tl__tip-games {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  columns: 2;
+  column-gap: 16px;
+}
+.tl__tip-none {
+  font-size: 12px;
+  color: var(--mute);
+}
+.tl__axis {
+  position: relative;
+  height: 18px;
+  overflow: hidden;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.tl__month {
+  position: absolute;
+  top: 2px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line-2);
+}
+.tl__readout {
+  position: relative;
+  min-height: 7.5em;
+  padding: 8px 0;
+}
+.tl__readout-hint {
+  font-size: 12px;
+  color: var(--mute);
+}
+.tl--empty .tl__summary {
+  color: var(--bone-2);
+}
+@media (max-width: 640px) {
+  .tl {
+    --tl-h: 200px;
+  }
+  .tl__band:not(.tl__band--wider) .tl__band-label {
+    display: none;
+  }
+  .tl__mark-text {
+    font-size: 10px;
+  }
+  .tl__tip-games {
+    columns: 1;
+  }
+  .tl__readout {
+    min-height: 9em;
+  }
+}

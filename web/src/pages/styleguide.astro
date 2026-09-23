@@ -12,13 +12,15 @@ import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { ThresholdControl } from '../components/ThresholdControl'
+import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
-import { buildGameLog, scatterLead, scatterPoints } from '../lib/games'
-import { countsOf, negRate, pearson, posRate, rankBy, sumCounts } from '../lib/metrics'
+import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
+import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
+import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
 import type { Sentiment } from '../lib/types'
@@ -94,6 +96,28 @@ const topR = pearson(topPoints.map((p) => p.x), topPoints.map((p) => p.y))
 const tableRows = [...new Set([...topLog.filter((g) => g.talked).slice(0, 8), topLog.find((g) => g.dnp), topLog.find((g) => g.home === null), quiet].filter((g) => g !== undefined))]
   .toSorted((a, b) => b.date.localeCompare(a.date))
 
+// Timelines: the full case, the thinnest official one, and the one with the fewest weeks at all.
+const weekFloor = manifest.rules.floors.week_min_n
+const ROLLING = 4
+const spine = weekSpine(tables.player_temporal.map((r) => r.week))
+const bands = phaseBands(spine, manifest.calendar)
+const temporalBy = new Map<string, typeof tables.player_temporal>()
+for (const r of tables.player_temporal) temporalBy.set(r.attributed_player, [...(temporalBy.get(r.attributed_player) ?? []), r])
+const timelineFor = (name: string, log = topLog) => {
+  const rows = spineRows(spine, (temporalBy.get(name) ?? []).map((r) => ({ ...countsOf(r), week: r.week })))
+  const counts = rows.map((r) => (r ? { neg: r.neg, neu: r.neu, pos: r.pos, total: r.total } : null))
+  const negLine = rollingRate(counts, ROLLING, negRate, weekFloor)
+  const posLine = rollingRate(counts, ROLLING, posRate, weekFloor)
+  const games = weekGames(log, spine).map((ws) => ws.map((g) => `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}`))
+  const tlWeeks: TimelineWeek[] = spine.map((key, i) => ({ key, counts: counts[i]!, games: games[i]! }))
+  return { weeks: tlWeeks, negLine, posLine, marks: extremeWeeks(counts, weekFloor), summary: timelineSummary(name, spine, counts, negLine, weekFloor, ROLLING) }
+}
+const weeksAtFloor = (name: string) => (temporalBy.get(name) ?? []).filter((r) => r.comment_count >= weekFloor).length
+const thinnestOfficial = qualified.toSorted((a, b) => weeksAtFloor(a.attributed_player) - weeksAtFloor(b.attributed_player))[0]!
+const fewestWeeks = overall.toSorted((a, b) => weeksAtFloor(a.attributed_player) - weeksAtFloor(b.attributed_player))[0]!
+const tlTop = timelineFor(top.attributed_player)
+const tlThin = timelineFor(thinnestOfficial.attributed_player, [])
+const tlNone = timelineFor(fewestWeeks.attributed_player, [])
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -319,6 +343,18 @@ const tableRows = [...new Set([...topLog.filter((g) => g.talked).slice(0, 8), to
       <h2>GameScatter</h2>
       <p class="eyebrow">Game Score across, the negative share up; wins filled bone, losses hollow; his usual as a dashed rule. The table is the accessible equivalent.</p>
       <GameScatter points={topPoints} baseline={negRate(top)} lead={scatterLead(top.attributed_player, topPoints.length, topR)} r={topR} />
+    </section>
+
+    <section class="guide__section">
+      <h2>Timeline</h2>
+      <p class="eyebrow">
+        {ROLLING}-week rolling lines from summed counts, weekly dots sized by n behind, neutral phase bands, worst and best week marked. Hover, focus or tap a week for its games.
+      </p>
+      <Timeline name={top.attributed_player} {...tlTop} bands={bands} floor={weekFloor} k={ROLLING} />
+      <p class="eyebrow">The thinnest official timeline: {thinnestOfficial.attributed_player}, {weeksAtFloor(thinnestOfficial.attributed_player)} of {spine.length} weeks at the floor.</p>
+      <Timeline name={thinnestOfficial.attributed_player} {...tlThin} bands={bands} floor={weekFloor} k={ROLLING} />
+      <p class="eyebrow">Nothing to draw: {fewestWeeks.attributed_player}, {weeksAtFloor(fewestWeeks.attributed_player)} weeks at the floor.</p>
+      <Timeline name={fewestWeeks.attributed_player} {...tlNone} bands={bands} floor={weekFloor} k={ROLLING} />
     </section>
 
     <section class="guide__section">

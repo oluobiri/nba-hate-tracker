@@ -53,6 +53,35 @@ export function playerUsual(rows: readonly PlayerRow[]): Map<string, Counts> {
   return m
 }
 
+export interface TalkRow extends Counts {
+  name: string
+  slug: string
+  headshot: string
+  /** The player's roster abbreviation; null for a free agent. */
+  abbr: string | null
+  /** On this fanbase's own roster. */
+  own: boolean
+}
+
+/** The players this fanbase has the most comments about, own roster included; ties by name. */
+export function talkRows(rows: readonly PlayerRow[], team: string, describe: (player: string) => { slug: string; headshot: string; abbr: string | null }, limit: number): TalkRow[] {
+  return rows
+    .filter((r) => r.fan === team)
+    .toSorted((a, b) => b.total - a.total || a.player.localeCompare(b.player))
+    .slice(0, limit)
+    .map(({ player, roster, neg, neu, pos, total }) => ({ name: player, ...describe(player), own: roster === team, neg, neu, pos, total }))
+}
+
+/** The Who they talk about lede: the main character's share, and how many of the list are their own. */
+export function talkSummary(team: string, rows: readonly TalkRow[], fanTotal: number): string {
+  const fans = possessive(team)
+  if (rows.length === 0 || fanTotal === 0) return `${fans} have no comments about tracked players.`
+  const lead = rows[0]!
+  const own = rows.filter((r) => r.own).length
+  const ownWord = own === 0 ? 'none' : own === rows.length ? `all ${fmtInt(rows.length)}` : `${fmtInt(own)} of their ${fmtInt(rows.length)}`
+  return `${lead.name} alone is ${fmtPct(lead.total / fanTotal, 0)} of what ${fans} say about players; ${ownWord} most-discussed ${own === 1 ? 'is' : 'are'} ${nickname(team)}.`
+}
+
 /** The whole matrix from player-grain rows, once per build. */
 export function fanRosterMatrix(rows: readonly MatrixRow[]): Matrix {
   const byFan = new Map<string, Map<string, Counts>>()

@@ -209,6 +209,7 @@ test('the team page controls are touch-sized', async ({ page }) => {
     ...(await page.locator('.tp__pn-link').all()),
     ...(await page.locator('.tp__more summary').all()),
     ...(await page.locator('.gap__link').all()),
+    ...(await page.locator('.tk__link').all()),
   ]
   for (const c of controls) expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
 })

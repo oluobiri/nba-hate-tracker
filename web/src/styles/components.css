@@ -1720,3 +1720,109 @@
     font-size: 14px;
   }
 }
+
+/* TalkList: a fanbase's most-discussed players. Bar length is share of the leader; segments the split. */
+.tk {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.tk__row {
+  border-bottom: 1px solid var(--line);
+}
+.tk__link {
+  display: grid;
+  grid-template-columns: 28px 44px minmax(120px, 1.2fr) minmax(100px, 2fr) 72px;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 0;
+  text-decoration: none;
+  color: inherit;
+}
+.tk__link:hover {
+  background: var(--ink-2);
+}
+.tk__link:hover .tk__name {
+  text-decoration: underline;
+}
+.tk__rank {
+  font-size: 12px;
+  text-align: right;
+  color: var(--mute);
+}
+.tk__mug {
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-2);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.tk__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.tk__name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+.tk__team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+.tk__tag {
+  padding: 1px 5px;
+  border: 1px solid var(--bone-2);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.tk__row--own .tk__link {
+  outline: 1px solid var(--bone-2);
+  outline-offset: -1px;
+}
+.tk__bar {
+  min-width: 0;
+}
+.tk__n {
+  font-size: 13px;
+  text-align: right;
+  color: var(--bone-2);
+}
+.tk__n-unit {
+  font-size: 11px;
+  color: var(--mute);
+}
+@media (max-width: 640px) {
+  .tk__link {
+    grid-template-columns: 22px 40px minmax(84px, 1fr) minmax(72px, 1.2fr) 52px;
+    gap: 8px;
+  }
+  .tk__n-unit {
+    display: none;
+  }
+  .tk__mug {
+    width: 40px;
+    height: 40px;
+  }
+  .tk__name {
+    font-size: 14px;
+  }
+  .tk__tag {
+    display: none;
+  }
+}

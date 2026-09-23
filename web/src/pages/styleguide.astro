@@ -14,13 +14,14 @@ import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
+import { TalkList } from '../components/TalkList'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
-import { deltaLists, gapRows, playerCells, playerUsual } from '../lib/fanbase'
+import { deltaLists, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
 import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
@@ -169,6 +170,11 @@ const grudges = deltaLists(playerCells(fanPlayerRows, saltiest.fan_team), (playe
 const GRUDGE_TOP = 5
 const grudgeRows = grudges.grudges.slice(0, GRUDGE_TOP).map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
 const pts = (v: number) => fmtSigned(v, 0)
+const TALK_TOP = 10
+const talk = talkRows(fanPlayerRows, saltiest.fan_team, (player) => {
+  const p = players.get(player)!
+  return { slug: p.slug, headshot: p.headshot_url, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null }
+}, TALK_TOP)
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -351,6 +357,12 @@ const pts = (v: number) => fmtSigned(v, 0)
       <GapTable rows={smallGap} caption={`${possessive(smallTeam)} on their own players`} floor={fanFloor} />
       <p class="eyebrow">DeltaDot on a Δ axis: each row against its own roster's average across every fanbase, so the tick sits at zero and says what it stands for; the value is in points, the raw rate in gray beside it, a headshot in the logo slot. {possessive(saltiest.fan_team)}' grudges, top {GRUDGE_TOP} of {grudges.eligible} players.</p>
       <DeltaDot rows={grudgeRows} average={0} domain={grudges.domain} format={pts} tone="neg" tickLabel="Each player's usual" detailLabel="rate" />
+    </section>
+
+    <section class="guide__section">
+      <h2>TalkList</h2>
+      <p class="eyebrow">A fanbase's most-discussed players, own roster included and tagged. Bar length is his share of the leader's n, the segments his split; n printed. {possessive(saltiest.fan_team)}, top {TALK_TOP}.</p>
+      <TalkList rows={talk} fans={possessive(saltiest.fan_team)} />
     </section>
 
     <section class="guide__section">

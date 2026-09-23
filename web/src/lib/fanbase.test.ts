@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deltaLists, fanbaseVerdict, fanRosterMatrix, fewEligibleSentence, type GapRow, gapRows, gapSummary, leagueSummary, type MatrixRow, playerCells, type PlayerRow, playerUsual, sideCells, targetsSummary } from './fanbase'
+import { deltaLists, fanbaseVerdict, fanRosterMatrix, fewEligibleSentence, type GapRow, gapRows, gapSummary, leagueSummary, type MatrixRow, playerCells, type PlayerRow, playerUsual, sideCells, talkRows, talkSummary, targetsSummary } from './fanbase'
 import { groupBy } from './group'
 import type { Counts } from './types'
 
@@ -164,5 +164,37 @@ describe('the ledes', () => {
     expect(fewEligibleSentence(LAL, 1, FLOOR, 'targets')).toBe('Only 1 player has at least 10 comments from Lakers fans, too few to rank.')
     expect(fewEligibleSentence(LAL, 0, FLOOR, 'fans')).toBe('Only 0 fanbases have at least 10 comments about Lakers players, too few to rank.')
     expect(targetsSummary(LAL, { grudges: [], flowers: [], eligible: 1, domain: [0, 0] }, FLOOR)).toMatch(/^Only 1 player/)
+  })
+})
+
+describe('talkRows', () => {
+  const meta = (player: string) => ({ slug: player.toLowerCase().replace(' ', '-'), headshot: `${player}.png`, abbr: player === 'Chris Paul' ? null : 'XXX' })
+  const rows = talkRows(PLAYER_ROWS, LAL, meta, 3)
+
+  it('ranks the fanbase\'s players by its comment count, ties by name, own roster included', () => {
+    expect(rows.map((r) => r.name)).toEqual(['Austin Reaves', 'Bam Adebayo', 'Jayson Tatum'])
+    expect(rows[0]).toMatchObject({ own: true, slug: 'austin-reaves', abbr: 'XXX', total: 100 })
+    expect(rows[1]!.own).toBe(false)
+  })
+
+  it('keeps a free agent, with no roster abbreviation', () => {
+    const all = talkRows(PLAYER_ROWS, LAL, meta, 10)
+    expect(all.map((r) => r.name)).toEqual(['Austin Reaves', 'Bam Adebayo', 'Jayson Tatum', 'Chris Paul', 'Bronny James'])
+    expect(all[3]!.abbr).toBeNull()
+  })
+})
+
+describe('talkSummary', () => {
+  const meta = (player: string) => ({ slug: player, headshot: '', abbr: null })
+  const all = talkRows(PLAYER_ROWS, LAL, meta, 10) // Lakers fans: 320 comments in the fixture
+
+  it('names the main character\'s share and counts their own', () => {
+    expect(talkSummary(LAL, all, 320)).toBe('Austin Reaves alone is 31% of what Lakers fans say about players; 2 of their 5 most-discussed are Lakers.')
+  })
+
+  it('words none, one and all', () => {
+    expect(talkSummary(LAL, all.filter((r) => !r.own), 320)).toMatch(/; none most-discussed are Lakers\.$/)
+    expect(talkSummary(LAL, all.filter((r) => r.own).slice(0, 1), 320)).toMatch(/; all 1 most-discussed is Lakers\.$/)
+    expect(talkSummary(LAL, [], 320)).toBe('Lakers fans have no comments about tracked players.')
   })
 })

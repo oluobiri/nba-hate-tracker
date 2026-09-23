@@ -12,9 +12,10 @@ import { RankNumeral } from '../../components/RankNumeral'
 import SectionRail from '../../components/SectionRail.astro'
 import { SentimentBar } from '../../components/SentimentBar'
 import { StatFigure } from '../../components/StatFigure'
+import { TalkList } from '../../components/TalkList'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
-import { type DeltaLists, type DeltaRow, deltaLists, fanbaseVerdict, fanRosterMatrix, gapRows, gapSummary, leagueSummary, playerCells, playerUsual, sideCells, targetsSummary } from '../../lib/fanbase'
+import { type DeltaLists, type DeltaRow, deltaLists, fanbaseVerdict, fanRosterMatrix, gapRows, gapSummary, leagueSummary, playerCells, playerUsual, sideCells, talkRows, talkSummary, targetsSummary } from '../../lib/fanbase'
 import { nickname, possessive } from '../../lib/fans'
 import { fmtInt, fmtPct, fmtSigned, ordinal } from '../../lib/format'
 import { groupBy } from '../../lib/group'
@@ -26,6 +27,8 @@ import type { Counts } from '../../lib/types'
 const LIST_TOP = 5
 
 export async function getStaticPaths() {
+  // The most-discussed list's length. Declared here: Astro compiles this function apart from the frontmatter.
+  const TALK_TOP = 10
   const { manifest, tables } = await getSeason()
   const floor = manifest.rules.floors.fanbase_min_n
   const players = new Map(tables.players.map((p) => [p.attributed_player, p]))
@@ -38,6 +41,10 @@ export async function getStaticPaths() {
   // Rank 1 is the highest negative rate; every fanbase is ranked, there is no minimum here.
   const ranked = rankBy(tables.fan_team_overall.map((r) => ({ ...countsOf(r), team: r })), 'neg', 0)
   const link = (team: string) => `/fanbases/${teams.get(team)!.abbreviation.toLowerCase()}/`
+  const talkMeta = (player: string) => {
+    const p = players.get(player)!
+    return { slug: p.slug, headshot: p.headshot_url, abbr: p.roster_team ? (teams.get(p.roster_team)?.abbreviation ?? null) : null }
+  }
   const describePlayer = (player: string) => ({ label: player, href: `/player/${players.get(player)!.slug}/`, logo: headshotVariant(players.get(player)!.headshot_url, 180) })
   const describeFans = (fan: string) => ({ label: possessive(fan), href: link(fan), logo: teams.get(fan)!.logo_url })
 
@@ -56,6 +63,7 @@ export async function getStaticPaths() {
         of: ranked.length,
         prev: neighbour(prev),
         next: neighbour(next),
+        talk: talkRows(fanRows, team, talkMeta, TALK_TOP),
         gap: gapRows(team, rosters.get(team) ?? [], byPlayer, floor),
         targets: deltaLists(playerCells(fanRows, team), (player) => usual.get(player) ?? sumCounts([]), floor, describePlayer),
         league: deltaLists(sideCells(matrix.byRoster.get(team), team), () => rosterAverage, floor, describeFans),
@@ -65,7 +73,7 @@ export async function getStaticPaths() {
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
-const { team, counts, rank, of, prev, next, gap, targets, league } = Astro.props
+const { team, counts, rank, of, prev, next, talk, gap, targets, league } = Astro.props
 const { manifest } = await getSeason()
 const floor = manifest.rules.floors.fanbase_min_n
 const name = team.fan_team
@@ -75,6 +83,7 @@ const verdict = fanbaseVerdict(name, counts, { rank, of })
 
 const SECTIONS = [
   { id: 'verdict', label: 'Verdict' },
+  { id: 'talk', label: 'Who they talk about' },
   { id: 'own', label: 'Their own players' },
   { id: 'targets', label: 'Grudges and flowers' },
   { id: 'league', label: 'The league on them' },
@@ -156,6 +165,13 @@ const lists = [
             A fanbase is the r/NBA flair its commenters wear, the team badge beside a username; comments with no flair are not counted here. A fanbase needs at
             least {fmtInt(floor)} comments about a player or a roster to be read against it, and every rate is from summed counts, never a mean of rates.
           </MethodNote>
+        </section>
+
+        <section id="talk" class="tp__section" aria-labelledby="talk-h">
+          <h2 id="talk-h">Who they talk about</h2>
+          <p class="tp__lede">{talkSummary(name, talk, counts.total)}</p>
+          <TalkList rows={talk} fans={fans} />
+          <p class="tp__note mono">Bar length: his share of the leader's n. Segments: negative, neutral, positive.</p>
         </section>
 
         <section id="own" class="tp__section" aria-labelledby="own-h">

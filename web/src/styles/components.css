@@ -215,13 +215,21 @@
   border-color: var(--bone);
 }
 
-/* Exhibit: a numbered receipt. Verbatim body, source, never a username. */
+/* Exhibit: a numbered receipt. Verbatim body, its thread, its source; never a username.
+   The sentiment is the left edge; the tab above already names it. */
 .exhibit {
   display: grid;
   gap: 10px;
   padding: 14px 16px;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--neu);
   background: var(--surface);
+}
+.exhibit--neg {
+  border-left-color: var(--heat);
+}
+.exhibit--pos {
+  border-left-color: var(--ice);
 }
 .exhibit__head {
   display: flex;
@@ -233,17 +241,16 @@
   text-transform: uppercase;
   color: var(--mute);
 }
-.exhibit__sent {
-  margin-left: auto;
-}
-.exhibit__sent--neg {
+.exhibit--neg .exhibit__head > span:first-child {
   color: var(--heat);
 }
-.exhibit__sent--neu {
-  color: var(--neu);
-}
-.exhibit__sent--pos {
+.exhibit--pos .exhibit__head > span:first-child {
   color: var(--ice);
+}
+.exhibit__flair {
+  margin-left: auto;
+  letter-spacing: 0.08em;
+  text-transform: none;
 }
 .exhibit__body {
   margin: 0;
@@ -254,25 +261,38 @@
   color: var(--bone);
 }
 .exhibit__foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  align-items: baseline;
+  display: grid;
+  gap: 8px;
   font-size: 13px;
   color: var(--bone-2);
 }
-.exhibit__post {
-  flex: 1 1 240px;
-  min-width: 0;
+.exhibit__ctx {
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--line-2);
+  overflow-wrap: anywhere;
 }
-.exhibit__post--missing {
+.exhibit__ctx b {
+  font-weight: 600;
+  color: var(--bone);
+}
+.exhibit__ctx--missing {
   color: var(--mute);
   font-style: italic;
 }
+.exhibit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: baseline;
+  font-size: 12px;
+}
 .exhibit__score {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--bone);
+}
+.exhibit__meta a {
+  margin-left: auto;
 }
 
 /* StatFigure: one number, its label, quiet detail. */

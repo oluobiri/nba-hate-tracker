@@ -6,6 +6,7 @@ import { useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 'react'
 
 import '../styles/receipts.css'
 import { fmtInt } from '../lib/format'
+import type { ReceiptContext } from '../lib/receipts'
 import { SENTIMENTS, type Sentiment } from '../lib/types'
 import { useViewState } from '../lib/url'
 import { Exhibit } from './Exhibit'
@@ -14,7 +15,9 @@ export interface ReceiptItem {
   body: string
   score: number
   sourceUrl: string
-  postTitle: string | null
+  context: ReceiptContext | null
+  flair: string | null
+  date: string
 }
 
 export interface ReceiptsProps {
@@ -106,7 +109,9 @@ export function Receipts({ name, cells, verified, top, official }: ReceiptsProps
                       sentiment={tab}
                       score={r.score}
                       sourceUrl={r.sourceUrl}
-                      postTitle={r.postTitle}
+                      context={r.context}
+                      flair={r.flair}
+                      date={r.date}
                       stamp={verified && tab !== 'neu' ? 'verified' : undefined}
                     />
                   </li>

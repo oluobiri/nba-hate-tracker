@@ -24,6 +24,7 @@ import { fmtInt, fmtPct, ordinal } from '../../lib/format'
 import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
 import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
+import { commentDate, receiptContext } from '../../lib/receipts'
 import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate, sumCounts } from '../../lib/metrics'
 import { type Counts, LENSES, type Lens, type Sentiment } from '../../lib/types'
 import { GAME_KEYS, RECEIPT_KEYS } from '../../lib/url'
@@ -62,7 +63,7 @@ export async function getStaticPaths() {
   const sentiment = groupByPlayer(tables.game_sentiment)
   const games = new Map(tables.games.map((g) => [g.game_id, g]))
   const teams = new Map(tables.teams.map((t) => [t.team, t]))
-  const posts = new Map(tables.posts.map((p) => [p.post_id, p.title]))
+  const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
 
   return tables.players.map((player) => {
     const name = player.attributed_player
@@ -119,7 +120,15 @@ const eyebrow = player.roster_team ? [rosterAbbr, player.position, 'season-end r
 const cells: Record<Sentiment, ReceiptItem[]> = { neg: [], neu: [], pos: [] }
 for (const r of receipts.toSorted((a, b) => a.rank - b.rank)) {
   const s = r.sentiment as Sentiment
-  cells[s]?.push({ body: r.body, score: r.score, sourceUrl: commentUrl(r.link_id, r.comment_id), postTitle: posts.get(r.link_id) ?? null })
+  const post = posts.get(r.link_id)
+  cells[s]?.push({
+    body: r.body,
+    score: r.score,
+    sourceUrl: commentUrl(r.link_id, r.comment_id),
+    context: receiptContext(post, post?.game_id ? games.get(post.game_id) : undefined, abbr),
+    flair: abbrOf(r.fan_team),
+    date: commentDate(r.created_utc),
+  })
 }
 
 // Fans.

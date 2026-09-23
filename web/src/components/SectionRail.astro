@@ -1,0 +1,50 @@
+---
+// The section rail: sticky anchors down a long page. Anchors work with no
+// JavaScript; the script only marks the section in view. Not an island:
+// it holds no state a reader sets.
+interface Props {
+  sections: readonly { id: string; label: string }[]
+  /** Preset the marked section (the style guide's static demo). */
+  current?: string
+  label?: string
+}
+
+const { sections, current, label = 'On this page' } = Astro.props
+---
+
+<nav class="rail" aria-label={label} data-rail>
+  <ol class="rail__list">
+    {
+      sections.map((s) => (
+        <li>
+          <a class="rail__link" href={`#${s.id}`} aria-current={s.id === current ? 'location' : undefined}>
+            {s.label}
+          </a>
+        </li>
+      ))
+    }
+  </ol>
+</nav>
+
+<script>
+  // Scrollspy: the section crossing the upper-middle band of the viewport
+  // is the current one. Progressive enhancement over plain anchors.
+  for (const rail of document.querySelectorAll<HTMLElement>('[data-rail]')) {
+    const links = [...rail.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')]
+    const targets = links.map((a) => document.getElementById(a.hash.slice(1))).filter((t): t is HTMLElement => t !== null)
+    if (targets.length === 0 || !('IntersectionObserver' in window)) continue
+    const mark = (id: string) => {
+      for (const a of links) {
+        if (a.hash === `#${id}`) a.setAttribute('aria-current', 'location')
+        else a.removeAttribute('aria-current')
+      }
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (e.isIntersecting) mark(e.target.id)
+      },
+      { rootMargin: '-40% 0px -55% 0px' },
+    )
+    for (const t of targets) io.observe(t)
+  }
+</script>

@@ -7,7 +7,7 @@ import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import '../styles/leaderboard.css'
 import { annotate, heroParts } from '../lib/annotate'
 import { fmtInt, fmtPct } from '../lib/format'
-import { headshotVariant } from '../lib/media'
+import { headshotSrcSet, headshotVariant } from '../lib/media'
 import { LENS_META, rankBy, rankDeltas } from '../lib/metrics'
 import { thresholdStops } from '../lib/threshold'
 import type { Counts } from '../lib/types'
@@ -128,6 +128,8 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
                 <motion.img
                   key={leader.row.slug}
                   src={headshotVariant(leader.row.headshot, 840)}
+                  srcSet={headshotSrcSet(leader.row.headshot, [180, 420, 840])}
+                  sizes="(min-width: 761px) 400px, 128px"
                   alt=""
                   width="840"
                   height="614"

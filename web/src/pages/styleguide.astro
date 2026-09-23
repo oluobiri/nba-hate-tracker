@@ -2,18 +2,28 @@
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { Games } from '../components/Games'
+import { GameScatter } from '../components/GameScatter'
+import { GamesTable } from '../components/GamesTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
+import { Receipts, type ReceiptItem } from '../components/Receipts'
+import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { ThresholdControl } from '../components/ThresholdControl'
+import { Timeline, type TimelineWeek } from '../components/Timeline'
+import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
-import { countsOf, negRate, posRate, rankBy, sumCounts } from '../lib/metrics'
+import { commentDate, receiptContext } from '../lib/receipts'
+import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
+import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
+import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
 import type { Sentiment } from '../lib/types'
@@ -33,8 +43,22 @@ const byVolume = rankBy(overall, 'volume', threshold).slice(0, 5)
 const maxVolume = byVolume[0]!.value
 
 const players = new Map(tables.players.map((p) => [p.attributed_player, p]))
+const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
 const noRoster = tables.players.find((p) => p.roster_team === null)!
-const posts = new Map(tables.posts.map((p) => [p.post_id, p.title]))
+const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
+const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
+const exhibitProps = (r: (typeof tables.comment_samples)[number]) => {
+  const post = posts.get(r.link_id)
+  return {
+    body: r.body,
+    sentiment: r.sentiment as Sentiment,
+    score: r.score,
+    sourceUrl: commentUrl(r.link_id, r.comment_id),
+    context: receiptContext(post, post?.game_id ? gamesById.get(post.game_id) : undefined, abbrOf),
+    flair: r.fan_team ? (abbrOf.get(r.fan_team) ?? null) : null,
+    date: commentDate(r.created_utc),
+  }
+}
 const receipt = tables.comment_samples.find((r) => r.sentiment === 'neg' && posts.has(r.link_id) && r.body.length < 240)!
 const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
@@ -44,7 +68,6 @@ const maxN = Math.max(...overall.map((r) => r.total))
 const stops = thresholdStops(manifest.rules.floors.fanbase_min_n, maxN, threshold)
 const customN = stops.find((s) => s < threshold) ?? threshold
 const customRanked = overall.filter((r) => r.total >= customN).length
-const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
 const rowProps = (name: string) => {
   const p = players.get(name)!
   return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, position: p.position, headshot: p.headshot_url }
@@ -66,6 +89,61 @@ const fans = tables.fan_team_overall.map((r) => ({ ...r, ...countsOf(r) })).toSo
 const leagueNeg = negRate(sumCounts(fans))
 const fanRows = fans.slice(0, 8).map((r) => ({ key: r.abbreviation, label: `${r.abbreviation} fans`, href: `/fanbases/${r.abbreviation.toLowerCase()}/`, value: negRate(r), n: r.total, logo: r.logo_url }))
 const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate))] as const
+const taggedRows = fanRows.slice(0, 5).map((r, i) => (i === 2 ? { ...r, tag: 'own fans' } : r))
+
+// The game log of #1 by negative rate: the verdict cases and the table's rows.
+const gameFloor = manifest.rules.floors.game_min_n
+const topLog = buildGameLog(
+  tables.player_games.filter((r) => r.attributed_player === top.attributed_player),
+  tables.game_sentiment.filter((r) => r.attributed_player === top.attributed_player),
+  gamesById,
+  abbrOf,
+  top,
+  gameFloor,
+)
+const judged = topLog.filter((g) => g.delta !== null)
+const harshest = judged.toSorted((a, b) => b.delta! - a.delta!)[0]
+const kindest = judged.toSorted((a, b) => a.delta! - b.delta!)[0]
+const quiet = topLog.find((g) => !g.talked)
+const topPoints = scatterPoints(topLog)
+const topR = pearson(topPoints.map((p) => p.x), topPoints.map((p) => p.y))
+// Ten rows for the table: talked games plus a DNP line and a neutral-site game when he has them.
+const tableRows = [...new Set([...topLog.filter((g) => g.talked).slice(0, 8), topLog.find((g) => g.dnp), topLog.find((g) => g.home === null), quiet].filter((g) => g !== undefined))]
+  .toSorted((a, b) => b.date.localeCompare(a.date))
+
+// Timelines: the full case, the thinnest official one, and the one with the fewest weeks at all.
+const weekFloor = manifest.rules.floors.week_min_n
+const ROLLING = 4
+const spine = weekSpine(tables.player_temporal.map((r) => r.week))
+const bands = phaseBands(spine, manifest.calendar)
+const temporalBy = new Map<string, typeof tables.player_temporal>()
+for (const r of tables.player_temporal) temporalBy.set(r.attributed_player, [...(temporalBy.get(r.attributed_player) ?? []), r])
+const timelineFor = (name: string, log = topLog) => {
+  const rows = spineRows(spine, (temporalBy.get(name) ?? []).map((r) => ({ ...countsOf(r), week: r.week })))
+  const counts = rows.map((r) => (r ? { neg: r.neg, neu: r.neu, pos: r.pos, total: r.total } : null))
+  const negLine = rollingRate(counts, ROLLING, negRate, weekFloor)
+  const posLine = rollingRate(counts, ROLLING, posRate, weekFloor)
+  const games = weekGames(log, spine).map((ws) => ws.map((g) => `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}`))
+  const tlWeeks: TimelineWeek[] = spine.map((key, i) => ({ key, counts: counts[i]!, games: games[i]! }))
+  return { weeks: tlWeeks, negLine, posLine, marks: extremeWeeks(counts, weekFloor), summary: timelineSummary(name, spine, counts, negLine, weekFloor, ROLLING) }
+}
+const weeksAtFloor = (name: string) => (temporalBy.get(name) ?? []).filter((r) => r.comment_count >= weekFloor).length
+const thinnestOfficial = qualified.toSorted((a, b) => weeksAtFloor(a.attributed_player) - weeksAtFloor(b.attributed_player))[0]!
+const fewestWeeks = overall.toSorted((a, b) => weeksAtFloor(a.attributed_player) - weeksAtFloor(b.attributed_player))[0]!
+const tlTop = timelineFor(top.attributed_player)
+const tlThin = timelineFor(thinnestOfficial.attributed_player, [])
+const tlNone = timelineFor(fewestWeeks.attributed_player, [])
+
+// Receipts: the official player with the thinnest cell, so the tabs show a full cell and a thin one.
+const RECEIPTS_TOP = 3
+const cellsFor = (name: string): Record<Sentiment, ReceiptItem[]> => {
+  const mine = tables.comment_samples.filter((r) => r.attributed_player === name).toSorted((a, b) => a.rank - b.rank)
+  const cell = (s: Sentiment) => mine.filter((r) => r.sentiment === s).map((r) => { const { sentiment: _s, ...rest } = exhibitProps(r); return rest })
+  return { neg: cell('neg'), neu: cell('neu'), pos: cell('pos') }
+}
+const thinnestCell = (name: string) => Math.min(...Object.values(cellsFor(name)).map((c) => c.length))
+const thinReceipts = qualified.toSorted((a, b) => thinnestCell(a.attributed_player) - thinnestCell(b.attributed_player))[0]!
+const LOG_TOP = 10
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -160,38 +238,11 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
 
     <section class="guide__section">
       <h2>Exhibit</h2>
-      <p class="eyebrow">A receipt: verbatim body, the post it lived in, score, source. No username, ever.</p>
+      <p class="eyebrow">A receipt: the sentiment as its edge, the commenter's flair, verbatim body, the thread as one line, score, date, source. No username, ever.</p>
       <div class="guide__stack">
-        <Exhibit
-          number={1}
-          body={receipt.body}
-          sentiment={receipt.sentiment as Sentiment}
-          score={receipt.score}
-          sourceUrl={commentUrl(receipt.link_id, receipt.comment_id)}
-          postTitle={posts.get(receipt.link_id) ?? null}
-          stamp={manifest.rules.receipts.verified ? 'verified' : undefined}
-        />
-        <Exhibit
-          number={2}
-          body={neutral.body}
-          sentiment={neutral.sentiment as Sentiment}
-          score={neutral.score}
-          sourceUrl={commentUrl(neutral.link_id, neutral.comment_id)}
-          postTitle={posts.get(neutral.link_id) ?? null}
-        />
-        {
-          orphan && (
-            <Exhibit
-              number={3}
-              body={orphan.body}
-              sentiment={orphan.sentiment as Sentiment}
-              score={orphan.score}
-              sourceUrl={commentUrl(orphan.link_id, orphan.comment_id)}
-              postTitle={null}
-              stamp={manifest.rules.receipts.verified ? 'verified' : undefined}
-            />
-          )
-        }
+        <Exhibit number={1} {...exhibitProps(receipt)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />
+        <Exhibit number={2} {...exhibitProps(neutral)} />
+        {orphan && <Exhibit number={3} {...exhibitProps(orphan)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />}
       </div>
       <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge.</p>
     </section>
@@ -259,8 +310,83 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
 
     <section class="guide__section">
       <h2>DeltaDot</h2>
-      <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Ranks read down.</p>
+      <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Every row prints its value, so the axis carries only the tick's label. Ranks read down.</p>
       <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
+      <p class="eyebrow">With a Δ column and a tagged row: the player page's "who hates him most", the tick his own average.</p>
+      <DeltaDot rows={taggedRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" averageLabel="His average" showDelta />
+    </section>
+
+    <section class="guide__section">
+      <h2>VerdictDelta</h2>
+      <p class="eyebrow">A game against his usual: signed points, a bar from the baseline, n. Heat harsher, ice kinder; the sign is printed.</p>
+      <div class="guide__row">
+        {harshest && <figure class="guide__fig"><VerdictDelta delta={harshest.delta} n={harshest.counts!.total} /><figcaption>harshest · {harshest.opponentAbbr} {harshest.score}</figcaption></figure>}
+        {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>kindest · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
+        <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
+        {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>GamesTable</h2>
+      <p class="eyebrow">A real table, newest first. Wins bold, losses gray. On a phone: date, opponent, result, P/R/A, verdict; nothing scrolls sideways.</p>
+      <GamesTable rows={tableRows} caption={`${top.attributed_player}'s game log, a sample`} />
+      <p class="eyebrow">
+        {topLog.some((g) => g.dnp) ? 'Includes a DNP line. ' : 'He has no DNP line this season. '}
+        {topLog.some((g) => g.home === null) ? 'Includes a neutral-site game. ' : 'He has no neutral-site game this season. '}
+        {quiet ? 'Includes a game under the floor.' : ''}
+      </p>
+    </section>
+
+    <section class="guide__section">
+      <h2>GameScatter</h2>
+      <p class="eyebrow">Game Score across, the negative share up; wins filled bone, losses hollow; his usual as a dashed rule. The table is the accessible equivalent.</p>
+      <GameScatter points={topPoints} baseline={negRate(top)} lead={scatterLead(top.attributed_player, topPoints.length, topR)} r={topR} />
+    </section>
+
+    <section class="guide__section">
+      <h2>Timeline</h2>
+      <p class="eyebrow">
+        {ROLLING}-week rolling lines from summed counts, weekly dots sized by n behind, neutral phase bands, worst and best week marked. Hover, focus or tap a week for its games.
+      </p>
+      <Timeline name={top.attributed_player} {...tlTop} bands={bands} floor={weekFloor} k={ROLLING} />
+      <p class="eyebrow">The thinnest official timeline: {thinnestOfficial.attributed_player}, {weeksAtFloor(thinnestOfficial.attributed_player)} of {spine.length} weeks at the floor.</p>
+      <Timeline name={thinnestOfficial.attributed_player} {...tlThin} bands={bands} floor={weekFloor} k={ROLLING} />
+      <p class="eyebrow">Nothing to draw: {fewestWeeks.attributed_player}, {weeksAtFloor(fewestWeeks.attributed_player)} weeks at the floor.</p>
+      <Timeline name={fewestWeeks.attributed_player} {...tlNone} bands={bands} floor={weekFloor} k={ROLLING} />
+    </section>
+
+    <section class="guide__section">
+      <h2>Receipts</h2>
+      <p class="eyebrow">
+        Three tabs in sentiment order, arrow keys move; the tab and the expansion live in the URL. Verified on negative and positive only. Rendered static here, hydrated on the player page.
+      </p>
+      <Receipts name={thinReceipts.attributed_player} cells={cellsFor(thinReceipts.attributed_player)} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={threshold} />
+      <p class="eyebrow">{thinReceipts.attributed_player}: the official player with the thinnest cell ({thinnestCell(thinReceipts.attributed_player)} receipts).</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>Games</h2>
+      <p class="eyebrow">The log island: which games and how many rows, both in the URL. Static here.</p>
+      <Games name={top.attributed_player} log={topLog.toSorted((a, b) => b.date.localeCompare(a.date))} floor={gameFloor} top={LOG_TOP} official={threshold} />
+    </section>
+
+    <section class="guide__section">
+      <h2>SectionRail</h2>
+      <p class="eyebrow">Anchors down a long page; sticky as a strip, a column past 1024 px. The marked one is the section in view.</p>
+      <div class="guide__stack guide__rail">
+        <SectionRail
+          sections={[
+            { id: 'verdict', label: 'Verdict' },
+            { id: 'receipts', label: 'Receipts' },
+            { id: 'fans', label: 'Fans' },
+            { id: 'timeline', label: 'Timeline' },
+            { id: 'games', label: 'Games' },
+          ]}
+          current="fans"
+          label="On this page (demo)"
+        />
+      </div>
     </section>
 
     <section class="guide__section">
@@ -346,6 +472,10 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  /* The rail demo sits in flow; the real one sticks. */
+  .guide__rail .rail {
+    position: static;
   }
   .guide__rows {
     margin: 0;

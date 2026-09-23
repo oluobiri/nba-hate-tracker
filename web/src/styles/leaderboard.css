@@ -140,12 +140,32 @@
   user-select: none;
 }
 @media (max-width: 760px) {
+  /* The headshot stays: a small card beside the sentence, as sports pages keep it. */
   .lb__hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 128px;
+    gap: 12px;
+    align-items: start;
     min-height: 0;
   }
   .lb__hero-figure {
+    height: auto;
+    min-height: 0;
+    /* Beside the name, not the kicker: centred on the hero text. */
+    align-self: center;
+    /* The lens switch slides the mug sideways; at the viewport's edge that must clip, not scroll. */
+    overflow: hidden;
+  }
+  .lb__rank-ghost {
     display: none;
+  }
+  /* The desktop cutout at a small size: masked into the ink, no card. */
+  .lb__hero-figure img {
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    object-fit: contain;
+    object-position: bottom;
   }
   .lb__sentence {
     font-size: clamp(40px, 12vw, 64px);

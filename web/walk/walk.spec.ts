@@ -133,3 +133,108 @@ test('the leaderboard controls are touch-sized', async ({ page }) => {
   }
   for (const tab of await page.getByRole('tab').all()) expect((await tab.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
 })
+
+// The player page: two islands, their state in the URL, five sections behind a rail.
+test('a receipts deep link shows its tab, and the tabs work by keyboard', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/player/james-harden/?tab=pos', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('tab', { name: /^Positive/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('html')).not.toHaveClass(/has-receipts-view/)
+  await expect(page.locator('.rc .exhibit--pos').first()).toBeVisible()
+  await page.getByRole('tab', { name: /^Positive/ }).focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByRole('tab', { name: /^Neutral/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/tab=neu/)
+  await page.goBack()
+  await expect(page.getByRole('tab', { name: /^Positive/ })).toHaveAttribute('aria-selected', 'true')
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('the receipts expand and collapse through the URL', async ({ page }) => {
+  await page.goto('/player/james-harden/?tab=pos&all=1', { waitUntil: 'networkidle' })
+  expect(await page.locator('.rc .exhibit').count()).toBeGreaterThan(3)
+  await page.getByRole('button', { name: 'Show 3' }).click()
+  await expect(page).not.toHaveURL(/all=/)
+  expect(await page.locator('.rc .exhibit').count()).toBe(3)
+})
+
+test('the game log filters and expands through the URL', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/player/victor-wembanyama/?games=all&log=all#games', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('button', { name: /^All games/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('html')).not.toHaveClass(/has-games-view/)
+  expect(await page.locator('.gt tbody tr').count()).toBeGreaterThan(10)
+  await page.getByRole('button', { name: /^Games the room talked about/ }).click()
+  await expect(page).not.toHaveURL(/games=/)
+  await expect(page).toHaveURL(/#games$/)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('the rail marks the section in view', async ({ page }) => {
+  await page.goto('/player/james-harden/', { waitUntil: 'networkidle' })
+  await page.locator('#games').scrollIntoViewIfNeeded()
+  await page.evaluate(() => window.scrollBy(0, 200))
+  await expect(page.locator('.rail__link[href="#games"]')).toHaveAttribute('aria-current', 'location')
+})
+
+test('the player page controls are touch-sized', async ({ page }) => {
+  await page.goto('/player/james-harden/', { waitUntil: 'networkidle' })
+  const controls = [
+    ...(await page.getByRole('tab').all()),
+    ...(await page.locator('.rail__link').all()),
+    ...(await page.locator('.pp__chip').all()),
+    ...(await page.locator('.pp__pn-link').all()),
+    page.getByRole('button', { name: /^Show all/ }).first(),
+    page.getByRole('button', { name: /^All games/ }),
+  ]
+  for (const c of controls) expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+})
+
+test('a week of the timeline opens its readout on focus', async ({ page }) => {
+  await page.goto('/player/james-harden/', { waitUntil: 'networkidle' })
+  const week = page.locator('.tl__week').nth(20)
+  await week.focus()
+  await expect(week.locator('.tl__tip')).toBeVisible()
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+// Edge states, one route each. The names are the data's, not a rule's.
+test('a free agent has no roster line and still gets fans', async ({ page }) => {
+  await page.goto('/player/chris-paul/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.pp__id')).toContainText('Free agent')
+  await expect(page.locator('#fans .pp__tile')).toHaveCount(2)
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a player who never dressed gets a sentence, no table, no scatter', async ({ page }) => {
+  await page.goto('/player/tyrese-haliburton/', { waitUntil: 'networkidle' })
+  await expect(page.locator('#games')).toContainText('never dressed')
+  await expect(page.locator('#games table')).toHaveCount(0)
+  await expect(page.locator('#games .sc')).toHaveCount(0)
+})
+
+test('a player below the official minimum is banded unofficial with hollow ranks', async ({ page }) => {
+  await page.goto('/player/reed-sheppard/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.note--rule .stamp--unofficial').first()).toBeVisible()
+  expect(await page.locator('.pp__chip .rank--hollow').count()).toBe(4)
+  expect(await page.locator('.pp__chip .rank:not(.rank--hollow)').count()).toBe(0)
+})
+
+test('a barely-mentioned player renders every section without a chart', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/player/bogdan-bogdanovic/', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Bogdan')
+  await expect(page.locator('#timeline .tl--empty')).toBeVisible()
+  await expect(page.locator('#timeline svg')).toHaveCount(0)
+  await expect(page.locator('#fans .dd')).toHaveCount(0)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a thin receipt cell shows all it has, with no show-all', async ({ page }) => {
+  await page.goto('/player/aaron-wiggins/', { waitUntil: 'networkidle' })
+  expect(await page.locator('.rc .exhibit').count()).toBe(1)
+  await expect(page.getByRole('button', { name: /^Show all/ })).toHaveCount(0)
+})

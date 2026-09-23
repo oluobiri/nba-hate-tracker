@@ -195,13 +195,41 @@
   transform: rotate(-3deg);
 }
 
-/* Exhibit: a numbered receipt. Verbatim body, source, never a username. */
+/* Button: a mono chip, touch-sized; pressed is bone on ink. */
+.btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.btn:hover {
+  border-color: var(--bone-2);
+}
+.btn[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--bone);
+  border-color: var(--bone);
+}
+
+/* Exhibit: a numbered receipt. Verbatim body, its thread, its source; never a username.
+   The sentiment is the left edge; the tab above already names it. */
 .exhibit {
   display: grid;
   gap: 10px;
   padding: 14px 16px;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--neu);
   background: var(--surface);
+}
+.exhibit--neg {
+  border-left-color: var(--heat);
+}
+.exhibit--pos {
+  border-left-color: var(--ice);
 }
 .exhibit__head {
   display: flex;
@@ -213,17 +241,16 @@
   text-transform: uppercase;
   color: var(--mute);
 }
-.exhibit__sent {
-  margin-left: auto;
-}
-.exhibit__sent--neg {
+.exhibit--neg .exhibit__head > span:first-child {
   color: var(--heat);
 }
-.exhibit__sent--neu {
-  color: var(--neu);
-}
-.exhibit__sent--pos {
+.exhibit--pos .exhibit__head > span:first-child {
   color: var(--ice);
+}
+.exhibit__flair {
+  margin-left: auto;
+  letter-spacing: 0.08em;
+  text-transform: none;
 }
 .exhibit__body {
   margin: 0;
@@ -234,25 +261,38 @@
   color: var(--bone);
 }
 .exhibit__foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  align-items: baseline;
+  display: grid;
+  gap: 8px;
   font-size: 13px;
   color: var(--bone-2);
 }
-.exhibit__post {
-  flex: 1 1 240px;
-  min-width: 0;
+.exhibit__ctx {
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--line-2);
+  overflow-wrap: anywhere;
 }
-.exhibit__post--missing {
+.exhibit__ctx b {
+  font-weight: 600;
+  color: var(--bone);
+}
+.exhibit__ctx--missing {
   color: var(--mute);
   font-style: italic;
 }
+.exhibit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: baseline;
+  font-size: 12px;
+}
 .exhibit__score {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--bone);
+}
+.exhibit__meta a {
+  margin-left: auto;
 }
 
 /* StatFigure: one number, its label, quiet detail. */
@@ -341,6 +381,18 @@
 }
 .tabs__tab--polar[aria-selected='true'] .tabs__line {
   background: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%);
+}
+.tabs__tab--neu[aria-selected='true'] {
+  --tab-line: var(--neu);
+}
+.tabs__count {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mute);
+}
+.tabs__tab[aria-selected='true'] .tabs__count {
+  color: var(--bone-2);
 }
 .tabs__unit {
   margin: 0;
@@ -758,15 +810,10 @@
   font-size: 11px;
   color: var(--mute);
 }
-.dd__lo,
-.dd__hi,
 .dd__avg {
   grid-column: 4;
   grid-row: 1;
   white-space: nowrap;
-}
-.dd__hi {
-  justify-self: end;
 }
 .dd__avg {
   justify-self: start;
@@ -775,6 +822,12 @@
   padding-bottom: 2px;
   border-bottom: 1px solid var(--bone-2);
   color: var(--bone-2);
+}
+.dd__avg--start {
+  transform: none;
+}
+.dd__avg--end {
+  transform: translateX(-100%);
 }
 .dd__rows {
   margin: 0;
@@ -847,9 +900,55 @@
   text-align: right;
   color: var(--bone-2);
 }
+/* With a Δ column: each row's distance from the tick, in points. */
+.dd--delta {
+  --dd-cols: 28px 20px minmax(110px, 1fr) minmax(120px, 3fr) 56px 52px;
+}
+.dd__dhead {
+  grid-column: 6;
+  justify-self: end;
+  white-space: nowrap;
+}
+.dd__delta {
+  font-size: 13px;
+  text-align: right;
+  color: var(--bone-2);
+}
+/* A tagged row (his own fans): bone outline and the tag, never yellow. */
+.dd__tag {
+  margin-left: 8px;
+  padding: 1px 5px;
+  border: 1px solid var(--bone-2);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: var(--bone-2);
+}
+.dd__row--tagged .dd__link {
+  outline: 1px solid var(--bone-2);
+  outline-offset: -1px;
+}
+/* The tag takes its own line rather than an ellipsis. */
+.dd__row--tagged .dd__label {
+  white-space: normal;
+  line-height: 1.05;
+}
+.dd__row--tagged .dd__tag {
+  display: block;
+  width: max-content;
+  margin: 3px 0 0;
+}
 @media (max-width: 640px) {
-  .dd {
+  .dd,
+  .dd--delta {
     --dd-cols: 24px 18px minmax(64px, 1fr) minmax(90px, 2fr) 48px;
+  }
+  /* The Δ stays in the row's text alternative; the value column carries the rate. */
+  .dd__delta,
+  .dd__dhead {
+    display: none;
   }
   .dd__link,
   .dd__head {
@@ -857,11 +956,6 @@
   }
   .dd__label {
     font-size: 14px;
-  }
-  /* The value column already carries the extremes; only the tick keeps its label. */
-  .dd__lo,
-  .dd__hi {
-    display: none;
   }
 }
 
@@ -888,4 +982,584 @@
   color: var(--ink);
   background: var(--bone);
   border-color: var(--bone);
+}
+
+/* SectionRail: sticky anchors. A strip under the header; a column on a wide screen. */
+.rail {
+  position: sticky;
+  top: 57px;
+  z-index: 15;
+  /* A grid item: without this the strip's content width becomes the page's. */
+  min-width: 0;
+  max-width: 100%;
+  background: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.rail__list {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.rail__list::-webkit-scrollbar {
+  display: none;
+}
+.rail__link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--mute);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.rail__link:hover {
+  color: var(--bone-2);
+}
+.rail__link[aria-current='location'] {
+  color: var(--bone);
+  border-bottom-color: var(--bone);
+}
+@media (min-width: 1024px) {
+  .rail {
+    top: 80px;
+    align-self: start;
+    border-bottom: 0;
+    background: none;
+  }
+  .rail__list {
+    flex-direction: column;
+    gap: 0;
+    overflow: visible;
+    border-left: 1px solid var(--line);
+  }
+  .rail__link {
+    padding: 8px 14px;
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+    margin: 0 0 0 -1px;
+  }
+  .rail__link[aria-current='location'] {
+    border-left-color: var(--bone);
+  }
+}
+
+/* VerdictDelta: a game against his usual. Figure, a bar centred on the baseline, n. */
+.vd {
+  --vd-ink: var(--bone-2);
+  display: inline-grid;
+  grid-template-columns: 40px minmax(48px, 88px);
+  grid-template-areas:
+    'fig track'
+    'fig n';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  vertical-align: middle;
+}
+.vd--neg {
+  --vd-ink: var(--heat);
+}
+.vd--pos {
+  --vd-ink: var(--ice);
+}
+.vd__figure {
+  grid-area: fig;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--vd-ink);
+}
+.vd--neu .vd__figure {
+  color: var(--mute);
+}
+.vd__track {
+  grid-area: track;
+  position: relative;
+  height: 6px;
+  background: var(--surface-2);
+}
+.vd__base {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  border-left: 1px solid var(--bone-2);
+}
+.vd__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--vd-l);
+  width: var(--vd-w);
+  background: var(--vd-ink);
+}
+.vd__n {
+  grid-area: n;
+  font-size: 10px;
+  color: var(--mute);
+}
+
+/* GamesTable: the log as a table. Wide columns go on a phone; the line collapses to P/R/A. */
+.gt {
+  width: 100%;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+}
+.gt th,
+.gt td {
+  padding: 8px 6px;
+  text-align: right;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.gt thead th {
+  padding-block: 6px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gt abbr {
+  text-decoration: none;
+}
+.gt .gt__date,
+.gt .gt__opp,
+.gt .gt__res,
+.gt thead th:nth-child(-n + 3),
+.gt .gt__verdict,
+.gt .gt__verdict-h {
+  text-align: left;
+}
+/* The verdict takes the slack; every other column hugs its content. */
+.gt thead th:not(.gt__verdict-h) {
+  width: 1%;
+}
+.gt__date {
+  font-weight: 400;
+  color: var(--bone-2);
+}
+.gt__phase {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--line-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gt__opp {
+  color: var(--bone-2);
+}
+/* Decision 8: a win is bold bone, a loss gray, never a colour. */
+.gt__row--w .gt__res {
+  font-weight: 600;
+  color: var(--bone);
+}
+.gt__row--l .gt__res {
+  color: var(--bone-2);
+}
+.gt__row--dnp td:not(.gt__verdict) {
+  color: var(--mute);
+}
+.gt__narrow {
+  display: none;
+}
+.gt__verdict {
+  padding-block: 4px;
+}
+@media (max-width: 640px) {
+  .gt {
+    table-layout: fixed;
+    font-size: 12px;
+  }
+  .gt th,
+  .gt td {
+    padding: 6px 4px;
+  }
+  .gt__wide {
+    display: none;
+  }
+  .gt__narrow {
+    display: table-cell;
+  }
+  .gt thead th:nth-child(1) {
+    width: 54px;
+  }
+  .gt thead th.gt__narrow {
+    width: auto;
+  }
+  .gt thead th:nth-child(2) {
+    width: 52px;
+  }
+  .gt thead th:nth-child(3) {
+    width: 72px;
+  }
+  .gt__verdict-h {
+    width: 104px;
+  }
+  .gt__phase {
+    display: block;
+    width: max-content;
+    margin: 2px 0 0;
+  }
+  .gt .vd {
+    grid-template-columns: 32px minmax(36px, 56px);
+    column-gap: 6px;
+  }
+  .gt .vd__figure {
+    font-size: 13px;
+  }
+}
+
+/* GameScatter: Game Score across, the room up. Wins filled, losses hollow. */
+.sc {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  max-width: 560px;
+}
+.sc__lead {
+  margin: 0;
+  font-size: 16px;
+  color: var(--bone);
+  text-wrap: balance;
+}
+.sc__plot {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'y svg'
+    '. x';
+  gap: 4px 6px;
+  align-items: stretch;
+}
+.sc__svg {
+  grid-area: svg;
+  width: 100%;
+  height: auto;
+  background: var(--ink-2);
+}
+.sc__y {
+  grid-area: y;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  align-self: center;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.sc__x {
+  grid-area: x;
+  justify-self: end;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.sc__grid {
+  stroke: var(--line);
+  stroke-width: 0.5;
+}
+.sc__axis {
+  stroke: var(--line-2);
+  stroke-width: 1;
+}
+.sc__tick {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--mute);
+}
+.sc__base {
+  stroke: var(--bone-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.sc__base-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--bone-2);
+}
+.sc__pt--w {
+  fill: var(--bone);
+}
+.sc__pt--l {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 1.5;
+}
+.sc__cap {
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.sc__key {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 2px 0 6px;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.sc__key--w {
+  background: var(--bone);
+}
+.sc__key--l {
+  border: 1.5px solid var(--bone);
+}
+
+/* Timeline: rolling lines over weekly dots; every word is HTML. */
+.tl {
+  --tl-h: 260px;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.tl__summary {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--bone);
+  text-wrap: pretty;
+}
+.tl__chart {
+  position: relative;
+  height: var(--tl-h);
+  border-bottom: 1px solid var(--line-2);
+}
+.tl__bands,
+.tl__dots,
+.tl__svg,
+.tl__marks,
+.tl__ends,
+.tl__weeks {
+  position: absolute;
+  inset: 0;
+}
+.tl__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* Phase bands: neutral surfaces, never heat. */
+.tl__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: var(--ink-2);
+}
+.tl__band:not(.tl__band--wide) .tl__band-label {
+  display: none;
+}
+.tl__band--regular_season,
+.tl__band--playoffs {
+  background: var(--surface);
+}
+.tl__band-label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--mute);
+}
+.tl__dot {
+  position: absolute;
+  width: var(--tl-d);
+  height: var(--tl-d);
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  opacity: 0.28;
+}
+.tl__dot--neg {
+  background: var(--heat);
+}
+.tl__dot--pos {
+  background: var(--ice);
+}
+.tl__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.tl__line--neg {
+  stroke: var(--heat);
+}
+.tl__line--pos {
+  stroke: var(--ice);
+}
+.tl__mark {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, 50%);
+  border-radius: 50%;
+  border: 2px solid var(--bone);
+  background: var(--ink);
+}
+.tl__mark--worst {
+  border-color: var(--heat);
+}
+.tl__mark--best {
+  border-color: var(--ice);
+}
+.tl__marks {
+  overflow: hidden;
+}
+.tl__key {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 3px 0 8px;
+  border-radius: 50%;
+  border: 2px solid var(--bone);
+  vertical-align: -1px;
+}
+.tl__key--worst {
+  border-color: var(--heat);
+}
+.tl__key--best {
+  border-color: var(--ice);
+}
+.tl__ends {
+  pointer-events: none;
+}
+.tl__end {
+  position: absolute;
+  right: 4px;
+  transform: translateY(50%);
+  padding: 1px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--ink);
+}
+.tl__end--neg {
+  color: var(--heat);
+}
+.tl__end--pos {
+  color: var(--ice);
+}
+/* Week columns: focusable, each with a readout that lands below the axis. */
+.tl__weeks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tl__week {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(100% / var(--tl-n));
+  cursor: default;
+}
+.tl__week:hover,
+.tl__week:focus {
+  background: rgba(237, 232, 220, 0.06);
+  outline: none;
+}
+.tl__week:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.tl__tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 26px);
+  left: calc(-100% * var(--tl-i));
+  width: calc(100% * var(--tl-n));
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--bone-2);
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  z-index: 2;
+}
+.tl__week:hover .tl__tip,
+.tl__week:focus .tl__tip,
+.tl__week:focus-within .tl__tip {
+  display: grid;
+  gap: 4px;
+}
+.tl__tip-head {
+  font-size: 12px;
+}
+.tl__tip-head b {
+  color: var(--bone);
+}
+.tl__tip-neg {
+  color: var(--heat);
+}
+.tl__tip-pos {
+  color: var(--ice);
+}
+.tl__tip-games {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  columns: 2;
+  column-gap: 16px;
+}
+.tl__tip-none {
+  font-size: 12px;
+  color: var(--mute);
+}
+.tl__axis {
+  position: relative;
+  height: 18px;
+  overflow: hidden;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.tl__month {
+  position: absolute;
+  top: 2px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line-2);
+}
+.tl__readout {
+  position: relative;
+  min-height: 7.5em;
+  padding: 8px 0;
+}
+.tl__readout-hint {
+  font-size: 12px;
+  color: var(--mute);
+}
+.tl--empty .tl__summary {
+  color: var(--bone-2);
+}
+@media (max-width: 640px) {
+  .tl {
+    --tl-h: 200px;
+  }
+  .tl__band:not(.tl__band--wider) .tl__band-label {
+    display: none;
+  }
+  .tl__tip-games {
+    columns: 1;
+  }
+  .tl__readout {
+    min-height: 9em;
+  }
 }

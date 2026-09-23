@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 // HTML first: an island needs browser state as its reason, and the list of
 // islands is a decision, not a drift. Adding one means adding it here.
 const ROOT = path.resolve(__dirname)
-const ISLANDS = ['FanbaseIndex client:visible', 'Leaderboard client:load', 'PlayerSearch client:idle']
+const ISLANDS = ['FanbaseIndex client:visible', 'Games client:visible', 'Leaderboard client:load', 'PlayerSearch client:idle', 'Receipts client:load']
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

@@ -213,8 +213,8 @@ const tiles = [
       <div class="pp__mug" aria-hidden="true">
         <img
           src={headshotVariant(player.headshot_url, 420)}
-          srcset={headshotSrcSet(player.headshot_url, [420, 840])}
-          sizes="(min-width: 760px) 360px, 1px"
+          srcset={headshotSrcSet(player.headshot_url, [180, 420, 840])}
+          sizes="(min-width: 761px) 360px, 96px"
           width="420"
           height="307"
           alt=""
@@ -644,17 +644,36 @@ const tiles = [
     min-width: 0;
   }
   @media (max-width: 760px) {
+    /* The headshot stays: a small card beside the name, as sports pages keep it. */
     .pp__head {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr) 96px;
       grid-template-areas:
-        'text'
-        'bio';
+        'text mug'
+        'bio bio';
+      gap: 0 12px;
+      align-items: start;
     }
     .pp__head-text {
       min-height: 0;
     }
     .pp__mug {
-      display: none;
+      min-height: 0;
+      align-self: start;
+      margin-top: 28px;
+    }
+    .pp__mug img {
+      position: static;
+      width: 96px;
+      height: 96px;
+      max-height: none;
+      object-fit: cover;
+      object-position: top;
+      border-radius: 3px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      filter: grayscale(0.85) contrast(1.05);
+      mask-image: none;
+      -webkit-mask-image: none;
     }
     .pp__bio {
       gap: 10px 24px;

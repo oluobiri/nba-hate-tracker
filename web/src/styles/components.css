@@ -244,3 +244,55 @@
   font-size: 13px;
   color: var(--mute);
 }
+
+/* LensTabs: four lenses, the underline is the lens's colour job. */
+.tabs {
+  display: grid;
+  gap: 8px;
+}
+.tabs__list {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.tabs__tab {
+  --tab-line: transparent;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 10px 12px 8px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--mute);
+  border-bottom: 3px solid var(--tab-line);
+  margin-bottom: -1px;
+}
+.tabs__tab:hover {
+  color: var(--bone-2);
+}
+.tabs__tab[aria-selected='true'] {
+  color: var(--bone);
+}
+.tabs__tab--neg[aria-selected='true'] {
+  --tab-line: var(--heat);
+}
+.tabs__tab--pos[aria-selected='true'] {
+  --tab-line: var(--ice);
+}
+.tabs__tab--volume[aria-selected='true'] {
+  --tab-line: var(--bone);
+}
+.tabs__tab--polar[aria-selected='true'] {
+  border-image: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%) 1;
+}
+.tabs__unit {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}

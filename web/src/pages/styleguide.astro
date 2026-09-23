@@ -1,5 +1,6 @@
 ---
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
 import { SentimentBar } from '../components/SentimentBar'
@@ -161,6 +162,15 @@ const sizes = ['hero', 'row', 'mini'] as const
         }
       </div>
       <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge.</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>LensTabs</h2>
+      <p class="eyebrow">Underline heat / ice / bone / split. Arrow keys move; the subtitle names the metric.</p>
+      <div class="guide__stack">
+        <LensTabs lens="neg" onChange={() => {}} id="guide-neg" />
+        <LensTabs lens="polar" onChange={() => {}} id="guide-polar" />
+      </div>
     </section>
 
     <section class="guide__section">

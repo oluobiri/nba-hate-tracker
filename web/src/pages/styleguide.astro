@@ -1,4 +1,5 @@
 ---
+import { BoardRow } from '../components/BoardRow'
 import { Exhibit, commentUrl } from '../components/Exhibit'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
@@ -40,6 +41,15 @@ const maxN = Math.max(...overall.map((r) => r.total))
 const stops = thresholdStops(manifest.rules.floors.fanbase_min_n, maxN, threshold)
 const customN = stops.find((s) => s < threshold) ?? threshold
 const customRanked = overall.filter((r) => r.total >= customN).length
+const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+const rowProps = (name: string) => {
+  const p = players.get(name)!
+  return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, headshot: p.headshot_url }
+}
+const freeAgent = byNeg.find((r) => r.rank !== null && players.get(r.row.attributed_player)?.roster_team === null)
+const byCustom = rankBy(overall, 'neg', customN)
+const hollow = byCustom.find((r) => r.rank !== null && r.row.total < threshold)!
+const ghost = byCustom.find((r) => r.rank === null)!
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -180,6 +190,19 @@ const customRanked = overall.filter((r) => r.total >= customN).length
     </section>
 
     <section class="guide__section">
+      <h2>BoardRow</h2>
+      <p class="eyebrow">The whole row is the link. Rank, mug, who, bar, value, n; chip for unofficial and for rank movement.</p>
+      <ol class="guide__rows">
+        <BoardRow rank={1} official {...rowProps(top.attributed_player)} counts={top} lens="neg" />
+        {freeAgent && <BoardRow rank={freeAgent.rank} official {...rowProps(freeAgent.row.attributed_player)} counts={freeAgent.row} lens="neg" delta={2} />}
+        <BoardRow rank={hollow.rank} official={false} {...rowProps(hollow.row.attributed_player)} counts={hollow.row} lens="neg" />
+        <BoardRow rank={null} official={false} {...rowProps(ghost.row.attributed_player)} counts={ghost.row} lens="neg" />
+        {byVolume.slice(0, 2).map((r) => <BoardRow rank={r.rank} official {...rowProps(r.row.attributed_player)} counts={r.row} lens="volume" scale={r.value / maxVolume} />)}
+      </ol>
+      <p class="eyebrow">Official · free agent with a rank-delta chip · hollow (below the official minimum) · ghosted (below the custom threshold) · volume lens.</p>
+    </section>
+
+    <section class="guide__section">
       <h2>ThresholdControl</h2>
       <p class="eyebrow">Collapsed by default; open on tap; open, loud and stamped once moved. Reset returns to the manifest value.</p>
       <div class="guide__stack">
@@ -282,6 +305,11 @@ const customRanked = overall.filter((r) => r.total >= customN).length
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  .guide__rows {
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
   }
   .guide__dl {
     margin: 0;

@@ -377,3 +377,132 @@
   font-size: 12px;
   color: var(--mute);
 }
+
+/* BoardRow: the whole row is the link. Rank · mug · who · bar · value · n. */
+.row {
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+}
+.row__link {
+  display: grid;
+  grid-template-columns: 48px 40px minmax(140px, 1fr) minmax(160px, 2fr) 64px 72px 20px;
+  grid-template-areas: 'rank mug who bar value n chev';
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 4px;
+  text-decoration: none;
+  color: inherit;
+}
+.row__link:hover {
+  background: var(--ink-2);
+}
+.row__link:hover .row__name {
+  text-decoration: underline;
+}
+.row__rank {
+  grid-area: rank;
+  text-align: right;
+}
+.row__unranked {
+  color: var(--mute-2);
+  font-size: 20px;
+}
+.row__mug {
+  grid-area: mug;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-2);
+  filter: grayscale(1);
+}
+.row__who {
+  grid-area: who;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.row__name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.row__team {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+.row__chip {
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--bone-2);
+}
+.row__chip--unofficial {
+  text-transform: uppercase;
+  border-color: var(--hl);
+  color: var(--hl);
+}
+.row__bar {
+  grid-area: bar;
+  min-width: 0;
+}
+.row__value {
+  grid-area: value;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 500;
+}
+.row__value--neg {
+  color: var(--heat);
+}
+.row__value--pos {
+  color: var(--ice);
+}
+.row__n {
+  grid-area: n;
+  text-align: right;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.row__chevron {
+  grid-area: chev;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--mute);
+}
+.row--ghost .row__link {
+  opacity: 0.45;
+}
+@media (max-width: 640px) {
+  /* n stays visible on phones: the second line of the row. */
+  .row__link {
+    grid-template-columns: 36px 36px 1fr auto 16px;
+    grid-template-areas:
+      'rank mug who value chev'
+      'rank mug bar n chev';
+    gap: 6px 8px;
+    padding-inline: 0;
+  }
+  .row__mug {
+    width: 36px;
+    height: 36px;
+  }
+  .row__name {
+    font-size: 18px;
+  }
+  .row__value {
+    font-size: 14px;
+  }
+  .row__n {
+    font-size: 12px;
+    align-self: center;
+  }
+}

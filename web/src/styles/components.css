@@ -828,6 +828,12 @@
   border-bottom: 1px solid var(--bone-2);
   color: var(--bone-2);
 }
+.dd__avg--start {
+  transform: none;
+}
+.dd__avg--end {
+  transform: translateX(-100%);
+}
 .dd__rows {
   margin: 0;
   padding: 0;
@@ -929,6 +935,16 @@
   outline: 1px solid var(--bone-2);
   outline-offset: -1px;
 }
+/* The tag takes its own line rather than an ellipsis. */
+.dd__row--tagged .dd__label {
+  white-space: normal;
+  line-height: 1.05;
+}
+.dd__row--tagged .dd__tag {
+  display: block;
+  width: max-content;
+  margin: 3px 0 0;
+}
 @media (max-width: 640px) {
   .dd,
   .dd--delta {
@@ -938,16 +954,6 @@
   .dd__delta,
   .dd__dhead {
     display: none;
-  }
-  /* The tag takes its own line rather than an ellipsis. */
-  .dd__row--tagged .dd__label {
-    white-space: normal;
-    line-height: 1.05;
-  }
-  .dd__row--tagged .dd__tag {
-    display: block;
-    width: max-content;
-    margin: 3px 0 0;
   }
   .dd__link,
   .dd__head {

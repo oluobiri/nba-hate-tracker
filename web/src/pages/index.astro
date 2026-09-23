@@ -1,4 +1,5 @@
 ---
+import { FanbaseIndex, type FanRow } from '../components/FanbaseIndex'
 import { Leaderboard, type BoardPlayer } from '../components/Leaderboard'
 import { MethodNote } from '../components/MethodNote'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
@@ -35,6 +36,12 @@ const temporal: TitleRow[] = tables.player_temporal.map((r) => {
 const weeks = [...new Set(temporal.map((r) => r.week))].toSorted()
 const belt = weeklyHolders(temporal, 'neg', beltFloor)
 const flowers = weeklyHolders(temporal, 'pos', beltFloor)
+
+// The fanbase index: every flair at or above the fanbase floor.
+const fanFloor = manifest.rules.floors.fanbase_min_n
+const fans: FanRow[] = tables.fan_team_overall
+  .filter((r) => r.comment_count >= fanFloor)
+  .map((r) => ({ ...countsOf(r), abbr: r.abbreviation, name: r.fan_team, logo: r.logo_url }))
 ---
 
 <Base title={SITE_NAME} description={`r/NBA's most hated players of ${manifest.season}, by negative comment rate.`}>
@@ -75,11 +82,25 @@ const flowers = weeklyHolders(temporal, 'pos', beltFloor)
         weak.
       </MethodNote>
     </section>
+
+    <section class="fans" aria-labelledby="fans-h">
+      <header class="titles__head">
+        <p class="eyebrow">Fanbase index · {fans.length} flairs</p>
+        <h2 id="fans-h">Which fans are the harshest?</h2>
+      </header>
+      <FanbaseIndex client:visible fans={fans} />
+      <MethodNote kind="method">
+        A fanbase is the flair its commenters wear, over every player they talked about. The tick is the league
+        average from summed counts, never a mean of rates. Flairs with fewer than {fmtInt(fanFloor)} comments
+        are left out.
+      </MethodNote>
+    </section>
   </main>
 </Base>
 
 <style>
-  .titles {
+  .titles,
+  .fans {
     display: grid;
     gap: 16px;
     padding-top: 32px;

@@ -714,3 +714,28 @@
     font-size: 14px;
   }
 }
+
+/* FanbaseIndex: the toggle above a DeltaDot. */
+.fi {
+  display: grid;
+  gap: 16px;
+}
+.fi__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fi__btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.fi__btn[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--bone);
+  border-color: var(--bone);
+}

@@ -140,11 +140,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
         onChange={(v) => update({ n: v }, { replace: true })}
       />
 
-      <MethodNote kind="read-first">
-        {notes.map((s) => (
-          <p key={s}>{s}</p>
-        ))}
-      </MethodNote>
+      <MethodNote kind="read-first">{notes.join(' ')}</MethodNote>
 
       <LayoutGroup>
       <motion.ol id="lens-panel" className="lb__rows" role="tabpanel" aria-labelledby={`lens-tab-${lens}`} layout>

@@ -310,7 +310,7 @@ const LOG_TOP = 10
 
     <section class="guide__section">
       <h2>DeltaDot</h2>
-      <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Ranks read down.</p>
+      <p class="eyebrow">Dots on one zoomed axis; the tick is the league average from summed counts, never a mean of rates. Every row prints its value, so the axis carries only the tick's label. Ranks read down.</p>
       <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
       <p class="eyebrow">With a Δ column and a tagged row: the player page's "who hates him most", the tick his own average.</p>
       <DeltaDot rows={taggedRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" averageLabel="His average" showDelta />

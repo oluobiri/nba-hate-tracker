@@ -30,24 +30,23 @@ export interface DeltaDotProps {
   showDelta?: boolean
 }
 
-// Within this share of either end, the average label replaces the end label.
+// Within this share of either end, the tick's label hangs inward instead of centred.
 const EDGE = 22
 
 export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false }: DeltaDotProps) {
   const [lo, hi] = domain
   const pct = (v: number): number => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 50)
   const style = (v: number): CSSProperties => ({ '--dd-x': `${pct(v)}%`, '--dd-avg': `${pct(average)}%` }) as CSSProperties
-  // Near an end of the axis the tick's label takes that end's place.
+  // Every row prints its value, so the axis carries only the tick's label,
+  // which hangs inward near either end.
   const avgPct = pct(average)
   const edge = avgPct < EDGE ? 'start' : avgPct > 100 - EDGE ? 'end' : null
   return (
     <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}`}>
       <div className="dd__head mono" aria-hidden="true">
-        {edge !== 'start' && <span className="dd__lo">{format(lo)}</span>}
         <span className={`dd__avg${edge ? ` dd__avg--${edge}` : ''}`} style={style(average)}>
           {averageLabel} {format(average)}
         </span>
-        {edge !== 'end' && <span className="dd__hi">{format(hi)}</span>}
         {showDelta && <span className="dd__dhead">Δ pts</span>}
       </div>
       <ol className="dd__rows">

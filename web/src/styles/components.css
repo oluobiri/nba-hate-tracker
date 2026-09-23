@@ -810,15 +810,10 @@
   font-size: 11px;
   color: var(--mute);
 }
-.dd__lo,
-.dd__hi,
 .dd__avg {
   grid-column: 4;
   grid-row: 1;
   white-space: nowrap;
-}
-.dd__hi {
-  justify-self: end;
 }
 .dd__avg {
   justify-self: start;
@@ -961,11 +956,6 @@
   }
   .dd__label {
     font-size: 14px;
-  }
-  /* The value column already carries the extremes; only the tick keeps its label. */
-  .dd__lo,
-  .dd__hi {
-    display: none;
   }
 }
 

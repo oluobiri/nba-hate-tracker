@@ -1,12 +1,14 @@
 // The board: one island. Hero sentence, lens tabs, threshold control, the
 // "Read this first" note, the rows and the copy link share one view state,
 // bound to the query string. Every rule number arrives as a prop.
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 
 import '../styles/leaderboard.css'
 import { annotate, heroParts } from '../lib/annotate'
-import { fmtInt } from '../lib/format'
-import { rankBy, rankDeltas } from '../lib/metrics'
+import { fmtInt, fmtPct } from '../lib/format'
+import { headshotVariant } from '../lib/media'
+import { LENS_META, rankBy, rankDeltas } from '../lib/metrics'
 import { thresholdStops } from '../lib/threshold'
 import type { Counts } from '../lib/types'
 import { useViewState } from '../lib/url'
@@ -14,6 +16,7 @@ import { BoardRow } from './BoardRow'
 import { LensTabs } from './LensTabs'
 import { MethodNote } from './MethodNote'
 import { SentimentBar } from './SentimentBar'
+import { Stamp } from './Stamp'
 import { ThresholdControl } from './ThresholdControl'
 
 export interface BoardPlayer extends Counts {
@@ -58,7 +61,10 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
   const input = { ranked, lens, threshold: n, official }
   const hero = heroParts(input)
   const leader = hero.leader
+  const custom = n !== official
+  const meta = LENS_META[lens]
   const notes = annotate(input)
+  const fade = { initial: { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -10 }, transition: { duration: 0.22 } }
 
   const [copied, setCopied] = useState(false)
   const copy = useCallback(() => {
@@ -69,25 +75,59 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
   }, [])
 
   return (
-    <section className="lb" aria-label="Leaderboard">
-      <header className="lb__hero">
-        <p className="lb__sentence">
-          {hero.before}
-          {leader && <a href={`/player/${leader.row.slug}/`}>{leader.row.name}</a>}
-          {hero.after}
-        </p>
-        {leader && <SentimentBar counts={leader.row} size="hero" subject={leader.row.name} />}
-        <p className="lb__meta mono">
-          {leader && (
-            <span>
-              n={fmtInt(leader.row.total)} comments about {leader.row.name}
-            </span>
-          )}
-          <span className="lb__headline">
-            {fmtInt(headline.count)} comments about {headline.players} players · {season}
-          </span>
-        </p>
-      </header>
+    <MotionConfig reducedMotion="user">
+      <section className="lb" aria-label="Leaderboard">
+        <header className={`lb__hero lb__hero--${lens}`}>
+          <div className="lb__hero-text">
+            <p className="lb__kicker mono">
+              {fmtInt(headline.count)} comments about {headline.players} players · {season}
+            </p>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div key={`${lens}-${leader?.row.slug ?? 'none'}`} className="lb__hero-body" {...fade}>
+                <h2 className="lb__sentence">
+                  <span className="lb__lead">{hero.before}</span>
+                  {leader && (
+                    <a className="lb__who" href={`/player/${leader.row.slug}/`}>
+                      {leader.row.name}
+                    </a>
+                  )}
+                  {custom && leader && <Stamp kind="unofficial" />}
+                </h2>
+                {leader && (
+                  <>
+                    <p className="lb__figure">
+                      <span className="lb__big">{meta.kind === 'rate' ? fmtPct(meta.value(leader.row)) : fmtInt(meta.value(leader.row))}</span>
+                      <span className="lb__unit mono">{meta.unit}</span>
+                    </p>
+                    <SentimentBar counts={leader.row} size="hero" subject={leader.row.name} />
+                    <p className="lb__meta mono">
+                      n={fmtInt(leader.row.total)} comments about {leader.row.name}
+                    </p>
+                  </>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <div className="lb__hero-figure" aria-hidden="true">
+            <span className="lb__rank-ghost">1</span>
+            <AnimatePresence mode="popLayout" initial={false}>
+              {leader && (
+                <motion.img
+                  key={leader.row.slug}
+                  src={headshotVariant(leader.row.headshot, 840)}
+                  alt=""
+                  width="840"
+                  height="614"
+                  decoding="async"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -24 }}
+                  transition={{ duration: 0.3 }}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+        </header>
 
       <LensTabs lens={lens} onChange={(l) => update({ lens: l })} />
 
@@ -135,6 +175,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
           {copied ? 'Link copied' : ''}
         </span>
       </div>
-    </section>
+      </section>
+    </MotionConfig>
   )
 }

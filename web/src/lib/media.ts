@@ -8,3 +8,6 @@ export function headshotSrcSet(url: string, widths: readonly number[] = [180, 42
   const stem = url.replace(/\.png$/, '')
   return widths.map((w) => `${stem}-${w}.webp ${w}w`).join(', ')
 }
+
+/** One WebP variant: "…/203500.png" → "…/203500-840.webp". */
+export const headshotVariant = (url: string, width: number): string => `${url.replace(/\.png$/, '')}-${width}.webp`

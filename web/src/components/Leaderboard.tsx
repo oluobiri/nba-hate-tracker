@@ -1,7 +1,7 @@
 // The board: one island. Hero sentence, lens tabs, threshold control, the
 // "Read this first" note, the rows and the copy link share one view state,
 // bound to the query string. Every rule number arrives as a prop.
-import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { AnimatePresence, LayoutGroup, MotionConfig, motion } from 'motion/react'
 import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 
 import '../styles/leaderboard.css'
@@ -146,7 +146,8 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
         ))}
       </MethodNote>
 
-      <ol id="lens-panel" className="lb__rows" role="tabpanel" aria-labelledby={`lens-tab-${lens}`}>
+      <LayoutGroup>
+      <motion.ol id="lens-panel" className="lb__rows" role="tabpanel" aria-labelledby={`lens-tab-${lens}`} layout>
         {shown.map((r) => (
           <BoardRow
             key={r.row.slug}
@@ -162,7 +163,8 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
             delta={deltas?.get(r.row.slug) ?? null}
           />
         ))}
-      </ol>
+      </motion.ol>
+      </LayoutGroup>
 
       <div className="lb__foot">
         <button type="button" className="lb__btn" onClick={() => update({ all: !all })}>

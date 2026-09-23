@@ -21,6 +21,7 @@
   height: var(--sb-h);
   width: calc(var(--sb-scale, 1) * 100%);
   background: var(--ink);
+  transition: width 0.4s ease;
 }
 .sb__seg {
   display: flex;
@@ -31,6 +32,7 @@
   overflow: hidden;
   flex: 0 0 auto;
   container-type: inline-size;
+  transition: flex-basis 0.4s ease;
 }
 /* A label never renders clipped: below the text's width it disappears. */
 @container (width < 44px) {
@@ -258,6 +260,7 @@
 }
 .tabs__tab {
   --tab-line: transparent;
+  position: relative;
   flex: 0 0 auto;
   min-height: 44px;
   padding: 10px 12px 8px;
@@ -268,8 +271,15 @@
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--mute);
-  border-bottom: 3px solid var(--tab-line);
   margin-bottom: -1px;
+}
+.tabs__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--tab-line);
 }
 .tabs__tab:hover {
   color: var(--bone-2);
@@ -286,8 +296,8 @@
 .tabs__tab--volume[aria-selected='true'] {
   --tab-line: var(--bone);
 }
-.tabs__tab--polar[aria-selected='true'] {
-  border-image: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%) 1;
+.tabs__tab--polar[aria-selected='true'] .tabs__line {
+  background: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%);
 }
 .tabs__unit {
   margin: 0;

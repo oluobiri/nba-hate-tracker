@@ -1,5 +1,6 @@
 // The four lenses as a tablist. The underline is the lens's colour job:
 // heat, ice, bone, and split heat-ice for polarization.
+import { motion } from 'motion/react'
 import { useRef, type KeyboardEvent } from 'react'
 
 import { LENS_META } from '../lib/metrics'
@@ -64,6 +65,7 @@ export function LensTabs({ lens, onChange, id = 'lens' }: LensTabsProps) {
             onKeyDown={(e) => onKeyDown(e, i)}
           >
             {LENS_META[l].label}
+            {l === lens && <motion.span className="tabs__line" layoutId={`${id}-line`} transition={{ type: 'spring', stiffness: 400, damping: 40 }} />}
           </button>
         ))}
       </div>

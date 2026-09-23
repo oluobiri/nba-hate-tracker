@@ -34,7 +34,7 @@
   container-type: inline-size;
   transition: flex-basis 0.4s ease;
 }
-/* A label never renders clipped: below the text's width it disappears. */
+/* Below the label's width the inside label goes and the under-label comes. */
 @container (width < 44px) {
   .sb__label {
     display: none;
@@ -65,19 +65,28 @@
   color: var(--ink);
   white-space: nowrap;
 }
-.sb__outside {
+.sb__under {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 2px;
+  height: 0;
+}
+.sb__under-cell {
+  flex: 0 0 auto;
+  min-width: 0;
+  container-type: inline-size;
+  position: relative;
+}
+.sb__under-label {
+  display: none;
+  position: absolute;
+  top: 2px;
+  white-space: nowrap;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--bone-2);
 }
-.sb__outside li::before {
+.sb__under-label::before {
   content: '';
   display: inline-block;
   width: 8px;
@@ -85,6 +94,40 @@
   margin-right: 6px;
   vertical-align: 0;
   background: var(--sb-swatch);
+}
+.sb__under-cell--neg {
+  --sb-swatch: var(--heat);
+}
+.sb__under-cell--neu {
+  --sb-swatch: var(--neu);
+}
+.sb__under-cell--pos {
+  --sb-swatch: var(--ice);
+  text-align: right;
+}
+.sb__under-cell--pos .sb__under-label {
+  right: 0;
+}
+.sb__under-cell--neu .sb__under-label {
+  left: 50%;
+  transform: translateX(-50%);
+}
+@container (width < 44px) {
+  .sb__under-label {
+    display: block;
+  }
+}
+@container (width < 56px) {
+  .sb--hero .sb__under-label {
+    display: block;
+  }
+}
+/* Reserve one line under the bar only when a label may land there. */
+.sb:has(.sb__under) {
+  padding-bottom: 18px;
+}
+.sb--hero:has(.sb__under) {
+  padding-bottom: 20px;
 }
 
 /* RankNumeral: official is solid bone; below the official minimum it is hollow. */

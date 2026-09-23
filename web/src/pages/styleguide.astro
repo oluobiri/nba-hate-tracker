@@ -96,7 +96,7 @@ const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate)
         <SentimentBar counts={leastPositive} size="hero" subject={leastPositive.attributed_player} />
         <figcaption>
           narrow segment: {leastPositive.attributed_player} is {fmtPct(posRate(leastPositive))} positive, the smallest
-          share among qualified players, so its label moves outside
+          share among qualified players, so its label moves under the bar
         </figcaption>
       </figure>
       <figure class="guide__fig">

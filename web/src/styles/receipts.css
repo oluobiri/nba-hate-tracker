@@ -1,0 +1,31 @@
+/* The receipts island's layout. Component looks live in components.css. */
+.rc {
+  display: grid;
+  gap: 16px;
+}
+/* A deep link with a tab or expansion: the prerendered default stays hidden
+   until the island has read the URL (the page's inline script sets the class). */
+.has-receipts-view .rc {
+  visibility: hidden;
+}
+.rc__panel {
+  display: grid;
+  gap: 12px;
+}
+.rc__list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rc__empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-2);
+  color: var(--bone-2);
+}
+.rc__foot {
+  display: flex;
+  gap: 12px;
+}

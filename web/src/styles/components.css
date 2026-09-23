@@ -195,6 +195,26 @@
   transform: rotate(-3deg);
 }
 
+/* Button: a mono chip, touch-sized; pressed is bone on ink. */
+.btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.btn:hover {
+  border-color: var(--bone-2);
+}
+.btn[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--bone);
+  border-color: var(--bone);
+}
+
 /* Exhibit: a numbered receipt. Verbatim body, source, never a username. */
 .exhibit {
   display: grid;
@@ -341,6 +361,18 @@
 }
 .tabs__tab--polar[aria-selected='true'] .tabs__line {
   background: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%);
+}
+.tabs__tab--neu[aria-selected='true'] {
+  --tab-line: var(--neu);
+}
+.tabs__count {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mute);
+}
+.tabs__tab[aria-selected='true'] .tabs__count {
+  color: var(--bone-2);
 }
 .tabs__unit {
   margin: 0;

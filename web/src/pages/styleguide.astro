@@ -7,6 +7,7 @@ import { GamesTable } from '../components/GamesTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
+import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
@@ -118,6 +119,16 @@ const fewestWeeks = overall.toSorted((a, b) => weeksAtFloor(a.attributed_player)
 const tlTop = timelineFor(top.attributed_player)
 const tlThin = timelineFor(thinnestOfficial.attributed_player, [])
 const tlNone = timelineFor(fewestWeeks.attributed_player, [])
+
+// Receipts: the official player with the thinnest cell, so the tabs show a full cell and a thin one.
+const RECEIPTS_TOP = 3
+const cellsFor = (name: string): Record<Sentiment, ReceiptItem[]> => {
+  const mine = tables.comment_samples.filter((r) => r.attributed_player === name).toSorted((a, b) => a.rank - b.rank)
+  const cell = (s: Sentiment) => mine.filter((r) => r.sentiment === s).map((r) => ({ body: r.body, score: r.score, sourceUrl: commentUrl(r.link_id, r.comment_id), postTitle: posts.get(r.link_id) ?? null }))
+  return { neg: cell('neg'), neu: cell('neu'), pos: cell('pos') }
+}
+const thinnestCell = (name: string) => Math.min(...Object.values(cellsFor(name)).map((c) => c.length))
+const thinReceipts = qualified.toSorted((a, b) => thinnestCell(a.attributed_player) - thinnestCell(b.attributed_player))[0]!
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -355,6 +366,15 @@ const tlNone = timelineFor(fewestWeeks.attributed_player, [])
       <Timeline name={thinnestOfficial.attributed_player} {...tlThin} bands={bands} floor={weekFloor} k={ROLLING} />
       <p class="eyebrow">Nothing to draw: {fewestWeeks.attributed_player}, {weeksAtFloor(fewestWeeks.attributed_player)} weeks at the floor.</p>
       <Timeline name={fewestWeeks.attributed_player} {...tlNone} bands={bands} floor={weekFloor} k={ROLLING} />
+    </section>
+
+    <section class="guide__section">
+      <h2>Receipts</h2>
+      <p class="eyebrow">
+        Three tabs in sentiment order, arrow keys move; the tab and the expansion live in the URL. Verified on negative and positive only. Rendered static here, hydrated on the player page.
+      </p>
+      <Receipts name={thinReceipts.attributed_player} cells={cellsFor(thinReceipts.attributed_player)} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={threshold} />
+      <p class="eyebrow">{thinReceipts.attributed_player}: the official player with the thinnest cell ({thinnestCell(thinReceipts.attributed_player)} receipts).</p>
     </section>
 
     <section class="guide__section">

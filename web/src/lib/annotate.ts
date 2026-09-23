@@ -97,10 +97,9 @@ export function heroSentence<T extends Named>(input: AnnotateInput<T>): string {
   return `${before}${leader?.row.name ?? ''}${after}`
 }
 
-// The player page's verdict: one sentence from his official ranks, with
-// the contrast the numbers alone do not say: hated and defended, or
-// hated and alone. Copy is the owner's; the tests pin it so a rewrite is
-// one commit.
+// The player page's verdict: his rank, stated plainly. The owner retired
+// the "hated and defended / alone" reading after the first build; copy is
+// the owner's, and the tests pin it so a rewrite is one commit.
 
 export interface VerdictInput {
   name: string
@@ -117,23 +116,11 @@ export interface VerdictInput {
   league: Counts
 }
 
-export type Standing = 'hated-defended' | 'hated-alone' | 'loved-argued' | 'loved-settled' | 'unofficial'
-
-/** The verdict sentence and which of the four standings it names. */
-export function playerVerdict(i: VerdictInput): { sentence: string; standing: Standing } {
+/** The verdict sentence: "r/NBA's 3rd most hated player." or, under the minimum, the unofficial note. */
+export function playerVerdict(i: VerdictInput): { sentence: string } {
   const neg = i.ranks.neg
-  const pos = i.ranks.pos
-  if (neg === null || pos === null) return { sentence: unofficialNote(i), standing: 'unofficial' }
-  if (neg <= pos) {
-    const defended = posRate(i.counts) >= posRate(i.league)
-    return defended
-      ? { sentence: `r/NBA's ${ordinal(neg)} most hated player, and its ${ordinal(pos)} most loved: hated and defended.`, standing: 'hated-defended' }
-      : { sentence: `r/NBA's ${ordinal(neg)} most hated player, and only its ${ordinal(pos)} most loved: hated and alone.`, standing: 'hated-alone' }
-  }
-  const argued = negRate(i.counts) >= negRate(i.league)
-  return argued
-    ? { sentence: `r/NBA's ${ordinal(pos)} most loved player, and its ${ordinal(neg)} most hated: loved and argued about.`, standing: 'loved-argued' }
-    : { sentence: `r/NBA's ${ordinal(pos)} most loved player, and only its ${ordinal(neg)} most hated: loved, no argument.`, standing: 'loved-settled' }
+  if (neg === null) return { sentence: unofficialNote(i) }
+  return { sentence: `r/NBA's ${ordinal(neg)} most hated player.` }
 }
 
 /** The sentence for a player under the official minimum: how far short, and where he would rank among everyone tracked. */

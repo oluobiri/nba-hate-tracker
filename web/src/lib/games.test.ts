@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GameSentimentRow, GamesRow, PlayerGamesRow } from '../data/types.gen'
-import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, talkedThreads, weekGames, winLossSplit } from './games'
+import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
 import { negRate } from './metrics'
 import type { Counts } from './types'
 
@@ -191,5 +191,14 @@ describe('weekGames', () => {
     const weeks = weekGames(log, spine)
     expect(weeks.map((w) => w.map((g) => g.gameId))).toEqual([['g1', 'g2'], ['g3', 'g4'], []])
     expect(negRate(weeks[0]![0]!.counts!)).toBeCloseTo(0.6)
+  })
+})
+
+describe('seasonAverages', () => {
+  it('averages regular-season games he played, leaving out DNP and the postseason', () => {
+    const log = buildGameLog(LINES, ROOM, GAMES, ABBR, BASELINE, FLOOR)
+    // g1, g2, g4 played (g3 DNP), all regular season: 30 pts, 10 reb, 7 ast each.
+    expect(seasonAverages(log)).toEqual({ gp: 3, ppg: 30, rpg: 10, apg: 7 })
+    expect(seasonAverages(log.map((g) => ({ ...g, seasonType: 'playoffs' })))).toBeNull()
   })
 })

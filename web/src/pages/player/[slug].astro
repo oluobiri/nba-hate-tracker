@@ -20,8 +20,9 @@ import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
 import { playerVerdict, rankChips, type VerdictInput } from '../../lib/annotate'
 import { type FanRow, fanLists, fanSplit, fansSummary } from '../../lib/fans'
+import { bioFacts } from '../../lib/bio'
 import { fmtInt, fmtPct, ordinal } from '../../lib/format'
-import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
+import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, seasonAverages, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
 import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
@@ -114,7 +115,10 @@ const rosterAbbr = abbrOf(player.roster_team)
 const verdictInput: VerdictInput = { name, counts, official, ranks, allRanks, tracked, league }
 const verdict = playerVerdict(verdictInput)
 const chips = rankChips(verdictInput)
-const eyebrow = player.roster_team ? [rosterAbbr, player.position, 'season-end roster'].filter(Boolean).join(' · ') : 'Free agent at season end'
+// Under the name: team · position · number, as a sports page reads. Then the dimension's facts.
+const idLine = player.roster_team ? [rosterAbbr, player.position, player.jersey_number ? `#${player.jersey_number}` : null].filter(Boolean).join(' · ') : 'Free agent'
+const today = new Date().toISOString().slice(0, 10)
+const facts = bioFacts(player, today)
 
 // Receipts.
 const cells: Record<Sentiment, ReceiptItem[]> = { neg: [], neu: [], pos: [] }
@@ -159,6 +163,7 @@ const r = pearson(
 )
 const gamesText = dressed ? gamesSummary(name, log, counts, floors.game_min_n) : neverDressedSentence(name, talkedThreads(sentiment, floors.game_min_n), floors.game_min_n)
 const logDesc = log.toSorted((a, b) => b.date.localeCompare(a.date))
+const avg = seasonAverages(log)
 
 // Timeline.
 const weekRows = spineRows(
@@ -200,8 +205,9 @@ const tiles = [
   <main id="main" class="wrap page pp">
     <header class="pp__head">
       <div class="pp__head-text">
-        <p class="eyebrow">{manifest.season} · {eyebrow}</p>
+        <p class="eyebrow">{manifest.season}</p>
         <h1 class="pp__name">{name}</h1>
+        <p class="pp__id mono">{idLine}</p>
         <p class="pp__verdict">{verdict.sentence}</p>
       </div>
       <div class="pp__mug" aria-hidden="true">
@@ -215,6 +221,27 @@ const tiles = [
           decoding="async"
         />
       </div>
+      {
+        (avg || facts.length > 0) && (
+          <div class="pp__bio">
+            {avg && (
+              <dl class="pp__avg mono">
+                <div><dt>PPG</dt><dd>{avg.ppg.toFixed(1)}</dd></div>
+                <div><dt>RPG</dt><dd>{avg.rpg.toFixed(1)}</dd></div>
+                <div><dt>APG</dt><dd>{avg.apg.toFixed(1)}</dd></div>
+                <div><dt>GP</dt><dd>{avg.gp}</dd></div>
+              </dl>
+            )}
+            {facts.length > 0 && (
+              <dl class="pp__facts">
+                {facts.map((f) => (
+                  <div><dt>{f.label}</dt><dd>{f.value}</dd></div>
+                ))}
+              </dl>
+            )}
+          </div>
+        )
+      }
     </header>
 
     {
@@ -365,17 +392,62 @@ const tiles = [
   .pp__head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(200px, 320px);
-    gap: 24px;
+    grid-template-areas:
+      'text mug'
+      'bio bio';
+    gap: 0 24px;
     align-items: end;
-    min-height: 300px;
     border-bottom: 1px solid var(--line);
   }
   .pp__head-text {
+    grid-area: text;
     display: grid;
-    gap: 12px;
+    gap: 10px;
     align-content: end;
     min-width: 0;
+    min-height: 280px;
     padding-bottom: 20px;
+  }
+  .pp__id {
+    margin: 0;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bone-2);
+  }
+  .pp__bio {
+    grid-area: bio;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 12px 40px;
+    padding: 14px 0 16px;
+    border-top: 1px solid var(--line);
+  }
+  .pp__bio dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin: 0;
+  }
+  .pp__bio dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .pp__bio dd {
+    margin: 0;
+    color: var(--bone);
+  }
+  .pp__avg dd {
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1.1;
+  }
+  .pp__facts dd {
+    font-size: 15px;
   }
   .pp__head-text .eyebrow {
     margin: 0;
@@ -393,6 +465,7 @@ const tiles = [
     text-wrap: balance;
   }
   .pp__mug {
+    grid-area: mug;
     position: relative;
     align-self: end;
     min-height: 260px;
@@ -536,10 +609,21 @@ const tiles = [
   @media (max-width: 760px) {
     .pp__head {
       grid-template-columns: 1fr;
+      grid-template-areas:
+        'text'
+        'bio';
+    }
+    .pp__head-text {
       min-height: 0;
     }
     .pp__mug {
       display: none;
+    }
+    .pp__bio {
+      gap: 10px 24px;
+    }
+    .pp__avg dd {
+      font-size: 18px;
     }
     .pp__figures {
       gap: 8px;

@@ -71,36 +71,19 @@ describe('heroSentence', () => {
 const ranks = (neg: number | null, pos: number | null) => ({ neg, pos, volume: 5, polar: 7 })
 
 describe('playerVerdict', () => {
-  const league = { neg: 400, neu: 400, pos: 200, total: 1_000 } // 40% neg, 20% pos
+  const league = { neg: 400, neu: 400, pos: 200, total: 1_000 }
   const base = { official: 100, tracked: 223, league }
   const allRanks = { neg: 31, pos: 40, volume: 50, polar: 60 }
 
-  it('names a hated player defended when his positive share meets the league', () => {
+  it('states the official negative rank and nothing else', () => {
     const v = playerVerdict({ ...base, name: 'A', counts: row('A', 50, 25, 25), ranks: ranks(3, 9), allRanks })
-    expect(v).toEqual({ sentence: "r/NBA's 3rd most hated player, and its 9th most loved: hated and defended.", standing: 'hated-defended' })
-  })
-
-  it('names a hated player alone when it does not', () => {
-    const v = playerVerdict({ ...base, name: 'A', counts: row('A', 50, 40, 10), ranks: ranks(3, 51), allRanks })
-    expect(v).toEqual({ sentence: "r/NBA's 3rd most hated player, and only its 51st most loved: hated and alone.", standing: 'hated-alone' })
-  })
-
-  it('leads with love when the positive rank is better, argued about when his negative share meets the league', () => {
-    const v = playerVerdict({ ...base, name: 'A', counts: row('A', 45, 10, 45), ranks: ranks(12, 2), allRanks })
-    expect(v).toEqual({ sentence: "r/NBA's 2nd most loved player, and its 12th most hated: loved and argued about.", standing: 'loved-argued' })
-    const w = playerVerdict({ ...base, name: 'A', counts: row('A', 10, 40, 50), ranks: ranks(60, 1), allRanks })
-    expect(w).toEqual({ sentence: "r/NBA's 1st most loved player, and only its 60th most hated: loved, no argument.", standing: 'loved-settled' })
-  })
-
-  it('treats a tie as hate-led', () => {
-    expect(playerVerdict({ ...base, name: 'A', counts: row('A', 50, 25, 25), ranks: ranks(4, 4), allRanks }).standing).toBe('hated-defended')
+    expect(v).toEqual({ sentence: "r/NBA's 3rd most hated player." })
   })
 
   it('writes the unofficial note under the minimum, with the shortfall and the all-player rank', () => {
     const v = playerVerdict({ ...base, name: 'A', counts: row('A', 40, 30, 20), ranks: ranks(null, null), allRanks })
     expect(v).toEqual({
       sentence: 'Unofficial: 90 comments, 10 short of the official minimum of 100. Among all 223 tracked players he would rank 31st most hated.',
-      standing: 'unofficial',
     })
   })
 })

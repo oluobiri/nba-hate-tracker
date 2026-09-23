@@ -164,3 +164,18 @@ export function weekGames(log: readonly GameLine[], spine: readonly string[]): G
   }
   return out
 }
+
+export interface SeasonAverages {
+  gp: number
+  ppg: number
+  rpg: number
+  apg: number
+}
+
+/** Regular-season averages over the games he played (not DNP); null when he played none. */
+export function seasonAverages(log: readonly GameLine[]): SeasonAverages | null {
+  const played = log.filter((g) => g.seasonType === 'regular_season' && !g.dnp)
+  if (played.length === 0) return null
+  const mean = (pick: (g: GameLine) => number) => played.reduce((a, g) => a + pick(g), 0) / played.length
+  return { gp: played.length, ppg: mean((g) => g.pts), rpg: mean((g) => g.reb), apg: mean((g) => g.ast) }
+}

@@ -76,11 +76,23 @@ export function annotate<T extends Named>({ ranked, lens, threshold, official }:
   return [...body, ...customView(ranked, threshold, official)]
 }
 
-/** The hero sentence: "r/NBA's most hated player is …", per lens and threshold. */
-export function heroSentence<T extends Named>({ ranked, lens, threshold, official }: AnnotateInput<T>): string {
-  const leader = ranked.find((r) => r.rank !== null)
-  if (!leader) return `No player has ${fmtInt(threshold)} comments.`
-  const core = `r/NBA's ${LENS_META[lens].hero} player is ${leader.row.name}`
-  if (threshold === official) return `${core}.`
-  return `With at least ${fmtInt(threshold)} comments, ${core} (unofficial).`
+export interface HeroParts<T extends Named> {
+  before: string
+  leader: Ranked<T> | null
+  after: string
+}
+
+/** The hero sentence in parts, so the page can link the name: before · leader · after. */
+export function heroParts<T extends Named>({ ranked, lens, threshold, official }: AnnotateInput<T>): HeroParts<T> {
+  const leader = ranked.find((r) => r.rank !== null) ?? null
+  if (!leader) return { before: `No player has ${fmtInt(threshold)} comments.`, leader, after: '' }
+  const core = `r/NBA's ${LENS_META[lens].hero} player is `
+  if (threshold === official) return { before: core, leader, after: '.' }
+  return { before: `With at least ${fmtInt(threshold)} comments, ${core}`, leader, after: ' (unofficial).' }
+}
+
+/** The hero sentence as one string: "r/NBA's most hated player is …", per lens and threshold. */
+export function heroSentence<T extends Named>(input: AnnotateInput<T>): string {
+  const { before, leader, after } = heroParts(input)
+  return `${before}${leader?.row.name ?? ''}${after}`
 }

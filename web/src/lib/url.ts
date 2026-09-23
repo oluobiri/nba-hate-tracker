@@ -1,7 +1,7 @@
 // Cross-page state lives in the query string: ?lens=neg&tab=pos&n=250&all=1.
 // Defaults come from the caller (the official threshold is a manifest
 // value), so a link with only non-default state serialises short.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
 import { LENSES, type Lens, type Sentiment } from './types'
 
@@ -39,32 +39,42 @@ export function serializeViewState(s: ViewState, defaults: ViewDefaults): string
   return str ? `?${str}` : ''
 }
 
-/** React hook: view state bound to the query string, with back/forward support. */
+// The query string is the store. pushState fires no event, so `update`
+// notifies subscribers itself; popstate covers Back and Forward.
+const listeners = new Set<() => void>()
+function subscribe(cb: () => void): () => void {
+  listeners.add(cb)
+  window.addEventListener('popstate', cb)
+  return () => {
+    listeners.delete(cb)
+    window.removeEventListener('popstate', cb)
+  }
+}
+const getSnapshot = (): string => window.location.search
+// Hydration renders the default view on both sides; React then re-renders
+// once with the real query string, before which `ready` reads false.
+const getServerSnapshot = (): string => ''
+
+/**
+ * React hook: view state bound to the query string, with back/forward support.
+ * `ready` is false only for the hydration render of a deep link, when the
+ * page still shows the default view. Pass a memoised `defaults`.
+ */
 export function useViewState(
   defaults: ViewDefaults,
-): [ViewState, (patch: Partial<ViewState>, opts?: { replace?: boolean }) => void] {
-  const [state, setState] = useState(() => parseViewState(window.location.search, defaults))
-  const latest = useRef(state)
-  useEffect(() => {
-    latest.current = state
-  }, [state])
-  useEffect(() => {
-    const onPop = () => setState(parseViewState(window.location.search, defaults))
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [defaults])
+): [ViewState, (patch: Partial<ViewState>, opts?: { replace?: boolean }) => void, boolean] {
+  const search = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+  const state = useMemo(() => parseViewState(search, defaults), [search, defaults])
+  const ready = typeof window !== 'undefined' && search === window.location.search
   const update = useCallback(
     (patch: Partial<ViewState>, opts?: { replace?: boolean }) => {
-      // History writes stay outside the setState updater: StrictMode runs
-      // updaters twice, which double-pushed entries and broke Back.
-      const next = { ...latest.current, ...patch }
-      latest.current = next
+      const next = { ...parseViewState(window.location.search, defaults), ...patch }
       const url = serializeViewState(next, defaults) || window.location.pathname
       if (opts?.replace) history.replaceState(null, '', url)
       else history.pushState(null, '', url)
-      setState(next)
+      for (const cb of listeners) cb()
     },
     [defaults],
   )
-  return [state, update]
+  return [state, update, ready]
 }

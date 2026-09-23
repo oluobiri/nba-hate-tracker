@@ -860,6 +860,9 @@
 .dd__logo {
   width: 20px;
   height: 20px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 2px;
   filter: grayscale(1);
   opacity: 0.8;
 }
@@ -914,6 +917,25 @@
   text-align: right;
   color: var(--bone-2);
 }
+/* With a detail column: the raw rate behind a Δ, gray, after the value. */
+.dd--detail {
+  --dd-cols: 28px 20px minmax(110px, 1.2fr) minmax(100px, 2fr) 44px 44px;
+}
+/* A player's name takes two lines rather than an ellipsis. */
+.dd--detail .dd__label {
+  white-space: normal;
+  line-height: 1.05;
+}
+.dd__dethead {
+  grid-column: 6;
+  justify-self: end;
+  white-space: nowrap;
+}
+.dd__detail {
+  font-size: 12px;
+  text-align: right;
+  color: var(--mute);
+}
 /* A tagged row (his own fans): bone outline and the tag, never yellow. */
 .dd__tag {
   margin-left: 8px;
@@ -944,6 +966,10 @@
   .dd,
   .dd--delta {
     --dd-cols: 24px 18px minmax(64px, 1fr) minmax(90px, 2fr) 48px;
+  }
+  /* Six columns: the label takes the slack, the track only places dots. */
+  .dd--detail {
+    --dd-cols: 24px 18px minmax(64px, 1.4fr) minmax(64px, 1fr) 40px 40px;
   }
   /* The Δ stays in the row's text alternative; the value column carries the rate. */
   .dd__delta,
@@ -1561,5 +1587,242 @@
   }
   .tl__readout {
     min-height: 9em;
+  }
+}
+
+/* GapTable: own fans against every other fanbase, per roster player. Ice kinder, heat harsher; the sign is printed. */
+.gap {
+  width: 100%;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+  border-collapse: collapse;
+}
+.gap th,
+.gap td {
+  padding: 6px 8px;
+  text-align: right;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--line);
+}
+.gap thead th {
+  padding-block: 6px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gap thead th:first-child,
+.gap th.gap__player {
+  text-align: left;
+  font-weight: 400;
+}
+.gap thead th:not(:first-child) {
+  width: 1%;
+  white-space: nowrap;
+}
+.gap abbr {
+  text-decoration: none;
+}
+.gap__row {
+  --gap-ink: var(--mute);
+  background: color-mix(in srgb, var(--gap-ink) var(--gap-mix, 0%), transparent);
+}
+.gap__row--kinder {
+  --gap-ink: var(--ice);
+}
+.gap__row--harsher {
+  --gap-ink: var(--heat);
+}
+.gap__link {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas:
+    'mug name'
+    'mug pos';
+  column-gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+}
+.gap__mug {
+  grid-area: mug;
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-2);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.gap__name {
+  grid-area: name;
+  align-self: end;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.gap__link:hover .gap__name {
+  text-decoration: underline;
+}
+.gap__pos {
+  grid-area: pos;
+  align-self: start;
+  font-size: 11px;
+  color: var(--mute);
+}
+.gap__rate {
+  white-space: nowrap;
+}
+.gap__n {
+  display: block;
+  font-size: 11px;
+  color: var(--mute);
+}
+.gap__delta {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--gap-ink);
+}
+.gap__row--thin .gap__rate,
+.gap__row--thin .gap__delta,
+.gap__row--even .gap__delta {
+  font-weight: 400;
+  color: var(--mute);
+}
+@media (max-width: 640px) {
+  .gap {
+    table-layout: fixed;
+    font-size: 12px;
+  }
+  .gap th,
+  .gap td {
+    padding: 6px 4px;
+  }
+  .gap thead th:not(:first-child) {
+    white-space: normal;
+    line-height: 1.2;
+  }
+  .gap thead th:nth-child(2),
+  .gap thead th:nth-child(3) {
+    width: 60px;
+  }
+  .gap thead th:nth-child(4) {
+    width: 44px;
+  }
+  .gap__name {
+    font-size: 14px;
+  }
+}
+
+/* TalkList: a fanbase's most-discussed players. Bar length is share of the leader; segments the split. */
+.tk {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.tk__row {
+  border-bottom: 1px solid var(--line);
+}
+.tk__link {
+  display: grid;
+  grid-template-columns: 28px 44px minmax(120px, 1.2fr) minmax(100px, 2fr) 72px;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 0;
+  text-decoration: none;
+  color: inherit;
+}
+.tk__link:hover {
+  background: var(--ink-2);
+}
+.tk__link:hover .tk__name {
+  text-decoration: underline;
+}
+.tk__rank {
+  font-size: 12px;
+  text-align: right;
+  color: var(--mute);
+}
+.tk__mug {
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-2);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.tk__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.tk__name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+.tk__team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+.tk__tag {
+  padding: 1px 5px;
+  border: 1px solid var(--bone-2);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.tk__row--own .tk__link {
+  outline: 1px solid var(--bone-2);
+  outline-offset: -1px;
+}
+.tk__bar {
+  min-width: 0;
+}
+.tk__n {
+  font-size: 13px;
+  text-align: right;
+  color: var(--bone-2);
+}
+.tk__n-unit {
+  font-size: 11px;
+  color: var(--mute);
+}
+@media (max-width: 640px) {
+  .tk__link {
+    grid-template-columns: 22px 40px minmax(84px, 1fr) minmax(72px, 1.2fr) 52px;
+    gap: 8px;
+  }
+  .tk__n-unit {
+    display: none;
+  }
+  .tk__mug {
+    width: 40px;
+    height: 40px;
+  }
+  .tk__name {
+    font-size: 14px;
+  }
+  .tk__tag {
+    display: none;
   }
 }

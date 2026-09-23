@@ -52,6 +52,6 @@ reused as the header glyph; its colours are pinned to `tokens.css` by a test. On
 in the header, which carries the React runtime. The leaderboard adds two: the board (`client:load`, its state in
 the query string, `motion` for the lens transitions) and the fanbase index (`client:visible`, local state). The player
 page adds two: the receipts (`client:load`, tab and expansion in the query string) and the game log (`client:visible`,
-filter and expansion likewise); a deep link hides each region until its island has read the URL. `src/islands.test.ts` pins that list.
+filter and expansion likewise); a deep link hides each region until its island has read the URL. The team page adds none: its two show-all controls are `<details>`, and the rest of each list continues the ranks where the top five stop. `src/islands.test.ts` pins that list.
 Nothing else runs JavaScript. `/styleguide/` renders every core component in every variant on real data; a colour,
 size or component change is made there once.

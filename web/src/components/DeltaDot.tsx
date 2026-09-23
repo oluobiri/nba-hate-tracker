@@ -14,6 +14,10 @@ export interface DeltaDotRow {
   logo?: string
   /** A small mark after the label ("own fans"); the row gets a bone outline. */
   tag?: string
+  /** The link's spoken sentence, when the generated one would not say enough (a Δ axis). */
+  text?: string
+  /** A small gray figure after the value: the raw rate behind a Δ. */
+  detail?: string
 }
 
 export interface DeltaDotProps {
@@ -28,12 +32,18 @@ export interface DeltaDotProps {
   averageLabel?: string
   /** Print each row's distance from the tick, in points, as a last column. */
   showDelta?: boolean
+  /** The first row's rank, when the list continues one shown above it. */
+  start?: number
+  /** Replaces the tick's label and value: on a Δ axis the tick is zero by construction, so say what it stands for. */
+  tickLabel?: string
+  /** Column head over the rows' detail figures. */
+  detailLabel?: string
 }
 
 // Within this share of either end, the tick's label hangs inward instead of centred.
 const EDGE = 22
 
-export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false }: DeltaDotProps) {
+export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false, start = 1, tickLabel, detailLabel }: DeltaDotProps) {
   const [lo, hi] = domain
   const pct = (v: number): number => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 50)
   const style = (v: number): CSSProperties => ({ '--dd-x': `${pct(v)}%`, '--dd-avg': `${pct(average)}%` }) as CSSProperties
@@ -41,22 +51,24 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
   // which hangs inward near either end.
   const avgPct = pct(average)
   const edge = avgPct < EDGE ? 'start' : avgPct > 100 - EDGE ? 'end' : null
+  const detailed = rows.some((r) => r.detail !== undefined)
   return (
-    <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}`}>
+    <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}${detailed ? ' dd--detail' : ''}`}>
       <div className="dd__head mono" aria-hidden="true">
         <span className={`dd__avg${edge ? ` dd__avg--${edge}` : ''}`} style={style(average)}>
-          {averageLabel} {format(average)}
+          {tickLabel ?? `${averageLabel} ${format(average)}`}
         </span>
         {showDelta && <span className="dd__dhead">Δ pts</span>}
+        {detailed && detailLabel && <span className="dd__dethead">{detailLabel}</span>}
       </div>
       <ol className="dd__rows">
         {rows.map((r, i) => {
           const delta = r.value - average
-          const text = `${r.label}: ${format(r.value)} of ${fmtInt(r.n)} comments${showDelta ? `, ${fmtSigned(delta, 0)} points against the ${averageLabel.toLowerCase()}` : ''}`
+          const text = r.text ?? `${r.label}: ${format(r.value)} of ${fmtInt(r.n)} comments${showDelta ? `, ${fmtSigned(delta, 0)} points against the ${averageLabel.toLowerCase()}` : ''}`
           return (
             <li key={r.key} className={`dd__row${r.tag ? ' dd__row--tagged' : ''}`}>
               <a className="dd__link" href={r.href} aria-label={text}>
-                <span className="dd__rank mono">{i + 1}</span>
+                <span className="dd__rank mono">{start + i}</span>
                 {r.logo ? <img className="dd__logo" src={r.logo} alt="" width="20" height="20" loading="lazy" decoding="async" /> : <span className="dd__logo" />}
                 <span className="dd__label">
                   {r.label}
@@ -68,6 +80,7 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
                 </span>
                 <span className="dd__value mono">{format(r.value)}</span>
                 {showDelta && <span className="dd__delta mono">{fmtSigned(delta, 0)}</span>}
+                {detailed && <span className="dd__detail mono">{r.detail}</span>}
               </a>
             </li>
           )

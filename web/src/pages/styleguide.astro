@@ -5,6 +5,7 @@ import { Exhibit, commentUrl } from '../components/Exhibit'
 import { Games } from '../components/Games'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
+import { GapTable } from '../components/GapTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { RankNumeral } from '../components/RankNumeral'
@@ -13,13 +14,18 @@ import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
+import { TalkList } from '../components/TalkList'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
-import { fmtInt, fmtPct } from '../lib/format'
+import { deltaLists, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
+import { nickname, possessive } from '../lib/fans'
+import { headshotVariant } from '../lib/media'
+import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
+import { groupBy } from '../lib/group'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
@@ -144,6 +150,31 @@ const cellsFor = (name: string): Record<Sentiment, ReceiptItem[]> => {
 const thinnestCell = (name: string) => Math.min(...Object.values(cellsFor(name)).map((c) => c.length))
 const thinReceipts = qualified.toSorted((a, b) => thinnestCell(a.attributed_player) - thinnestCell(b.attributed_player))[0]!
 const LOG_TOP = 10
+
+// The team page's table and Δ axis: the largest and smallest tracked rosters, and the saltiest fanbase's grudges around zero.
+const fanFloor = manifest.rules.floors.fanbase_min_n
+const rosterOf = new Map(tables.players.map((p) => [p.attributed_player, p.roster_team]))
+const fanPlayerRows = tables.player_fan_team.map((r) => ({ ...countsOf(r), fan: r.fan_team, player: r.attributed_player, roster: rosterOf.get(r.attributed_player) ?? null }))
+const fanByPlayer = groupBy(fanPlayerRows, (r) => r.player)
+const rosters = [...groupBy(tables.players.filter((p) => p.roster_team !== null), (p) => p.roster_team!)].toSorted((a, b) => b[1].length - a[1].length)
+const [bigTeam, bigRoster] = rosters[0]!
+const [smallTeam, smallRoster] = rosters.at(-1)!
+const bigGap = gapRows(bigTeam, bigRoster, fanByPlayer, fanFloor)
+const smallGap = gapRows(smallTeam, smallRoster, fanByPlayer, fanFloor)
+const usual = playerUsual(fanPlayerRows)
+const saltiest = fans[0]!
+const grudges = deltaLists(playerCells(fanPlayerRows, saltiest.fan_team), (player) => usual.get(player)!, fanFloor, (player) => {
+  const p = players.get(player)!
+  return { label: player, href: `/player/${p.slug}/`, logo: headshotVariant(p.headshot_url, 180) }
+})
+const GRUDGE_TOP = 5
+const grudgeRows = grudges.grudges.slice(0, GRUDGE_TOP).map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
+const pts = (v: number) => fmtSigned(v, 0)
+const TALK_TOP = 10
+const talk = talkRows(fanPlayerRows, saltiest.fan_team, (player) => {
+  const p = players.get(player)!
+  return { slug: p.slug, headshot: p.headshot_url, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null }
+}, TALK_TOP)
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -314,6 +345,24 @@ const LOG_TOP = 10
       <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
       <p class="eyebrow">With a Δ column and a tagged row: the player page's "who hates him most", the tick his own average.</p>
       <DeltaDot rows={taggedRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" averageLabel="His average" showDelta />
+    </section>
+
+    <section class="guide__section">
+      <h2>GapTable</h2>
+      <p class="eyebrow">
+        Own fans against every other fanbase, one row per roster player, kindest first. Ice where own fans are kinder, heat where harsher, the sign printed; a row under the floor of {fmtInt(fanFloor)} of their own comments keeps its rates in gray and no Δ. The {nickname(bigTeam)}: the largest tracked roster. {bigGap.some((r) => r.delta === null) ? 'Includes a row under the floor.' : 'Every row clears the floor this drop.'}
+      </p>
+      <GapTable rows={bigGap} caption={`${possessive(bigTeam)} on their own players`} floor={fanFloor} />
+      <p class="eyebrow">The {nickname(smallTeam)}: the smallest tracked roster, still a table.</p>
+      <GapTable rows={smallGap} caption={`${possessive(smallTeam)} on their own players`} floor={fanFloor} />
+      <p class="eyebrow">DeltaDot on a Δ axis: each row against its own roster's average across every fanbase, so the tick sits at zero and says what it stands for; the value is in points, the raw rate in gray beside it, a headshot in the logo slot. {possessive(saltiest.fan_team)}' grudges, top {GRUDGE_TOP} of {grudges.eligible} players.</p>
+      <DeltaDot rows={grudgeRows} average={0} domain={grudges.domain} format={pts} tone="neg" tickLabel="Each player's usual" detailLabel="rate" />
+    </section>
+
+    <section class="guide__section">
+      <h2>TalkList</h2>
+      <p class="eyebrow">A fanbase's most-discussed players, own roster included and tagged. Bar length is his share of the leader's n, the segments his split; n printed. {possessive(saltiest.fan_team)}, top {TALK_TOP}.</p>
+      <TalkList rows={talk} fans={possessive(saltiest.fan_team)} />
     </section>
 
     <section class="guide__section">

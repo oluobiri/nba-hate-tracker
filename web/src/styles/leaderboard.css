@@ -58,7 +58,7 @@
   font-weight: 800;
   text-decoration: none;
   color: var(--bone);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .lb__who:hover {
   text-decoration: underline;
@@ -142,7 +142,7 @@
 @media (max-width: 760px) {
   /* The headshot stays: a small card beside the sentence, as sports pages keep it. */
   .lb__hero {
-    grid-template-columns: minmax(0, 1fr) 128px;
+    grid-template-columns: minmax(0, 1fr) 96px;
     gap: 12px;
     align-items: start;
     min-height: 0;
@@ -167,8 +167,10 @@
     object-fit: contain;
     object-position: bottom;
   }
+  /* The name column is the viewport less the gutters, the mug and the gap; the longest
+     tracked surname (Antetokounmpo) must fit it on one line, so the phone size steps down. */
   .lb__sentence {
-    font-size: clamp(40px, 12vw, 64px);
+    font-size: clamp(34px, 10vw, 64px);
   }
 }
 .lb__rows {

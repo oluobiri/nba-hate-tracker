@@ -41,6 +41,18 @@ export interface LeaderboardProps {
 // How many rows show before "Show all": a page choice, not a rule.
 const TOP = 25
 
+// Polarization is both poles at once: first name heat, the rest ice, as
+// the wordmark splits. The link still reads as the whole name.
+function SplitName({ name }: { name: string }) {
+  const [first, ...rest] = name.split(' ')
+  return (
+    <>
+      <span className="lb__who-heat">{first}</span>
+      {rest.length > 0 && <> <span className="lb__who-ice">{rest.join(' ')}</span></>}
+    </>
+  )
+}
+
 export function Leaderboard({ players, official, floor, season, headline }: LeaderboardProps) {
   const defaults = useMemo(() => ({ threshold: official }), [official])
   const [view, update, ready] = useViewState(defaults)
@@ -89,7 +101,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
                   <span className="lb__lead">{hero.before}</span>
                   {leader && (
                     <a className="lb__who" href={`/player/${leader.row.slug}/`}>
-                      {leader.row.name}
+                      {lens === 'polar' ? <SplitName name={leader.row.name} /> : leader.row.name}
                     </a>
                   )}
                   {custom && leader && <Stamp kind="unofficial" />}

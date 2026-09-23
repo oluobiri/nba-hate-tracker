@@ -70,6 +70,12 @@
 .lb__hero--pos .lb__who {
   color: var(--ice);
 }
+.lb__who-heat {
+  color: var(--heat);
+}
+.lb__who-ice {
+  color: var(--ice);
+}
 .lb__sentence .stamp {
   font-size: 12px;
   transform: rotate(-3deg) translateY(-0.4em);

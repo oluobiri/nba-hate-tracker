@@ -860,6 +860,9 @@
 .dd__logo {
   width: 20px;
   height: 20px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 2px;
   filter: grayscale(1);
   opacity: 0.8;
 }
@@ -916,7 +919,12 @@
 }
 /* With a detail column: the raw rate behind a Δ, gray, after the value. */
 .dd--detail {
-  --dd-cols: 28px 20px minmax(110px, 1fr) minmax(120px, 3fr) 44px 44px;
+  --dd-cols: 28px 20px minmax(110px, 1.2fr) minmax(100px, 2fr) 44px 44px;
+}
+/* A player's name takes two lines rather than an ellipsis. */
+.dd--detail .dd__label {
+  white-space: normal;
+  line-height: 1.05;
 }
 .dd__dethead {
   grid-column: 6;

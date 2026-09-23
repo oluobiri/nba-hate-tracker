@@ -20,8 +20,9 @@ import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
-import { deltaLists, fanRosterMatrix, gapRows } from '../lib/fanbase'
+import { deltaLists, gapRows, playerCells, playerUsual } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
+import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { commentDate, receiptContext } from '../lib/receipts'
@@ -152,19 +153,18 @@ const LOG_TOP = 10
 // The team page's table and Δ axis: the largest and smallest tracked rosters, and the saltiest fanbase's grudges around zero.
 const fanFloor = manifest.rules.floors.fanbase_min_n
 const rosterOf = new Map(tables.players.map((p) => [p.attributed_player, p.roster_team]))
-const teamByName = new Map(tables.teams.map((t) => [t.team, t]))
-const fanByPlayer = groupBy(tables.player_fan_team.map((r) => ({ ...countsOf(r), fan: r.fan_team, player: r.attributed_player })), (r) => r.player)
+const fanPlayerRows = tables.player_fan_team.map((r) => ({ ...countsOf(r), fan: r.fan_team, player: r.attributed_player, roster: rosterOf.get(r.attributed_player) ?? null }))
+const fanByPlayer = groupBy(fanPlayerRows, (r) => r.player)
 const rosters = [...groupBy(tables.players.filter((p) => p.roster_team !== null), (p) => p.roster_team!)].toSorted((a, b) => b[1].length - a[1].length)
 const [bigTeam, bigRoster] = rosters[0]!
 const [smallTeam, smallRoster] = rosters.at(-1)!
 const bigGap = gapRows(bigTeam, bigRoster, fanByPlayer, fanFloor)
 const smallGap = gapRows(smallTeam, smallRoster, fanByPlayer, fanFloor)
-const matrix = fanRosterMatrix(tables.player_fan_team.map((r) => ({ ...countsOf(r), fan: r.fan_team, roster: rosterOf.get(r.attributed_player) ?? null })))
+const usual = playerUsual(fanPlayerRows)
 const saltiest = fans[0]!
-const targetCells = [...matrix.byFan.get(saltiest.fan_team)!].filter(([roster]) => roster !== saltiest.fan_team).map(([key, counts]) => ({ key, ...counts }))
-const grudges = deltaLists(targetCells, (roster) => matrix.rosterAverage.get(roster)!, fanFloor, (roster) => {
-  const t = teamByName.get(roster)!
-  return { label: nickname(roster), href: `/fanbases/${t.abbreviation.toLowerCase()}/`, logo: t.logo_url }
+const grudges = deltaLists(playerCells(fanPlayerRows, saltiest.fan_team), (player) => usual.get(player)!, fanFloor, (player) => {
+  const p = players.get(player)!
+  return { label: player, href: `/player/${p.slug}/`, logo: headshotVariant(p.headshot_url, 180) }
 })
 const GRUDGE_TOP = 5
 const grudgeRows = grudges.grudges.slice(0, GRUDGE_TOP).map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
@@ -349,8 +349,8 @@ const pts = (v: number) => fmtSigned(v, 0)
       <GapTable rows={bigGap} caption={`${possessive(bigTeam)} on their own players`} floor={fanFloor} />
       <p class="eyebrow">The {nickname(smallTeam)}: the smallest tracked roster, still a table.</p>
       <GapTable rows={smallGap} caption={`${possessive(smallTeam)} on their own players`} floor={fanFloor} />
-      <p class="eyebrow">DeltaDot on a Δ axis: each row against its own roster's average across every fanbase, so the tick sits at zero and says what it stands for; the value is in points, the raw rate in gray beside it. {possessive(saltiest.fan_team)}' grudges, top {GRUDGE_TOP} of {grudges.eligible}.</p>
-      <DeltaDot rows={grudgeRows} average={0} domain={grudges.domain} format={pts} tone="neg" tickLabel="Each roster's usual" detailLabel="rate" />
+      <p class="eyebrow">DeltaDot on a Δ axis: each row against its own roster's average across every fanbase, so the tick sits at zero and says what it stands for; the value is in points, the raw rate in gray beside it, a headshot in the logo slot. {possessive(saltiest.fan_team)}' grudges, top {GRUDGE_TOP} of {grudges.eligible} players.</p>
+      <DeltaDot rows={grudgeRows} average={0} domain={grudges.domain} format={pts} tone="neg" tickLabel="Each player's usual" detailLabel="rate" />
     </section>
 
     <section class="guide__section">

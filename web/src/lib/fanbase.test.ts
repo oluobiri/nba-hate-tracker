@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deltaLists, fanbaseVerdict, fanRosterMatrix, fewEligibleSentence, type GapRow, gapRows, gapSummary, leagueSummary, type MatrixRow, sideCells, targetsSummary } from './fanbase'
+import { deltaLists, fanbaseVerdict, fanRosterMatrix, fewEligibleSentence, type GapRow, gapRows, gapSummary, leagueSummary, type MatrixRow, playerCells, type PlayerRow, playerUsual, sideCells, targetsSummary } from './fanbase'
 import { groupBy } from './group'
 import type { Counts } from './types'
 
@@ -26,6 +26,7 @@ const ROWS = [
   row(LAL, 'Chris Paul', null, 5, 5, 5), // a free agent belongs to no column
 ]
 const MATRIX_ROWS: MatrixRow[] = ROWS.map(({ fan, roster, ...counts }) => ({ fan, roster, ...c(counts.neg, counts.neu, counts.pos) }))
+const PLAYER_ROWS: PlayerRow[] = ROWS.map(({ fan, roster, player, ...counts }) => ({ fan, roster, player, ...c(counts.neg, counts.neu, counts.pos) }))
 const FLOOR = 10
 
 describe('fanRosterMatrix', () => {
@@ -44,6 +45,16 @@ describe('fanRosterMatrix', () => {
   it('reads one side as cells, the own key left out', () => {
     expect(sideCells(m.byFan.get(LAL), LAL).map((cell) => cell.key).toSorted()).toEqual([BOS, MIA])
     expect(sideCells(undefined, LAL)).toEqual([])
+  })
+
+  it("reads one fanbase's player rows as cells, its own roster out and free agents in", () => {
+    expect(playerCells(PLAYER_ROWS, LAL).map((cell) => cell.key)).toEqual(['Jayson Tatum', 'Bam Adebayo', 'Chris Paul'])
+    expect(playerCells(PLAYER_ROWS, LAL)[0]).toEqual({ key: 'Jayson Tatum', ...c(40, 40, 20) })
+  })
+
+  it('sums each player over every fanbase as his usual', () => {
+    expect(playerUsual(PLAYER_ROWS).get('Jayson Tatum')).toEqual(c(110, 105, 85))
+    expect(playerUsual(PLAYER_ROWS).get('Chris Paul')).toEqual(c(5, 5, 5))
   })
 
   it('drops free agents: no roster, no column', () => {
@@ -140,7 +151,7 @@ describe('deltaLists', () => {
 
 describe('the ledes', () => {
   it('names the hardest and warmest targets in points', () => {
-    expect(targetsSummary(LAL, targets(), FLOOR)).toBe("Across the 2 rosters Lakers fans have at least 10 comments about, they are hardest on the Celtics (+3 pts negative against that roster's usual) and warmest to the Heat (+7 pts positive against usual).")
+    expect(targetsSummary(LAL, targets(), FLOOR)).toBe("Of the 2 players Lakers fans have at least 10 comments about, they are hardest on Celtics (+3 pts negative against his usual) and warmest to Heat (+7 pts positive against his usual).")
   })
 
   it('names the hardest and warmest fanbases on this roster', () => {
@@ -150,8 +161,8 @@ describe('the ledes', () => {
   })
 
   it('falls to one sentence under two eligible rows, on either side', () => {
-    expect(fewEligibleSentence(LAL, 1, FLOOR, 'targets')).toBe('Only 1 roster has at least 10 comments from Lakers fans, too few to rank.')
+    expect(fewEligibleSentence(LAL, 1, FLOOR, 'targets')).toBe('Only 1 player has at least 10 comments from Lakers fans, too few to rank.')
     expect(fewEligibleSentence(LAL, 0, FLOOR, 'fans')).toBe('Only 0 fanbases have at least 10 comments about Lakers players, too few to rank.')
-    expect(targetsSummary(LAL, { grudges: [], flowers: [], eligible: 1, domain: [0, 0] }, FLOOR)).toMatch(/^Only 1 roster/)
+    expect(targetsSummary(LAL, { grudges: [], flowers: [], eligible: 1, domain: [0, 0] }, FLOOR)).toMatch(/^Only 1 player/)
   })
 })

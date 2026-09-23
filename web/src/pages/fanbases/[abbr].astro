@@ -14,10 +14,11 @@ import { SentimentBar } from '../../components/SentimentBar'
 import { StatFigure } from '../../components/StatFigure'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
-import { type DeltaLists, type DeltaRow, deltaLists, fanbaseVerdict, fanRosterMatrix, gapRows, gapSummary, leagueSummary, sideCells, targetsSummary } from '../../lib/fanbase'
+import { type DeltaLists, type DeltaRow, deltaLists, fanbaseVerdict, fanRosterMatrix, gapRows, gapSummary, leagueSummary, playerCells, playerUsual, sideCells, targetsSummary } from '../../lib/fanbase'
 import { nickname, possessive } from '../../lib/fans'
 import { fmtInt, fmtPct, fmtSigned, ordinal } from '../../lib/format'
 import { groupBy } from '../../lib/group'
+import { headshotVariant } from '../../lib/media'
 import { countsOf, negRate, neighbours, neuRate, posRate, rankBy, sumCounts } from '../../lib/metrics'
 import type { Counts } from '../../lib/types'
 
@@ -33,10 +34,11 @@ export async function getStaticPaths() {
   const byPlayer = groupBy(fanRows, (r) => r.player)
   const rosters = groupBy(tables.players.filter((p) => p.roster_team !== null), (p) => p.roster_team!)
   const matrix = fanRosterMatrix(fanRows)
+  const usual = playerUsual(fanRows)
   // Rank 1 is the highest negative rate; every fanbase is ranked, there is no minimum here.
   const ranked = rankBy(tables.fan_team_overall.map((r) => ({ ...countsOf(r), team: r })), 'neg', 0)
   const link = (team: string) => `/fanbases/${teams.get(team)!.abbreviation.toLowerCase()}/`
-  const describeRoster = (roster: string) => ({ label: nickname(roster), href: link(roster), logo: teams.get(roster)!.logo_url })
+  const describePlayer = (player: string) => ({ label: player, href: `/player/${players.get(player)!.slug}/`, logo: headshotVariant(players.get(player)!.headshot_url, 180) })
   const describeFans = (fan: string) => ({ label: possessive(fan), href: link(fan), logo: teams.get(fan)!.logo_url })
 
   return ranked.map((r) => {
@@ -55,7 +57,7 @@ export async function getStaticPaths() {
         prev: neighbour(prev),
         next: neighbour(next),
         gap: gapRows(team, rosters.get(team) ?? [], byPlayer, floor),
-        targets: deltaLists(sideCells(matrix.byFan.get(team), team), (roster) => matrix.rosterAverage.get(roster) ?? sumCounts([]), floor, describeRoster),
+        targets: deltaLists(playerCells(fanRows, team), (player) => usual.get(player) ?? sumCounts([]), floor, describePlayer),
         league: deltaLists(sideCells(matrix.byRoster.get(team), team), () => rosterAverage, floor, describeFans),
       },
     }
@@ -79,6 +81,7 @@ const SECTIONS = [
 ]
 
 // Δ lists plot the Δ itself, the tick at zero; each link speaks the raw rate too.
+// Grudges and flowers are players; the league on them is fanbases.
 const pts = (v: number): string => fmtSigned(v, 0)
 const spoken = (r: DeltaRow, subject: string, object: string, word: string): string => {
   const points = Math.abs(Math.round(100 * r.delta))
@@ -88,11 +91,11 @@ const spoken = (r: DeltaRow, subject: string, object: string, word: string): str
 const dotRows = (rows: readonly DeltaRow[], text: (r: DeltaRow) => string): DeltaDotRow[] =>
   rows.map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, text: text(r), detail: fmtPct(r.rate, 0) }))
 const targetRows = (lists: DeltaLists, which: 'grudges' | 'flowers') =>
-  dotRows(lists[which], (r) => spoken(r, fans, `${r.label} players`, which === 'grudges' ? 'negative' : 'positive'))
+  dotRows(lists[which], (r) => spoken(r, fans, r.label, which === 'grudges' ? 'negative' : 'positive'))
 const leagueRows = (lists: DeltaLists, which: 'grudges' | 'flowers') =>
   dotRows(lists[which], (r) => spoken(r, r.label, `${nickname(name)} players`, which === 'grudges' ? 'negative' : 'positive'))
 const lists = [
-  { id: 'targets', data: targets, rows: targetRows, lede: targetsSummary(name, targets, floor), heads: ['Grudges', 'Flowers'], tick: "Each roster's usual" },
+  { id: 'targets', data: targets, rows: targetRows, lede: targetsSummary(name, targets, floor), heads: ['Grudges', 'Flowers'], tick: "Each player's usual" },
   { id: 'league', data: league, rows: leagueRows, lede: leagueSummary(name, league, floor), heads: ['Hardest on them', 'Warmest to them'], tick: `The ${nickname(name)}' usual` },
 ] as const
 ---

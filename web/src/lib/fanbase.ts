@@ -37,6 +37,22 @@ export function sideCells(side: Map<string, Counts> | undefined, except: string)
   return [...(side ?? [])].filter(([k]) => k !== except).map(([key, counts]) => ({ key, ...counts }))
 }
 
+export interface PlayerRow extends MatrixRow {
+  player: string
+}
+
+/** One fanbase's player rows as cells keyed by player, its own roster left out; free agents stay. */
+export function playerCells(rows: readonly PlayerRow[], team: string): (Counts & { key: string })[] {
+  return rows.filter((r) => r.fan === team && r.roster !== team).map(({ player, neg, neu, pos, total }) => ({ key: player, neg, neu, pos, total }))
+}
+
+/** Each player's counts summed over every fanbase: the usual a cell is read against. */
+export function playerUsual(rows: readonly PlayerRow[]): Map<string, Counts> {
+  const m = new Map<string, Counts>()
+  for (const r of rows) add(m, r.player, r)
+  return m
+}
+
 /** The whole matrix from player-grain rows, once per build. */
 export function fanRosterMatrix(rows: readonly MatrixRow[]): Matrix {
   const byFan = new Map<string, Map<string, Counts>>()
@@ -163,12 +179,12 @@ export function deltaLists(cells: readonly (Counts & { key: string })[], baselin
   return { grudges, flowers, eligible: eligible.length, domain: [Math.min(0, ...deltas), Math.max(0, ...deltas)] }
 }
 
-/** Grudges and flowers lede: this fanbase against the other rosters. */
+/** Grudges and flowers lede: this fanbase against other teams' players. */
 export function targetsSummary(team: string, lists: DeltaLists, floor: number): string {
   if (lists.eligible < 2) return fewEligibleSentence(team, lists.eligible, floor, 'targets')
   const g = lists.grudges[0]!
   const f = lists.flowers[0]!
-  return `Across the ${fmtInt(lists.eligible)} rosters ${possessive(team)} have at least ${fmtInt(floor)} comments about, they are hardest on the ${g.label} (${pts(g.delta)} negative against that roster's usual) and warmest to the ${f.label} (${pts(f.delta)} positive against usual).`
+  return `Of the ${fmtInt(lists.eligible)} players ${possessive(team)} have at least ${fmtInt(floor)} comments about, they are hardest on ${g.label} (${pts(g.delta)} negative against his usual) and warmest to ${f.label} (${pts(f.delta)} positive against his usual).`
 }
 
 /** The league lede: the other fanbases against this roster. */
@@ -181,6 +197,6 @@ export function leagueSummary(team: string, lists: DeltaLists, floor: number): s
 
 /** The one-sentence state when a list would have fewer than two rows. */
 export function fewEligibleSentence(team: string, eligible: number, floor: number, side: 'targets' | 'fans'): string {
-  const what = side === 'targets' ? `${eligible === 1 ? 'roster has' : 'rosters have'} at least ${fmtInt(floor)} comments from ${possessive(team)}` : `${eligible === 1 ? 'fanbase has' : 'fanbases have'} at least ${fmtInt(floor)} comments about ${nickname(team)} players`
+  const what = side === 'targets' ? `${eligible === 1 ? 'player has' : 'players have'} at least ${fmtInt(floor)} comments from ${possessive(team)}` : `${eligible === 1 ? 'fanbase has' : 'fanbases have'} at least ${fmtInt(floor)} comments about ${nickname(team)} players`
   return `Only ${fmtInt(eligible)} ${what}, too few to rank.`
 }

@@ -49,7 +49,11 @@ export function ThresholdControl({ value, official, stops, ranked, total, onChan
           {status}
         </label>
         {custom && <Stamp kind="unofficial" />}
-        {!custom && (
+        {custom ? (
+          <button type="button" className="thr__reset mono" onClick={() => onChange(official)}>
+            Reset to official
+          </button>
+        ) : (
           <button type="button" className="thr__close mono" onClick={() => setOpened(false)} aria-expanded={true}>
             Close
           </button>
@@ -83,11 +87,6 @@ export function ThresholdControl({ value, official, stops, ranked, total, onChan
             {short(t)}
           </button>
         ))}
-      </div>
-      <div className="thr__foot">
-        <button type="button" className="thr__reset mono" onClick={() => onChange(official)} disabled={!custom}>
-          Reset to official
-        </button>
       </div>
     </div>
   )

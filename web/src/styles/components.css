@@ -336,21 +336,13 @@
 .thr__close,
 .thr__reset {
   margin-left: auto;
+  min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--line-2);
   font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--bone);
-}
-.thr__reset {
-  margin-left: 0;
-  min-height: 44px;
-}
-.thr__reset:disabled {
-  color: var(--mute);
-  border-color: var(--line);
-  cursor: default;
 }
 .thr--open {
   padding-block: 10px 12px;
@@ -406,11 +398,7 @@
 .thr__tick--on {
   color: var(--bone);
 }
-.thr__foot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+
 
 /* BoardRow: the whole row is the link. Rank · mug · who · bar · value · n. */
 .row {

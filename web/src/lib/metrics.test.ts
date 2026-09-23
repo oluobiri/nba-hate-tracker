@@ -55,17 +55,17 @@ describe('rankBy', () => {
   })
 })
 
+const byName = (r: { name: string }) => r.name
+
 describe('rankDeltas', () => {
   const rows = [
     { name: 'a', ...c(60, 20, 20) }, // n=100
     { name: 'b', ...c(700, 200, 100) }, // n=1000
     { name: 'c', ...c(9, 1, 0) }, // n=10, 90% neg
   ]
-  const key = (r: { name: string }) => r.name
-
   it('reads 0 in the official view and null for unranked rows', () => {
     const official = rankBy(rows, 'neg', 100)
-    const d = rankDeltas(official, official, key)
+    const d = rankDeltas(official, official, byName)
     expect(d.get('b')).toBe(0)
     expect(d.get('a')).toBe(0)
     expect(d.get('c')).toBeNull()
@@ -74,7 +74,7 @@ describe('rankDeltas', () => {
   it('is positive for a row that moved up in the current view, null for a row the official view never ranked', () => {
     const official = rankBy(rows, 'neg', 100)
     const current = rankBy(rows, 'neg', 10)
-    const d = rankDeltas(current, official, key)
+    const d = rankDeltas(current, official, byName)
     expect(d.get('c')).toBeNull() // newly ranked; nothing to compare against
     expect(d.get('b')).toBe(-1) // 1st officially, 2nd now
     expect(d.get('a')).toBe(-1)

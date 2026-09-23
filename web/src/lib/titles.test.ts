@@ -47,8 +47,9 @@ describe('weeklyHolders', () => {
   })
 })
 
+const key = (r: Row) => r.name
+
 describe('reigns', () => {
-  const key = (r: Row) => r.name
 
   it('merges consecutive weeks by one holder', () => {
     const holders = weeklyHolders([row(W1, 'a', 60, 40, 0), row(W2, 'a', 70, 30, 0), row(W3, 'b', 80, 20, 0)], 'neg', 100)

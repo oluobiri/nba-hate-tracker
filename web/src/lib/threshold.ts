@@ -24,3 +24,14 @@ export function snapThreshold(n: number, stops: readonly number[]): number {
   for (const s of stops) if (Math.abs(s - n) < Math.abs(best - n)) best = s
   return best
 }
+
+/** The labelled stops: the floor, the official minimum, the last stop, and every power of ten between. */
+export function thresholdTicks(stops: readonly number[], official: number): number[] {
+  const first = stops[0]
+  const last = stops.at(-1)
+  if (first === undefined || last === undefined) return []
+  const ticks = new Set<number>([first, last])
+  if (stops.includes(official)) ticks.add(official)
+  for (const s of stops) if (Number.isInteger(Math.log10(s))) ticks.add(s)
+  return [...ticks].toSorted((a, b) => a - b)
+}

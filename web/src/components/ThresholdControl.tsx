@@ -4,6 +4,7 @@
 import { useId, useState } from 'react'
 
 import { fmtInt } from '../lib/format'
+import { thresholdTicks } from '../lib/threshold'
 import { Stamp } from './Stamp'
 
 export interface ThresholdControlProps {
@@ -26,6 +27,8 @@ export function ThresholdControl({ value, official, stops, ranked, total, onChan
   const custom = value !== official
   const open = opened || custom
   const index = Math.max(0, stops.indexOf(value))
+  const ticks = thresholdTicks(stops, official)
+  const short = (v: number): string => (v >= 1000 ? `${v / 1000}k` : String(v))
   const status = `${custom ? 'Custom' : 'Official'} · min. ${fmtInt(value)} comments · ${ranked} of ${total} ranked`
 
   if (!open) {
@@ -66,12 +69,25 @@ export function ThresholdControl({ value, official, stops, ranked, total, onChan
         aria-valuetext={`minimum ${fmtInt(value)} comments`}
         onChange={(e) => onChange(stops[Number(e.target.value)] ?? official)}
       />
+      <div className="thr__ticks" aria-label="Presets">
+        {ticks.map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={`thr__tick mono${t === official ? ' thr__tick--official' : ''}${t === value ? ' thr__tick--on' : ''}`}
+            style={{ left: `${(100 * stops.indexOf(t)) / Math.max(1, stops.length - 1)}%` }}
+            onClick={() => onChange(t)}
+            aria-label={`minimum ${fmtInt(t)} comments`}
+            aria-pressed={t === value}
+          >
+            {short(t)}
+          </button>
+        ))}
+      </div>
       <div className="thr__foot">
-        <span className="mono thr__bound">{fmtInt(stops[0] ?? value)}</span>
         <button type="button" className="thr__reset mono" onClick={() => onChange(official)} disabled={!custom}>
           Reset to official
         </button>
-        <span className="mono thr__bound">{fmtInt(stops.at(-1) ?? value)}</span>
       </div>
     </div>
   )

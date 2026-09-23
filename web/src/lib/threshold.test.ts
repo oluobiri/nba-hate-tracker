@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { snapThreshold, thresholdStops } from './threshold'
+import { snapThreshold, thresholdStops, thresholdTicks } from './threshold'
 
 describe('thresholdStops', () => {
   const stops = thresholdStops(200, 165_616, 5_000)
@@ -36,5 +36,12 @@ describe('snapThreshold', () => {
     expect(snapThreshold(750, stops)).toBe(500)
     expect(snapThreshold(760, stops)).toBe(1_000)
     expect(snapThreshold(5, stops)).toBe(200)
+  })
+})
+
+describe('thresholdTicks', () => {
+  it('labels the ends, the official minimum and the powers of ten', () => {
+    const stops = thresholdStops(200, 165_616, 5_000)
+    expect(thresholdTicks(stops, 5_000)).toEqual([200, 1_000, 5_000, 10_000, 100_000, 150_000])
   })
 })

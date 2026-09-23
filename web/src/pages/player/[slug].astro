@@ -1,39 +1,554 @@
 ---
+// Page 2. One route per player; five sections behind a rail. Everything is
+// derived here from the player's own rows, the rule numbers straight from
+// the manifest; two islands (Receipts, Games) take plain props.
+import type { InferGetStaticPropsType } from 'astro'
+
+import { DeltaDot, type DeltaDotRow } from '../../components/DeltaDot'
+import { commentUrl } from '../../components/Exhibit'
+import { GameScatter } from '../../components/GameScatter'
+import { Games } from '../../components/Games'
+import { MethodNote } from '../../components/MethodNote'
+import { RankNumeral } from '../../components/RankNumeral'
+import { Receipts, type ReceiptItem } from '../../components/Receipts'
+import SectionRail from '../../components/SectionRail.astro'
 import { SentimentBar } from '../../components/SentimentBar'
+import { Stamp } from '../../components/Stamp'
+import { StatFigure } from '../../components/StatFigure'
+import { Timeline, type TimelineWeek } from '../../components/Timeline'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
-import { fmtInt } from '../../lib/format'
-import { countsOf } from '../../lib/metrics'
+import { playerVerdict, rankChips, type VerdictInput } from '../../lib/annotate'
+import { type FanRow, fanLists, fanSplit, fansSummary } from '../../lib/fans'
+import { fmtInt, fmtPct, ordinal } from '../../lib/format'
+import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
+import { groupByPlayer } from '../../lib/group'
+import { headshotSrcSet, headshotVariant } from '../../lib/media'
+import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate, sumCounts } from '../../lib/metrics'
+import { type Counts, LENSES, type Lens, type Sentiment } from '../../lib/types'
+import { GAME_KEYS, RECEIPT_KEYS } from '../../lib/url'
+import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../../lib/weeks'
 
-export async function getStaticPaths() {
-  const { tables } = await getSeason()
-  const overall = new Map(tables.player_overall.map((r) => [r.attributed_player, r]))
-  return tables.players.map((player) => ({
-    params: { slug: player.slug },
-    props: { player, overall: overall.get(player.attributed_player) ?? null },
-  }))
+// Page choices, not rules. Every rule number is read from the manifest below.
+const RECEIPTS_TOP = 3
+const FAN_LIST = 5
+const ROLLING_WEEKS = 4
+const LOG_TOP = 10
+// PROTOTYPE: the scatter needs this many graded games before it is drawn.
+const SCATTER_MIN = 15
+
+interface Named extends Counts {
+  name: string
+  slug: string
 }
 
-const { player, overall } = Astro.props
-const roster = player.roster_team ?? 'No roster team'
+export async function getStaticPaths() {
+  const { manifest, tables } = await getSeason()
+  const official = manifest.rules.qualified_threshold
+  const dim = new Map(tables.players.map((p) => [p.attributed_player, p]))
+  const overall: Named[] = tables.player_overall.map((r) => ({ ...countsOf(r), name: r.attributed_player, slug: dim.get(r.attributed_player)!.slug }))
+  const overallBy = new Map(overall.map((r) => [r.name, r]))
+  const rankings = Object.fromEntries(LENSES.map((l) => [l, rankBy(overall, l, official)])) as Record<Lens, Ranked<Named>[]>
+  const allRankings = Object.fromEntries(LENSES.map((l) => [l, rankBy(overall, l, 0)])) as Record<Lens, Ranked<Named>[]>
+  const league = sumCounts(overall.filter((r) => r.total >= official))
+  // Below the minimum, prev/next walk the unofficial players by rate.
+  const unofficialChain = rankBy(overall.filter((r) => r.total < official), 'neg', 0)
+  const rankIn = (rs: readonly Ranked<Named>[], name: string): number | null => rs.find((r) => r.row.name === name)?.rank ?? null
+  const spine = weekSpine(tables.player_temporal.map((r) => r.week))
+  const receipts = groupByPlayer(tables.comment_samples)
+  const temporal = groupByPlayer(tables.player_temporal)
+  const fanRows = groupByPlayer(tables.player_fan_team)
+  const lines = groupByPlayer(tables.player_games)
+  const sentiment = groupByPlayer(tables.game_sentiment)
+  const games = new Map(tables.games.map((g) => [g.game_id, g]))
+  const teams = new Map(tables.teams.map((t) => [t.team, t]))
+  const posts = new Map(tables.posts.map((p) => [p.post_id, p.title]))
+
+  return tables.players.map((player) => {
+    const name = player.attributed_player
+    const row = overallBy.get(name) ?? { neg: 0, neu: 0, pos: 0, total: 0, name, slug: player.slug }
+    const isOfficial = row.total >= official
+    const ranks = Object.fromEntries(LENSES.map((l) => [l, rankIn(rankings[l], name)])) as Record<Lens, number | null>
+    const allRanks = Object.fromEntries(LENSES.map((l) => [l, rankIn(allRankings[l], name) ?? overall.length])) as Record<Lens, number>
+    const chain = isOfficial ? rankings.neg : unofficialChain
+    const { prev, next } = neighbours(chain, (r) => r.name, name)
+    const neighbour = (r: Ranked<Named> | null) => (r ? { name: r.row.name, slug: r.row.slug, rank: isOfficial ? r.rank! : rankIn(allRankings.neg, r.row.name)! } : null)
+    return {
+      params: { slug: player.slug },
+      props: {
+        player,
+        counts: { neg: row.neg, neu: row.neu, pos: row.pos, total: row.total } as Counts,
+        ranks,
+        allRanks,
+        prev: neighbour(prev),
+        next: neighbour(next),
+        tracked: overall.length,
+        league,
+        spine,
+        receipts: receipts.get(name) ?? [],
+        temporal: temporal.get(name) ?? [],
+        fanRows: fanRows.get(name) ?? [],
+        lines: lines.get(name) ?? [],
+        sentiment: sentiment.get(name) ?? [],
+        games,
+        teams,
+        posts,
+      },
+    }
+  })
+}
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>
+const { player, counts, ranks, allRanks, prev, next, tracked, league, spine, receipts, temporal, fanRows, lines, sentiment, games, teams, posts } = Astro.props
+const { manifest } = await getSeason()
+const official = manifest.rules.qualified_threshold
+const floors = manifest.rules.floors
+const name = player.attributed_player
+const isOfficial = counts.total >= official
+const abbrOf = (team: string | null): string | null => (team ? (teams.get(team)?.abbreviation ?? null) : null)
+const abbr = new Map([...teams.values()].map((t) => [t.team, t.abbreviation]))
+const rosterAbbr = abbrOf(player.roster_team)
+
+// Verdict.
+const verdictInput: VerdictInput = { name, counts, official, ranks, allRanks, tracked, league }
+const verdict = playerVerdict(verdictInput)
+const chips = rankChips(verdictInput)
+const eyebrow = player.roster_team ? [rosterAbbr, player.position, 'season-end roster'].filter(Boolean).join(' · ') : 'Free agent at season end'
+
+// Receipts.
+const cells: Record<Sentiment, ReceiptItem[]> = { neg: [], neu: [], pos: [] }
+for (const r of receipts.toSorted((a, b) => a.rank - b.rank)) {
+  const s = r.sentiment as Sentiment
+  cells[s]?.push({ body: r.body, score: r.score, sourceUrl: commentUrl(r.link_id, r.comment_id), postTitle: posts.get(r.link_id) ?? null })
+}
+
+// Fans.
+const fans: FanRow[] = fanRows.map((r) => ({ ...countsOf(r), team: r.fan_team }))
+const split = fanSplit(counts, fans, player.roster_team)
+const lists = fanLists(fans, floors.fanbase_min_n, player.roster_team, FAN_LIST)
+const fansText = fansSummary(name, split, lists, floors.fanbase_min_n, player.roster_team)
+const fanRow =
+  (value: (c: Counts) => number) =>
+  (r: (typeof lists.haters)[number]): DeltaDotRow => {
+    const a = abbr.get(r.team) ?? r.team
+    return { key: r.team, label: `${a} fans`, href: `/fanbases/${a.toLowerCase()}/`, value: value(r), n: r.total, logo: teams.get(r.team)?.logo_url, tag: r.own ? 'own fans' : undefined }
+  }
+const haters = lists.haters.map(fanRow(negRate))
+const defenders = lists.defenders.map(fanRow(posRate))
+const domainOf = (rows: DeltaDotRow[], avg: number): readonly [number, number] => [Math.min(avg, ...rows.map((r) => r.value)), Math.max(avg, ...rows.map((r) => r.value))]
+const hisNeg = negRate(lists.average)
+const hisPos = posRate(lists.average)
+
+// Games (built before the timeline: the week readouts list them).
+const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n)
+const dressed = log.length > 0
+const wl = winLossSplit(log, floors.game_min_n)
+const points = scatterPoints(log)
+const r = pearson(
+  points.map((p) => p.x),
+  points.map((p) => p.y),
+)
+const gamesText = dressed ? gamesSummary(name, log, counts, floors.game_min_n) : neverDressedSentence(name, talkedThreads(sentiment, floors.game_min_n), floors.game_min_n)
+const logDesc = log.toSorted((a, b) => b.date.localeCompare(a.date))
+
+// Timeline.
+const weekRows = spineRows(
+  spine,
+  temporal.map((t) => ({ ...countsOf(t), week: t.week })),
+)
+const weekCounts: (Counts | null)[] = weekRows.map((w) => (w ? { neg: w.neg, neu: w.neu, pos: w.pos, total: w.total } : null))
+const negLine = rollingRate(weekCounts, ROLLING_WEEKS, negRate, floors.week_min_n)
+const posLine = rollingRate(weekCounts, ROLLING_WEEKS, posRate, floors.week_min_n)
+const marks = extremeWeeks(weekCounts, floors.week_min_n)
+const bands = phaseBands(spine, manifest.calendar)
+const gamesByWeek = weekGames(log, spine).map((ws) => ws.map((g) => `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}`))
+const weeks: TimelineWeek[] = spine.map((key, i) => ({ key, counts: weekCounts[i]!, games: gamesByWeek[i]! }))
+const timelineText = timelineSummary(name, spine, weekCounts, negLine, floors.week_min_n, ROLLING_WEEKS)
+
+const SECTIONS = [
+  { id: 'verdict', label: 'Verdict' },
+  { id: 'receipts', label: 'Receipts' },
+  { id: 'fans', label: 'Fans' },
+  { id: 'timeline', label: 'Timeline' },
+  { id: 'games', label: 'Games' },
+]
+const hero = (c: Counts, label: string, detail: string, tone: 'neg' | 'neu' | 'pos') => ({ c, label, detail, tone })
+const tiles = [
+  ...(split.own && player.roster_team ? [hero(split.own, 'Own fans', `${rosterAbbr} flair · ${fmtInt(split.own.total)} comments`, 'neg' as const)] : []),
+  hero(split.rivals, split.own ? 'Rival fans' : 'Flaired fans', `${split.own ? 'every other flair' : 'every flair'} · ${fmtInt(split.rivals.total)} comments`, 'neg'),
+  hero(split.unflaired, 'Unflaired', `no flair · ${fmtInt(split.unflaired.total)} comments`, 'neg'),
+]
 ---
 
-<Base title={player.attributed_player} description={`What r/NBA says about ${player.attributed_player}.`}>
-  <main id="main" class="wrap page">
-    <header>
-      <p class="eyebrow">{roster}</p>
-      <h1>{player.attributed_player}</h1>
+<Base title={name} description={verdict.sentence}>
+  <script is:inline define:vars={{ receipts: RECEIPT_KEYS, games: GAME_KEYS }}>
+    // A deep link carries a view: hold each island's prerendered default out
+    // of sight until that island has read the URL (it removes its class).
+    const q = new URLSearchParams(location.search)
+    if (receipts.some((k) => q.has(k))) document.documentElement.classList.add('has-receipts-view')
+    if (games.some((k) => q.has(k))) document.documentElement.classList.add('has-games-view')
+  </script>
+  <main id="main" class="wrap page pp">
+    <header class="pp__head">
+      <div class="pp__head-text">
+        <p class="eyebrow">{manifest.season} · {eyebrow}</p>
+        <h1 class="pp__name">{name}</h1>
+        <p class="pp__verdict">{verdict.sentence}</p>
+      </div>
+      <div class="pp__mug" aria-hidden="true">
+        <img
+          src={headshotVariant(player.headshot_url, 420)}
+          srcset={headshotSrcSet(player.headshot_url, [420, 840])}
+          sizes="(min-width: 760px) 360px, 1px"
+          width="420"
+          height="307"
+          alt=""
+          decoding="async"
+        />
+      </div>
     </header>
+
     {
-      overall ? (
-        <>
-          <SentimentBar counts={countsOf(overall)} size="hero" subject={player.attributed_player} />
-          <p class="page__lede mono">n={fmtInt(overall.comment_count)} comments attributed</p>
-        </>
-      ) : (
-        <p class="page__lede">No attributed comments this season.</p>
+      !isOfficial && (
+        <MethodNote kind="rule">
+          <Stamp kind="unofficial" /> Official rankings need at least {fmtInt(official)} comments; {name} has {fmtInt(counts.total)}. Every rank on this page is
+          his place among all {fmtInt(tracked)} tracked players, drawn hollow.
+        </MethodNote>
       )
     }
-    <p class="page__lede">The full player page is on its way.</p>
+
+    <div class="pp__grid">
+      <div class="pp__rail"><SectionRail sections={SECTIONS} /></div>
+      <div class="pp__sections">
+        <section id="verdict" class="pp__section" aria-labelledby="verdict-h">
+          <h2 id="verdict-h">Verdict</h2>
+          <SentimentBar counts={counts} size="hero" subject={name} />
+          <div class="pp__figures">
+            <StatFigure figure={fmtPct(negRate(counts))} label="Negative" detail={`${fmtInt(counts.neg)} comments`} tone="neg" />
+            <StatFigure figure={fmtPct(neuRate(counts))} label="Neutral" detail={`${fmtInt(counts.neu)} comments`} tone="neu" />
+            <StatFigure figure={fmtPct(posRate(counts))} label="Positive" detail={`${fmtInt(counts.pos)} comments`} tone="pos" />
+          </div>
+          <p class="pp__n mono">
+            n={fmtInt(counts.total)} comments about {name}
+            {!isOfficial && <Stamp kind="unofficial" />}
+          </p>
+          <ol class="pp__chips" aria-label="Ranks, by lens">
+            {
+              chips.map((c) => (
+                <li>
+                  <a class="pp__chip" href={c.href} aria-label={`${c.label}${c.official ? '' : ', among all tracked players'}: see the leaderboard`}>
+                    <RankNumeral rank={c.rank} official={c.official} />
+                    <span class="pp__chip-text">{c.label.slice(c.label.indexOf(' ') + 1)}</span>
+                  </a>
+                </li>
+              ))
+            }
+          </ol>
+          <nav class="pp__pn" aria-label="Neighbours by negative rate">
+            {
+              prev ? (
+                <a class="pp__pn-link" href={`/player/${prev.slug}/`} rel="prev">
+                  <span class="pp__pn-dir mono">← {ordinal(prev.rank)}</span>
+                  <span class="pp__pn-name">{prev.name}</span>
+                </a>
+              ) : (
+                <span class="pp__pn-link pp__pn-link--none mono">{isOfficial ? 'Top of the board' : 'No one above'}</span>
+              )
+            }
+            {
+              next ? (
+                <a class="pp__pn-link pp__pn-link--next" href={`/player/${next.slug}/`} rel="next">
+                  <span class="pp__pn-dir mono">{ordinal(next.rank)} →</span>
+                  <span class="pp__pn-name">{next.name}</span>
+                </a>
+              ) : (
+                <span class="pp__pn-link pp__pn-link--next pp__pn-link--none mono">{isOfficial ? 'Bottom of the board' : 'No one below'}</span>
+              )
+            }
+          </nav>
+        </section>
+
+        <section id="receipts" class="pp__section" aria-labelledby="receipts-h">
+          <h2 id="receipts-h">Receipts</h2>
+          <p class="pp__lede">What the room said about {name}, verbatim: the highest-scoring comments in each class.</p>
+          <Receipts client:load name={name} cells={cells} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={official} />
+          <MethodNote kind="method">
+            A receipt is a top-scoring comment about {name} that cleared the classifier's confidence bar
+            {manifest.rules.receipts.verified && ' and a second pass confirming it is about him'}. Neutral receipts carry no stamp. No usernames: the site judges
+            players, not commenters.
+          </MethodNote>
+        </section>
+
+        <section id="fans" class="pp__section" aria-labelledby="fans-h">
+          <h2 id="fans-h">Fans</h2>
+          <p class="pp__lede">{fansText}</p>
+          <div class="pp__tiles">
+            {
+              tiles.map((t) => (
+                <div class="pp__tile">
+                  <StatFigure figure={fmtPct(negRate(t.c))} label={t.label} detail={t.detail} tone={t.c.total ? t.tone : undefined} />
+                  <SentimentBar counts={t.c} size="mini" subject={`${t.label} on ${name}`} />
+                </div>
+              ))
+            }
+          </div>
+          {
+            lists.eligible >= 2 && (
+              <div class="pp__lists">
+                <div class="pp__list">
+                  <h3>Who hates him most</h3>
+                  <DeltaDot rows={haters} average={hisNeg} domain={domainOf(haters, hisNeg)} format={(v) => fmtPct(v)} tone="neg" averageLabel="His average" showDelta />
+                </div>
+                <div class="pp__list">
+                  <h3>Who defends him</h3>
+                  <DeltaDot rows={defenders} average={hisPos} domain={domainOf(defenders, hisPos)} format={(v) => fmtPct(v)} tone="pos" averageLabel="His average" showDelta />
+                </div>
+              </div>
+            )
+          }
+          <MethodNote kind="method">
+            A fanbase is the flair its commenters wear. Flairs with fewer than {fmtInt(floors.fanbase_min_n)} comments about {name} are left out of the lists;
+            the tick is his rate across every flaired comment, from summed counts, never a mean of rates.
+          </MethodNote>
+        </section>
+
+        <section id="timeline" class="pp__section" aria-labelledby="timeline-h">
+          <h2 id="timeline-h">Timeline</h2>
+          <Timeline name={name} weeks={weeks} negLine={negLine} posLine={posLine} bands={bands} marks={marks} floor={floors.week_min_n} k={ROLLING_WEEKS} summary={timelineText} />
+          <MethodNote kind="method">
+            Lines are {ROLLING_WEEKS}-week rolling rates from summed counts (Σ negative ÷ Σ comments), drawn only where the window holds at least{' '}
+            {fmtInt(floors.week_min_n)} comments. Dots are single weeks, sized by n. Bands follow the season calendar.
+          </MethodNote>
+        </section>
+
+        <section id="games" class="pp__section" aria-labelledby="games-h">
+          <h2 id="games-h">Games</h2>
+          <p class="pp__lede">{gamesText}</p>
+          {
+            dressed ? (
+              <>
+                <div class="pp__figures">
+                  <StatFigure figure={wl.wins ? fmtPct(negRate(wl.wins)) : '—'} label="In wins" detail={wl.wins ? `${fmtInt(wl.wins.total)} comments` : 'too few graded wins'} tone={wl.wins ? 'neg' : undefined} />
+                  <StatFigure figure={wl.losses ? fmtPct(negRate(wl.losses)) : '—'} label="In losses" detail={wl.losses ? `${fmtInt(wl.losses.total)} comments` : 'too few graded losses'} tone={wl.losses ? 'neg' : undefined} />
+                  <StatFigure figure={fmtPct(negRate(counts))} label="His usual" detail="the season, every comment" tone="neg" />
+                </div>
+                <Games client:visible name={name} log={logDesc} floor={floors.game_min_n} top={LOG_TOP} official={official} />
+                {points.length >= SCATTER_MIN && <GameScatter points={points} baseline={negRate(counts)} lead={scatterLead(name, points.length, r)} r={r} />}
+                <MethodNote kind="rule">
+                  A game counts when at least {fmtInt(floors.game_min_n)} comments about {name} were posted in its threads. The verdict is that game's negative
+                  share against his season share of {fmtPct(negRate(counts), 0)}; wins and losses are split from summed counts.
+                </MethodNote>
+              </>
+            ) : (
+              <MethodNote kind="caveat">No box score, no game log: the room's verdicts need a game he played.</MethodNote>
+            )
+          }
+        </section>
+      </div>
+    </div>
   </main>
 </Base>
+
+<style>
+  .pp {
+    gap: 24px;
+  }
+  .pp__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 320px);
+    gap: 24px;
+    align-items: end;
+    min-height: 300px;
+    border-bottom: 1px solid var(--line);
+  }
+  .pp__head-text {
+    display: grid;
+    gap: 12px;
+    align-content: end;
+    min-width: 0;
+    padding-bottom: 20px;
+  }
+  .pp__head-text .eyebrow {
+    margin: 0;
+  }
+  .pp__name {
+    font-size: clamp(44px, 7vw, 96px);
+    overflow-wrap: anywhere;
+  }
+  .pp__verdict {
+    margin: 0;
+    max-width: 44ch;
+    font-size: clamp(18px, 2.2vw, 24px);
+    line-height: 1.3;
+    color: var(--bone-2);
+    text-wrap: balance;
+  }
+  .pp__mug {
+    position: relative;
+    align-self: end;
+    min-height: 260px;
+  }
+  .pp__mug img {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: bottom;
+    filter: grayscale(1) contrast(1.15) brightness(0.92);
+    mask-image: linear-gradient(to top, transparent 0, #000 22%);
+    -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22%);
+  }
+  .pp__grid {
+    display: contents;
+  }
+  .pp__rail {
+    display: contents;
+  }
+  .pp__sections {
+    display: grid;
+    gap: 40px;
+    min-width: 0;
+  }
+  .pp__section {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    scroll-margin-top: 112px;
+  }
+  .pp__lede {
+    margin: 0;
+    max-width: 70ch;
+    font-size: 16px;
+    color: var(--bone-2);
+  }
+  .pp__figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .pp__n {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: 0;
+    font-size: 13px;
+    color: var(--bone-2);
+  }
+  .pp__chips {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .pp__chip {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--line-2);
+    text-decoration: none;
+    color: inherit;
+  }
+  .pp__chip:hover {
+    border-color: var(--bone-2);
+  }
+  .pp__chip-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bone-2);
+  }
+  .pp__pn {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .pp__pn-link {
+    display: grid;
+    gap: 2px;
+    min-height: 44px;
+    padding: 8px 0;
+    text-decoration: none;
+    color: inherit;
+    border-top: 1px solid var(--line);
+  }
+  .pp__pn-link--next {
+    text-align: right;
+  }
+  .pp__pn-link--none {
+    font-size: 12px;
+    color: var(--mute);
+    align-content: center;
+  }
+  .pp__pn-dir {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+  }
+  .pp__pn-name {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 20px;
+    text-transform: uppercase;
+  }
+  .pp__pn-link:hover .pp__pn-name {
+    text-decoration: underline;
+  }
+  .pp__tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px 24px;
+  }
+  .pp__tile {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+  .pp__lists {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px 32px;
+  }
+  .pp__list {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  @media (max-width: 760px) {
+    .pp__head {
+      grid-template-columns: 1fr;
+      min-height: 0;
+    }
+    .pp__mug {
+      display: none;
+    }
+    .pp__figures {
+      gap: 8px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .pp__grid {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 40px;
+      align-items: start;
+    }
+    .pp__rail {
+      display: block;
+      align-self: stretch;
+    }
+    .pp__section {
+      scroll-margin-top: 80px;
+    }
+  }
+</style>

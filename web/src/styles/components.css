@@ -1005,3 +1005,59 @@
     border-left-color: var(--bone);
   }
 }
+
+/* VerdictDelta: a game against his usual. Figure, a bar centred on the baseline, n. */
+.vd {
+  --vd-ink: var(--bone-2);
+  display: inline-grid;
+  grid-template-columns: 40px minmax(48px, 88px);
+  grid-template-areas:
+    'fig track'
+    'fig n';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  vertical-align: middle;
+}
+.vd--neg {
+  --vd-ink: var(--heat);
+}
+.vd--pos {
+  --vd-ink: var(--ice);
+}
+.vd__figure {
+  grid-area: fig;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--vd-ink);
+}
+.vd--neu .vd__figure {
+  color: var(--mute);
+}
+.vd__track {
+  grid-area: track;
+  position: relative;
+  height: 6px;
+  background: var(--surface-2);
+}
+.vd__base {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  border-left: 1px solid var(--bone-2);
+}
+.vd__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--vd-l);
+  width: var(--vd-w);
+  background: var(--vd-ink);
+}
+.vd__n {
+  grid-area: n;
+  font-size: 10px;
+  color: var(--mute);
+}

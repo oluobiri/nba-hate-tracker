@@ -10,10 +10,12 @@ import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { ThresholdControl } from '../components/ThresholdControl'
+import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
+import { buildGameLog } from '../lib/games'
 import { countsOf, negRate, posRate, rankBy, sumCounts } from '../lib/metrics'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
@@ -68,6 +70,22 @@ const leagueNeg = negRate(sumCounts(fans))
 const fanRows = fans.slice(0, 8).map((r) => ({ key: r.abbreviation, label: `${r.abbreviation} fans`, href: `/fanbases/${r.abbreviation.toLowerCase()}/`, value: negRate(r), n: r.total, logo: r.logo_url }))
 const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate))] as const
 const taggedRows = fanRows.slice(0, 5).map((r, i) => (i === 2 ? { ...r, tag: 'own fans' } : r))
+
+// The game log of #1 by negative rate: the verdict cases and the table's rows.
+const gameFloor = manifest.rules.floors.game_min_n
+const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
+const topLog = buildGameLog(
+  tables.player_games.filter((r) => r.attributed_player === top.attributed_player),
+  tables.game_sentiment.filter((r) => r.attributed_player === top.attributed_player),
+  gamesById,
+  abbrOf,
+  top,
+  gameFloor,
+)
+const judged = topLog.filter((g) => g.delta !== null)
+const harshest = judged.toSorted((a, b) => b.delta! - a.delta!)[0]
+const kindest = judged.toSorted((a, b) => a.delta! - b.delta!)[0]
+const quiet = topLog.find((g) => !g.talked)
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -265,6 +283,17 @@ const taggedRows = fanRows.slice(0, 5).map((r, i) => (i === 2 ? { ...r, tag: 'ow
       <DeltaDot rows={fanRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" />
       <p class="eyebrow">With a Δ column and a tagged row: the player page's "who hates him most", the tick his own average.</p>
       <DeltaDot rows={taggedRows} average={leagueNeg} domain={fanDomain} format={(v) => fmtPct(v)} tone="neg" averageLabel="His average" showDelta />
+    </section>
+
+    <section class="guide__section">
+      <h2>VerdictDelta</h2>
+      <p class="eyebrow">A game against his usual: signed points, a bar from the baseline, n. Heat harsher, ice kinder; the sign is printed.</p>
+      <div class="guide__row">
+        {harshest && <figure class="guide__fig"><VerdictDelta delta={harshest.delta} n={harshest.counts!.total} /><figcaption>harshest · {harshest.opponentAbbr} {harshest.score}</figcaption></figure>}
+        {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>kindest · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
+        <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
+        {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
+      </div>
     </section>
 
     <section class="guide__section">

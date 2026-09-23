@@ -57,3 +57,18 @@ export function rankBy<T extends Counts>(rows: readonly T[], lens: Lens, thresho
   let r = 0
   return sorted.map((x) => ({ ...x, rank: x.row.total >= threshold ? ++r : null }))
 }
+
+/** Rank movement per row between two views of the same lens: official rank minus current rank, null when either is unranked. */
+export function rankDeltas<T extends Counts>(
+  current: readonly Ranked<T>[],
+  official: readonly Ranked<T>[],
+  key: (row: T) => string,
+): Map<string, number | null> {
+  const was = new Map(official.map((r) => [key(r.row), r.rank]))
+  return new Map(
+    current.map((r) => {
+      const before = was.get(key(r.row)) ?? null
+      return [key(r.row), r.rank === null || before === null ? null : before - r.rank]
+    }),
+  )
+}

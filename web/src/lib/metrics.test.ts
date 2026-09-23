@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { countsOf, negRate, netSentiment, polarization, posRate, rankBy, sumCounts } from './metrics'
+import { countsOf, negRate, netSentiment, polarization, posRate, rankBy, rankDeltas, sumCounts } from './metrics'
 import type { Counts } from './types'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
@@ -52,5 +52,31 @@ describe('rankBy', () => {
 
   it('ranks volume by total', () => {
     expect(rankBy(rows, 'volume', 0).map((r) => r.row.name)).toEqual(['b', 'a', 'c'])
+  })
+})
+
+describe('rankDeltas', () => {
+  const rows = [
+    { name: 'a', ...c(60, 20, 20) }, // n=100
+    { name: 'b', ...c(700, 200, 100) }, // n=1000
+    { name: 'c', ...c(9, 1, 0) }, // n=10, 90% neg
+  ]
+  const key = (r: { name: string }) => r.name
+
+  it('reads 0 in the official view and null for unranked rows', () => {
+    const official = rankBy(rows, 'neg', 100)
+    const d = rankDeltas(official, official, key)
+    expect(d.get('b')).toBe(0)
+    expect(d.get('a')).toBe(0)
+    expect(d.get('c')).toBeNull()
+  })
+
+  it('is positive for a row that moved up in the current view, null for a row the official view never ranked', () => {
+    const official = rankBy(rows, 'neg', 100)
+    const current = rankBy(rows, 'neg', 10)
+    const d = rankDeltas(current, official, key)
+    expect(d.get('c')).toBeNull() // newly ranked; nothing to compare against
+    expect(d.get('b')).toBe(-1) // 1st officially, 2nd now
+    expect(d.get('a')).toBe(-1)
   })
 })

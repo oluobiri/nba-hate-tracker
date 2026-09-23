@@ -1,0 +1,24 @@
+/* The games island's layout. Component looks live in components.css. */
+.gl {
+  display: grid;
+  gap: 16px;
+}
+/* A deep link with a filter or expansion: hidden until the island has read the URL. */
+.has-games-view .gl {
+  visibility: hidden;
+}
+.gl__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gl__empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-2);
+  color: var(--bone-2);
+}
+.gl__foot {
+  display: flex;
+  gap: 12px;
+}

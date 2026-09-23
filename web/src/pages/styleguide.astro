@@ -2,6 +2,7 @@
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { Games } from '../components/Games'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
 import { LensTabs } from '../components/LensTabs'
@@ -129,6 +130,7 @@ const cellsFor = (name: string): Record<Sentiment, ReceiptItem[]> => {
 }
 const thinnestCell = (name: string) => Math.min(...Object.values(cellsFor(name)).map((c) => c.length))
 const thinReceipts = qualified.toSorted((a, b) => thinnestCell(a.attributed_player) - thinnestCell(b.attributed_player))[0]!
+const LOG_TOP = 10
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -375,6 +377,12 @@ const thinReceipts = qualified.toSorted((a, b) => thinnestCell(a.attributed_play
       </p>
       <Receipts name={thinReceipts.attributed_player} cells={cellsFor(thinReceipts.attributed_player)} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={threshold} />
       <p class="eyebrow">{thinReceipts.attributed_player}: the official player with the thinnest cell ({thinnestCell(thinReceipts.attributed_player)} receipts).</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>Games</h2>
+      <p class="eyebrow">The log island: which games and how many rows, both in the URL. Static here.</p>
+      <Games name={top.attributed_player} log={topLog.toSorted((a, b) => b.date.localeCompare(a.date))} floor={gameFloor} top={LOG_TOP} official={threshold} />
     </section>
 
     <section class="guide__section">

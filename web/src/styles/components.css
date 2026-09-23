@@ -1176,3 +1176,100 @@
     font-size: 13px;
   }
 }
+
+/* GameScatter: Game Score across, the room up. Wins filled, losses hollow. */
+.sc {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  max-width: 560px;
+}
+.sc__lead {
+  margin: 0;
+  font-size: 16px;
+  color: var(--bone);
+  text-wrap: balance;
+}
+.sc__plot {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'y svg'
+    '. x';
+  gap: 4px 6px;
+  align-items: stretch;
+}
+.sc__svg {
+  grid-area: svg;
+  width: 100%;
+  height: auto;
+  background: var(--ink-2);
+}
+.sc__y {
+  grid-area: y;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  align-self: center;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.sc__x {
+  grid-area: x;
+  justify-self: end;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.sc__grid {
+  stroke: var(--line);
+  stroke-width: 0.5;
+}
+.sc__axis {
+  stroke: var(--line-2);
+  stroke-width: 1;
+}
+.sc__tick {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--mute);
+}
+.sc__base {
+  stroke: var(--bone-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.sc__base-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--bone-2);
+}
+.sc__pt--w {
+  fill: var(--bone);
+}
+.sc__pt--l {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 1.5;
+}
+.sc__cap {
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.sc__key {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 2px 0 6px;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.sc__key--w {
+  background: var(--bone);
+}
+.sc__key--l {
+  border: 1.5px solid var(--bone);
+}
+

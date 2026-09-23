@@ -152,6 +152,8 @@
     min-height: 0;
     align-self: start;
     margin-top: 26px;
+    /* The lens switch slides the mug sideways; at the viewport's edge that must clip, not scroll. */
+    overflow: hidden;
   }
   .lb__rank-ghost {
     display: none;

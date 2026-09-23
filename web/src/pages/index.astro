@@ -70,6 +70,13 @@ const fans: FanRow[] = tables.fan_team_overall
         <p class="eyebrow">Weekly titles · {weeks.length} weeks</p>
         <h2 id="titles-h">The Belt and the Flowers</h2>
       </header>
+      <div class="wk-scroller">
+        <p class="wk-scroller__label mono">The Belt · most hated that week</p>
+        <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" merge />
+        <WeekAxis weeks={weeks} />
+        <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" merge />
+        <p class="wk-scroller__label mono">The Flowers · most loved that week</p>
+      </div>
       <div class="titles__tallies">
         <div class="titles__tally">
           <p class="eyebrow">The Belt · most weeks</p>
@@ -79,13 +86,6 @@ const fans: FanRow[] = tables.fan_team_overall
           <p class="eyebrow">The Flowers · most weeks</p>
           <TitleTally holders={flowers} />
         </div>
-      </div>
-      <div class="wk-scroller">
-        <p class="wk-scroller__label mono">The Belt · most hated that week</p>
-        <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" merge />
-        <WeekAxis weeks={weeks} />
-        <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" merge />
-        <p class="wk-scroller__label mono">The Flowers · most loved that week</p>
       </div>
       <MethodNote kind="rule">
         Each week's title goes to the highest rate among players with at least {fmtInt(beltFloor)} comments that

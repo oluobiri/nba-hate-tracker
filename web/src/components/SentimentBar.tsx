@@ -32,18 +32,20 @@ export function SentimentBar({ counts, length = 'full', scale = 1, size = 'row',
   const shares = SENTIMENTS.map((s) => ({ s, share: RATES[s](counts) }))
   const width = length === 'relative' ? Math.max(0, Math.min(1, scale)) : 1
   const summary = `${subject ? `${subject}: ` : ''}${shares.map(({ s, share }) => `${fmtPct(share)} ${NAMES[s]}`).join(', ')} of ${fmtInt(counts.total)} comments`
-  const outside = shares.filter(({ share }) => share > 0 && share * width < INSIDE_MIN[size])
+  // A relative bar is a length; its shares are in the text alternative only.
+  const labelled = size !== 'mini' && length === 'full'
+  const outside = labelled ? shares.filter(({ share }) => share > 0 && share < INSIDE_MIN[size]) : []
 
   return (
     <div className={`sb sb--${size}`} role="img" aria-label={summary}>
       <div className="sb__track" style={{ '--sb-scale': width } as CSSProperties}>
         {shares.map(({ s, share }) => (
           <span key={s} className={`sb__seg sb__seg--${s}`} style={{ flexBasis: `${share * 100}%` }}>
-            {size !== 'mini' && share * width >= INSIDE_MIN[size] && <span className="sb__label">{fmtPct(share)}</span>}
+            {labelled && share >= INSIDE_MIN[size] && <span className="sb__label">{fmtPct(share)}</span>}
           </span>
         ))}
       </div>
-      {size !== 'mini' && outside.length > 0 && (
+      {outside.length > 0 && (
         <ul className="sb__outside" aria-hidden="true">
           {outside.map(({ s, share }) => (
             <li key={s} style={{ '--sb-swatch': `var(--${s === 'neg' ? 'heat' : s === 'pos' ? 'ice' : 'neu'})` } as CSSProperties}>

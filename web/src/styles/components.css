@@ -528,7 +528,7 @@
 }
 .wk__cell {
   --wk-ink: var(--heat);
-  min-height: 84px;
+  min-height: 96px;
   background: color-mix(in srgb, var(--wk-ink) var(--wk-mix, 50%), var(--surface));
 }
 .wk--pos .wk__cell {
@@ -540,22 +540,28 @@
 }
 .wk__link {
   display: grid;
-  grid-template-columns: 32px 1fr;
-  grid-template-areas:
-    'mug name'
-    'stat stat';
-  align-items: center;
-  gap: 4px 8px;
+  grid-template-rows: auto 1fr auto;
+  align-content: start;
+  gap: 6px;
   height: 100%;
   padding: 8px;
   text-decoration: none;
+  color: var(--bone);
+}
+.wk__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.wk__weeks {
+  font-size: 11px;
   color: var(--bone);
 }
 .wk__link:hover .wk__name {
   text-decoration: underline;
 }
 .wk__mug {
-  grid-area: mug;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -565,16 +571,14 @@
   filter: grayscale(1);
 }
 .wk__name {
-  grid-area: name;
   font-family: var(--display);
   font-weight: 700;
   font-size: 15px;
   line-height: 1;
   text-transform: uppercase;
-  overflow-wrap: anywhere;
+  hyphens: manual;
 }
 .wk__stat {
-  grid-area: stat;
   font-size: 11px;
   white-space: nowrap;
   color: var(--bone);

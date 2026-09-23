@@ -26,6 +26,7 @@ export interface Reign<T extends WeekRow> {
 }
 
 const RATE: Record<TitleMetric, (c: Counts) => number> = { neg: negRate, pos: posRate }
+const PART: Record<TitleMetric, (c: Counts) => number> = { neg: (c) => c.neg, pos: (c) => c.pos }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 const dayOf = (week: string): number => Date.parse(`${week.slice(0, 10)}T00:00:00Z`)
@@ -56,4 +57,11 @@ export function reigns<T extends WeekRow>(holders: readonly Holder<T>[], key: (r
     } else out.push({ from: h.week, to: h.week, weeks: 1, holders: [h] })
   }
   return out
+}
+
+/** A reign's rate from its summed counts, never the mean of its weekly rates. */
+export function reignRate<T extends WeekRow>(reign: Reign<T>, metric: TitleMetric): number {
+  const part = reign.holders.reduce((a, h) => a + PART[metric](h.row), 0)
+  const total = reign.holders.reduce((a, h) => a + h.row.total, 0)
+  return total ? part / total : 0
 }

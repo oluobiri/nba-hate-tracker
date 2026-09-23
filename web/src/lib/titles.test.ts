@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { reigns, weeklyHolders, type WeekRow } from './titles'
+import { reignRate, reigns, weeklyHolders, type WeekRow } from './titles'
 
 interface Row extends WeekRow {
   name: string
@@ -69,5 +69,16 @@ describe('reigns', () => {
     const holders = weeklyHolders([W1, W2, W3, W4].map((w) => row(w, 'a', 60, 40, 0)), 'neg', 100)
     expect(reigns(holders, key)).toHaveLength(1)
     expect(reigns(holders, key)[0]!.weeks).toBe(4)
+  })
+})
+
+describe('reignRate', () => {
+  it('is the rate of the summed counts, not the mean of the weekly rates', () => {
+    const holders = weeklyHolders([row(W1, 'a', 90, 10, 0), row(W2, 'a', 10, 90, 0)], 'neg', 100)
+    const [reign] = reigns(holders, (r) => r.name)
+    expect(reign!.weeks).toBe(2)
+    expect(reignRate(reign!, 'neg')).toBeCloseTo(0.5)
+    const heavier = weeklyHolders([row(W1, 'a', 900, 100, 0), row(W2, 'a', 10, 90, 0)], 'neg', 100)
+    expect(reignRate(reigns(heavier, (r) => r.name)[0]!, 'neg')).toBeCloseTo(910 / 1100)
   })
 })

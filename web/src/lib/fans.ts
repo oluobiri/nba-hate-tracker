@@ -58,7 +58,10 @@ export function fanLists(rows: readonly FanRow[], floor: number, rosterTeam: str
   return { haters: by(negRate), defenders: by(posRate), average: sumCounts(rows), eligible: eligible.length }
 }
 
-const possessive = (team: string): string => `${team.split(' ').at(-1)} fans`
+/** "Los Angeles Lakers" → "Lakers": the name r/NBA uses. */
+export const nickname = (team: string): string => team.split(' ').at(-1)!
+/** "Los Angeles Lakers" → "Lakers fans". */
+export const possessive = (team: string): string => `${nickname(team)} fans`
 
 /** One sentence for the section: the split, then who stands out. */
 export function fansSummary(name: string, split: FanSplit, lists: FanLists, floor: number, rosterTeam: string | null): string {

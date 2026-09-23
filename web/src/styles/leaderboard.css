@@ -142,7 +142,7 @@
 @media (max-width: 760px) {
   /* The headshot stays: a small card beside the sentence, as sports pages keep it. */
   .lb__hero {
-    grid-template-columns: minmax(0, 1fr) 88px;
+    grid-template-columns: minmax(0, 1fr) 128px;
     gap: 12px;
     align-items: start;
     min-height: 0;
@@ -158,19 +158,14 @@
   .lb__rank-ghost {
     display: none;
   }
+  /* The desktop cutout at a small size: masked into the ink, no card. */
   .lb__hero-figure img {
     position: static;
-    width: 88px;
-    height: 88px;
+    width: 100%;
+    height: auto;
     max-height: none;
-    object-fit: cover;
-    object-position: top;
-    border-radius: 3px;
-    border: 1px solid var(--line);
-    background: var(--surface-2);
-    filter: grayscale(0.85) contrast(1.05);
-    mask-image: none;
-    -webkit-mask-image: none;
+    object-fit: contain;
+    object-position: bottom;
   }
   .lb__sentence {
     font-size: clamp(40px, 12vw, 64px);

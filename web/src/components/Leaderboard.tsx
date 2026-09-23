@@ -129,7 +129,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
                   key={leader.row.slug}
                   src={headshotVariant(leader.row.headshot, 840)}
                   srcSet={headshotSrcSet(leader.row.headshot, [180, 420, 840])}
-                  sizes="(min-width: 761px) 400px, 88px"
+                  sizes="(min-width: 761px) 400px, 128px"
                   alt=""
                   width="840"
                   height="614"

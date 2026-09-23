@@ -1563,3 +1563,134 @@
     min-height: 9em;
   }
 }
+
+/* GapTable: own fans against every other fanbase, per roster player. Ice kinder, heat harsher; the sign is printed. */
+.gap {
+  width: 100%;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+  border-collapse: collapse;
+}
+.gap th,
+.gap td {
+  padding: 6px 8px;
+  text-align: right;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--line);
+}
+.gap thead th {
+  padding-block: 6px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gap thead th:first-child,
+.gap th.gap__player {
+  text-align: left;
+  font-weight: 400;
+}
+.gap thead th:not(:first-child) {
+  width: 1%;
+  white-space: nowrap;
+}
+.gap abbr {
+  text-decoration: none;
+}
+.gap__row {
+  --gap-ink: var(--mute);
+  background: color-mix(in srgb, var(--gap-ink) var(--gap-mix, 0%), transparent);
+}
+.gap__row--kinder {
+  --gap-ink: var(--ice);
+}
+.gap__row--harsher {
+  --gap-ink: var(--heat);
+}
+.gap__link {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas:
+    'mug name'
+    'mug pos';
+  column-gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+}
+.gap__mug {
+  grid-area: mug;
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-2);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.gap__name {
+  grid-area: name;
+  align-self: end;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.gap__link:hover .gap__name {
+  text-decoration: underline;
+}
+.gap__pos {
+  grid-area: pos;
+  align-self: start;
+  font-size: 11px;
+  color: var(--mute);
+}
+.gap__rate {
+  white-space: nowrap;
+}
+.gap__n {
+  display: block;
+  font-size: 11px;
+  color: var(--mute);
+}
+.gap__delta {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--gap-ink);
+}
+.gap__row--thin .gap__rate,
+.gap__row--thin .gap__delta,
+.gap__row--even .gap__delta {
+  font-weight: 400;
+  color: var(--mute);
+}
+@media (max-width: 640px) {
+  .gap {
+    table-layout: fixed;
+    font-size: 12px;
+  }
+  .gap th,
+  .gap td {
+    padding: 6px 4px;
+  }
+  .gap thead th:not(:first-child) {
+    white-space: normal;
+    line-height: 1.2;
+  }
+  .gap thead th:nth-child(2),
+  .gap thead th:nth-child(3) {
+    width: 60px;
+  }
+  .gap thead th:nth-child(4) {
+    width: 44px;
+  }
+  .gap__name {
+    font-size: 14px;
+  }
+}

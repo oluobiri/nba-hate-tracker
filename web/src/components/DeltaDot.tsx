@@ -14,6 +14,8 @@ export interface DeltaDotRow {
   logo?: string
   /** A small mark after the label ("own fans"); the row gets a bone outline. */
   tag?: string
+  /** The link's spoken sentence, when the generated one would not say enough (a Δ axis). */
+  text?: string
 }
 
 export interface DeltaDotProps {
@@ -52,7 +54,7 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
       <ol className="dd__rows">
         {rows.map((r, i) => {
           const delta = r.value - average
-          const text = `${r.label}: ${format(r.value)} of ${fmtInt(r.n)} comments${showDelta ? `, ${fmtSigned(delta, 0)} points against the ${averageLabel.toLowerCase()}` : ''}`
+          const text = r.text ?? `${r.label}: ${format(r.value)} of ${fmtInt(r.n)} comments${showDelta ? `, ${fmtSigned(delta, 0)} points against the ${averageLabel.toLowerCase()}` : ''}`
           return (
             <li key={r.key} className={`dd__row${r.tag ? ' dd__row--tagged' : ''}`}>
               <a className="dd__link" href={r.href} aria-label={text}>

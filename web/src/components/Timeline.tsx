@@ -40,6 +40,9 @@ const WIDER_BAND = 8
 const MONTH_GAP = 3
 // Above this share of the chart's height a mark's label sits below its dot.
 const HIGH = 0.8
+// Past this share of the width a mark's label hangs left of its dot; on a phone, past MID.
+const LATE = 0.6
+const MID = 0.4
 // Dot diameter range, px.
 const DOT_MIN = 4
 const DOT_MAX = 14
@@ -102,12 +105,13 @@ export function Timeline({ name, weeks, negLine, posLine, bands, marks, floor, k
   const mark = (i: number, kind: 'worst' | 'best') => {
     const c = weeks[i]!.counts!
     const rate = kind === 'worst' ? negRate(c) : posRate(c)
-    const late = i / n > 0.6
+    const late = i / n > LATE
+    const mid = i / n > MID
     const share = rate / ymax
     // The worst week's label sits above its dot, the best week's below, unless the edge is near.
     const below = kind === 'worst' ? share > HIGH : share > 1 - HIGH
     return (
-      <span key={kind} className={`tl__mark tl__mark--${kind}${late ? ' tl__mark--late' : ''}${below ? ' tl__mark--below' : ''}`} style={{ left: xOf(i), bottom: yOf(rate) }}>
+      <span key={kind} className={`tl__mark tl__mark--${kind}${late ? ' tl__mark--late' : ''}${mid ? ' tl__mark--mid' : ''}${below ? ' tl__mark--below' : ''}`} style={{ left: xOf(i), bottom: yOf(rate) }}>
         <span className="tl__mark-text mono">
           {kind === 'worst' ? 'Worst week' : 'Best week'} · {fmtPct(rate, 0)} {kind === 'worst' ? 'negative' : 'positive'} · {weekLabel(weeks[i]!.key)}
         </span>

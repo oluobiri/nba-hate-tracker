@@ -1418,6 +1418,9 @@
   bottom: auto;
   top: 14px;
 }
+.tl__marks {
+  overflow: hidden;
+}
 .tl__ends {
   pointer-events: none;
 }
@@ -1537,6 +1540,10 @@
   }
   .tl__mark-text {
     font-size: 10px;
+  }
+  .tl__mark--mid .tl__mark-text {
+    left: auto;
+    right: -4px;
   }
   .tl__tip-games {
     columns: 1;

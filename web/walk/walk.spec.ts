@@ -115,7 +115,7 @@ test('a custom threshold is stamped unofficial and draws hollow ranks', async ({
   const errors = watchErrors(page)
   await page.goto('/?n=500&all=1', { waitUntil: 'networkidle' })
   await expect(page.locator('.thr--custom .stamp--unofficial')).toBeVisible()
-  await expect(page.locator('.lb__sentence')).toContainText('unofficial')
+  await expect(page.locator('.lb__sentence .stamp--unofficial')).toBeVisible()
   expect(await page.locator('.rank--hollow').count()).toBeGreaterThan(0)
   expect(await page.locator('.row--ghost').count()).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Reset to official' }).click()

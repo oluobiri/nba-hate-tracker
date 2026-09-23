@@ -38,11 +38,6 @@ const WIDE_BAND = 4
 const WIDER_BAND = 8
 // A month label needs this many weeks before the next one, or it goes.
 const MONTH_GAP = 3
-// Above this share of the chart's height a mark's label sits below its dot.
-const HIGH = 0.8
-// Past this share of the width a mark's label hangs left of its dot; on a phone, past MID.
-const LATE = 0.6
-const MID = 0.4
 // Dot diameter range, px.
 const DOT_MIN = 4
 const DOT_MAX = 14
@@ -102,21 +97,11 @@ export function Timeline({ name, weeks, negLine, posLine, bands, marks, floor, k
     return `${head}: ${fmtPct(negRate(w.counts), 0)} negative, ${fmtPct(posRate(w.counts), 0)} positive of ${fmtInt(w.counts.total)} comments.${games}`
   }
 
+  // A ring on the worst and the best week; the summary names them, the readout explains them.
   const mark = (i: number, kind: 'worst' | 'best') => {
     const c = weeks[i]!.counts!
     const rate = kind === 'worst' ? negRate(c) : posRate(c)
-    const late = i / n > LATE
-    const mid = i / n > MID
-    const share = rate / ymax
-    // The worst week's label sits above its dot, the best week's below, unless the edge is near.
-    const below = kind === 'worst' ? share > HIGH : share > 1 - HIGH
-    return (
-      <span key={kind} className={`tl__mark tl__mark--${kind}${late ? ' tl__mark--late' : ''}${mid ? ' tl__mark--mid' : ''}${below ? ' tl__mark--below' : ''}`} style={{ left: xOf(i), bottom: yOf(rate) }}>
-        <span className="tl__mark-text mono">
-          {kind === 'worst' ? 'Worst week' : 'Best week'} · {fmtPct(rate, 0)} {kind === 'worst' ? 'negative' : 'positive'} · {weekLabel(weeks[i]!.key)}
-        </span>
-      </span>
-    )
+    return <span key={kind} className={`tl__mark tl__mark--${kind}`} style={{ left: xOf(i), bottom: yOf(rate) }} />
   }
 
   return (
@@ -213,7 +198,19 @@ export function Timeline({ name, weeks, negLine, posLine, bands, marks, floor, k
         ))}
       </div>
       <div className="tl__readout" aria-hidden="true">
-        <span className="tl__readout-hint mono">Hover or tap a week for its games.</span>
+        <span className="tl__readout-hint mono">
+          {marks.worst !== null && (
+            <>
+              <span className="tl__key tl__key--worst" /> worst week
+            </>
+          )}
+          {marks.best !== null && (
+            <>
+              <span className="tl__key tl__key--best" /> best week
+            </>
+          )}
+          {' '}· hover or tap a week for its games.
+        </span>
       </div>
       <figcaption className="visually-hidden">
         {k}-week rolling rates from summed counts; weeks under {fmtInt(floor)} comments are left off the lines.

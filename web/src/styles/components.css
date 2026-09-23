@@ -1425,27 +1425,29 @@
   border: 2px solid var(--bone);
   background: var(--ink);
 }
-.tl__mark-text {
-  position: absolute;
-  bottom: 14px;
-  left: -4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  white-space: nowrap;
-  color: var(--bone);
-  background: var(--ink);
-  border: 1px solid var(--line-2);
+.tl__mark--worst {
+  border-color: var(--heat);
 }
-.tl__mark--late .tl__mark-text {
-  left: auto;
-  right: -4px;
-}
-.tl__mark--below .tl__mark-text {
-  bottom: auto;
-  top: 14px;
+.tl__mark--best {
+  border-color: var(--ice);
 }
 .tl__marks {
   overflow: hidden;
+}
+.tl__key {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 3px 0 8px;
+  border-radius: 50%;
+  border: 2px solid var(--bone);
+  vertical-align: -1px;
+}
+.tl__key--worst {
+  border-color: var(--heat);
+}
+.tl__key--best {
+  border-color: var(--ice);
 }
 .tl__ends {
   pointer-events: none;
@@ -1563,13 +1565,6 @@
   }
   .tl__band:not(.tl__band--wider) .tl__band-label {
     display: none;
-  }
-  .tl__mark-text {
-    font-size: 10px;
-  }
-  .tl__mark--mid .tl__mark-text {
-    left: auto;
-    right: -4px;
   }
   .tl__tip-games {
     columns: 1;

@@ -272,8 +272,11 @@ const tiles = [
             {
               chips.map((c) => (
                 <li>
-                  <a class="pp__chip" href={c.href} aria-label={`${c.label}${c.official ? '' : ', among all tracked players'}: see the leaderboard`}>
-                    <RankNumeral rank={c.rank} official={c.official} />
+                  <a class={`pp__chip pp__chip--${c.lens}`} href={c.href} aria-label={`${c.label}${c.official ? '' : ', among all tracked players'}: see the leaderboard`}>
+                    <span class="pp__chip-rank">
+                      <span class="pp__chip-hash" aria-hidden="true">#</span>
+                      <RankNumeral rank={c.rank} official={c.official} />
+                    </span>
                     <span class="pp__chip-text">{c.label.slice(c.label.indexOf(' ') + 1)}</span>
                   </a>
                 </li>
@@ -540,6 +543,40 @@ const tiles = [
   }
   .pp__chip:hover {
     border-color: var(--bone-2);
+  }
+  /* The lens's underline, as the leaderboard's tabs draw it: heat, ice, bone, split. */
+  .pp__chip {
+    --chip-line: var(--bone);
+    position: relative;
+  }
+  .pp__chip::after {
+    content: '';
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    height: 3px;
+    background: var(--chip-line);
+  }
+  .pp__chip--neg {
+    --chip-line: var(--heat);
+  }
+  .pp__chip--pos {
+    --chip-line: var(--ice);
+  }
+  .pp__chip--polar::after {
+    background: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%);
+  }
+  .pp__chip-rank {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 2px;
+  }
+  .pp__chip-hash {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--mute);
   }
   .pp__chip-text {
     font-family: var(--mono);

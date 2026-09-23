@@ -6,10 +6,12 @@ import { RankNumeral } from '../components/RankNumeral'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
+import { ThresholdControl } from '../components/ThresholdControl'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
 import { countsOf, negRate, posRate, rankBy } from '../lib/metrics'
+import { thresholdStops } from '../lib/threshold'
 import type { Sentiment } from '../lib/types'
 
 // Every variant on real data, the awkward cases chosen by rule so the page
@@ -34,6 +36,10 @@ const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
 
 const sizes = ['hero', 'row', 'mini'] as const
+const maxN = Math.max(...overall.map((r) => r.total))
+const stops = thresholdStops(manifest.rules.floors.fanbase_min_n, maxN, threshold)
+const customN = stops.find((s) => s < threshold) ?? threshold
+const customRanked = overall.filter((r) => r.total >= customN).length
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -170,6 +176,16 @@ const sizes = ['hero', 'row', 'mini'] as const
       <div class="guide__stack">
         <LensTabs lens="neg" onChange={() => {}} id="guide-neg" />
         <LensTabs lens="polar" onChange={() => {}} id="guide-polar" />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>ThresholdControl</h2>
+      <p class="eyebrow">Collapsed by default; open on tap; open, loud and stamped once moved. Reset returns to the manifest value.</p>
+      <div class="guide__stack">
+        <ThresholdControl value={threshold} official={threshold} stops={stops} ranked={qualified.length} total={overall.length} onChange={() => {}} />
+        <ThresholdControl value={threshold} official={threshold} stops={stops} ranked={qualified.length} total={overall.length} onChange={() => {}} defaultOpen />
+        <ThresholdControl value={customN} official={threshold} stops={stops} ranked={customRanked} total={overall.length} onChange={() => {}} />
       </div>
     </section>
 

@@ -9,6 +9,10 @@ export const SEASONS = ['2025-26'] as const
 export type Season = (typeof SEASONS)[number]
 export const CURRENT_SEASON: Season = '2025-26'
 
+// The one corpus figure a page may headline: the attributed population is
+// the site's population. Read as manifest.corpus[HEADLINE_POPULATION].
+export const HEADLINE_POPULATION = 'attributed' as const
+
 // Every page carries noindex until launch day flips this in the deploy env.
 export const SITE_INDEXABLE = process.env.SITE_INDEXABLE === 'true'
 

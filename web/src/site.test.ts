@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { NAV, SEASONS, SITE_INDEXABLE } from './site'
+import { HEADLINE_POPULATION, NAV, SEASONS, SITE_INDEXABLE } from './site'
 
 describe('NAV', () => {
   it('follows the brief order and ends every href with a slash', () => {
@@ -26,5 +26,11 @@ describe('SITE_INDEXABLE', () => {
 describe('SEASONS', () => {
   it('lists the published season only', () => {
     expect(SEASONS).toEqual(['2025-26'])
+  })
+})
+
+describe('HEADLINE_POPULATION', () => {
+  it('is the attributed population, the only corpus figure a page headlines', () => {
+    expect(HEADLINE_POPULATION).toBe('attributed')
   })
 })

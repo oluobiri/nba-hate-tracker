@@ -1,6 +1,7 @@
 // One leaderboard row, the whole row a link. Rank numeral (hollow below
 // the official minimum), grayscale mug, name and team, the bar, the lens
-// value, n, and the rank-delta chip in a custom view.
+// value (the n column already is the value in the volume lens), n, and
+// the rank-delta chip in a custom view.
 import { fmtInt, fmtPct } from '../lib/format'
 import { headshotSrcSet } from '../lib/media'
 import { LENS_META } from '../lib/metrics'
@@ -49,7 +50,7 @@ export function BoardRow({ rank, official, name, slug, abbr, headshot, counts, l
         <span className="row__bar">
           <SentimentBar counts={counts} size="row" length={meta.kind === 'count' ? 'relative' : 'full'} scale={scale} subject={name} />
         </span>
-        <span className={`row__value mono row__value--${lens}`}>{meta.kind === 'rate' ? fmtPct(value) : fmtInt(value)}</span>
+        {meta.kind === 'rate' && <span className={`row__value mono row__value--${lens}`}>{fmtPct(value)}</span>}
         <span className="row__n mono">{fmtInt(counts.total)}</span>
         <span className="row__chevron" aria-hidden="true">
           ›

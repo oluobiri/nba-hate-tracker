@@ -2,7 +2,7 @@
 import { FanbaseIndex, type FanRow } from '../components/FanbaseIndex'
 import { Leaderboard, type BoardPlayer } from '../components/Leaderboard'
 import { MethodNote } from '../components/MethodNote'
-import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
+import { TitleTally, WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt } from '../lib/format'
@@ -70,6 +70,16 @@ const fans: FanRow[] = tables.fan_team_overall
         <p class="eyebrow">Weekly titles · {weeks.length} weeks</p>
         <h2 id="titles-h">The Belt and the Flowers</h2>
       </header>
+      <div class="titles__tallies">
+        <div class="titles__tally">
+          <p class="eyebrow">The Belt · most weeks</p>
+          <TitleTally holders={belt} />
+        </div>
+        <div class="titles__tally">
+          <p class="eyebrow">The Flowers · most weeks</p>
+          <TitleTally holders={flowers} />
+        </div>
+      </div>
       <div class="wk-scroller">
         <p class="wk-scroller__label mono">The Belt · most hated that week</p>
         <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" merge />
@@ -110,6 +120,18 @@ const fans: FanRow[] = tables.fan_team_overall
   .titles__head {
     display: grid;
     gap: 6px;
+  }
+  .titles__tallies {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px 32px;
+  }
+  .titles__tally {
+    display: grid;
+    gap: 8px;
+  }
+  .titles__tally .eyebrow {
+    margin: 0;
   }
   .wk-scroller__label {
     position: sticky;

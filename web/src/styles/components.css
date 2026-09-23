@@ -576,7 +576,7 @@
 }
 .wk__cell {
   --wk-ink: var(--heat);
-  min-height: 96px;
+  min-height: 150px;
   background: color-mix(in srgb, var(--wk-ink) var(--wk-mix, 50%), var(--surface));
 }
 .wk--pos .wk__cell {
@@ -586,39 +586,61 @@
   background: var(--surface);
   border: 1px dashed var(--line);
 }
+/* The cell is the spike's square card: week, full-width mug, name, rate, n.
+   A reign block spans its weeks with the mug at the left. */
 .wk__link {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'week'
+    'mug'
+    'name'
+    'rate'
+    'n';
   align-content: start;
-  gap: 6px;
+  gap: 4px;
   height: 100%;
-  padding: 8px;
+  padding: 8px 8px 6px;
   text-decoration: none;
   color: var(--bone);
 }
-.wk__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.wk__weeks {
-  font-size: 11px;
-  color: var(--bone);
+.wk__cell--reign .wk__link {
+  grid-template-columns: 100px 1fr;
+  grid-template-areas:
+    'week week'
+    'mug name'
+    'mug rate'
+    'mug n';
+  column-gap: 10px;
 }
 .wk__link:hover .wk__name {
   text-decoration: underline;
 }
+.wk__week {
+  grid-area: week;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--bone-2);
+}
 .wk__mug {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  grid-area: mug;
+  width: 100%;
+  height: 72px;
+  border-radius: 2px;
   object-fit: cover;
   object-position: top;
   background: var(--ink);
-  filter: grayscale(1);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.wk__cell--reign .wk__mug {
+  width: 100px;
+  align-self: start;
 }
 .wk__name {
+  grid-area: name;
+  margin-top: 2px;
   font-family: var(--display);
   font-weight: 700;
   font-size: 15px;
@@ -626,10 +648,54 @@
   text-transform: uppercase;
   hyphens: manual;
 }
-.wk__stat {
-  font-size: 11px;
-  white-space: nowrap;
+.wk__rate {
+  grid-area: rate;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--bone);
+}
+.wk__n {
+  grid-area: n;
+  font-size: 10px;
+  color: var(--bone-2);
+}
+.wk-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wk-tally__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: none;
+  color: var(--bone-2);
+}
+.wk-tally__chip:hover {
+  border-color: var(--bone-2);
+  color: var(--bone);
+}
+.wk-tally__rank {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--bone);
+}
+.wk-tally__name {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.wk-tally__n {
+  color: var(--mute);
 }
 /* The page wraps axis and tracks in one scroller; the page never scrolls sideways. */
 .wk-scroller {

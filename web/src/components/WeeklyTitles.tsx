@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react'
 
 import { fmtInt, fmtPct } from '../lib/format'
 import { headshotSrcSet } from '../lib/media'
-import { reignRate, reigns, type Holder, type TitleMetric, type WeekRow } from '../lib/titles'
+import { reignRate, reigns, tally, type Holder, type TitleMetric, type WeekRow } from '../lib/titles'
 
 export interface TitleRow extends WeekRow {
   name: string
@@ -49,16 +49,20 @@ export function WeeklyTitles({ metric, weeks, holders, merge = false, label }: W
         const n = b.holders.reduce((a, h) => a + h.row.total, 0)
         const start = col.get(b.from) ?? 1
         return (
-          <li key={b.from} className="wk__cell" style={{ gridColumn: `${start} / span ${b.weeks}`, '--wk-mix': `${Math.round(rate * 100)}%` } as CSSProperties}>
+          <li
+            key={b.from}
+            className={`wk__cell${b.weeks > 1 ? ' wk__cell--reign' : ''}`}
+            style={{ gridColumn: `${start} / span ${b.weeks}`, '--wk-mix': `${Math.round(rate * 100)}%` } as CSSProperties}
+          >
             <a className="wk__link" href={`/player/${first.row.slug}/`}>
-              <span className="wk__top">
-                <img className="wk__mug" src={first.row.headshot} srcSet={headshotSrcSet(first.row.headshot)} sizes="32px" width="32" height="32" alt="" loading="lazy" decoding="async" />
-                {b.weeks > 1 && <span className="wk__weeks mono">{b.weeks} wks</span>}
+              <span className="wk__week mono">
+                {day(b.from)}
+                {b.weeks > 1 && ` → ${day(b.to)} · ${b.weeks} wks`}
               </span>
+              <img className="wk__mug" src={first.row.headshot} srcSet={headshotSrcSet(first.row.headshot)} sizes="100px" width="100" height="72" alt="" loading="lazy" decoding="async" />
               <span className="wk__name">{first.row.name}</span>
-              <span className="wk__stat mono">
-                {fmtPct(rate)} · n={fmtInt(n)}
-              </span>
+              <span className="wk__rate mono">{fmtPct(rate)}</span>
+              <span className="wk__n mono">n={fmtInt(n)}</span>
             </a>
           </li>
         )
@@ -69,5 +73,26 @@ export function WeeklyTitles({ metric, weeks, holders, merge = false, label }: W
           <li key={w} className="wk__cell wk__cell--empty" style={{ gridColumn: `${col.get(w)} / span 1` }} aria-label={`${day(w)}: no holder`} />
         ))}
     </ul>
+  )
+}
+
+/** The season's tally: who held the title and for how many weeks, most first. */
+export function TitleTally({ holders, limit = 5 }: { holders: readonly Holder<TitleRow>[]; limit?: number }) {
+  return (
+    <ol className="wk-tally">
+      {tally(holders, (r) => r.slug)
+        .slice(0, limit)
+        .map((t, i) => (
+          <li key={t.row.slug}>
+            <a className="wk-tally__chip" href={`/player/${t.row.slug}/`}>
+              <span className="wk-tally__rank">{i + 1}</span>
+              <span className="wk-tally__name">{t.row.name}</span>
+              <span className="wk-tally__n mono">
+                {t.weeks} wk{t.weeks === 1 ? '' : 's'}
+              </span>
+            </a>
+          </li>
+        ))}
+    </ol>
   )
 }

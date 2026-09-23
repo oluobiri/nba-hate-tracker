@@ -65,3 +65,20 @@ export function reignRate<T extends WeekRow>(reign: Reign<T>, metric: TitleMetri
   const total = reign.holders.reduce((a, h) => a + h.row.total, 0)
   return total ? part / total : 0
 }
+
+export interface Tally<T extends WeekRow> {
+  row: T
+  weeks: number
+}
+
+/** Weeks held per player (by `key`), most first; ties keep first appearance. */
+export function tally<T extends WeekRow>(holders: readonly Holder<T>[], key: (row: T) => string): Tally<T>[] {
+  const seen = new Map<string, Tally<T>>()
+  for (const h of holders) {
+    const k = key(h.row)
+    const t = seen.get(k)
+    if (t) t.weeks += 1
+    else seen.set(k, { row: h.row, weeks: 1 })
+  }
+  return [...seen.values()].toSorted((a, b) => b.weeks - a.weeks)
+}

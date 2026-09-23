@@ -86,14 +86,14 @@ const spoken = (r: DeltaRow, subject: string, object: string, word: string): str
   return `${subject} on ${object}: ${fmtPct(r.rate, 0)} ${word}, ${against} the usual ${fmtPct(r.baseline, 0)}, from ${fmtInt(r.n)} comments.`
 }
 const dotRows = (rows: readonly DeltaRow[], text: (r: DeltaRow) => string): DeltaDotRow[] =>
-  rows.map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, text: text(r) }))
+  rows.map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, text: text(r), detail: fmtPct(r.rate, 0) }))
 const targetRows = (lists: DeltaLists, which: 'grudges' | 'flowers') =>
   dotRows(lists[which], (r) => spoken(r, fans, `${r.label} players`, which === 'grudges' ? 'negative' : 'positive'))
 const leagueRows = (lists: DeltaLists, which: 'grudges' | 'flowers') =>
   dotRows(lists[which], (r) => spoken(r, r.label, `${nickname(name)} players`, which === 'grudges' ? 'negative' : 'positive'))
 const lists = [
-  { id: 'targets', data: targets, rows: targetRows, lede: targetsSummary(name, targets, floor), heads: ['Grudges', 'Flowers'] },
-  { id: 'league', data: league, rows: leagueRows, lede: leagueSummary(name, league, floor), heads: ['Hardest on them', 'Warmest to them'] },
+  { id: 'targets', data: targets, rows: targetRows, lede: targetsSummary(name, targets, floor), heads: ['Grudges', 'Flowers'], tick: "Each roster's usual" },
+  { id: 'league', data: league, rows: leagueRows, lede: leagueSummary(name, league, floor), heads: ['Hardest on them', 'Warmest to them'], tick: `The ${nickname(name)}' usual` },
 ] as const
 ---
 
@@ -175,11 +175,11 @@ const lists = [
                     return (
                       <div class="tp__list">
                         <h3>{l.heads[i]}</h3>
-                        <DeltaDot rows={rows.slice(0, LIST_TOP)} average={0} domain={l.data.domain} format={pts} tone={which === 'grudges' ? 'neg' : 'pos'} averageLabel="Roster average, pts" />
+                        <DeltaDot rows={rows.slice(0, LIST_TOP)} average={0} domain={l.data.domain} format={pts} tone={which === 'grudges' ? 'neg' : 'pos'} tickLabel={l.tick} detailLabel="rate" />
                         {rest.length > 0 && (
                           <details class="tp__more">
                             <summary>Show all {fmtInt(rows.length)}</summary>
-                            <DeltaDot rows={rest} average={0} domain={l.data.domain} format={pts} tone={which === 'grudges' ? 'neg' : 'pos'} averageLabel="Roster average, pts" start={LIST_TOP + 1} />
+                            <DeltaDot rows={rest} average={0} domain={l.data.domain} format={pts} tone={which === 'grudges' ? 'neg' : 'pos'} tickLabel={l.tick} start={LIST_TOP + 1} />
                           </details>
                         )}
                       </div>

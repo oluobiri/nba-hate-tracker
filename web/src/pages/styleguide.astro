@@ -167,7 +167,7 @@ const grudges = deltaLists(targetCells, (roster) => matrix.rosterAverage.get(ros
   return { label: nickname(roster), href: `/fanbases/${t.abbreviation.toLowerCase()}/`, logo: t.logo_url }
 })
 const GRUDGE_TOP = 5
-const grudgeRows = grudges.grudges.slice(0, GRUDGE_TOP).map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo }))
+const grudgeRows = grudges.grudges.slice(0, GRUDGE_TOP).map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
 const pts = (v: number) => fmtSigned(v, 0)
 ---
 
@@ -349,8 +349,8 @@ const pts = (v: number) => fmtSigned(v, 0)
       <GapTable rows={bigGap} caption={`${possessive(bigTeam)} on their own players`} floor={fanFloor} />
       <p class="eyebrow">The {nickname(smallTeam)}: the smallest tracked roster, still a table.</p>
       <GapTable rows={smallGap} caption={`${possessive(smallTeam)} on their own players`} floor={fanFloor} />
-      <p class="eyebrow">DeltaDot on a Δ axis: each row against its own roster's average across every fanbase, so the tick sits at zero and the value is in points. {possessive(saltiest.fan_team)}' grudges, top {GRUDGE_TOP} of {grudges.eligible}.</p>
-      <DeltaDot rows={grudgeRows} average={0} domain={grudges.domain} format={pts} tone="neg" averageLabel="Roster average, pts" />
+      <p class="eyebrow">DeltaDot on a Δ axis: each row against its own roster's average across every fanbase, so the tick sits at zero and says what it stands for; the value is in points, the raw rate in gray beside it. {possessive(saltiest.fan_team)}' grudges, top {GRUDGE_TOP} of {grudges.eligible}.</p>
+      <DeltaDot rows={grudgeRows} average={0} domain={grudges.domain} format={pts} tone="neg" tickLabel="Each roster's usual" detailLabel="rate" />
     </section>
 
     <section class="guide__section">

@@ -914,6 +914,20 @@
   text-align: right;
   color: var(--bone-2);
 }
+/* With a detail column: the raw rate behind a Δ, gray, after the value. */
+.dd--detail {
+  --dd-cols: 28px 20px minmax(110px, 1fr) minmax(120px, 3fr) 44px 44px;
+}
+.dd__dethead {
+  grid-column: 6;
+  justify-self: end;
+  white-space: nowrap;
+}
+.dd__detail {
+  font-size: 12px;
+  text-align: right;
+  color: var(--mute);
+}
 /* A tagged row (his own fans): bone outline and the tag, never yellow. */
 .dd__tag {
   margin-left: 8px;
@@ -944,6 +958,10 @@
   .dd,
   .dd--delta {
     --dd-cols: 24px 18px minmax(64px, 1fr) minmax(90px, 2fr) 48px;
+  }
+  /* Six columns: the label takes the slack, the track only places dots. */
+  .dd--detail {
+    --dd-cols: 24px 18px minmax(64px, 1.4fr) minmax(64px, 1fr) 40px 40px;
   }
   /* The Δ stays in the row's text alternative; the value column carries the rate. */
   .dd__delta,

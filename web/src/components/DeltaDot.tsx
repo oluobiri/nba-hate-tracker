@@ -16,6 +16,8 @@ export interface DeltaDotRow {
   tag?: string
   /** The link's spoken sentence, when the generated one would not say enough (a Δ axis). */
   text?: string
+  /** A small gray figure after the value: the raw rate behind a Δ. */
+  detail?: string
 }
 
 export interface DeltaDotProps {
@@ -32,12 +34,16 @@ export interface DeltaDotProps {
   showDelta?: boolean
   /** The first row's rank, when the list continues one shown above it. */
   start?: number
+  /** Replaces the tick's label and value: on a Δ axis the tick is zero by construction, so say what it stands for. */
+  tickLabel?: string
+  /** Column head over the rows' detail figures. */
+  detailLabel?: string
 }
 
 // Within this share of either end, the tick's label hangs inward instead of centred.
 const EDGE = 22
 
-export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false, start = 1 }: DeltaDotProps) {
+export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false, start = 1, tickLabel, detailLabel }: DeltaDotProps) {
   const [lo, hi] = domain
   const pct = (v: number): number => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 50)
   const style = (v: number): CSSProperties => ({ '--dd-x': `${pct(v)}%`, '--dd-avg': `${pct(average)}%` }) as CSSProperties
@@ -45,13 +51,15 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
   // which hangs inward near either end.
   const avgPct = pct(average)
   const edge = avgPct < EDGE ? 'start' : avgPct > 100 - EDGE ? 'end' : null
+  const detailed = rows.some((r) => r.detail !== undefined)
   return (
-    <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}`}>
+    <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}${detailed ? ' dd--detail' : ''}`}>
       <div className="dd__head mono" aria-hidden="true">
         <span className={`dd__avg${edge ? ` dd__avg--${edge}` : ''}`} style={style(average)}>
-          {averageLabel} {format(average)}
+          {tickLabel ?? `${averageLabel} ${format(average)}`}
         </span>
         {showDelta && <span className="dd__dhead">Δ pts</span>}
+        {detailed && detailLabel && <span className="dd__dethead">{detailLabel}</span>}
       </div>
       <ol className="dd__rows">
         {rows.map((r, i) => {
@@ -72,6 +80,7 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
                 </span>
                 <span className="dd__value mono">{format(r.value)}</span>
                 {showDelta && <span className="dd__delta mono">{fmtSigned(delta, 0)}</span>}
+                {detailed && <span className="dd__detail mono">{r.detail}</span>}
               </a>
             </li>
           )

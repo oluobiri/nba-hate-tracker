@@ -117,6 +117,7 @@ Domain-specific instructions in `.claude/rules/`:
 - `git.md` — Commit convention (Angular style), branch naming
 - `python.md` — Code style, patterns, logging, dataclasses
 - `testing.md` — TDD workflow, pytest conventions
+- `web.md` — site conventions (loads for `web/**`)
 - `notion.md` — Notion workflow, 3-layer separation, session handoff skills
 
 ---

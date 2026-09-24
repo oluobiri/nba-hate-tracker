@@ -197,6 +197,9 @@ const keep = windowAround(leadPos.r, leadPos.c, GRID_CROP, gridAll.length)
 const crop = cropGrid(gridAll, gridCells(matrix, gridAll), keep)
 const cropPos = { r: keep.indexOf(leadPos.r), c: keep.indexOf(leadPos.c) }
 const gridLimit = deltaLimit(pairs.domain)
+const PAIR_TOP = 3
+const longestPair = pairs.grudges.toSorted((a, b) => b.label.length - a.label.length)[0]!
+const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair).slice(0, PAIR_TOP - 1)].map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -403,6 +406,8 @@ const gridLimit = deltaLimit(pairs.domain)
       <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by Δ." example={cropPos} demo={{ scale: 'delta', open: cropPos }} />
       <p class="eyebrow">The same window by raw negative share, heat on the absolute 0–100 scale.</p>
       <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by share." example={cropPos} demo={{ scale: 'raw' }} />
+      <p class="eyebrow">The landing's list rows: a pair on one line, the longest label first ({longestPair.label}), the target's logo, the Δ axis with the roster's usual as the tick.</p>
+      <DeltaDot rows={pairRows} average={0} domain={pairs.domain} format={pts} tone="neg" tickLabel="Each roster's usual" detailLabel="rate" nowrap />
     </section>
 
     <section class="guide__section">

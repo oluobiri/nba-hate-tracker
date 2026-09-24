@@ -3,7 +3,7 @@
 // the two headline lists over every pair, the grid's plain props, and the
 // sentences both share. Floors arrive as arguments, read from the manifest.
 import type { TeamsRow } from '../data/types.gen'
-import type { Described, DeltaLists, Matrix } from './fanbase'
+import type { Described, DeltaLists, DeltaRow, Matrix } from './fanbase'
 import { nickname, possessive } from './fans'
 import { fmtInt, fmtPct, fmtSigned } from './format'
 import { negRate } from './metrics'
@@ -106,6 +106,14 @@ const pts = (d: number): string => `${fmtSigned(d, 0)} pts`
 const pair = (key: string): { fans: string; roster: string } => {
   const { fan, roster } = splitKey(key)
   return { fans: possessive(fan), roster: nickname(roster) }
+}
+
+/** A list row's spoken sentence: the pair, its rate, its Δ against the roster's usual, its n. */
+export function pairSpoken(row: DeltaRow, word: 'negative' | 'positive'): string {
+  const { fan, roster } = splitKey(row.key)
+  const n = Math.abs(Math.round(100 * row.delta))
+  const against = n === 0 ? 'at' : `${points(n)} ${row.delta > 0 ? 'above' : 'below'}`
+  return `${possessive(fan)} on ${nickname(roster)} players: ${fmtPct(row.rate, 0)} ${word}, ${against} the ${nickname(roster)}' usual ${fmtPct(row.baseline, 0)}, from ${fmtInt(row.n)} comments.`
 }
 
 /** The page lede and the lists' text alternative: the lead grudge and the lead flowers. */

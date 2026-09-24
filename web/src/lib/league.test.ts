@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { TeamsRow } from '../data/types.gen'
 import { deltaLists, fanRosterMatrix, type MatrixRow } from './fanbase'
-import { cellSentence, cropGrid, deltaLimit, describePair, gridCells, gridSummary, gridTeams, landingLede, minPresets, moveFocus, pairCells, pairKey, pickerGroups, rampMix, splitKey, tipSide, windowAround } from './league'
+import { cellSentence, cropGrid, deltaLimit, describePair, gridCells, gridSummary, gridTeams, landingLede, minPresets, moveFocus, pairCells, pairKey, pairSpoken, pickerGroups, rampMix, splitKey, tipSide, windowAround } from './league'
 import type { Counts } from './types'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
@@ -122,6 +122,11 @@ describe('the sentences', () => {
     expect(lists.eligible).toBe(5)
     expect(lists.grudges.map((r) => r.label)).toEqual(['Celtics fans → Lakers', 'Heat fans → Celtics', 'Celtics fans → Heat', 'Lakers fans → Celtics', 'Heat fans → Lakers'])
     expect(lists.flowers[0]!.label).toBe('Heat fans → Lakers')
+  })
+
+  it('speaks a list row: rate, Δ against the usual, n', () => {
+    expect(pairSpoken(lists.grudges[0]!, 'negative')).toBe("Celtics fans on Lakers players: 60% negative, 13 points above the Lakers' usual 47%, from 100 comments.")
+    expect(pairSpoken(lists.flowers.at(-1)!, 'positive')).toBe("Celtics fans on Heat players: 30% positive, 10 points below the Heat' usual 40%, from 100 comments.")
   })
 
   it('lede: the lead grudge and the lead flowers over the eligible pairs', () => {

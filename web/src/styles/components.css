@@ -936,6 +936,13 @@
   text-align: right;
   color: var(--mute);
 }
+/* With one-line labels: a pair such as "Pistons fans → Hornets", the label column wider for it. */
+.dd--nowrap {
+  --dd-cols: 28px 20px minmax(200px, 1.6fr) minmax(100px, 2fr) 44px 44px;
+}
+.dd--nowrap .dd__label {
+  white-space: nowrap;
+}
 /* A tagged row (his own fans): bone outline and the tag, never yellow. */
 .dd__tag {
   margin-left: 8px;
@@ -970,6 +977,10 @@
   /* Six columns: the label takes the slack, the track only places dots. */
   .dd--detail {
     --dd-cols: 24px 18px minmax(64px, 1.4fr) minmax(64px, 1fr) 40px 40px;
+  }
+  /* The label takes most of the slack: the track only places dots. */
+  .dd--nowrap {
+    --dd-cols: 24px 18px minmax(140px, 2.4fr) minmax(48px, 1fr) 40px 40px;
   }
   /* The Δ stays in the row's text alternative; the value column carries the rate. */
   .dd__delta,

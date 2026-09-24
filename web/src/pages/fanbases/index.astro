@@ -88,11 +88,11 @@ const headline = [
     </section>
 
     <section class="fl__section" aria-labelledby="grid-h">
-      <h2 id="grid-h">The full grid</h2>
-      <p class="fl__phone">The full {fmtInt(axes.length)} × {fmtInt(axes.length)} grid is a desktop view. On a phone, pick a fanbase above.</p>
+      <h2 id="grid-h" class="fl__grid-h">Who hates whom?</h2>
+      <p class="fl__phone">This table is a desktop view. On a phone, pick a fanbase above.</p>
       <div class="fl__desk">
         <p class="fl__eg">
-          Every fanbase on every roster. Read it like this: find the row for <b>{possessive(lead.fan)}</b> and the column for the <b>{nickname(lead.roster)}</b>. The dashed
+          Every fanbase on every roster, in one table. Read it like this: find the row for <b>{possessive(lead.fan)}</b> and the column for the <b>{nickname(lead.roster)}</b>. The dashed
           cell where they meet says “{exampleText}”
         </p>
         <FanGrid client:visible teams={axes} cells={cells} limit={limit} floor={floor} official={official} caption={caption} example={example} />
@@ -119,6 +119,11 @@ const headline = [
      by lens, so a sentiment colour on a display title is an existing idiom. Team-page titles stay bone. */
   .fl__title {
     color: var(--ice);
+  }
+  /* The question in heat: the table colours by negative rate, and a sentiment colour on a
+     display title is the site's idiom (the title above in ice, the leaderboard hero by lens). */
+  .fl__grid-h {
+    color: var(--heat);
   }
   .fl__lede,
   .fl__eg {

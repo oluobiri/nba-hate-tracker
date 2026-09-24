@@ -14,6 +14,7 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
+from pipeline.accuracy import unlabeled_figures
 from pipeline.aggregation import (
     _build_players_dimension,
     aggregate_sentiment,
@@ -1113,6 +1114,13 @@ class TestAggregateViews:
         assert meta["receipts_precision"] is None
         assert meta["classifier_target_model"] is None
 
+    def test_no_accuracy_sample_reports_unlabeled(self, views_parquet):
+        """Without a labeled sample the accuracy block is the unlabeled one."""
+        result = aggregate_sentiment(views_parquet)
+
+        assert result["metadata"]["accuracy"] == unlabeled_figures()
+        assert result["manifest"]["rules"]["accuracy"]["labeled"] is False
+
     def test_player_overall_sorted_by_neg_rate_desc_then_player_asc(
         self, views_parquet
     ):
@@ -1228,6 +1236,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
         "receipts_precision": 0.777,
         "attribution_toward_share": 0.74,
         "recap_reaction_lag": REACTION_LAG,
+        "accuracy": unlabeled_figures(),
     }
     season_config = {
         "calendar": {"opening_night": "2025-10-21", "finals_end": None},
@@ -1371,6 +1380,23 @@ class TestBuildManifest:
             "precision": 0.777,
             "attribution_toward_share": 0.74,
         }
+
+    def test_accuracy_figures_pass_through(self):
+        """The accuracy sample's block rides under rules.accuracy as scored."""
+        outputs, metadata, season_config, versions = _manifest_inputs()
+        metadata["accuracy"] = {
+            **unlabeled_figures(),
+            "labeled": True,
+            "drawn": 1000,
+            "rejected": 4,
+            "n": 996,
+            "sentiment_agreement": 0.9,
+        }
+
+        rules = build_manifest(outputs, metadata, season_config, versions)["rules"]
+
+        assert rules["accuracy"] == metadata["accuracy"]
+        assert list(rules)[2:4] == ["receipts", "accuracy"]
 
     def test_gate_only_fallback_says_so(self):
         """Without a sidecar the samples admit on the gate and the figures are null."""

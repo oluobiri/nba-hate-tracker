@@ -121,13 +121,13 @@ export function pairSpoken(row: DeltaRow, word: 'negative' | 'positive'): string
   return `${possessive(fan)} on ${nickname(roster)} players: ${fmtPct(row.rate, 0)} ${word}, ${against} the ${nickname(roster)}' usual ${fmtPct(row.baseline, 0)}, from ${fmtInt(row.n)} comments.`
 }
 
-/** The page lede and the lists' text alternative: the lead grudge and the lead flowers. */
-export function landingLede(lists: DeltaLists, total: number, floor: number): string {
+/** The page lede and the lists' text alternative: the lead grudge and the lead flowers, the finding first. */
+export function landingLede(lists: DeltaLists): string {
   const g = lists.grudges[0]!
   const f = lists.flowers[0]!
   const gp = pair(g.key)
   const fp = pair(f.key)
-  return `Across the ${fmtInt(lists.eligible)} of ${fmtInt(total)} fan–roster pairs with at least ${fmtInt(floor)} comments, the biggest grudge is ${gp.fans} on the ${gp.roster}, ${gap(g.delta)} more negative than the ${gp.roster}' usual; the warmest flowers are ${fp.fans} on the ${fp.roster}, ${gap(f.delta)} more positive than the ${fp.roster}' usual.`
+  return `The biggest grudge in the league: ${gp.fans} on the ${gp.roster}, ${gap(g.delta)} more negative than the ${gp.roster}' usual. The warmest flowers: ${fp.fans} on the ${fp.roster}, ${gap(f.delta)} more positive than the ${fp.roster}' usual.`
 }
 
 /** The grid's caption: its shape, its floor, its two ends by negative Δ, signed. */

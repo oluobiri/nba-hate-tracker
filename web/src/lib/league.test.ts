@@ -129,9 +129,9 @@ describe('the sentences', () => {
     expect(pairSpoken(lists.flowers.at(-1)!, 'positive')).toBe("Celtics fans on Heat players: 30% positive, 10 points below the Heat' usual 40%, from 100 comments.")
   })
 
-  it('lede: the lead grudge and the lead flowers over the eligible pairs', () => {
-    expect(landingLede(lists, 6, FLOOR)).toBe(
-      "Across the 5 of 6 fan–roster pairs with at least 20 comments, the biggest grudge is Celtics fans on the Lakers, 13 points more negative than the Lakers' usual; the warmest flowers are Heat fans on the Lakers, 7 points more positive than the Lakers' usual.",
+  it('lede: the lead grudge and the lead flowers, the finding first', () => {
+    expect(landingLede(lists)).toBe(
+      "The biggest grudge in the league: Celtics fans on the Lakers, 13 points more negative than the Lakers' usual. The warmest flowers: Heat fans on the Lakers, 7 points more positive than the Lakers' usual.",
     )
   })
 

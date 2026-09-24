@@ -34,7 +34,7 @@ const cells = gridCells(matrix, axes)
 const lead = splitKey(lists.grudges[0]!.key)
 const example = { r: axes.findIndex((t) => t.team === lead.fan), c: axes.findIndex((t) => t.team === lead.roster) }
 const exampleText = cellSentence(cells.find((x) => x.f === example.r && x.r === example.c)!, axes, floor)
-const lede = landingLede(lists, pairs.length, floor)
+const lede = landingLede(lists)
 const caption = gridSummary(lists, axes.length, pairs.length, floor)
 const groups = pickerGroups(tables.teams)
 
@@ -82,7 +82,8 @@ const headline = [
       </div>
       <MethodNote kind="method">
         A fanbase is the r/NBA flair its commenters wear; a roster is the tracked players who ended the season on a team. Each row is one fanbase on one roster, its rate
-        from summed counts against that roster's rate across every fanbase, in points; pairs with fewer than {fmtInt(floor)} comments are out. A row links to the fanbase's page, where its grudges and flowers are told player by player.
+        from summed counts against that roster's rate across every fanbase, in points. Pairs with fewer than {fmtInt(floor)} comments are out; {fmtInt(lists.eligible)} of
+        the {fmtInt(pairs.length)} clear it. A row links to the fanbase's page, where its grudges and flowers are told player by player.
       </MethodNote>
     </section>
 

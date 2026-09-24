@@ -13,7 +13,7 @@ pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
 config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts; teams.yaml; publish.yaml target)
 app/              → Streamlit dashboard (V1 lab, retires in #114)
-web/              → The site: Astro + React islands, built from the published contract (web/README.md)
+web/              → The site: Astro + React islands, built from the published contract (conventions: web/CLAUDE.md)
 tests/            → pytest (unit/, conftest.py)
 notebooks/        → EDA and exploration, season-scoped (2024-25/, 2025-26/)
 data/             → Not committed
@@ -49,7 +49,7 @@ uv run ruff format .                 # Format
 # Streamlit
 uv run streamlit run app/streamlit_app.py  # Local dev
 
-# Site (from web/; Node 22 via .nvmrc; see web/README.md)
+# Site (from web/; Node 22 via .nvmrc)
 npm run dev                          # Dev server, --host for the phone
 npm run build                        # codegen --check + astro build → dist/
 npm run codegen                      # Refresh src/data/schema.json + types.gen.ts from DATA_BASE
@@ -117,8 +117,9 @@ Domain-specific instructions in `.claude/rules/`:
 - `git.md` — Commit convention (Angular style), branch naming
 - `python.md` — Code style, patterns, logging, dataclasses
 - `testing.md` — TDD workflow, pytest conventions
-- `web.md` — site conventions (loads for `web/**`)
 - `notion.md` — Notion workflow, 3-layer separation, session handoff skills
+
+Site conventions are in `web/CLAUDE.md`, which loads when a file under `web/` is read.
 
 ---
 

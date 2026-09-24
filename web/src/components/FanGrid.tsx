@@ -75,12 +75,17 @@ export function FanGrid({ teams, cells, limit, floor, official, caption, example
     const next = moveFocus(from.row, from.col, e.key, n)
     if (!next) return
     e.preventDefault()
-    setStop({ row: next.r, col: next.c })
     body.current?.rows[next.r]?.cells[next.c + 1]?.focus()
   }
-  const point = (e: MouseEvent<HTMLTableSectionElement> | FocusEvent<HTMLTableSectionElement>): void => {
+  const hover = (e: MouseEvent<HTMLTableSectionElement>): void => {
     const p = posOf(e.target as Element)
     setActive((prev) => (same(prev, p) ? prev : p))
+  }
+  // Focus, by key, click or tab, is where the crosshair sits and where Tab comes back to.
+  const focus = (e: FocusEvent<HTMLTableSectionElement>): void => {
+    const p = posOf(e.target as Element)
+    setActive((prev) => (same(prev, p) ? prev : p))
+    if (p) setStop((prev) => (same(prev, p) ? prev : p))
   }
   const clear = (): void => setActive(null)
 
@@ -122,7 +127,7 @@ export function FanGrid({ teams, cells, limit, floor, official, caption, example
             ))}
           </tr>
         </thead>
-        <tbody ref={body} onKeyDown={onKeyDown} onMouseOver={point} onMouseLeave={clear} onFocus={point} onBlur={clear}>
+        <tbody ref={body} onKeyDown={onKeyDown} onMouseOver={hover} onMouseLeave={clear} onFocus={focus} onBlur={clear}>
           {teams.map((t, r) => (
             <Row
               key={t.abbr}

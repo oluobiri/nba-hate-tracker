@@ -70,9 +70,9 @@ describe('gridCells', () => {
     expect(cells.map((x) => `${x.f}${x.r}`)).toEqual(['00', '01', '02', '10', '11', '12', '20', '21', '22'])
   })
 
-  it("takes each Δ from summed counts against the roster's usual", () => {
+  it("carries the roster's usual from summed counts, unrounded", () => {
     // Celtics fans (row 0) on the Lakers (column 1): 60% against 140/300.
-    expect(cells.find((x) => x.f === 0 && x.r === 1)).toEqual({ f: 0, r: 1, n: 100, neg: 60, dneg: 0.1333 })
+    expect(cells.find((x) => x.f === 0 && x.r === 1)).toEqual({ f: 0, r: 1, n: 100, neg: 60, usual: 140 / 300 })
     // Own fans keep their cell; the page draws it as the diagonal.
     expect(cells.find((x) => x.f === 1 && x.r === 1)?.n).toBe(100)
   })
@@ -101,9 +101,9 @@ describe('cellSentence', () => {
   })
 
   it('says below when kinder, at when level, and one point in the singular', () => {
-    expect(cellSentence({ f: 1, r: 0, n: 100, neg: 30, dneg: -0.0667 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 30% negative, 7 points below the Celtics' usual 37%, from 100 comments.")
-    expect(cellSentence({ f: 1, r: 0, n: 100, neg: 37, dneg: 0.002 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 37% negative, at the Celtics' usual 37%, from 100 comments.")
-    expect(cellSentence({ f: 1, r: 0, n: 100, neg: 37, dneg: 0.012 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 37% negative, 1 point above the Celtics' usual 36%, from 100 comments.")
+    expect(cellSentence({ f: 1, r: 0, n: 100, neg: 30, usual: 0.3667 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 30% negative, 7 points below the Celtics' usual 37%, from 100 comments.")
+    expect(cellSentence({ f: 1, r: 0, n: 100, neg: 37, usual: 0.368 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 37% negative, at the Celtics' usual 37%, from 100 comments.")
+    expect(cellSentence({ f: 1, r: 0, n: 100, neg: 37, usual: 0.358 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 37% negative, 1 point above the Celtics' usual 36%, from 100 comments.")
   })
 
   it('names the shortfall under the floor', () => {
@@ -129,10 +129,23 @@ describe('the sentences', () => {
     expect(pairSpoken(lists.flowers.at(-1)!, 'positive')).toBe("Celtics fans on Heat players: 30% positive, 10 points below the Heat' usual 40%, from 100 comments.")
   })
 
+  it("says the usual the lists say: the grid's cell and the list's row agree on the baseline", () => {
+    const teams = gridTeams(TEAMS)
+    const cell = gridCells(m, teams).find((x) => x.f === 0 && x.r === 1)!
+    expect(cell.usual).toBe(lists.grudges[0]!.baseline)
+  })
+
   it('lede: the lead grudge and the lead flowers, the finding first', () => {
-    expect(landingLede(lists)).toBe(
+    expect(landingLede(lists, FLOOR)).toBe(
       "The biggest grudge in the league: Celtics fans on the Lakers, 13 points more negative than the Lakers' usual. The warmest flowers: Heat fans on the Lakers, 7 points more positive than the Lakers' usual.",
     )
+  })
+
+  it('falls to one sentence when no pair clears the floor, and never throws', () => {
+    const none = deltaLists(pairCells(m), (key) => m.rosterAverage.get(splitKey(key).roster)!, 1000, describePair(BY_NAME))
+    expect(none.eligible).toBe(0)
+    expect(landingLede(none, 1000)).toBe("No fanbase has 1,000 comments about another team's players yet, so there is nothing to rank.")
+    expect(gridSummary(none, 3, 6, 1000)).toBe('3 fanbases on 3 rosters: no pair has 1,000 comments yet.')
   })
 
   it('grid caption: shape, floor, the two ends by negative Δ, signed', () => {
@@ -160,7 +173,7 @@ describe('rampMix', () => {
 
 describe('tipSide', () => {
   it('hangs inward by column third', () => {
-    expect([0, 9, 10, 19, 20, 29].map((c) => tipSide(c, 30))).toEqual(['start', 'start', 'centre', 'centre', 'end', 'end'])
+    expect([0, 9, 10, 19, 20, 29].map((col) => tipSide(col, 30))).toEqual(['start', 'start', 'centre', 'centre', 'end', 'end'])
   })
 })
 

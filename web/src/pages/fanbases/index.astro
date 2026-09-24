@@ -30,11 +30,11 @@ const lists = deltaLists(pairs, (key) => matrix.rosterAverage.get(splitKey(key).
 const limit = deltaLimit(lists.domain)
 const axes = gridTeams(tables.teams)
 const cells = gridCells(matrix, axes)
-// The worked example: the cell the Biggest grudges list leads with.
-const lead = splitKey(lists.grudges[0]!.key)
-const example = { r: axes.findIndex((t) => t.team === lead.fan), c: axes.findIndex((t) => t.team === lead.roster) }
-const exampleText = cellSentence(cells.find((x) => x.f === example.r && x.r === example.c)!, axes, floor)
-const lede = landingLede(lists)
+// The worked example: the cell the Biggest grudges list leads with; with nothing to rank, the first cell.
+const lead = lists.grudges[0] ? splitKey(lists.grudges[0].key) : null
+const example = lead ? { row: axes.findIndex((t) => t.team === lead.fan), col: axes.findIndex((t) => t.team === lead.roster) } : { row: 0, col: 1 }
+const exampleText = cellSentence(cells.find((x) => x.f === example.row && x.r === example.col) ?? { f: example.row, r: example.col, n: 0, neg: 0, usual: 0 }, axes, floor)
+const lede = landingLede(lists, floor)
 const caption = gridSummary(lists, axes.length, pairs.length, floor)
 const groups = pickerGroups(tables.teams)
 
@@ -92,8 +92,13 @@ const headline = [
       <p class="fl__phone">This table is a desktop view. On a phone, pick a fanbase above.</p>
       <div class="fl__desk">
         <p class="fl__eg">
-          Every fanbase on every roster, in one table. Read it like this: find the row for <b>{possessive(lead.fan)}</b> and the column for the <b>{nickname(lead.roster)}</b>. The dashed
-          cell where they meet says “{exampleText}”
+          Every fanbase on every roster, in one table.
+          {lead && (
+            <>
+              {' '}Read it like this: find the row for <b>{possessive(lead.fan)}</b> and the column for the <b>{nickname(lead.roster)}</b>. The dashed cell where they meet says
+              “{exampleText}”
+            </>
+          )}
         </p>
         <FanGrid client:visible teams={axes} cells={cells} limit={limit} floor={floor} official={official} caption={caption} example={example} />
         <p class="fl__note mono">Heat where a fanbase is harsher than the roster's usual, ice where kinder; a dash under the minimum; the diagonal is each fanbase on its own players, told on its team page.</p>

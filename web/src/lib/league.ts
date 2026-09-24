@@ -10,6 +10,7 @@ import { fmtInt, fmtPct, fmtSigned } from './format'
 import { negRate } from './metrics'
 import type { Counts } from './types'
 
+// Team names are config-controlled and carry no '|'; nothing else enforces it.
 const SEP = '|'
 /** The grid's cell floors, as multiples of the published one. */
 export const MIN_MULTIPLES = [1, 2, 5, 10] as const
@@ -20,7 +21,6 @@ const RAMP = { heat: { bone: 74, ink: 88 }, ice: { bone: 49, ink: 60 } } as cons
 const BRIGHT_T = 0.6
 const CONFERENCES = ['West', 'East']
 
-const round4 = (v: number): number => Math.round(v * 1e4) / 1e4
 const points = (n: number): string => `${n} point${n === 1 ? '' : 's'}`
 const gap = (d: number): string => points(Math.abs(Math.round(100 * d)))
 const pts = (d: number): string => `${fmtSigned(d, 0)} pts`
@@ -76,8 +76,8 @@ export interface GridCell {
   n: number
   /** Negative comments. */
   neg: number
-  /** The negative rate's Δ against the roster's usual, as a fraction. */
-  dneg: number
+  /** The roster's negative rate across every fanbase, the baseline a cell is read against. */
+  usual: number
 }
 
 /** Every cell the matrix holds, the diagonal included, by row then column. */
@@ -90,7 +90,7 @@ export function gridCells(m: Matrix, teams: readonly GridTeam[]): GridCell[] {
     for (const [roster, c] of byRoster) {
       const r = index.get(roster)
       if (r === undefined) continue
-      cells.push({ f, r, n: c.total, neg: c.neg, dneg: round4(negRate(c) - negRate(m.rosterAverage.get(roster)!)) })
+      cells.push({ f, r, n: c.total, neg: c.neg, usual: negRate(m.rosterAverage.get(roster)!) })
     }
   }
   return cells.toSorted((a, b) => a.f - b.f || a.r - b.r)
@@ -108,9 +108,10 @@ export function cellSentence(cell: GridCell, teams: readonly GridTeam[], min: nu
   if (cell.f === cell.r) return `${fans} on their own players — read on the team page.`
   if (cell.n < min) return `${fans} on ${roster} players — ${fmtInt(cell.n)} comments, under the minimum of ${fmtInt(min)}.`
   const rate = cell.neg / cell.n
-  const n = Math.abs(Math.round(100 * cell.dneg))
-  const against = n === 0 ? 'at' : `${points(n)} ${cell.dneg > 0 ? 'above' : 'below'}`
-  return `${fans} on ${roster} players — ${fmtPct(rate, 0)} negative, ${against} the ${roster}' usual ${fmtPct(rate - cell.dneg, 0)}, from ${fmtInt(cell.n)} comments.`
+  const dneg = rate - cell.usual
+  const n = Math.abs(Math.round(100 * dneg))
+  const against = n === 0 ? 'at' : `${points(n)} ${dneg > 0 ? 'above' : 'below'}`
+  return `${fans} on ${roster} players — ${fmtPct(rate, 0)} negative, ${against} the ${roster}' usual ${fmtPct(cell.usual, 0)}, from ${fmtInt(cell.n)} comments.`
 }
 
 /** A list row's spoken sentence: the pair, its rate, its Δ against the roster's usual, its n. */
@@ -122,9 +123,10 @@ export function pairSpoken(row: DeltaRow, word: 'negative' | 'positive'): string
 }
 
 /** The page lede and the lists' text alternative: the lead grudge and the lead flowers, the finding first. */
-export function landingLede(lists: DeltaLists): string {
-  const g = lists.grudges[0]!
-  const f = lists.flowers[0]!
+export function landingLede(lists: DeltaLists, floor: number): string {
+  const g = lists.grudges[0]
+  const f = lists.flowers[0]
+  if (!g || !f) return `No fanbase has ${fmtInt(floor)} comments about another team's players yet, so there is nothing to rank.`
   const gp = pair(g.key)
   const fp = pair(f.key)
   return `The biggest grudge in the league: ${gp.fans} on the ${gp.roster}, ${gap(g.delta)} more negative than the ${gp.roster}' usual. The warmest flowers: ${fp.fans} on the ${fp.roster}, ${gap(f.delta)} more positive than the ${fp.roster}' usual.`
@@ -132,8 +134,9 @@ export function landingLede(lists: DeltaLists): string {
 
 /** The grid's caption: its shape, its floor, its two ends by negative Δ, signed. */
 export function gridSummary(lists: DeltaLists, teams: number, total: number, floor: number): string {
-  const harsh = lists.grudges[0]!
-  const kind = lists.grudges.at(-1)!
+  const harsh = lists.grudges[0]
+  const kind = lists.grudges.at(-1)
+  if (!harsh || !kind) return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters: no pair has ${fmtInt(floor)} comments yet.`
   const hp = pair(harsh.key)
   const kp = pair(kind.key)
   return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters, each cell the fanbase's negative rate against the roster's usual: ${fmtInt(lists.eligible)} of ${fmtInt(total)} pairs have at least ${fmtInt(floor)} comments. Harshest: ${hp.fans} on ${hp.roster} players (${pts(harsh.delta)}); kindest: ${kp.fans} on ${kp.roster} players (${pts(kind.delta)}).`

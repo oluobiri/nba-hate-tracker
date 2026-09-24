@@ -14,8 +14,8 @@ import { type Scale, useViewState } from '../lib/url'
 import '../styles/fangrid.css'
 
 export interface GridPos {
-  r: number
-  c: number
+  row: number
+  col: number
 }
 
 export interface FanGridProps {
@@ -40,13 +40,13 @@ const SCALES: { key: Scale; label: string }[] = [
   { key: 'raw', label: 'Negative share' },
 ]
 
-const EMPTY = { n: 0, neg: 0, dneg: 0 }
+const EMPTY = { n: 0, neg: 0, usual: 0 }
 
 const posOf = (e: Element | null): GridPos | null => {
   const td = e?.closest<HTMLElement>('td[data-r]')
-  return td ? { r: Number(td.dataset.r), c: Number(td.dataset.c) } : null
+  return td ? { row: Number(td.dataset.r), col: Number(td.dataset.c) } : null
 }
-const same = (a: GridPos | null, b: GridPos | null): boolean => a?.r === b?.r && a?.c === b?.c
+const same = (a: GridPos | null, b: GridPos | null): boolean => a?.row === b?.row && a?.col === b?.col
 
 export function FanGrid({ teams, cells, limit, floor, official, caption, example, demo }: FanGridProps) {
   const defaults = useMemo(() => ({ threshold: official, min: floor }), [official, floor])
@@ -72,10 +72,10 @@ export function FanGrid({ teams, cells, limit, floor, official, caption, example
   const onKeyDown = (e: KeyboardEvent<HTMLTableSectionElement>): void => {
     const from = posOf(e.target as Element)
     if (!from) return
-    const next = moveFocus(from.r, from.c, e.key, n)
+    const next = moveFocus(from.row, from.col, e.key, n)
     if (!next) return
     e.preventDefault()
-    setStop(next)
+    setStop({ row: next.r, col: next.c })
     body.current?.rows[next.r]?.cells[next.c + 1]?.focus()
   }
   const point = (e: MouseEvent<HTMLTableSectionElement> | FocusEvent<HTMLTableSectionElement>): void => {
@@ -115,7 +115,7 @@ export function FanGrid({ teams, cells, limit, floor, official, caption, example
               <span className="visually-hidden">Fans of</span>
             </th>
             {teams.map((t, c) => (
-              <th key={t.abbr} scope="col" className={`fg__ch mono${active?.c === c ? ' fg__ch--x' : ''}`}>
+              <th key={t.abbr} scope="col" className={`fg__ch mono${active?.col === c ? ' fg__ch--x' : ''}`}>
                 <span aria-hidden="true">{t.abbr}</span>
                 <span className="visually-hidden">{t.team} players</span>
               </th>
@@ -134,11 +134,11 @@ export function FanGrid({ teams, cells, limit, floor, official, caption, example
               scale={scale}
               min={min}
               limit={limit}
-              hlCol={active?.c ?? -1}
-              hlRow={active?.r === r}
-              stopCol={stop.r === r ? stop.c : -1}
-              egCol={example.r === r ? example.c : -1}
-              openCol={demo?.open?.r === r ? demo.open.c : -1}
+              hlCol={active?.col ?? -1}
+              hlRow={active?.row === r}
+              stopCol={stop.row === r ? stop.col : -1}
+              egCol={example.row === r ? example.col : -1}
+              openCol={demo?.open?.row === r ? demo.open.col : -1}
             />
           ))}
         </tbody>
@@ -181,10 +181,11 @@ const Row = memo(function Row({ r, team, cells, teams, n, scale, min, limit, hlC
         }
         const under = cell.n < min
         const rate = cell.n ? cell.neg / cell.n : 0
-        const t = scale === 'delta' ? (limit > 0 ? Math.abs(cell.dneg) / limit : 0) : rate
-        const tone = scale === 'delta' && cell.dneg < 0 ? 'ice' : 'heat'
+        const dneg = cell.n ? rate - cell.usual : 0
+        const t = scale === 'delta' ? (limit > 0 ? Math.abs(dneg) / limit : 0) : rate
+        const tone = scale === 'delta' && dneg < 0 ? 'ice' : 'heat'
         const { mix, bright } = under ? { mix: 0, bright: false } : rampMix(t, tone)
-        const figure = under ? '–' : scale === 'delta' ? fmtSigned(cell.dneg, 0) : fmtPct(rate, 0)
+        const figure = under ? '–' : scale === 'delta' ? fmtSigned(dneg, 0) : fmtPct(rate, 0)
         const cls = [
           'fg__cell',
           `fg__cell--${tone}`,

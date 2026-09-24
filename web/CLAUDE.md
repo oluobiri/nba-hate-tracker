@@ -79,6 +79,12 @@ unique keys, every foreign key.
 - **Cross-page state lives in the query string** via `src/lib/url.ts`; defaults come from
   the manifest so short links serialise short.
 - **Charts are SVG rendered at build.** No chart library.
+- **A Δ against a baseline is drawn on a Δ axis.** `DeltaDot` with `average={0}`; `tickLabel` is
+  a phrase for what zero stands for ("Each player's usual"), never "average 0"; `format` gives
+  signed points; the raw rate sits in gray beside the value (`detail`, `detailLabel="rate"`);
+  `text` speaks rate, Δ and n; `start` continues ranks past a show-all. Heat where harsher, ice
+  where kinder, and every Δ view on a page shares the one `deltaLists().domain`. The team page
+  and the fanbases landing are the models.
 - **Motion lives inside islands only** (`motion/react`), wrapped in `MotionConfig
   reducedMotion="user"`; static regions animate with CSS transitions, which the global
   reduced-motion rule already stops. A lens switch keeps every row's identity (`layout`).

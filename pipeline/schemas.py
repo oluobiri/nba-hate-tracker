@@ -36,6 +36,11 @@ pipeline produces. Data dictionary first, enforcement second:
 - CORPUS_DAILY_SCHEMA describes the corpus funnel at day grain
   (corpus_daily.parquet), built from the raw download by
   pipeline/corpus.py and cached as a reference snapshot.
+- ACCURACY_SAMPLE_SCHEMA describes the accuracy sample
+  (reference/accuracy_sample.parquet): the owner's verdicts on a blind
+  random draw of the attributed population beside the classifier's
+  labels for the same rows (pipeline/accuracy.py); enforced at the
+  import write boundary.
 - NULLABLE_COLUMNS declares, per produced table, which columns may hold
   nulls; every other column is enforced null-free at the same write
   boundary (validate_nullability).
@@ -465,6 +470,22 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
     }
 )
 
+ACCURACY_SAMPLE_SCHEMA = pl.Schema(
+    {
+        "comment_id": pl.String,
+        # The classifier's side, copied from the fact at draw time
+        "sentiment": pl.String,  # "pos" | "neg" | "neu"
+        "confidence": pl.Float64,
+        "sentiment_player": pl.String,  # nullable: the classifier's named target
+        "attributed_player": pl.String,  # the resolution the row was drawn on
+        # The owner's side; both null on a rejected row and only there
+        "label_sentiment": pl.String,  # nullable
+        "label_target": pl.String,  # nullable: a canonical name, "none" or "other"
+        "reject": pl.String,  # nullable: a pipeline.accuracy.REJECT_REASONS value
+        "note": pl.String,  # nullable
+    }
+)
+
 # --- Corpus at day grain (built in pipeline/corpus.py) -----------------------
 # One row per UTC day of the download's extent, zero-filled: the funnel's
 # stages as counts, named exactly as the manifest's corpus block so each
@@ -615,6 +636,31 @@ class ReceiptsFigures(TypedDict):
     attribution_toward_share: float | None  # affirmed share, random named stratum
 
 
+class ClassAgreement(TypedDict):
+    """One sentiment class of the accuracy sample: the classifier against the owner."""
+
+    predicted: int  # rows the classifier gave this label
+    labeled: int  # rows the owner gave this label
+    precision: float | None  # labeled so, of the predicted
+    recall: float | None  # predicted so, of the labeled
+    toward_precision: float | None  # labeled so and about the attributed player, of the predicted
+
+
+class AccuracyFigures(TypedDict):
+    """The blind random sample's agreement figures; null until it is labeled."""
+
+    labeled: bool
+    drawn: int | None  # rows in the sample
+    rejected: int | None  # rows the owner ruled not a valid input
+    n: int | None  # scored rows: drawn minus rejected
+    seed: int | None
+    drawn_at: str | None
+    sentiment_agreement: float | None  # label matches, of n
+    target_agreement: float | None  # the owner's target is the attributed player, of n
+    joint_agreement: float | None  # both, of n
+    by_class: dict[str, ClassAgreement] | None  # keyed neg / neu / pos
+
+
 class Floors(TypedDict):
     """Consumer-side minimum comment counts per cell."""
 
@@ -630,6 +676,7 @@ class Rules(TypedDict):
     qualified_threshold: int
     samples: SamplesRule
     receipts: ReceiptsFigures
+    accuracy: AccuracyFigures
     floors: Floors
     metrics: dict[str, str]  # METRIC_FORMULAS
 

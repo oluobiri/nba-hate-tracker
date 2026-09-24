@@ -25,7 +25,7 @@ import polars as pl
 
 from pipeline.accuracy import WORKBOOK_FILENAME, draw_sample, write_workbook
 from pipeline.aggregation import load_attributed_frame, read_classifier_stamps
-from pipeline.lineage import config_stamps
+from pipeline.lineage import OUTPUT_CONFIGS, config_stamp_key
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from utils.constants import ACCURACY_SAMPLE_N, ACCURACY_SAMPLE_SEED
 from utils.paths import get_processed_dir, get_reference_dir
@@ -113,9 +113,9 @@ def main() -> None:
     fact_metadata = pl.read_parquet_metadata(input_path)
     stamps = {
         **{
-            key: fact_metadata[key]
-            for key in config_stamps("accuracy_sample")
-            if key in fact_metadata
+            config_stamp_key(config): fact_metadata[config_stamp_key(config)]
+            for config in OUTPUT_CONFIGS["accuracy_sample"]
+            if config_stamp_key(config) in fact_metadata
         },
         **{
             key: value

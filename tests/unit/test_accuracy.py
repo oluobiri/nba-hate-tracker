@@ -263,6 +263,15 @@ class TestWriteWorkbook:
         assert validations["E2:E4"] == '"' + ",".join(SENTIMENT_VERDICTS) + '"'
         assert validations["G2:G4"] == '"' + ",".join(REJECT_REASONS) + '"'
 
+    def test_a_typed_value_outside_the_list_is_refused_in_the_cell(self, workbook):
+        """Every dropdown raises a stop alert, so a typo is caught while labeling."""
+        sheet = load_workbook(workbook)[LABELS_SHEET]
+
+        for validation in sheet.data_validations.dataValidation:
+            assert validation.showErrorMessage is True
+            assert validation.errorStyle == "stop"
+            assert validation.allow_blank is True
+
     def test_target_list_is_per_row(self, workbook):
         """Each row's target dropdown is its own mentions plus none and other."""
         book = load_workbook(workbook)

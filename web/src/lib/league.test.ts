@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { TeamsRow } from '../data/types.gen'
 import { deltaLists, fanRosterMatrix, type MatrixRow } from './fanbase'
-import { cellSentence, deltaLimit, describePair, gridCells, gridSummary, gridTeams, landingLede, minPresets, pairCells, pairKey, pickerGroups, splitKey } from './league'
+import { cellSentence, cropGrid, deltaLimit, describePair, gridCells, gridSummary, gridTeams, landingLede, minPresets, moveFocus, pairCells, pairKey, pickerGroups, rampMix, splitKey, tipSide, windowAround } from './league'
 import type { Counts } from './types'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
@@ -134,6 +134,70 @@ describe('the sentences', () => {
     expect(gridSummary(lists, 3, 6, FLOOR)).toBe(
       "3 fanbases on 3 rosters, each cell the fanbase's negative rate against the roster's usual: 5 of 6 pairs have at least 20 comments. Harshest: Celtics fans on Lakers players (+13 pts); kindest: Heat fans on Lakers players (+3 pts).",
     )
+  })
+})
+
+describe('rampMix', () => {
+  it('runs bone-text mixes up to the dead band, then ink-text mixes past it', () => {
+    expect(rampMix(0, 'heat')).toEqual({ mix: 0, bright: false })
+    expect(rampMix(0.3, 'heat')).toEqual({ mix: 37, bright: false })
+    expect(rampMix(0.6, 'heat')).toEqual({ mix: 88, bright: true })
+    expect(rampMix(1, 'heat')).toEqual({ mix: 100, bright: true })
+    expect(rampMix(0.3, 'ice')).toEqual({ mix: 25, bright: false })
+    expect(rampMix(0.8, 'ice')).toEqual({ mix: 80, bright: true })
+  })
+
+  it('clamps beyond the limit', () => {
+    expect(rampMix(1.4, 'ice')).toEqual({ mix: 100, bright: true })
+    expect(rampMix(-0.2, 'heat')).toEqual({ mix: 0, bright: false })
+  })
+})
+
+describe('tipSide', () => {
+  it('hangs inward by column third', () => {
+    expect([0, 9, 10, 19, 20, 29].map((c) => tipSide(c, 30))).toEqual(['start', 'start', 'centre', 'centre', 'end', 'end'])
+  })
+})
+
+describe('moveFocus', () => {
+  it('steps along a row and column, clamped at the edges', () => {
+    expect(moveFocus(0, 1, 'ArrowRight', 3)).toEqual({ r: 0, c: 2 })
+    expect(moveFocus(0, 2, 'ArrowRight', 3)).toBeNull()
+    expect(moveFocus(2, 0, 'ArrowUp', 3)).toEqual({ r: 1, c: 0 })
+    expect(moveFocus(1, 0, 'ArrowLeft', 3)).toBeNull()
+  })
+
+  it('skips the diagonal, and stays put when the skip would leave the grid', () => {
+    expect(moveFocus(1, 0, 'ArrowRight', 3)).toEqual({ r: 1, c: 2 })
+    expect(moveFocus(0, 1, 'ArrowDown', 3)).toEqual({ r: 2, c: 1 })
+    expect(moveFocus(1, 2, 'ArrowLeft', 3)).toEqual({ r: 1, c: 0 })
+    expect(moveFocus(2, 1, 'ArrowDown', 3)).toBeNull()
+    expect(moveFocus(1, 2, 'ArrowDown', 3)).toBeNull()
+  })
+
+  it('goes to the row ends, minus the diagonal', () => {
+    expect(moveFocus(0, 2, 'Home', 3)).toEqual({ r: 0, c: 1 })
+    expect(moveFocus(1, 2, 'Home', 3)).toEqual({ r: 1, c: 0 })
+    expect(moveFocus(2, 0, 'End', 3)).toEqual({ r: 2, c: 1 })
+    expect(moveFocus(0, 1, 'a', 3)).toBeNull()
+  })
+})
+
+describe('cropGrid', () => {
+  const teams = gridTeams(TEAMS)
+  const cells = gridCells(m, teams)
+
+  it('keeps the named teams and re-indexes their cells', () => {
+    const crop = cropGrid(teams, cells, [0, 2])
+    expect(crop.teams.map((t) => t.abbr)).toEqual(['BOS', 'MIA'])
+    expect(crop.cells.map((x) => `${x.f}${x.r}`)).toEqual(['00', '01', '10', '11'])
+    expect(crop.cells[1]!.n).toBe(cells.find((x) => x.f === 0 && x.r === 2)!.n)
+  })
+
+  it("windows a pair's teams and the run after the first of them", () => {
+    expect(windowAround(3, 8, 6, 30)).toEqual([3, 4, 5, 6, 7, 8])
+    expect(windowAround(20, 3, 6, 30)).toEqual([3, 4, 5, 6, 7, 20])
+    expect(windowAround(28, 29, 6, 30)).toEqual([28, 29])
   })
 })
 

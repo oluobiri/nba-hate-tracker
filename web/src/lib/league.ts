@@ -126,6 +126,72 @@ export function gridSummary(lists: DeltaLists, teams: number, total: number, flo
   return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters, each cell the fanbase's negative rate against the roster's usual: ${fmtInt(lists.eligible)} of ${fmtInt(total)} pairs have at least ${fmtInt(floor)} comments. Harshest: ${hp.fans} on ${hp.roster} players (${pts(harsh.delta)}); kindest: ${kp.fans} on ${kp.roster} players (${pts(kind.delta)}).`
 }
 
+// ---- The grid's mechanics, pure so they can be pinned. ----
+
+export type Tone = 'heat' | 'ice'
+
+// Text contrast (4.5:1) on a hue mixed toward the surface: bone passes up to
+// 74% heat / 49% ice; ink passes from 88% heat / 60% ice. Each hue has a dead
+// band between, so a cell's mix runs in two segments that skip it.
+const RAMP = { heat: { bone: 74, ink: 88 }, ice: { bone: 49, ink: 60 } } as const
+const BRIGHT_T = 0.6
+
+/** A cell's tint for a distance t in [0, 1]: the mix percentage, and whether its text must be ink. */
+export function rampMix(t: number, tone: Tone): { mix: number; bright: boolean } {
+  const r = RAMP[tone]
+  const x = Math.min(1, Math.max(0, t))
+  if (x < BRIGHT_T) return { mix: Math.round((x / BRIGHT_T) * r.bone), bright: false }
+  return { mix: Math.round(r.ink + ((x - BRIGHT_T) / (1 - BRIGHT_T)) * (100 - r.ink)), bright: true }
+}
+
+/** Where a cell's tooltip hangs, by column third, so an edge cell's never widens the page. */
+export const tipSide = (c: number, n: number): 'start' | 'centre' | 'end' => (c < n / 3 ? 'start' : c >= (2 * n) / 3 ? 'end' : 'centre')
+
+/** The cell a key moves focus to, or null when it is not navigation: clamped at the edges, the diagonal skipped. */
+export function moveFocus(r: number, c: number, key: string, n: number): { r: number; c: number } | null {
+  const step = (dr: number, dc: number): { r: number; c: number } | null => {
+    let nr = r + dr
+    let nc = c + dc
+    if (nr === nc) {
+      nr += dr
+      nc += dc
+    }
+    return nr < 0 || nc < 0 || nr >= n || nc >= n ? null : { r: nr, c: nc }
+  }
+  switch (key) {
+    case 'ArrowRight':
+      return step(0, 1)
+    case 'ArrowLeft':
+      return step(0, -1)
+    case 'ArrowDown':
+      return step(1, 0)
+    case 'ArrowUp':
+      return step(-1, 0)
+    case 'Home':
+      return { r, c: r === 0 ? 1 : 0 }
+    case 'End':
+      return { r, c: r === n - 1 ? n - 2 : n - 1 }
+    default:
+      return null
+  }
+}
+
+/** A window of the grid: the teams at `keep`, in that order, and the cells among them re-indexed. */
+export function cropGrid(teams: readonly GridTeam[], cells: readonly GridCell[], keep: readonly number[]): { teams: GridTeam[]; cells: GridCell[] } {
+  const at = new Map(keep.map((i, j) => [i, j]))
+  return {
+    teams: keep.map((i) => teams[i]!),
+    cells: cells.filter((x) => at.has(x.f) && at.has(x.r)).map((x) => ({ ...x, f: at.get(x.f)!, r: at.get(x.r)! })),
+  }
+}
+
+/** The style guide's window: a pair's two teams, then the alphabetical run from the first of them until `size`. */
+export function windowAround(f: number, r: number, size: number, n: number): number[] {
+  const keep = new Set([f, r])
+  for (let i = Math.min(f, r); keep.size < size && i < n; i++) keep.add(i)
+  return [...keep].toSorted((a, b) => a - b)
+}
+
 export interface PickerTeam {
   abbr: string
   name: string

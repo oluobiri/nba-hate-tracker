@@ -2,6 +2,7 @@
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
@@ -22,12 +23,12 @@ import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
-import { deltaLists, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
+import { deltaLists, fanRosterMatrix, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
 import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
-import { pickerGroups } from '../lib/league'
+import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
@@ -183,6 +184,19 @@ const pickerTeams = pickerGroups(tables.teams)
 const longestName = tables.teams.toSorted((a, b) => b.team.length - a.team.length)[0]!
 const abbrLengths = [...new Set(tables.teams.map((t) => t.abbreviation.length))].toSorted((a, b) => a - b)
 const abbrNote = abbrLengths.length === 1 ? `every abbreviation is ${abbrLengths[0]} letters` : `abbreviations run ${abbrLengths[0]} to ${abbrLengths.at(-1)} letters`
+
+// The grid: a six-team window around the lead grudge, on both scales, the tip drawn open on its cell.
+const GRID_CROP = 6
+const teamsByName = new Map(tables.teams.map((t) => [t.team, t]))
+const matrix = fanRosterMatrix(fanPlayerRows)
+const pairs = deltaLists(pairCells(matrix), (key) => matrix.rosterAverage.get(splitKey(key).roster)!, fanFloor, describePair(teamsByName))
+const gridAll = gridTeams(tables.teams)
+const lead = splitKey(pairs.grudges[0]!.key)
+const leadPos = { r: gridAll.findIndex((t) => t.team === lead.fan), c: gridAll.findIndex((t) => t.team === lead.roster) }
+const keep = windowAround(leadPos.r, leadPos.c, GRID_CROP, gridAll.length)
+const crop = cropGrid(gridAll, gridCells(matrix, gridAll), keep)
+const cropPos = { r: keep.indexOf(leadPos.r), c: keep.indexOf(leadPos.c) }
+const gridLimit = deltaLimit(pairs.domain)
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -379,6 +393,16 @@ const abbrNote = abbrLengths.length === 1 ? `every abbreviation is ${abbrLengths
         The way into a fanbase: one group per conference, alphabetical inside, 44 px tiles. Logos in colour, the site's one exception: they stand alone as the control. Focus drawn on the longest name, {longestName.team}; {abbrNote} this drop.
       </p>
       <TeamPicker groups={pickerTeams} demoFocus={longestName.abbreviation} />
+    </section>
+
+    <section class="guide__section">
+      <h2>FanGrid</h2>
+      <p class="eyebrow">
+        A {GRID_CROP} × {GRID_CROP} window of the fan × roster table around the lead grudge, {possessive(lead.fan)} on the {nickname(lead.roster)}, the tip drawn open on it. Δ against each roster's usual: heat harsher, ice kinder, the mix by distance up to {fmtSigned(gridLimit, 0)} points; ink text past the contrast dead band; a dash under the floor; the diagonal bone.
+      </p>
+      <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by Δ." example={cropPos} demo={{ scale: 'delta', open: cropPos }} />
+      <p class="eyebrow">The same window by raw negative share, heat on the absolute 0–100 scale.</p>
+      <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by share." example={cropPos} demo={{ scale: 'raw' }} />
     </section>
 
     <section class="guide__section">

@@ -15,6 +15,7 @@ import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { TalkList } from '../components/TalkList'
+import { TeamPicker } from '../components/TeamPicker'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
@@ -26,6 +27,7 @@ import { nickname, possessive } from '../lib/fans'
 import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
+import { pickerGroups } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
@@ -175,6 +177,12 @@ const talk = talkRows(fanPlayerRows, saltiest.fan_team, (player) => {
   const p = players.get(player)!
   return { slug: p.slug, headshot: p.headshot_url, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null }
 }, TALK_TOP)
+
+// The picker: every team; the demo focus on the longest name, the abbreviation lengths as found.
+const pickerTeams = pickerGroups(tables.teams)
+const longestName = tables.teams.toSorted((a, b) => b.team.length - a.team.length)[0]!
+const abbrLengths = [...new Set(tables.teams.map((t) => t.abbreviation.length))].toSorted((a, b) => a - b)
+const abbrNote = abbrLengths.length === 1 ? `every abbreviation is ${abbrLengths[0]} letters` : `abbreviations run ${abbrLengths[0]} to ${abbrLengths.at(-1)} letters`
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -363,6 +371,14 @@ const talk = talkRows(fanPlayerRows, saltiest.fan_team, (player) => {
       <h2>TalkList</h2>
       <p class="eyebrow">A fanbase's most-discussed players, own roster included and tagged. Bar length is his share of the leader's n, the segments his split; n printed. {possessive(saltiest.fan_team)}, top {TALK_TOP}.</p>
       <TalkList rows={talk} fans={possessive(saltiest.fan_team)} />
+    </section>
+
+    <section class="guide__section">
+      <h2>TeamPicker</h2>
+      <p class="eyebrow">
+        The way into a fanbase: one group per conference, alphabetical inside, 44 px tiles. Logos in colour, the site's one exception: they stand alone as the control. Focus drawn on the longest name, {longestName.team}; {abbrNote} this drop.
+      </p>
+      <TeamPicker groups={pickerTeams} demoFocus={longestName.abbreviation} />
     </section>
 
     <section class="guide__section">

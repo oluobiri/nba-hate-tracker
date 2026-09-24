@@ -1826,3 +1826,62 @@
     display: none;
   }
 }
+
+/* TeamPicker: the way into a fanbase. One group per conference, alphabetical inside.
+   Logos in colour, the site's one exception: they are the control and stand alone,
+   with no team name beside them for gray to defer to. */
+.pk {
+  display: grid;
+  gap: 24px;
+}
+.pk__head {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.pk__tiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.pk__tile {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--bone-2);
+}
+.pk__tile:hover {
+  border-color: var(--bone-2);
+  background: var(--ink-2);
+}
+/* The style guide's demo shares the site's focus ring. */
+.pk__tile--focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pk__logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.pk__abbr {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+@media (min-width: 760px) {
+  .pk {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+}

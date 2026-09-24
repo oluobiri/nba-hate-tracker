@@ -182,7 +182,7 @@ TARGET_POOL_STRATUM_N = 500  # rows per random stratum
 TARGET_POOL_SEED = 7
 
 # The accuracy sample (pipeline/accuracy.py): a blind random draw of the
-# attributed population, labeled by the owner, scored into the manifest.
+# attributed population, labeled by hand, scored into the manifest.
 ACCURACY_SAMPLE_N = 1000
 ACCURACY_SAMPLE_SEED = 11
 ACCURACY_CLASS_MIN_N = 100  # a predicted class thinner than this in the draw is flagged

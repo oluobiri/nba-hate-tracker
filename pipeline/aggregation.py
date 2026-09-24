@@ -382,7 +382,7 @@ def aggregate_sentiment(
     )
     log_comment_samples_diagnostics(df_attributed, comment_samples)
 
-    # The accuracy sample: the owner's verdicts on a blind random draw,
+    # The accuracy sample: manual verdicts on a blind random draw,
     # scored against the classifier; absent, the manifest says unlabeled
     logger.info("Scoring the accuracy sample...")
     metadata["accuracy"] = load_accuracy_sample(accuracy_path, classifier_stamps)

@@ -37,7 +37,7 @@ pipeline produces. Data dictionary first, enforcement second:
   (corpus_daily.parquet), built from the raw download by
   pipeline/corpus.py and cached as a reference snapshot.
 - ACCURACY_SAMPLE_SCHEMA describes the accuracy sample
-  (reference/accuracy_sample.parquet): the owner's verdicts on a blind
+  (reference/accuracy_sample.parquet): manual verdicts on a blind
   random draw of the attributed population beside the classifier's
   labels for the same rows (pipeline/accuracy.py); enforced at the
   import write boundary.
@@ -478,7 +478,7 @@ ACCURACY_SAMPLE_SCHEMA = pl.Schema(
         "confidence": pl.Float64,
         "sentiment_player": pl.String,  # nullable: the classifier's named target
         "attributed_player": pl.String,  # the resolution the row was drawn on
-        # The owner's side; both null on a rejected row and only there
+        # The manual side; both null on a rejected row and only there
         "label_sentiment": pl.String,  # nullable
         "label_target": pl.String,  # nullable: a canonical name, "none" or "other"
         "reject": pl.String,  # nullable: a pipeline.accuracy.REJECT_REASONS value
@@ -637,13 +637,13 @@ class ReceiptsFigures(TypedDict):
 
 
 class ClassAgreement(TypedDict):
-    """One sentiment class of the accuracy sample: the classifier against the owner."""
+    """One sentiment class of the accuracy sample: the classifier against manual review."""
 
     predicted: int  # rows the classifier gave this label
-    labeled: int  # rows the owner gave this label
+    labeled: int  # rows manual review gave this label
     precision: float | None  # labeled so, of the predicted
     recall: float | None  # predicted so, of the labeled
-    toward_precision: float | None  # labeled so and about the attributed player, of the predicted
+    toward_precision: float | None  # labeled so and about the attributed player
 
 
 class AccuracyFigures(TypedDict):
@@ -651,12 +651,12 @@ class AccuracyFigures(TypedDict):
 
     labeled: bool
     drawn: int | None  # rows in the sample
-    rejected: int | None  # rows the owner ruled not a valid input
+    rejected: int | None  # rows manual review ruled not a valid input
     n: int | None  # scored rows: drawn minus rejected
     seed: int | None
     drawn_at: str | None
     sentiment_agreement: float | None  # label matches, of n
-    target_agreement: float | None  # the owner's target is the attributed player, of n
+    target_agreement: float | None  # the manual target is the attributed player, of n
     joint_agreement: float | None  # both, of n
     by_class: dict[str, ClassAgreement] | None  # keyed neg / neu / pos
 

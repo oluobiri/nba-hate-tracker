@@ -4,7 +4,7 @@ The accuracy sample: a blind random draw of the attributed population.
 The eval suite (pipeline/evaluation.py, pipeline/targets.py) is a
 regression tripwire over chosen cases; its pass rate describes the
 suite. This module draws rows uniformly at random from the population
-the rankings are computed over, hands them to the owner as a workbook
+the rankings are computed over, hands them out for manual review as a workbook
 with no prediction in sight, reads the verdicts back, and scores the
 classifier against them. It is the only producer of an accuracy figure.
 """
@@ -439,11 +439,11 @@ def score_sample(
     sample: pl.DataFrame, *, seed: int | None, drawn_at: str | None
 ) -> AccuracyFigures:
     """
-    Score the classifier against the owner's verdicts.
+    Score the classifier against the manual verdicts.
 
     Rejected rows are excluded before anything is counted. Sentiment
-    agreement is the label match; target agreement is the owner naming
-    the attributed player (none and other both count against); joint is
+    agreement is the label match; target agreement is the manual target
+    being the attributed player (none and other both count against); joint is
     both on the same row. Per class: precision and recall of the label,
     and toward_precision, labeled so and about the attributed player,
     of the predicted, which is the figure a negative rate rests on.

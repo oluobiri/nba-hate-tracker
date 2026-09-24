@@ -161,6 +161,10 @@ The distinction matters because the two layers age differently: frozen fields st
 
 The atomic fact stays at `created_utc` (seconds) and serves the replay directly; views roll up to day or week as the consumer needs.
 
+### The accuracy sample — reference asset
+
+**Grain:** one drawn comment. Kept as `data/<season>/reference/accuracy_sample.parquet`, never published as a table: the owner's verdicts (sentiment, target, or a reject reason) on a blind, uniform random draw of the **attributed** population, beside the classifier's own labels for the same rows. The draw is seeded and its ids are stored, so the file is scored without the fact. The manifest's `rules.accuracy` block is the only accuracy figure the pipeline produces: sentiment agreement, target agreement (the owner named the attributed player), their joint, and per-class precision, recall and toward-precision, all over the scored rows with `n`. It is distinct from the eval suite under `tests/eval/`, whose cases are chosen for difficulty and whose floors guard against regression; a pass rate there describes the suite, not the corpus. The file carries the players-config version its target lists were built under and the sentiment classifier's identity, and aggregation warns when either differs from the fact it is scoring.
+
 ---
 
 ## 2. The `team` roles

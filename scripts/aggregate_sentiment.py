@@ -20,7 +20,7 @@ import logging
 import sys
 from pathlib import Path
 
-from pipeline.accuracy import SAMPLE_FILENAME, log_figures
+from pipeline.accuracy import SAMPLE_FILENAME
 from pipeline.aggregation import aggregate_sentiment
 from pipeline.contract import build_contract_schema
 from pipeline.lineage import config_stamps
@@ -207,8 +207,13 @@ def main() -> None:
         logger.info(f"Receipts coverage:   {meta['receipts_coverage']:.1%}")
     if meta["receipts_precision"] is not None:
         logger.info(f"Receipts precision:  {meta['receipts_precision']:.1%}")
-    if meta["accuracy"]["labeled"]:
-        log_figures(meta["accuracy"])
+    # The full block is logged where it is scored; one line here
+    accuracy = meta["accuracy"]
+    if accuracy["labeled"]:
+        logger.info(
+            f"Accuracy sample:     n={accuracy['n']:,}, "
+            f"joint {accuracy['joint_agreement']:.1%}"
+        )
     else:
         logger.info("Accuracy sample:     none (unlabeled)")
 

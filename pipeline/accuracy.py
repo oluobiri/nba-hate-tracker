@@ -185,6 +185,19 @@ def target_options(mentioned_players: list[str]) -> tuple[str, ...]:
     return (*mentioned_players, TARGET_NONE, TARGET_OTHER)
 
 
+def _list_validation(formula: str) -> DataValidation:
+    """A dropdown that refuses a typed value outside its list, blank allowed."""
+    return DataValidation(
+        type="list",
+        formula1=formula,
+        allow_blank=True,
+        showErrorMessage=True,
+        errorStyle="stop",
+        errorTitle="Not in the list",
+        error="Pick a value from the dropdown, or leave the cell blank.",
+    )
+
+
 def write_workbook(sample: pl.DataFrame, path: Path, stamps: Mapping[str, str]) -> None:
     """
     Write the labeling workbook.
@@ -222,12 +235,8 @@ def write_workbook(sample: pl.DataFrame, path: Path, stamps: Mapping[str, str]) 
         meta.append([key, value])
 
     last_row = sample.height + 1
-    sentiment_validation = DataValidation(
-        type="list", formula1=f'"{",".join(SENTIMENT_VERDICTS)}"', allow_blank=True
-    )
-    reject_validation = DataValidation(
-        type="list", formula1=f'"{",".join(REJECT_REASONS)}"', allow_blank=True
-    )
+    sentiment_validation = _list_validation(f'"{",".join(SENTIMENT_VERDICTS)}"')
+    reject_validation = _list_validation(f'"{",".join(REJECT_REASONS)}"')
     labels.add_data_validation(sentiment_validation)
     labels.add_data_validation(reject_validation)
     sentiment_validation.add(f"E2:E{last_row}")
@@ -242,10 +251,8 @@ def write_workbook(sample: pl.DataFrame, path: Path, stamps: Mapping[str, str]) 
             lists.append(list(options))
             list_row = len(list_validations) + 1
             last_column = get_column_letter(len(options))
-            validation = DataValidation(
-                type="list",
-                formula1=f"{LISTS_SHEET}!$A${list_row}:${last_column}${list_row}",
-                allow_blank=True,
+            validation = _list_validation(
+                f"{LISTS_SHEET}!$A${list_row}:${last_column}${list_row}"
             )
             labels.add_data_validation(validation)
             list_validations[options] = validation

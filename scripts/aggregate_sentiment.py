@@ -20,13 +20,14 @@ import logging
 import sys
 from pathlib import Path
 
+from pipeline.accuracy import SAMPLE_FILENAME, log_figures
 from pipeline.aggregation import aggregate_sentiment
 from pipeline.contract import build_contract_schema
 from pipeline.lineage import config_stamps
 from pipeline.receipts import samples_stamps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
-from utils.paths import get_dashboard_dir, get_processed_dir
+from utils.paths import get_dashboard_dir, get_processed_dir, get_reference_dir
 from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
@@ -81,6 +82,13 @@ def main() -> None:
         f"samples (default: data/<season>/processed/{DEFAULT_TARGETS_FILENAME})",
     )
     parser.add_argument(
+        "--accuracy",
+        type=Path,
+        default=None,
+        help="Path to the labeled accuracy sample; absent file -> no accuracy "
+        f"figure in the manifest (default: data/<season>/reference/{SAMPLE_FILENAME})",
+    )
+    parser.add_argument(
         "--season",
         default=None,
         metavar="YYYY-YY",
@@ -96,6 +104,7 @@ def main() -> None:
     # right season directory
     input_path = args.input or get_processed_dir() / DEFAULT_INPUT_FILENAME
     targets_path = args.targets or get_processed_dir() / DEFAULT_TARGETS_FILENAME
+    accuracy_path = args.accuracy or get_reference_dir() / SAMPLE_FILENAME
     output_dir = args.output_dir or get_dashboard_dir()
 
     # Validate input exists
@@ -109,6 +118,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info(f"Input:   {input_path}")
     logger.info(f"Targets: {targets_path}")
+    logger.info(f"Accuracy: {accuracy_path}")
     logger.info(f"Output:  {output_dir}")
     logger.info("=" * 60)
 
@@ -123,7 +133,7 @@ def main() -> None:
     }
 
     # Run aggregation
-    result = aggregate_sentiment(input_path, targets_path)
+    result = aggregate_sentiment(input_path, targets_path, accuracy_path)
     # The samples stamp is read back from the sidecar inside aggregation
     # (verified flag + verifier identity), so it joins the set here
     stamps["comment_samples"].update(samples_stamps(result["metadata"]))
@@ -197,6 +207,10 @@ def main() -> None:
         logger.info(f"Receipts coverage:   {meta['receipts_coverage']:.1%}")
     if meta["receipts_precision"] is not None:
         logger.info(f"Receipts precision:  {meta['receipts_precision']:.1%}")
+    if meta["accuracy"]["labeled"]:
+        log_figures(meta["accuracy"])
+    else:
+        logger.info("Accuracy sample:     none (unlabeled)")
 
 
 if __name__ == "__main__":

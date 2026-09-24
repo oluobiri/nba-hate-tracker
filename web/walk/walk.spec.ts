@@ -325,8 +325,8 @@ test('every picker tile and every list row leads to a live team page', async ({ 
   const rows = await page.locator('#grudges .dd__link, #flowers .dd__link').evaluateAll((as) => as.map((a) => a.getAttribute('href')!))
   expect(rows).toHaveLength(20)
   for (const h of rows) {
-    expect(h).toMatch(/#league$/)
-    expect(ROUTES).toContain(h.replace(/#league$/, ''))
+    expect(h).toMatch(/#targets$/)
+    expect(ROUTES).toContain(h.replace(/#targets$/, ''))
   }
 })
 

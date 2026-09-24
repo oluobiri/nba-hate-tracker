@@ -46,12 +46,12 @@ export function pairCells(m: Matrix): (Counts & { key: string })[] {
   return cells
 }
 
-/** A pair as a list row: "Pistons fans → Hornets", the target's page at the section where the same cell is a row, the target's logo. */
+/** A pair as a list row: "Pistons fans → Hornets", the fans' page at its grudges and flowers, where the pair is told player by player; the fans' logo. */
 export function describePair(teams: ReadonlyMap<string, TeamsRow>): (key: string) => Described {
   return (key) => {
     const { fan, roster } = splitKey(key)
-    const target = teams.get(roster)!
-    return { label: `${possessive(fan)} → ${nickname(roster)}`, href: `/fanbases/${target.abbreviation.toLowerCase()}/#league`, logo: target.logo_url }
+    const fans = teams.get(fan)!
+    return { label: `${possessive(fan)} → ${nickname(roster)}`, href: `/fanbases/${fans.abbreviation.toLowerCase()}/#targets`, logo: fans.logo_url }
   }
 }
 

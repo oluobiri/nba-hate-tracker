@@ -49,8 +49,8 @@ describe('pairCells', () => {
 })
 
 describe('describePair', () => {
-  it("labels the pair fans → roster and links to the target's page where the cell is a row", () => {
-    expect(describePair(BY_NAME)(pairKey(LAL, BOS))).toEqual({ label: 'Lakers fans → Celtics', href: '/fanbases/bos/#league', logo: 'https://m/BOS.svg' })
+  it("labels the pair fans → roster and links to the fans' page, where the pair is told player by player", () => {
+    expect(describePair(BY_NAME)(pairKey(LAL, BOS))).toEqual({ label: 'Lakers fans → Celtics', href: '/fanbases/lal/#targets', logo: 'https://m/LAL.svg' })
   })
 })
 

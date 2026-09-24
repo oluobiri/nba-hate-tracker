@@ -1,7 +1,8 @@
 // The league at once: every fanbase on every roster as cells, for the
 // fanbases page. The team page's matrix (fanbase.ts) is read whole here:
-// the two headline lists over every pair, the grid's plain props, and the
-// sentences both share. Floors arrive as arguments, read from the manifest.
+// the two headline lists over every pair, the grid's plain props, the
+// sentences both share, and the grid's mechanics. Floors arrive as
+// arguments, read from the manifest.
 import type { TeamsRow } from '../data/types.gen'
 import type { Described, DeltaLists, DeltaRow, Matrix } from './fanbase'
 import { nickname, possessive } from './fans'
@@ -10,6 +11,20 @@ import { negRate } from './metrics'
 import type { Counts } from './types'
 
 const SEP = '|'
+/** The grid's cell floors, as multiples of the published one. */
+export const MIN_MULTIPLES = [1, 2, 5, 10] as const
+// Text contrast (4.5:1) on a hue mixed toward the surface: bone passes up to
+// 74% heat / 49% ice; ink passes from 88% heat / 60% ice. Each hue has a dead
+// band between, so a cell's mix runs in two segments that skip it.
+const RAMP = { heat: { bone: 74, ink: 88 }, ice: { bone: 49, ink: 60 } } as const
+const BRIGHT_T = 0.6
+const CONFERENCES = ['West', 'East']
+
+const round4 = (v: number): number => Math.round(v * 1e4) / 1e4
+const points = (n: number): string => `${n} point${n === 1 ? '' : 's'}`
+const gap = (d: number): string => points(Math.abs(Math.round(100 * d)))
+const pts = (d: number): string => `${fmtSigned(d, 0)} pts`
+const conferenceOrder = (c: string): number => (CONFERENCES.includes(c) ? CONFERENCES.indexOf(c) : CONFERENCES.length)
 
 /** A cell's key for deltaLists: the fan team, then the roster team. */
 export const pairKey = (fan: string, roster: string): string => `${fan}${SEP}${roster}`
@@ -19,6 +34,11 @@ export function splitKey(key: string): { fan: string; roster: string } {
   return { fan: key.slice(0, i), roster: key.slice(i + 1) }
 }
 
+const pair = (key: string): { fans: string; roster: string } => {
+  const { fan, roster } = splitKey(key)
+  return { fans: possessive(fan), roster: nickname(roster) }
+}
+
 /** Every off-diagonal cell of the matrix, keyed, in the matrix's order. */
 export function pairCells(m: Matrix): (Counts & { key: string })[] {
   const cells: (Counts & { key: string })[] = []
@@ -26,10 +46,7 @@ export function pairCells(m: Matrix): (Counts & { key: string })[] {
   return cells
 }
 
-/**
- * A pair as a list row: "Pistons fans → Hornets", linking to the target's
- * page at the section where the same cell sits as a row, the target's logo.
- */
+/** A pair as a list row: "Pistons fans → Hornets", the target's page at the section where the same cell is a row, the target's logo. */
 export function describePair(teams: ReadonlyMap<string, TeamsRow>): (key: string) => Described {
   return (key) => {
     const { fan, roster } = splitKey(key)
@@ -63,8 +80,6 @@ export interface GridCell {
   dneg: number
 }
 
-const round4 = (v: number): number => Math.round(v * 1e4) / 1e4
-
 /** Every cell the matrix holds, the diagonal included, by row then column. */
 export function gridCells(m: Matrix, teams: readonly GridTeam[]): GridCell[] {
   const index = new Map(teams.map((t, i) => [t.team, i]))
@@ -84,8 +99,6 @@ export function gridCells(m: Matrix, teams: readonly GridTeam[]): GridCell[] {
 /** The Δ that fills a cell: the farthest either list reaches from zero. */
 export const deltaLimit = ([lo, hi]: readonly [number, number]): number => Math.max(-lo, hi)
 
-/** The grid's cell floors, as multiples of the published one. */
-export const MIN_MULTIPLES = [1, 2, 5, 10] as const
 export const minPresets = (floor: number): number[] => MIN_MULTIPLES.map((k) => k * floor)
 
 /** A cell read aloud: the tooltip, the cell's hidden text, the worked example. */
@@ -98,14 +111,6 @@ export function cellSentence(cell: GridCell, teams: readonly GridTeam[], min: nu
   const n = Math.abs(Math.round(100 * cell.dneg))
   const against = n === 0 ? 'at' : `${points(n)} ${cell.dneg > 0 ? 'above' : 'below'}`
   return `${fans} on ${roster} players — ${fmtPct(rate, 0)} negative, ${against} the ${roster}' usual ${fmtPct(rate - cell.dneg, 0)}, from ${fmtInt(cell.n)} comments.`
-}
-
-const points = (n: number): string => `${n} point${n === 1 ? '' : 's'}`
-const gap = (d: number): string => points(Math.abs(Math.round(100 * d)))
-const pts = (d: number): string => `${fmtSigned(d, 0)} pts`
-const pair = (key: string): { fans: string; roster: string } => {
-  const { fan, roster } = splitKey(key)
-  return { fans: possessive(fan), roster: nickname(roster) }
 }
 
 /** A list row's spoken sentence: the pair, its rate, its Δ against the roster's usual, its n. */
@@ -134,15 +139,7 @@ export function gridSummary(lists: DeltaLists, teams: number, total: number, flo
   return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters, each cell the fanbase's negative rate against the roster's usual: ${fmtInt(lists.eligible)} of ${fmtInt(total)} pairs have at least ${fmtInt(floor)} comments. Harshest: ${hp.fans} on ${hp.roster} players (${pts(harsh.delta)}); kindest: ${kp.fans} on ${kp.roster} players (${pts(kind.delta)}).`
 }
 
-// ---- The grid's mechanics, pure so they can be pinned. ----
-
 export type Tone = 'heat' | 'ice'
-
-// Text contrast (4.5:1) on a hue mixed toward the surface: bone passes up to
-// 74% heat / 49% ice; ink passes from 88% heat / 60% ice. Each hue has a dead
-// band between, so a cell's mix runs in two segments that skip it.
-const RAMP = { heat: { bone: 74, ink: 88 }, ice: { bone: 49, ink: 60 } } as const
-const BRIGHT_T = 0.6
 
 /** A cell's tint for a distance t in [0, 1]: the mix percentage, and whether its text must be ink. */
 export function rampMix(t: number, tone: Tone): { mix: number; bright: boolean } {
@@ -211,9 +208,6 @@ export interface PickerGroup {
   conference: string
   teams: PickerTeam[]
 }
-
-const CONFERENCES = ['West', 'East']
-const conferenceOrder = (c: string): number => (CONFERENCES.includes(c) ? CONFERENCES.indexOf(c) : CONFERENCES.length)
 
 /** The picker: one group per conference, West first, alphabetical inside. */
 export function pickerGroups(teams: readonly TeamsRow[]): PickerGroup[] {

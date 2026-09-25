@@ -1,36 +1,184 @@
 ---
+// The fanbases landing: the way into a fanbase, the two headline lists over
+// every fan × roster pair, and the full grid for explorers. Three regions,
+// one island; a phone gets the first two and a line about the third.
+import { DeltaDot, type DeltaDotRow } from '../../components/DeltaDot'
+import { FanGrid } from '../../components/FanGrid'
+import { MethodNote } from '../../components/MethodNote'
+import { TeamPicker } from '../../components/TeamPicker'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
+import { type DeltaRow, deltaLists, fanRosterMatrix } from '../../lib/fanbase'
+import { nickname, possessive } from '../../lib/fans'
+import { fmtInt, fmtPct, fmtSigned } from '../../lib/format'
+import { cellSentence, deltaLimit, describePair, gridCells, gridSummary, gridTeams, landingLede, pairCells, pairSpoken, pickerGroups, splitKey } from '../../lib/league'
+import { countsOf } from '../../lib/metrics'
+import { GRID_KEYS } from '../../lib/url'
 
-const { tables } = await getSeason()
-const teams = tables.teams.toSorted((a, b) => a.team.localeCompare(b.team))
+// Rows in each headline list; the grid is the show-all.
+const LIST_TOP = 10
+
+const { manifest, tables } = await getSeason()
+const floor = manifest.rules.floors.fanbase_min_n
+const official = manifest.rules.qualified_threshold
+const rosterOf = new Map(tables.players.map((p) => [p.attributed_player, p.roster_team]))
+const teams = new Map(tables.teams.map((t) => [t.team, t]))
+const fanRows = tables.player_fan_team.map((r) => ({ ...countsOf(r), fan: r.fan_team, roster: rosterOf.get(r.attributed_player) ?? null }))
+const matrix = fanRosterMatrix(fanRows)
+const pairs = pairCells(matrix)
+const lists = deltaLists(pairs, (key) => matrix.rosterAverage.get(splitKey(key).roster)!, floor, describePair(teams))
+const limit = deltaLimit(lists.domain)
+const axes = gridTeams(tables.teams)
+const cells = gridCells(matrix, axes)
+// The worked example: the cell the Biggest grudges list leads with; with nothing to rank, the first cell.
+const lead = lists.grudges[0] ? splitKey(lists.grudges[0].key) : null
+const example = lead ? { row: axes.findIndex((t) => t.team === lead.fan), col: axes.findIndex((t) => t.team === lead.roster) } : { row: 0, col: 1 }
+const exampleText = cellSentence(cells.find((x) => x.f === example.row && x.r === example.col) ?? { f: example.row, r: example.col, n: 0, neg: 0, usual: 0 }, axes, floor)
+const lede = landingLede(lists, floor)
+const caption = gridSummary(lists, axes.length, pairs.length, floor)
+const groups = pickerGroups(tables.teams)
+
+// Δ lists plot the Δ itself, the tick at zero; each link speaks the raw rate too.
+const pts = (v: number): string => fmtSigned(v, 0)
+const dotRows = (rows: readonly DeltaRow[], word: 'negative' | 'positive'): DeltaDotRow[] =>
+  rows.slice(0, LIST_TOP).map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, text: pairSpoken(r, word), detail: fmtPct(r.rate, 0) }))
+const headline = [
+  { id: 'grudges', head: 'Biggest grudges', rows: dotRows(lists.grudges, 'negative'), tone: 'neg' },
+  { id: 'flowers', head: 'Flowers from rivals', rows: dotRows(lists.flowers, 'positive'), tone: 'pos' },
+] as const
 ---
 
-<Base title="Fanbases" description="What each fanbase thinks, and who thinks what about them.">
-  <main id="main" class="wrap page">
-    <header>
-      <h1>Fanbases</h1>
-      <p class="page__lede">Pick a fanbase. The full landing is on its way.</p>
+<Base title="Fanbases" description={lede}>
+  <script is:inline define:vars={{ grid: GRID_KEYS }}>
+    // A deep link carries a grid view: hold the prerendered default out of
+    // sight until the island has read the URL (it removes the class).
+    const q = new URLSearchParams(location.search)
+    if (grid.some((k) => q.has(k))) document.documentElement.classList.add('has-grid-view')
+  </script>
+  <main id="main" class="wrap page fl">
+    <header class="fl__head">
+      <p class="eyebrow">{manifest.season} · Fanbases</p>
+      <h1 class="fl__title">Fanbases</h1>
+      <p class="fl__lede">{lede}</p>
     </header>
-    <ul class="teams">
-      {teams.map((t) => <li><a href={`/fanbases/${t.abbreviation.toLowerCase()}/`}>{t.team}</a></li>)}
-    </ul>
+
+    <section class="fl__section" aria-labelledby="pick-h">
+      <h2 id="pick-h">Pick a fanbase</h2>
+      <TeamPicker groups={groups} />
+      <p class="fl__index">Who is saltiest? <a href="/#fans-h">See the fanbase index on the leaderboard.</a></p>
+    </section>
+
+    <section class="fl__section" aria-labelledby="pairs-h">
+      <h2 id="pairs-h" class="visually-hidden">Grudges and flowers</h2>
+      <div class="fl__lists">
+        {
+          headline.map((l) => (
+            <div id={l.id} class="fl__list">
+              <h2>{l.head}</h2>
+              <DeltaDot rows={l.rows} average={0} domain={lists.domain} format={pts} tone={l.tone} tickLabel="Each roster's usual" detailLabel="rate" nowrap />
+            </div>
+          ))
+        }
+      </div>
+      <MethodNote kind="method">
+        A fanbase is the r/NBA flair its commenters wear; a roster is the tracked players who ended the season on a team. Each row is one fanbase on one roster, its rate
+        from summed counts against that roster's rate across every fanbase, in points. Pairs with fewer than {fmtInt(floor)} comments are out; {fmtInt(lists.eligible)} of
+        the {fmtInt(pairs.length)} clear it. A row links to the fanbase's page, where its grudges and flowers are told player by player.
+      </MethodNote>
+    </section>
+
+    <section class="fl__section" aria-labelledby="grid-h">
+      <h2 id="grid-h" class="fl__grid-h">Who hates whom?</h2>
+      <p class="fl__phone">This table is a desktop view. On a phone, pick a fanbase above.</p>
+      <div class="fl__desk">
+        <p class="fl__eg">
+          Every fanbase on every roster, in one table.
+          {lead && (
+            <>
+              {' '}Read it like this: find the row for <b>{possessive(lead.fan)}</b> and the column for the <b>{nickname(lead.roster)}</b>. The dashed cell where they meet says
+              “{exampleText}”
+            </>
+          )}
+        </p>
+        <FanGrid client:visible teams={axes} cells={cells} limit={limit} floor={floor} official={official} caption={caption} example={example} />
+        <p class="fl__note mono">Heat where a fanbase is harsher than the roster's usual, ice where kinder; a dash under the minimum; the diagonal is each fanbase on its own players, told on its team page.</p>
+      </div>
+    </section>
   </main>
 </Base>
 
 <style>
-  .teams {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 8px 24px;
+  .fl {
+    gap: 48px;
   }
-  .teams a {
-    display: block;
-    padding: 8px 0;
+  .fl__head {
+    display: grid;
+    gap: 10px;
+    padding-bottom: 20px;
     border-bottom: 1px solid var(--line);
-    text-decoration: none;
+  }
+  .fl__head .eyebrow {
+    margin: 0;
+  }
+  /* The title in ice: fans like their team, and the leaderboard hero already colours its name
+     by lens, so a sentiment colour on a display title is an existing idiom. Team-page titles stay bone. */
+  .fl__title {
+    color: var(--ice);
+  }
+  /* The question in heat: the table colours by negative rate, and a sentiment colour on a
+     display title is the site's idiom (the title above in ice, the leaderboard hero by lens). */
+  .fl__grid-h {
+    color: var(--heat);
+  }
+  .fl__lede,
+  .fl__eg {
+    margin: 0;
+    max-width: 70ch;
+    font-size: 16px;
+    color: var(--bone-2);
+  }
+  .fl__eg b {
+    color: var(--bone);
+  }
+  .fl__section {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .fl__index {
+    margin: 0;
+    font-size: 14px;
+    color: var(--bone-2);
+  }
+  .fl__lists {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px 32px;
+  }
+  .fl__list {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  .fl__phone {
+    margin: 0;
+    color: var(--bone-2);
+  }
+  .fl__desk {
+    display: none;
+  }
+  .fl__note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--mute);
+  }
+  @media (min-width: 1024px) {
+    .fl__phone {
+      display: none;
+    }
+    .fl__desk {
+      display: grid;
+      gap: 16px;
+    }
   }
 </style>

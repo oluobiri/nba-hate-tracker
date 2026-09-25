@@ -1,0 +1,45 @@
+/* The grid island's layout. The table's looks live in components.css.
+   Desktop only: under 1024 px the island is display: none, never intersects,
+   and never hydrates; the page says so in a line of its own. */
+.fg {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .fg {
+    display: grid;
+    gap: 12px;
+  }
+}
+/* A deep link with a scale or minimum: the prerendered default stays hidden
+   until the island has read the URL (the page's inline script sets the class). */
+.has-grid-view .fg {
+  visibility: hidden;
+}
+.fg__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 32px;
+  margin-bottom: 4px;
+}
+.fg__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fg__label {
+  margin-right: 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.fg__axis {
+  margin: 0;
+  padding-left: 150px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}

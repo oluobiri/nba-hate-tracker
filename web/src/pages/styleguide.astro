@@ -2,6 +2,7 @@
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
+import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
@@ -15,17 +16,19 @@ import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { TalkList } from '../components/TalkList'
+import { TeamPicker } from '../components/TeamPicker'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
-import { deltaLists, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
+import { deltaLists, fanRosterMatrix, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
 import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
+import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
@@ -175,6 +178,28 @@ const talk = talkRows(fanPlayerRows, saltiest.fan_team, (player) => {
   const p = players.get(player)!
   return { slug: p.slug, headshot: p.headshot_url, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null }
 }, TALK_TOP)
+
+// The picker: every team; the demo focus on the longest name, the abbreviation lengths as found.
+const pickerTeams = pickerGroups(tables.teams)
+const longestName = tables.teams.toSorted((a, b) => b.team.length - a.team.length)[0]!
+const abbrLengths = [...new Set(tables.teams.map((t) => t.abbreviation.length))].toSorted((a, b) => a - b)
+const abbrNote = abbrLengths.length === 1 ? `every abbreviation is ${abbrLengths[0]} letters` : `abbreviations run ${abbrLengths[0]} to ${abbrLengths.at(-1)} letters`
+
+// The grid: a six-team window around the lead grudge, on both scales, the tip drawn open on its cell.
+const GRID_CROP = 6
+const teamsByName = new Map(tables.teams.map((t) => [t.team, t]))
+const matrix = fanRosterMatrix(fanPlayerRows)
+const pairs = deltaLists(pairCells(matrix), (key) => matrix.rosterAverage.get(splitKey(key).roster)!, fanFloor, describePair(teamsByName))
+const gridAll = gridTeams(tables.teams)
+const lead = pairs.grudges[0] ? splitKey(pairs.grudges[0].key) : { fan: gridAll[0]!.team, roster: gridAll[1]!.team }
+const leadPos = { row: gridAll.findIndex((t) => t.team === lead.fan), col: gridAll.findIndex((t) => t.team === lead.roster) }
+const keep = windowAround(leadPos.row, leadPos.col, GRID_CROP, gridAll.length)
+const crop = cropGrid(gridAll, gridCells(matrix, gridAll), keep)
+const cropPos = { row: keep.indexOf(leadPos.row), col: keep.indexOf(leadPos.col) }
+const gridLimit = deltaLimit(pairs.domain)
+const PAIR_TOP = 3
+const longestPair = pairs.grudges.toSorted((a, b) => b.label.length - a.label.length)[0]!
+const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair).slice(0, PAIR_TOP - 1)].map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -363,6 +388,26 @@ const talk = talkRows(fanPlayerRows, saltiest.fan_team, (player) => {
       <h2>TalkList</h2>
       <p class="eyebrow">A fanbase's most-discussed players, own roster included and tagged. Bar length is his share of the leader's n, the segments his split; n printed. {possessive(saltiest.fan_team)}, top {TALK_TOP}.</p>
       <TalkList rows={talk} fans={possessive(saltiest.fan_team)} />
+    </section>
+
+    <section class="guide__section">
+      <h2>TeamPicker</h2>
+      <p class="eyebrow">
+        The way into a fanbase: one group per conference, alphabetical inside, 44 px tiles. Logos in colour, the site's one exception: they stand alone as the control. Focus drawn on the longest name, {longestName.team}; {abbrNote} this drop.
+      </p>
+      <TeamPicker groups={pickerTeams} demoFocus={longestName.abbreviation} />
+    </section>
+
+    <section class="guide__section">
+      <h2>FanGrid</h2>
+      <p class="eyebrow">
+        A {crop.teams.length} × {crop.teams.length} window of the fan × roster table around the lead grudge, {possessive(lead.fan)} on the {nickname(lead.roster)}, the tip drawn open on it. Δ against each roster's usual: heat harsher, ice kinder, the mix by distance up to {fmtSigned(gridLimit, 0)} points; ink text past the contrast dead band; a dash under the floor; the diagonal bone.
+      </p>
+      <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by Δ." example={cropPos} demo={{ scale: 'delta', open: cropPos }} />
+      <p class="eyebrow">The same window by raw negative share, heat on the absolute 0–100 scale.</p>
+      <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by share." example={cropPos} demo={{ scale: 'raw' }} />
+      <p class="eyebrow">The landing's list rows: a pair on one line, the longest label first ({longestPair.label}), the target's logo, the Δ axis with the roster's usual as the tick.</p>
+      <DeltaDot rows={pairRows} average={0} domain={pairs.domain} format={pts} tone="neg" tickLabel="Each roster's usual" detailLabel="rate" nowrap />
     </section>
 
     <section class="guide__section">

@@ -9,6 +9,9 @@ describe('formatters', () => {
     expect(fmtInt(53454)).toBe('53,454')
     expect(fmtSigned(0.021)).toBe('+2.1')
     expect(fmtSigned(-0.021)).toBe('-2.1')
+    expect(fmtSigned(0.004, 0)).toBe('0')
+    expect(fmtSigned(-0.004, 0)).toBe('0')
+    expect(fmtSigned(-0.0004)).toBe('0.0')
   })
 
   it.each([

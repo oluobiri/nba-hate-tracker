@@ -38,12 +38,14 @@ export interface DeltaDotProps {
   tickLabel?: string
   /** Column head over the rows' detail figures. */
   detailLabel?: string
+  /** Labels stay on one line (a pair, "Pistons fans → Hornets"), the label column wider for it. */
+  nowrap?: boolean
 }
 
 // Within this share of either end, the tick's label hangs inward instead of centred.
 const EDGE = 22
 
-export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false, start = 1, tickLabel, detailLabel }: DeltaDotProps) {
+export function DeltaDot({ rows, average, domain, format, tone, averageLabel = 'League average', showDelta = false, start = 1, tickLabel, detailLabel, nowrap = false }: DeltaDotProps) {
   const [lo, hi] = domain
   const pct = (v: number): number => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 50)
   const style = (v: number): CSSProperties => ({ '--dd-x': `${pct(v)}%`, '--dd-avg': `${pct(average)}%` }) as CSSProperties
@@ -53,7 +55,7 @@ export function DeltaDot({ rows, average, domain, format, tone, averageLabel = '
   const edge = avgPct < EDGE ? 'start' : avgPct > 100 - EDGE ? 'end' : null
   const detailed = rows.some((r) => r.detail !== undefined)
   return (
-    <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}${detailed ? ' dd--detail' : ''}`}>
+    <div className={`dd dd--${tone}${showDelta ? ' dd--delta' : ''}${detailed ? ' dd--detail' : ''}${nowrap ? ' dd--nowrap' : ''}`}>
       <div className="dd__head mono" aria-hidden="true">
         <span className={`dd__avg${edge ? ` dd__avg--${edge}` : ''}`} style={style(average)}>
           {tickLabel ?? `${averageLabel} ${format(average)}`}

@@ -305,3 +305,108 @@ test('a long team name wraps inside the team header', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Blazers fans')
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
+
+// The fanbases landing: the picker and two lists at every width; the grid island on
+// desktop only, where it is the page's one island.
+const GRID_ONLY = 'the grid is a desktop view'
+
+// client:visible — the grid hydrates once it is in view, and a deep link's view stays
+// hidden until then; every test that touches it scrolls there first and waits.
+async function gridReady(page: Page): Promise<void> {
+  await page.locator('.fg').scrollIntoViewIfNeeded()
+  await expect(page.locator('astro-island[component-export="FanGrid"]')).not.toHaveAttribute('ssr', '')
+}
+
+test('every picker tile and every list row leads to a live team page', async ({ page }) => {
+  await page.goto('/fanbases/', { waitUntil: 'networkidle' })
+  const tiles = await page.locator('.pk__tile').evaluateAll((as) => as.map((a) => a.getAttribute('href')!))
+  expect(tiles).toHaveLength(30)
+  for (const h of tiles) expect(ROUTES).toContain(h)
+  const rows = await page.locator('#grudges .dd__link, #flowers .dd__link').evaluateAll((as) => as.map((a) => a.getAttribute('href')!))
+  expect(rows).toHaveLength(20)
+  for (const h of rows) {
+    expect(h).toMatch(/#targets$/)
+    expect(ROUTES).toContain(h.replace(/#targets$/, ''))
+  }
+})
+
+test('the landing controls are touch-sized', async ({ page }, info) => {
+  await page.goto('/fanbases/', { waitUntil: 'networkidle' })
+  for (const t of await page.locator('.pk__tile').all()) {
+    const box = await t.boundingBox()
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+  }
+  const rows = await page.locator('.dd__link').all()
+  const buttons = info.project.name === 'desktop' ? await page.locator('.fg__controls .btn').all() : []
+  for (const c of [...rows, ...buttons]) expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+})
+
+test('a phone gets the picker and the lists, stacked, and a line in place of the grid', async ({ page }, info) => {
+  test.skip(info.project.name !== 'phone', GRID_ONLY)
+  await page.goto('/fanbases/?scale=raw', { waitUntil: 'networkidle' })
+  await expect(page.locator('.fg')).toBeHidden()
+  await expect(page.locator('.fl__phone')).toBeVisible()
+  const [west, east] = await Promise.all((await page.locator('.pk__group').all()).map((g) => g.boundingBox()))
+  expect(east!.y).toBeGreaterThanOrEqual(west!.y + west!.height)
+  // Never hydrated: Astro drops an island's ssr attribute when it hydrates (internal, but stable).
+  await expect(page.locator('astro-island[component-export="FanGrid"]')).toHaveAttribute('ssr', '')
+})
+
+test('a grid deep link renders that view with no flash, and Back returns to it', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', GRID_ONLY)
+  const errors = watchErrors(page)
+  await page.goto('/fanbases/?scale=raw', { waitUntil: 'networkidle' })
+  await gridReady(page)
+  await expect(page.locator('html')).not.toHaveClass(/has-grid-view/)
+  const raw = page.getByRole('button', { name: 'Negative share' })
+  await expect(raw).toHaveAttribute('aria-pressed', 'true')
+  const figure = page.locator('.fg__cell--eg > span').first()
+  await expect(figure).toHaveText(/%$/)
+  await page.getByRole('button', { name: "Δ vs each roster's usual" }).click()
+  await expect(page).not.toHaveURL(/scale=/)
+  await expect(figure).toHaveText(/^[+-]?\d+$/)
+  await page.goBack()
+  await expect(raw).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('the minimum presets multiply the floor; the chosen one rides in the URL', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', GRID_ONLY)
+  await page.goto('/fanbases/', { waitUntil: 'networkidle' })
+  await gridReady(page)
+  const presets = page.locator('.fg__group[aria-label="Minimum comments per cell"] .btn')
+  await expect(presets.first()).toHaveAttribute('aria-pressed', 'true')
+  const before = await page.locator('.fg__cell--under').count()
+  const label = (await presets.nth(2).textContent())!.trim().replace(/,/g, '')
+  await presets.nth(2).click()
+  await expect(page).toHaveURL(new RegExp(`min=${label}`))
+  expect(await page.locator('.fg__cell--under').count()).toBeGreaterThan(before)
+  await presets.first().click()
+  await expect(page).not.toHaveURL(/min=/)
+})
+
+test('the grid walks by arrow key, the tip opens on focus, the crosshair follows', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', GRID_ONLY)
+  await page.goto('/fanbases/', { waitUntil: 'networkidle' })
+  await gridReady(page)
+  const n = await page.locator('thead .fg__ch').count()
+  const eg = page.locator('.fg__cell--eg')
+  await eg.focus()
+  await expect(eg.locator('.fg__tip')).toBeVisible()
+  const c = Number(await eg.getAttribute('data-c'))
+  await page.keyboard.press('ArrowRight')
+  const next = page.locator('td:focus')
+  // One column on, or two across the diagonal.
+  expect([c + 1, c + 2]).toContain(Number(await next.getAttribute('data-c')))
+  await expect(next.locator('.fg__tip')).toBeVisible()
+  expect(await next.evaluate((td) => td.parentElement!.classList.contains('fg__row--x'))).toBe(true)
+  await expect(page.locator('.fg__ch--x')).toHaveCount(1)
+  await page.keyboard.press('End')
+  expect([n - 1, n - 2]).toContain(Number(await page.locator('td:focus').getAttribute('data-c')))
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+  await page.locator('td[data-r="3"][data-c="5"]').hover()
+  await expect(page.locator('tr.fg__row--x th')).toHaveCount(1)
+  await expect(page.locator('thead .fg__ch').nth(5)).toHaveClass(/fg__ch--x/)
+})

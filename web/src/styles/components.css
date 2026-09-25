@@ -936,6 +936,13 @@
   text-align: right;
   color: var(--mute);
 }
+/* With one-line labels: a pair such as "Pistons fans → Hornets", the label column wider for it. */
+.dd--nowrap {
+  --dd-cols: 28px 20px minmax(200px, 1.6fr) minmax(100px, 2fr) 44px 44px;
+}
+.dd--nowrap .dd__label {
+  white-space: nowrap;
+}
 /* A tagged row (his own fans): bone outline and the tag, never yellow. */
 .dd__tag {
   margin-left: 8px;
@@ -970,6 +977,10 @@
   /* Six columns: the label takes the slack, the track only places dots. */
   .dd--detail {
     --dd-cols: 24px 18px minmax(64px, 1.4fr) minmax(64px, 1fr) 40px 40px;
+  }
+  /* The label takes most of the slack: the track only places dots. */
+  .dd--nowrap {
+    --dd-cols: 24px 18px minmax(140px, 2.4fr) minmax(48px, 1fr) 40px 40px;
   }
   /* The Δ stays in the row's text alternative; the value column carries the rate. */
   .dd__delta,
@@ -1825,4 +1836,193 @@
   .tk__tag {
     display: none;
   }
+}
+
+/* TeamPicker: the way into a fanbase. One group per conference, alphabetical inside.
+   Logos in colour, the site's one exception: they are the control and stand alone,
+   with no team name beside them for gray to defer to. */
+.pk {
+  display: grid;
+  gap: 24px;
+}
+.pk__head {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.pk__tiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.pk__tile {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--bone-2);
+}
+.pk__tile:hover {
+  border-color: var(--bone-2);
+  background: var(--ink-2);
+}
+/* The style guide's demo shares the site's focus ring. */
+.pk__tile--focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pk__logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.pk__abbr {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+@media (min-width: 760px) {
+  .pk {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+}
+
+/* FanGrid: the fan × roster table. Fixed layout, so thirty columns and a row-header
+   column always fit the wrap; separate borders so the sticky header keeps its line.
+   A cell's tint is a mix of its tone toward the surface; past the contrast dead band
+   the text turns ink. */
+.fg__table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 1px;
+  background: var(--ink);
+}
+.fg__table th,
+.fg__table td {
+  padding: 0;
+}
+.fg__table thead th {
+  position: sticky;
+  top: 57px;
+  z-index: 2;
+  height: 30px;
+  padding-bottom: 4px;
+  background: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  vertical-align: bottom;
+  color: var(--mute);
+}
+.fg__corner {
+  width: 150px;
+  text-align: left;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.fg__ch--x {
+  color: var(--bone);
+}
+.fg__rh {
+  padding-right: 8px;
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--bone-2);
+  background: var(--ink);
+}
+.fg__row--x .fg__rh {
+  color: var(--bone);
+}
+.fg__cell {
+  --fg-ink: var(--heat);
+  --fg-mix: 0%;
+  position: relative;
+  height: 30px;
+  background: color-mix(in srgb, var(--fg-ink) var(--fg-mix), var(--surface));
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--bone);
+  cursor: default;
+}
+.fg__cell--ice {
+  --fg-ink: var(--ice);
+}
+.fg__cell--bright {
+  color: var(--ink);
+}
+.fg__cell--under {
+  background: transparent;
+  color: var(--mute);
+}
+.fg__cell--diag {
+  background: color-mix(in srgb, var(--bone-2) 25%, transparent);
+}
+/* The crosshair: a light wash over the active row and column. */
+.fg__cell--x::after,
+.fg__row--x .fg__cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(237, 232, 220, 0.14);
+  pointer-events: none;
+}
+.fg__cell:focus {
+  outline: none;
+}
+.fg__cell:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  z-index: 3;
+}
+/* The worked example's cell. */
+.fg__cell--eg {
+  outline: 1px dashed var(--bone);
+  outline-offset: -1px;
+}
+/* The tip: the cell's sentence, hanging inward at either edge so it never widens the page. */
+.fg__tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  padding: 8px 10px;
+  font-family: var(--body);
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--bone-2);
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  z-index: 4;
+}
+.fg__cell--tip-start .fg__tip {
+  left: 0;
+  transform: none;
+}
+.fg__cell--tip-end .fg__tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.fg__cell:hover .fg__tip,
+.fg__cell:focus .fg__tip,
+.fg__cell--open .fg__tip {
+  display: block;
 }

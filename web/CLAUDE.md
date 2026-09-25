@@ -14,8 +14,11 @@ The design brief is `docs/internal/ux-review.md` (local only, not committed).
 
 ```
 src/
-├── pages/        → one .astro per route; see "A page composes in its frontmatter"
+├── pages/        → one .astro per route; see "A page composes in its frontmatter"; card.png.ts endpoints
+│                   beside the index, player and team routes
 ├── components/   → .tsx (in an island, or static HTML without a directive) / .astro (shell only)
+├── cards/        → the share cards: model.ts (pure, the page's sentence) → frame.tsx (the satori tree) →
+│                   render.ts (resvg); palette.ts pinned to tokens.css; media read once per build
 ├── lib/          → pure logic and sentences, each with a colocated .test.ts
 ├── data/         → the contract boundary: env → load → rows → assert
 │                   schema.json + types.gen.ts are generated, never edited
@@ -43,7 +46,7 @@ Env is shell-only (`astro build` does not read `.env`):
 
 | Variable | Default | Effect |
 |---|---|---|
-| `DATA_BASE` | `https://courtsentiment.com/data` | A URL uses the published layout; a path (e.g. `../data`) uses the repo's `data/<season>/dashboard/` |
+| `DATA_BASE` | `https://courtsentiment.com/data` | A URL uses the published layout; a path (e.g. `../data`) uses the repo's `data/<season>/dashboard/` and `data/media/` |
 | `SITE_INDEXABLE` | unset | Every page carries `noindex` unless this is `true`. Flipped in the deploy workflow on launch day |
 
 ## The contract
@@ -100,6 +103,10 @@ unique keys, every foreign key.
 - **URL state through `useViewState`** (`useSyncExternalStore` over the query string): the
   first render is the default view on both server and client, and a deep link takes over
   after hydration. Slider drags write with `replace`, everything else pushes.
+- **Every page has a share card.** `Base.astro` takes `image`; a page without one shows the
+  leaderboard's card. A card is built from the page's own inputs (`lib/standings`, shared by the
+  page and its endpoint) and says the header's sentence; the official view, never a receipt.
+  Headshots and logos are fetched at build from the data base, and a miss fails the build.
 - **A new component lands with its style-guide section in the same commit**, its awkward
   cases chosen by rule from live data. Look at `dist/` before the next component.
 

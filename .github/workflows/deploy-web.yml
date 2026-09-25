@@ -107,6 +107,8 @@ jobs:
             || { echo "::error::no _astro/*.css in the build"; exit 1; }
           font=$(cd web/dist/_astro && ls -- *.woff2 | head -n1) \
             || { echo "::error::no _astro/*.woff2 in the build"; exit 1; }
+          player=$(cd web/dist/player && ls -d -- */ | head -n1) \
+            || { echo "::error::no player route in the build"; exit 1; }
           expect "GET /"                      "$(status /)"                    200
           expect "GET /how-it-works/"         "$(status /how-it-works/)"       200
           expect "GET /404.html"              "$(status /404.html)"            200
@@ -115,3 +117,7 @@ jobs:
           expect "asset cache-control"        "$(header "/_astro/$css" cache-control)" "public, max-age=31536000, immutable"
           expect "asset content-type"         "$(header "/_astro/$css" content-type)"  "text/css"
           expect "font content-type"          "$(header "/_astro/$font" content-type)" "font/woff2"
+          expect "GET /card.png"              "$(status /card.png)"            200
+          expect "card content-type"          "$(header /card.png content-type)"  "image/png"
+          expect "card cache-control"         "$(header /card.png cache-control)" "public, max-age=300"
+          expect "GET a player card"          "$(status "/player/${player}card.png")" 200

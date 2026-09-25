@@ -13,17 +13,23 @@ import '../styles/global.css'
 import '../styles/components.css'
 import '../styles/shell.css'
 
+import { cardHref } from '../cards/model'
 import Footer from '../components/Footer.astro'
 import Nav from '../components/Nav.astro'
-import { SITE_DESCRIPTION, SITE_INDEXABLE, SITE_NAME } from '../site'
+import { SITE_DESCRIPTION, SITE_INDEXABLE, SITE_NAME, SITE_URL } from '../site'
 
 interface Props {
   title: string
   description?: string
+  /** The page's share card, site-relative; a page without one shows the leaderboard's. */
+  image?: string
 }
 
-const { title, description = SITE_DESCRIPTION } = Astro.props
+const { title, description = SITE_DESCRIPTION, image = cardHref.board } = Astro.props
 const fullTitle = title === SITE_NAME ? title : `${title} · ${SITE_NAME}`
+// Share previews need absolute URLs; the card is always 1200 × 630.
+const pageUrl = new URL(Astro.url.pathname, SITE_URL).href
+const imageUrl = new URL(image, SITE_URL).href
 ---
 
 <html lang="en">
@@ -33,6 +39,20 @@ const fullTitle = title === SITE_NAME ? title : `${title} · ${SITE_NAME}`
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     {!SITE_INDEXABLE && <meta name="robots" content="noindex" />}
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={imageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content={description} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageUrl} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>

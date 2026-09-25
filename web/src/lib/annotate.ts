@@ -116,11 +116,11 @@ export interface VerdictInput {
   league: Counts
 }
 
-/** The verdict sentence: "r/NBA's 3rd most hated player." or, under the minimum, the unofficial note. */
+/** The verdict sentence: "r/NBA's 3rd most hated player.", "r/NBA's most hated player." at the top, or, under the minimum, the unofficial note. */
 export function playerVerdict(i: VerdictInput): { sentence: string } {
   const neg = i.ranks.neg
   if (neg === null) return { sentence: unofficialNote(i) }
-  return { sentence: `r/NBA's ${ordinal(neg)} most hated player.` }
+  return { sentence: neg === 1 ? "r/NBA's most hated player." : `r/NBA's ${ordinal(neg)} most hated player.` }
 }
 
 /** The sentence for a player under the official minimum: how far short, and where he would rank among everyone tracked. */

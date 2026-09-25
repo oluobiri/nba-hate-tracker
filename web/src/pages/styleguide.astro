@@ -1,4 +1,5 @@
 ---
+import { cardHref } from '../cards/model'
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
@@ -33,6 +34,7 @@ import { commentDate, receiptContext } from '../lib/receipts'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
+import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
 import type { Sentiment } from '../lib/types'
@@ -71,6 +73,25 @@ const exhibitProps = (r: (typeof tables.comment_samples)[number]) => {
 const receipt = tables.comment_samples.find((r) => r.sentiment === 'neg' && posts.has(r.link_id) && r.body.length < 240)!
 const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
+
+// Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
+const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
+const longestFans = tables.teams.toSorted((a, b) => possessive(b.team).length - possessive(a.team).length)[0]!
+const fanRanked = fanbaseStandings(tables.fan_team_overall)
+const saltiestFans = fanRanked[0]!.row.team
+const kindestFans = fanRanked.at(-1)!.row.team
+const slugOf = (name: string): string => players.get(name)!.slug
+const cards = [
+  { src: cardHref.board, why: 'the leaderboard: the official #1 with the hero sentence; every page without a card of its own falls back to this one' },
+  { src: cardHref.player(slugOf(top.attributed_player)), why: `${top.attributed_player} · #1 by negative rate` },
+  { src: cardHref.player(longestPlayerName.slug), why: `${longestPlayerName.attributed_player} · the longest name` },
+  { src: cardHref.player(slugOf(leastPositive.attributed_player)), why: `${leastPositive.attributed_player} · the smallest positive segment among official players` },
+  { src: cardHref.player(slugOf(unofficial.attributed_player)), why: `${unofficial.attributed_player} · unofficial: the note and the stamp` },
+  { src: cardHref.player(noRoster.slug), why: `${noRoster.attributed_player} · free agent, no team line` },
+  { src: cardHref.team(longestFans.abbreviation), why: `${possessive(longestFans.team)} · the longest title` },
+  { src: cardHref.team(saltiestFans.abbreviation), why: `${possessive(saltiestFans.fan_team)} · the saltiest fanbase` },
+  { src: cardHref.team(kindestFans.abbreviation), why: `${possessive(kindestFans.fan_team)} · the least salty fanbase` },
+]
 
 const sizes = ['hero', 'row', 'mini'] as const
 const maxN = Math.max(...overall.map((r) => r.total))
@@ -506,6 +527,34 @@ const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair)
     </section>
 
     <section class="guide__section">
+      <h2>Share card</h2>
+      <p class="eyebrow">
+        1200 × 630, rendered at build for every player, every fanbase and the leaderboard; what a pasted link shows. The page header's sentence, the
+        official view, never a receipt. Half size here; the small row is a phone preview.
+      </p>
+      <div class="guide__stack">
+        {
+          cards.map((c) => (
+            <figure class="guide__fig">
+              <img class="guide__card" src={c.src} alt="" width="600" height="315" loading="lazy" />
+              <figcaption>{c.why}</figcaption>
+            </figure>
+          ))
+        }
+      </div>
+      <div class="guide__row">
+        {
+          cards.slice(0, 3).map((c) => (
+            <figure class="guide__fig">
+              <img class="guide__card" src={c.src} alt="" width="360" height="189" loading="lazy" />
+              <figcaption>phone preview</figcaption>
+            </figure>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>Edge states</h2>
       <p class="eyebrow">Data the pages must render without a sentinel.</p>
       <dl class="guide__dl mono">
@@ -566,6 +615,11 @@ const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair)
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  .guide__card {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--line);
   }
   /* The rail demo sits in flow; the real one sticks. */
   .guide__rail .rail {

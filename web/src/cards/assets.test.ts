@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { mediaPath, readMedia } from './assets'
+import { mediaPath, readMedia, warmMedia } from './assets'
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47])
 
@@ -49,5 +49,16 @@ describe('readMedia', () => {
 
   it('refuses a file type the card cannot draw', async () => {
     await expect(readMedia('https://example.test/media/headshots/1.webp', 'https://example.test/data')).rejects.toThrow(/not a card image/)
+  })
+
+  it('warms the cache so a later read costs no request, and a warmed miss still throws on the read', async () => {
+    const fetchMock = vi.fn(async (url: string) => new Response(url.endsWith('404.png') ? null : PNG, { status: url.endsWith('404.png') ? 404 : 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const base = 'https://warm.test/data'
+    warmMedia(['https://warm.test/media/headshots/1.png', 'https://warm.test/media/headshots/404.png'], base)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await expect(readMedia('https://warm.test/media/headshots/1.png', base)).resolves.toMatch(/^data:image\/png/)
+    await expect(readMedia('https://warm.test/media/headshots/404.png', base)).rejects.toThrow(/HTTP 404/)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

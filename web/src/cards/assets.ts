@@ -41,3 +41,8 @@ export function readMedia(url: string, base: string = resolveDataBase()): Promis
   }
   return pending
 }
+
+/** Start every read now, so the endpoints find their images cached instead of fetching one card at a time. A failure resurfaces on the read. */
+export function warmMedia(urls: Iterable<string>, base: string = resolveDataBase()): void {
+  for (const url of urls) readMedia(url, base).catch(() => undefined)
+}

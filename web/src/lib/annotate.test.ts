@@ -80,6 +80,11 @@ describe('playerVerdict', () => {
     expect(v).toEqual({ sentence: "r/NBA's 3rd most hated player." })
   })
 
+  it('drops the ordinal at the top of the board', () => {
+    const v = playerVerdict({ ...base, name: 'A', counts: row('A', 60, 20, 20), ranks: ranks(1, 9), allRanks })
+    expect(v).toEqual({ sentence: "r/NBA's most hated player." })
+  })
+
   it('writes the unofficial note under the minimum, with the shortfall and the all-player rank', () => {
     const v = playerVerdict({ ...base, name: 'A', counts: row('A', 40, 30, 20), ranks: ranks(null, null), allRanks })
     expect(v).toEqual({

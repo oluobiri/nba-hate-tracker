@@ -16,6 +16,8 @@ pipeline produces. Data dictionary first, enforcement second:
 - TEAM_GAME_LOG_SCHEMA / PLAYER_GAME_LOG_SCHEMA describe the season
   game-log snapshots from stats.nba.com (scripts/fetch_games.py), the
   reference assets the game tables derive from.
+- PLAY_BY_PLAY_SCHEMA describes the per-game play-by-play snapshots
+  (scripts/fetch_play_by_play.py), enforced at the fetch write boundary.
 - GAMES_SCHEMA / PLAYER_GAMES_SCHEMA describe the game layer
   (games.parquet, player_games.parquet): the Game dimension and the
   per-player box-score lines, derived from the snapshots under the
@@ -213,6 +215,42 @@ PLAYER_GAME_LOG_SCHEMA = pl.Schema(
         "matchup": pl.String,
         "wl": pl.String,  # nullable at source
         **_BOX_SCORE_COLUMNS,
+    }
+)
+
+# data/<season>/reference/play_by_play/<game_id>.parquet — one row per
+# action_id, PlayByPlayV3 as served: every column, snake_cased, in endpoint
+# order, nothing filtered. action_number is not unique: a block or steal
+# shares it with the shot or turnover it ends, and the shot row carries
+# the coordinates. The endpoint marks an absent value with "" or 0,
+# never null; clock is an ISO duration ("PT11M39.00S") and the running
+# score is a string, "" on actions that do not change it. Consumers cast.
+PLAY_BY_PLAY_SCHEMA = pl.Schema(
+    {
+        "game_id": pl.String,
+        "action_number": pl.Int64,  # shared by a shot and its block
+        "clock": pl.String,
+        "period": pl.Int64,
+        "team_id": pl.Int64,  # 0 on actions without a team
+        "team_tricode": pl.String,
+        "person_id": pl.Int64,  # 0 on actions without a player
+        "player_name": pl.String,
+        "player_name_i": pl.String,  # "V. Wembanyama"
+        "x_legacy": pl.Int64,  # shot-chart coordinates; 0 off a shot
+        "y_legacy": pl.Int64,
+        "shot_distance": pl.Int64,
+        "shot_result": pl.String,  # "Made" / "Missed" / ""
+        "is_field_goal": pl.Int64,
+        "score_home": pl.String,
+        "score_away": pl.String,
+        "points_total": pl.Int64,
+        "location": pl.String,  # "h" / "v" / ""
+        "description": pl.String,  # period starts carry wall-clock time
+        "action_type": pl.String,
+        "sub_type": pl.String,
+        "video_available": pl.Int64,
+        "shot_value": pl.Int64,
+        "action_id": pl.Int64,  # unique within a game: the row key
     }
 )
 

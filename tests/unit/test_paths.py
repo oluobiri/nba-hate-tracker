@@ -19,6 +19,7 @@ from utils.paths import (
     get_data_dir,
     get_filtered_dir,
     get_media_dir,
+    get_play_by_play_dir,
     get_processed_dir,
     get_raw_dir,
     get_reference_dir,
@@ -117,6 +118,12 @@ class TestLeafPathFunctions:
         result = get_reference_dir()
         assert result.parent.name == pinned_season
         assert result.name == "reference"
+
+    def test_play_by_play_dir_is_under_reference(self, pinned_season):
+        """Per-game play-by-play files sit in their own reference subdirectory."""
+        result = get_play_by_play_dir()
+        assert result.parent == get_reference_dir()
+        assert result.name == "play_by_play"
 
 
 class TestGetMediaDir:

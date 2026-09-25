@@ -4,7 +4,7 @@
 // the manifest; two islands (Receipts, Games) take plain props.
 import type { InferGetStaticPropsType } from 'astro'
 
-import { idLine } from '../../cards/model'
+import { cardHref, idLine } from '../../cards/model'
 import { DeltaDot, type DeltaDotRow } from '../../components/DeltaDot'
 import { commentUrl } from '../../components/Exhibit'
 import { GameScatter } from '../../components/GameScatter'
@@ -178,7 +178,7 @@ const tiles = [
 ]
 ---
 
-<Base title={name} description={verdict.sentence}>
+<Base title={name} description={verdict.sentence} image={cardHref.player(player.slug)}>
   <script is:inline define:vars={{ receipts: RECEIPT_KEYS, games: GAME_KEYS }}>
     // A deep link carries a view: hold each island's prerendered default out
     // of sight until that island has read the URL (it removes its class).

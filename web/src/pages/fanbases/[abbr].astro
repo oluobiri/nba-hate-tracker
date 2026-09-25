@@ -5,6 +5,7 @@
 // controls are <details>.
 import type { InferGetStaticPropsType } from 'astro'
 
+import { cardHref } from '../../cards/model'
 import { DeltaDot, type DeltaDotRow } from '../../components/DeltaDot'
 import { GapTable } from '../../components/GapTable'
 import { MethodNote } from '../../components/MethodNote'
@@ -110,7 +111,7 @@ const lists = [
 ] as const
 ---
 
-<Base title={title} description={verdict}>
+<Base title={title} description={verdict} image={cardHref.team(team.abbreviation)}>
   <main id="main" class="wrap page tp">
     <header class="tp__head">
       <div class="tp__head-text">

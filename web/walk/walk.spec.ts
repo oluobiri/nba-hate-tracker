@@ -1,7 +1,7 @@
 // Walk every route in dist/ and hold the two invariants that cannot be
 // unit-tested: zero console errors and no horizontal overflow. The style
 // guide is also screenshotted as built, in grayscale and as a deuteranope.
-import { readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -409,4 +409,32 @@ test('the grid walks by arrow key, the tip opens on focus, the crosshair follows
   await page.locator('td[data-r="3"][data-c="5"]').hover()
   await expect(page.locator('tr.fg__row--x th')).toHaveCount(1)
   await expect(page.locator('thead .fg__ch').nth(5)).toHaveClass(/fg__ch--x/)
+})
+
+// Share cards: every route names one, its own or the leaderboard's, and
+// every card serves as a 1200 × 630 PNG at the address the meta gives.
+const SITE = 'https://courtsentiment.com'
+const OWN_CARD = /^\/(player\/[^/]+|fanbases\/[a-z]{3})\/$/
+const meta = (html: string, key: string): string | null => html.match(new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`))?.[1] ?? null
+
+test('every route names a share card, and every card is a 1200 × 630 PNG', async ({ request }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the cards are the same at every width')
+  test.setTimeout(120_000)
+  const cards = new Set<string>()
+  for (const route of ROUTES) {
+    const html = readFileSync(path.join(DIST, route, 'index.html'), 'utf8')
+    const og = meta(html, 'og:image')
+    expect(og, `og:image on ${route}`).toBe(OWN_CARD.test(route) ? `${SITE}${route}card.png` : `${SITE}/card.png`)
+    expect(meta(html, 'twitter:card'), `twitter:card on ${route}`).toBe('summary_large_image')
+    expect(meta(html, 'og:url'), `og:url on ${route}`).toBe(`${SITE}${route}`)
+    cards.add(new URL(og!).pathname)
+  }
+  expect(cards.size).toBeGreaterThan(250)
+  for (const card of cards) {
+    const res = await request.get(card)
+    expect(res.status(), card).toBe(200)
+    expect(res.headers()['content-type'], card).toMatch(/^image\/png/)
+    const png = Buffer.from(await res.body())
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)], `size of ${card}`).toEqual([1200, 630])
+  }
 })

@@ -205,6 +205,7 @@ DASHBOARD_DATA_SUBDIR = "dashboard"
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "schema.json"
 REFERENCE_DATA_SUBDIR = "reference"
+PLAY_BY_PLAY_SUBDIR = "play_by_play"
 
 # Season-independent: one set of originals and variants serves every
 # season, so it sits beside the season directories, not under them.

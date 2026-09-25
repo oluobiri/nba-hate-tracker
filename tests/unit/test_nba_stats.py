@@ -1,5 +1,6 @@
-"""Tests for pipeline/nba_stats.py roster snapshot acquisition."""
+"""Tests for pipeline/nba_stats.py stats.nba.com acquisition."""
 
+import json
 import logging
 from datetime import date
 from unittest.mock import Mock, call, patch
@@ -10,13 +11,18 @@ import pytest
 import requests
 
 from pipeline.nba_stats import (
+    fetch_play_by_play,
     fetch_player_game_log,
     fetch_rosters,
     fetch_team_game_log,
+    has_valid_play_by_play,
+    sync_play_by_play,
 )
 from pipeline.schemas import (
+    PLAY_BY_PLAY_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
     ROSTERS_SCHEMA,
+    SCHEMA_VERSION,
     TEAM_GAME_LOG_SCHEMA,
 )
 
@@ -530,3 +536,313 @@ class TestFetchPlayerGameLog:
         )
 
         assert df["wl"][0] is None
+
+
+# ---------------------------------------------------------------------------
+# Play-by-play (PlayByPlayV3)
+# ---------------------------------------------------------------------------
+
+GAME_A = "0042500317"
+GAME_B = "0042500405"
+
+
+def _raw_action(**overrides) -> dict:
+    """One endpoint-shaped PlayByPlayV3 action (camelCase nba_api columns)."""
+    row = {
+        "gameId": GAME_A,
+        "actionNumber": 4,
+        "clock": "PT12M00.00S",
+        "period": 1,
+        "teamId": 1610612760,
+        "teamTricode": "OKC",
+        "personId": 1631096,
+        "playerName": "Holmgren",
+        "playerNameI": "C. Holmgren",
+        "xLegacy": 0,
+        "yLegacy": 0,
+        "shotDistance": 0,
+        "shotResult": "",
+        "isFieldGoal": 0,
+        "scoreHome": "",
+        "scoreAway": "",
+        "pointsTotal": 0,
+        "location": "h",
+        "description": "Jump Ball Holmgren vs. Wembanyama: Tip to Castle",
+        "actionType": "Jump Ball",
+        "subType": "",
+        "videoAvailable": 1,
+        "shotValue": 0,
+        "actionId": 2,
+    }
+    row.update(overrides)
+    return row
+
+
+def _game_frame(game_id: str) -> pd.DataFrame:
+    """A two-action raw frame: the period start, then a made shot with coordinates."""
+    return pd.DataFrame(
+        [
+            _raw_action(
+                gameId=game_id,
+                actionNumber=2,
+                teamId=0,
+                teamTricode="",
+                personId=0,
+                playerName="",
+                playerNameI="",
+                scoreHome="0",
+                scoreAway="0",
+                location="",
+                description="Start of 1st Period (8:17 PM EST)",
+                actionType="period",
+                subType="start",
+                actionId=1,
+            ),
+            _raw_action(
+                gameId=game_id,
+                actionNumber=7,
+                clock="PT11M39.00S",
+                teamId=1610612759,
+                teamTricode="SAS",
+                personId=1641705,
+                playerName="Wembanyama",
+                playerNameI="V. Wembanyama",
+                xLegacy=112,
+                yLegacy=36,
+                shotDistance=12,
+                shotResult="Made",
+                isFieldGoal=1,
+                scoreHome="0",
+                scoreAway="2",
+                pointsTotal=2,
+                location="v",
+                description="Wembanyama 12' Step Back Bank Jump Shot (2 PTS)",
+                actionType="Made Shot",
+                subType="Step Back Bank Jump Shot",
+                shotValue=2,
+                actionId=3,
+            ),
+        ]
+    )
+
+
+def _pbp_endpoint(responses: dict[str, list]):
+    """Build a PlayByPlayV3 stand-in serving queued responses per game id.
+
+    Each queued item is a raw frame (served as the endpoint's first data
+    frame) or an exception (raised by the call).
+    """
+    queues = {game_id: list(items) for game_id, items in responses.items()}
+
+    def _make(game_id: str, timeout: int) -> Mock:
+        item = queues[game_id].pop(0)
+        if isinstance(item, Exception):
+            raise item
+        endpoint = Mock()
+        endpoint.get_data_frames.return_value = [
+            item,
+            pd.DataFrame({"videoAvailable": [1]}),
+        ]
+        return endpoint
+
+    return _make
+
+
+def _sync_with_mocks(responses: dict[str, list], out_dir, game_ids=None, **kwargs):
+    """Run sync_play_by_play with the endpoint and sleep mocked."""
+    with (
+        patch(
+            "pipeline.nba_stats.playbyplayv3.PlayByPlayV3",
+            side_effect=_pbp_endpoint(responses),
+        ) as mock_endpoint,
+        patch("pipeline.nba_stats.time.sleep") as mock_sleep,
+    ):
+        report = sync_play_by_play(
+            game_ids if game_ids is not None else list(responses),
+            out_dir,
+            season="2025-26",
+            **kwargs,
+        )
+    return report, mock_endpoint, mock_sleep
+
+
+class TestFetchPlayByPlay:
+    """Tests for PlayByPlayV3 normalization into the snapshot contract."""
+
+    def _fetch(self, frame: pd.DataFrame) -> pl.DataFrame:
+        with patch(
+            "pipeline.nba_stats.playbyplayv3.PlayByPlayV3",
+            side_effect=_pbp_endpoint({GAME_A: [frame]}),
+        ):
+            return fetch_play_by_play(GAME_A)
+
+    def test_conforms_to_schema(self):
+        """Every endpoint column lands, snake_cased, in schema order and dtype."""
+        df = self._fetch(_game_frame(GAME_A))
+        assert df.schema == PLAY_BY_PLAY_SCHEMA
+
+    def test_snake_cases_the_trailing_initial(self):
+        """playerNameI becomes player_name_i, not a mangled split."""
+        df = self._fetch(_game_frame(GAME_A))
+        assert df["player_name_i"].to_list() == ["", "V. Wembanyama"]
+
+    def test_keeps_values_as_served(self):
+        """Scores stay strings, the clock stays ISO, and empty strings stay empty."""
+        df = self._fetch(_game_frame(GAME_A))
+        shot = df.row(1, named=True)
+        assert shot["score_away"] == "2"
+        assert shot["clock"] == "PT11M39.00S"
+        assert (shot["x_legacy"], shot["y_legacy"]) == (112, 36)
+        assert df.row(0, named=True)["team_tricode"] == ""
+        assert df.null_count().sum_horizontal().item() == 0
+
+    def test_numeric_looking_strings_stay_strings(self):
+        """A score served as a JSON number still lands as a string column."""
+        frame = _game_frame(GAME_A)
+        frame["scoreHome"] = [0, 0]  # serialization drift to raw numbers
+        df = self._fetch(frame)
+        assert df["score_home"].to_list() == ["0", "0"]
+
+    def test_zero_actions_returns_empty_frame(self):
+        """An unknown game serves zero rows; the fetch returns them, conformed."""
+        df = self._fetch(_game_frame(GAME_A).iloc[0:0])
+        assert df.height == 0
+        assert df.schema == PLAY_BY_PLAY_SCHEMA
+
+
+class TestSyncPlayByPlay:
+    """Tests for the resumable, miss-collecting per-game archive."""
+
+    def test_writes_one_stamped_file_per_game(self, tmp_path):
+        """Each game lands at <game_id>.parquet with the lineage stamps."""
+        report, _, _ = _sync_with_mocks(
+            {GAME_A: [_game_frame(GAME_A)], GAME_B: [_game_frame(GAME_B)]}, tmp_path
+        )
+
+        assert report.ok
+        assert report.fetched == [GAME_A, GAME_B]
+        for game_id in (GAME_A, GAME_B):
+            path = tmp_path / f"{game_id}.parquet"
+            assert pl.read_parquet(path)["game_id"].unique().to_list() == [game_id]
+            stamps = pl.read_parquet_metadata(path)
+            assert stamps["season"] == "2025-26"
+            assert stamps["schema_version"] == str(SCHEMA_VERSION)
+            date.fromisoformat(stamps["fetched_at"])
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            f"{GAME_A}.parquet",
+            f"{GAME_B}.parquet",
+        ]  # no temp file left behind
+
+    def test_skips_valid_file_on_disk(self, tmp_path):
+        """A game with a valid file is not requested again."""
+        _sync_with_mocks({GAME_A: [_game_frame(GAME_A)]}, tmp_path)
+
+        report, mock_endpoint, mock_sleep = _sync_with_mocks({GAME_A: []}, tmp_path)
+
+        assert mock_endpoint.call_count == 0
+        assert mock_sleep.call_count == 0
+        assert report.skipped == [GAME_A]
+        assert report.fetched == []
+
+    @pytest.mark.parametrize(
+        "bad_bytes",
+        [b"not a parquet", b""],
+        ids=["corrupt", "empty"],
+    )
+    def test_refetches_invalid_file_on_disk(self, tmp_path, bad_bytes):
+        """A file that does not read as a valid snapshot is fetched again."""
+        (tmp_path / f"{GAME_A}.parquet").write_bytes(bad_bytes)
+
+        report, mock_endpoint, _ = _sync_with_mocks(
+            {GAME_A: [_game_frame(GAME_A)]}, tmp_path
+        )
+
+        assert mock_endpoint.call_count == 1
+        assert report.fetched == [GAME_A]
+        assert has_valid_play_by_play(tmp_path / f"{GAME_A}.parquet")
+
+    def test_zero_actions_is_a_miss(self, tmp_path):
+        """A game that serves no actions misses and leaves no file."""
+        report, _, _ = _sync_with_mocks(
+            {GAME_A: [_game_frame(GAME_A).iloc[0:0]]}, tmp_path
+        )
+
+        assert not report.ok
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "zero actions" in report.misses[0].reason
+        assert not (tmp_path / f"{GAME_A}.parquet").exists()
+
+    def test_transient_error_is_retried(self, tmp_path):
+        """A timeout then a success writes the file; the retry is not a miss."""
+        report, mock_endpoint, _ = _sync_with_mocks(
+            {GAME_A: [requests.Timeout("hang"), _game_frame(GAME_A)]}, tmp_path
+        )
+
+        assert mock_endpoint.call_count == 2
+        assert report.ok
+        assert report.fetched == [GAME_A]
+
+    def test_exhausted_retries_are_a_miss(self, tmp_path):
+        """A game whose retries run out misses; the run continues."""
+        down = [requests.ConnectionError("down")] * 2
+        report, _, _ = _sync_with_mocks(
+            {GAME_A: down, GAME_B: [_game_frame(GAME_B)]}, tmp_path, max_attempts=2
+        )
+
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "ConnectionError" in report.misses[0].reason
+        assert report.fetched == [GAME_B]
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            requests.HTTPError("500 Server Error"),
+            json.JSONDecodeError("Expecting value", "", 0),
+            KeyError("resultSets"),
+        ],
+        ids=["http", "json", "payload"],
+    )
+    def test_endpoint_failure_is_a_miss_not_a_crash(self, tmp_path, error):
+        """A non-transient per-game failure misses once and the run moves on."""
+        report, mock_endpoint, _ = _sync_with_mocks(
+            {GAME_A: [error], GAME_B: [_game_frame(GAME_B)]}, tmp_path
+        )
+
+        assert mock_endpoint.call_count == 2  # no retries for GAME_A
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert report.fetched == [GAME_B]
+        assert not (tmp_path / f"{GAME_A}.parquet").exists()
+
+    def test_waits_after_every_request(self, tmp_path):
+        """The polite delay follows every request, misses included."""
+        report, _, mock_sleep = _sync_with_mocks(
+            {
+                GAME_A: [_game_frame(GAME_A).iloc[0:0]],
+                GAME_B: [_game_frame(GAME_B)],
+            },
+            tmp_path,
+            delay=0.6,
+        )
+
+        assert mock_sleep.call_args_list == [call(0.6), call(0.6)]
+        assert len(report.misses) == 1
+
+
+class TestHasValidPlayByPlay:
+    """Tests for the on-disk validity check that makes the archive resumable."""
+
+    def test_missing_file_is_invalid(self, tmp_path):
+        """No file, nothing to skip."""
+        assert not has_valid_play_by_play(tmp_path / f"{GAME_A}.parquet")
+
+    def test_wrong_schema_is_invalid(self, tmp_path):
+        """A parquet that does not match the contract is refetched."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        pl.DataFrame({"game_id": [GAME_A]}).write_parquet(path)
+        assert not has_valid_play_by_play(path)
+
+    def test_zero_rows_is_invalid(self, tmp_path):
+        """A conforming but empty parquet never counts as banked."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        pl.DataFrame(schema=PLAY_BY_PLAY_SCHEMA).write_parquet(path)
+        assert not has_valid_play_by_play(path)

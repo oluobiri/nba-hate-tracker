@@ -20,7 +20,8 @@ import { nickname, possessive } from '../../lib/fans'
 import { fmtInt, fmtPct, fmtSigned, ordinal } from '../../lib/format'
 import { groupBy } from '../../lib/group'
 import { headshotVariant } from '../../lib/media'
-import { countsOf, negRate, neighbours, neuRate, posRate, rankBy, sumCounts } from '../../lib/metrics'
+import { countsOf, negRate, neighbours, neuRate, posRate, sumCounts } from '../../lib/metrics'
+import { fanbaseStandings } from '../../lib/standings'
 import type { Counts } from '../../lib/types'
 
 // Rows shown before "Show all".
@@ -39,7 +40,7 @@ export async function getStaticPaths() {
   const matrix = fanRosterMatrix(fanRows)
   const usual = playerUsual(fanRows)
   // Rank 1 is the highest negative rate; every fanbase is ranked, there is no minimum here.
-  const ranked = rankBy(tables.fan_team_overall.map((r) => ({ ...countsOf(r), team: r })), 'neg', 0)
+  const ranked = fanbaseStandings(tables.fan_team_overall)
   const link = (team: string) => `/fanbases/${teams.get(team)!.abbreviation.toLowerCase()}/`
   const talkMeta = (player: string) => {
     const p = players.get(player)!

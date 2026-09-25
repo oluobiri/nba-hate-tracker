@@ -18,7 +18,7 @@ import { StatFigure } from '../../components/StatFigure'
 import { Timeline, type TimelineWeek } from '../../components/Timeline'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
-import { playerVerdict, rankChips, type VerdictInput } from '../../lib/annotate'
+import { playerVerdict, rankChips } from '../../lib/annotate'
 import { type FanRow, fanLists, fanSplit, fansSummary } from '../../lib/fans'
 import { bioFacts } from '../../lib/bio'
 import { fmtInt, fmtPct, ordinal } from '../../lib/format'
@@ -26,8 +26,9 @@ import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterP
 import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
-import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate, sumCounts } from '../../lib/metrics'
-import { type Counts, LENSES, type Lens, type Sentiment } from '../../lib/types'
+import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
+import { playerStandings, rankIn, type Standing } from '../../lib/standings'
+import type { Counts, Sentiment } from '../../lib/types'
 import { GAME_KEYS, RECEIPT_KEYS } from '../../lib/url'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../../lib/weeks'
 
@@ -39,23 +40,12 @@ const LOG_TOP = 10
 // PROTOTYPE: the scatter needs this many graded games before it is drawn.
 const SCATTER_MIN = 15
 
-interface Named extends Counts {
-  name: string
-  slug: string
-}
-
 export async function getStaticPaths() {
   const { manifest, tables } = await getSeason()
   const official = manifest.rules.qualified_threshold
-  const dim = new Map(tables.players.map((p) => [p.attributed_player, p]))
-  const overall: Named[] = tables.player_overall.map((r) => ({ ...countsOf(r), name: r.attributed_player, slug: dim.get(r.attributed_player)!.slug }))
-  const overallBy = new Map(overall.map((r) => [r.name, r]))
-  const rankings = Object.fromEntries(LENSES.map((l) => [l, rankBy(overall, l, official)])) as Record<Lens, Ranked<Named>[]>
-  const allRankings = Object.fromEntries(LENSES.map((l) => [l, rankBy(overall, l, 0)])) as Record<Lens, Ranked<Named>[]>
-  const league = sumCounts(overall.filter((r) => r.total >= official))
+  const { overall, rankings, allRankings, inputs } = playerStandings(tables, official)
   // Below the minimum, prev/next walk the unofficial players by rate.
   const unofficialChain = rankBy(overall.filter((r) => r.total < official), 'neg', 0)
-  const rankIn = (rs: readonly Ranked<Named>[], name: string): number | null => rs.find((r) => r.row.name === name)?.rank ?? null
   const spine = weekSpine(tables.player_temporal.map((r) => r.week))
   const receipts = groupByPlayer(tables.comment_samples)
   const temporal = groupByPlayer(tables.player_temporal)
@@ -68,24 +58,18 @@ export async function getStaticPaths() {
 
   return tables.players.map((player) => {
     const name = player.attributed_player
-    const row = overallBy.get(name) ?? { neg: 0, neu: 0, pos: 0, total: 0, name, slug: player.slug }
-    const isOfficial = row.total >= official
-    const ranks = Object.fromEntries(LENSES.map((l) => [l, rankIn(rankings[l], name)])) as Record<Lens, number | null>
-    const allRanks = Object.fromEntries(LENSES.map((l) => [l, rankIn(allRankings[l], name) ?? overall.length])) as Record<Lens, number>
+    const verdictInput = inputs.get(name)!
+    const isOfficial = verdictInput.counts.total >= official
     const chain = isOfficial ? rankings.neg : unofficialChain
     const { prev, next } = neighbours(chain, (r) => r.name, name)
-    const neighbour = (r: Ranked<Named> | null) => (r ? { name: r.row.name, slug: r.row.slug, rank: isOfficial ? r.rank! : rankIn(allRankings.neg, r.row.name)! } : null)
+    const neighbour = (r: Ranked<Standing> | null) => (r ? { name: r.row.name, slug: r.row.slug, rank: isOfficial ? r.rank! : rankIn(allRankings.neg, r.row.name)! } : null)
     return {
       params: { slug: player.slug },
       props: {
         player,
-        counts: { neg: row.neg, neu: row.neu, pos: row.pos, total: row.total } as Counts,
-        ranks,
-        allRanks,
+        verdictInput,
         prev: neighbour(prev),
         next: neighbour(next),
-        tracked: overall.length,
-        league,
         spine,
         receipts: receipts.get(name) ?? [],
         temporal: temporal.get(name) ?? [],
@@ -101,7 +85,8 @@ export async function getStaticPaths() {
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
-const { player, counts, ranks, allRanks, prev, next, tracked, league, spine, receipts, temporal, fanRows, lines, sentiment, games, teams, posts } = Astro.props
+const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, lines, sentiment, games, teams, posts } = Astro.props
+const { counts, tracked } = verdictInput
 const { manifest } = await getSeason()
 const official = manifest.rules.qualified_threshold
 const floors = manifest.rules.floors
@@ -112,7 +97,6 @@ const abbr = new Map([...teams.values()].map((t) => [t.team, t.abbreviation]))
 const rosterAbbr = abbrOf(player.roster_team)
 
 // Verdict.
-const verdictInput: VerdictInput = { name, counts, official, ranks, allRanks, tracked, league }
 const verdict = playerVerdict(verdictInput)
 const chips = rankChips(verdictInput)
 // Under the name: team · position · number, as a sports page reads. Then the dimension's facts.

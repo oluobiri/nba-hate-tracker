@@ -32,6 +32,7 @@ CONFIG_VERSION_LOADERS: dict[str, Callable[[], str]] = {
 OUTPUT_CONFIGS: dict[str, tuple[str, ...]] = {
     "sentiment": ("players", "teams"),
     "target_pool": ("players",),
+    "accuracy_sample": ("players",),  # the per-row target options
     "posts_bridge": ("teams",),
     "player_overall": (),
     "player_temporal": (),

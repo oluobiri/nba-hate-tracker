@@ -22,7 +22,7 @@ data/             → Not committed
   │   ├── filtered/   → Player-mention filtered JSONL
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
-  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + posts_bridge.parquet + corpus_daily.parquet
+  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + posts_bridge.parquet + corpus_daily.parquet + accuracy_sample.xlsx/.parquet
   │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json
   ├── 2025-26/    → V2 season data (same structure)
   └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed
@@ -59,6 +59,10 @@ npm run walk                         # Playwright over dist/ at 1280 and 400
 # Media (headshots + logos from cdn.nba.com into data/media/, WebP variants derived; resumable)
 uv run python -m scripts.fetch_media --dry-run  # Plan only, no request
 uv run python -m scripts.fetch_media            # Fetch what is missing, exit 1 on any miss
+
+# Accuracy sample (a blind random draw of the attributed rows, labeled in a sheet, scored into the manifest)
+uv run python -m scripts.export_accuracy_sample --season 2025-26  # Draw → reference/accuracy_sample.xlsx (refuses to overwrite)
+uv run python -m scripts.import_accuracy_sample --season 2025-26  # Labeled sheet → reference/accuracy_sample.parquet + figures
 
 # Publishing (assumes the publish role; prompts for an MFA code, dry runs included)
 uv run python -m scripts.publish_dashboard --season 2025-26 --dry-run  # Plan only

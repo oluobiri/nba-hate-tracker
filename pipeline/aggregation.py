@@ -13,6 +13,7 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.accuracy import load_accuracy_sample
 from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_game_tables
 from pipeline.lineage import check_config_stamps, config_versions
@@ -243,7 +244,11 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     return df, excluded_rows
 
 
-def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> dict:
+def aggregate_sentiment(
+    input_path: Path,
+    targets_path: Path | None = None,
+    accuracy_path: Path | None = None,
+) -> dict:
     """
     Aggregate classified sentiment data into the published tables.
 
@@ -256,6 +261,8 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         input_path: Path to sentiment.parquet file.
         targets_path: Path to sentiment_targets.parquet; None or a
             missing file selects the fallback posture.
+        accuracy_path: Path to accuracy_sample.parquet; None or a
+            missing file leaves the manifest's accuracy block unlabeled.
 
     Returns:
         Dict where player_overall, player_temporal, player_fan_team,
@@ -374,6 +381,11 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         df_attributed, verdicts=verdicts, alias_map=alias_map
     )
     log_comment_samples_diagnostics(df_attributed, comment_samples)
+
+    # The accuracy sample: manual verdicts on a blind random draw,
+    # scored against the classifier; absent, the manifest says unlabeled
+    logger.info("Scoring the accuracy sample...")
+    metadata["accuracy"] = load_accuracy_sample(accuracy_path, classifier_stamps)
 
     # Post bridge: the threads plus each receipt's post, from the bridge
     # scripts.process_posts derived against the same game-log snapshot
@@ -503,6 +515,7 @@ def build_manifest(
                 "precision": metadata["receipts_precision"],
                 "attribution_toward_share": metadata["attribution_toward_share"],
             },
+            "accuracy": metadata["accuracy"],
             "floors": {
                 "fanbase_min_n": FANBASE_MIN_N,
                 "week_min_n": WEEK_MIN_N,

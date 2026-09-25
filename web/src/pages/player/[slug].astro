@@ -4,6 +4,7 @@
 // the manifest; two islands (Receipts, Games) take plain props.
 import type { InferGetStaticPropsType } from 'astro'
 
+import { idLine } from '../../cards/model'
 import { DeltaDot, type DeltaDotRow } from '../../components/DeltaDot'
 import { commentUrl } from '../../components/Exhibit'
 import { GameScatter } from '../../components/GameScatter'
@@ -100,7 +101,6 @@ const rosterAbbr = abbrOf(player.roster_team)
 const verdict = playerVerdict(verdictInput)
 const chips = rankChips(verdictInput)
 // Under the name: team · position · number, as a sports page reads. Then the dimension's facts.
-const idLine = player.roster_team ? [rosterAbbr, player.position, player.jersey_number ? `#${player.jersey_number}` : null].filter(Boolean).join(' · ') : 'Free agent'
 const today = new Date().toISOString().slice(0, 10)
 const facts = bioFacts(player, today)
 
@@ -191,7 +191,7 @@ const tiles = [
       <div class="pp__head-text">
         <p class="eyebrow">{manifest.season}</p>
         <h1 class="pp__name">{name}</h1>
-        <p class="pp__id mono">{idLine}</p>
+        <p class="pp__id mono">{idLine(player, rosterAbbr)}</p>
         <p class="pp__verdict">{verdict.sentence}</p>
       </div>
       <div class="pp__mug" aria-hidden="true">

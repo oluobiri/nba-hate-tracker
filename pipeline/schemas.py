@@ -219,14 +219,16 @@ PLAYER_GAME_LOG_SCHEMA = pl.Schema(
 )
 
 # data/<season>/reference/play_by_play/<game_id>.parquet — one row per
-# action, PlayByPlayV3 as served: every column, snake_cased, in endpoint
-# order, nothing filtered. The endpoint marks an absent value with "" or 0,
+# action_id, PlayByPlayV3 as served: every column, snake_cased, in endpoint
+# order, nothing filtered. action_number is not unique: a block or steal
+# shares it with the shot or turnover it ends, and the shot row carries
+# the coordinates. The endpoint marks an absent value with "" or 0,
 # never null; clock is an ISO duration ("PT11M39.00S") and the running
 # score is a string, "" on actions that do not change it. Consumers cast.
 PLAY_BY_PLAY_SCHEMA = pl.Schema(
     {
         "game_id": pl.String,
-        "action_number": pl.Int64,
+        "action_number": pl.Int64,  # shared by a shot and its block
         "clock": pl.String,
         "period": pl.Int64,
         "team_id": pl.Int64,  # 0 on actions without a team
@@ -248,7 +250,7 @@ PLAY_BY_PLAY_SCHEMA = pl.Schema(
         "sub_type": pl.String,
         "video_available": pl.Int64,
         "shot_value": pl.Int64,
-        "action_id": pl.Int64,
+        "action_id": pl.Int64,  # unique within a game: the row key
     }
 )
 

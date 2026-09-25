@@ -813,6 +813,18 @@ class TestSyncPlayByPlay:
         assert report.fetched == [GAME_B]
         assert not (tmp_path / f"{GAME_A}.parquet").exists()
 
+    def test_endpoint_drift_is_a_miss(self, tmp_path):
+        """A column the schema does not pin fails validation as a miss, no file."""
+        drifted = _game_frame(GAME_A).assign(newColumn=1)
+        report, _, _ = _sync_with_mocks(
+            {GAME_A: [drifted], GAME_B: [_game_frame(GAME_B)]}, tmp_path
+        )
+
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "new_column" in report.misses[0].reason
+        assert report.fetched == [GAME_B]
+        assert not (tmp_path / f"{GAME_A}.parquet").exists()
+
     def test_waits_after_every_request(self, tmp_path):
         """The polite delay follows every request, misses included."""
         report, _, mock_sleep = _sync_with_mocks(

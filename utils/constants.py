@@ -206,6 +206,8 @@ MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "schema.json"
 REFERENCE_DATA_SUBDIR = "reference"
 PLAY_BY_PLAY_SUBDIR = "play_by_play"
+RECAPS_SUBDIR = "recaps"  # under dashboard/: one JSON per curated recap
+RECAP_CANDIDATES_FILENAME = "recap_candidates.csv"  # under reference/, never published
 
 # Season-independent: one set of originals and variants serves every
 # season, so it sits beside the season directories, not under them.

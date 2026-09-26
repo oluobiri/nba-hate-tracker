@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from utils.player_config import load_player_config_version
+from utils.recaps_config import load_recaps_config_version
 from utils.season_config import load_season_config_version
 from utils.team_config import load_team_config_version
 
@@ -22,6 +23,7 @@ CONFIG_VERSION_LOADERS: dict[str, Callable[[], str]] = {
     "players": load_player_config_version,
     "teams": load_team_config_version,
     "season": load_season_config_version,
+    "recaps": load_recaps_config_version,
 }
 
 # Produced file -> the configs its rows derive from. Every file the
@@ -45,6 +47,7 @@ OUTPUT_CONFIGS: dict[str, tuple[str, ...]] = {
     "posts": (),
     "comment_samples": (),
     "corpus_daily": (),
+    "recaps": ("recaps", "players", "teams"),
 }
 
 

@@ -1,0 +1,19 @@
+# Curated recaps — 2025-26. One entry per recap, in page order:
+# game_id -> games.parquet, slug -> players.parquet. game_id stays quoted
+# (a leading zero reads as octal otherwise). Empty list = nothing curated.
+# version: MAJOR = entry add/drop, MINOR = reorder.
+
+version: "1.0"
+season: "2025-26"
+
+recaps:
+  - {game_id: "0042500317", slug: chet-holmgren}
+  - {game_id: "0042500405", slug: victor-wembanyama}
+  - {game_id: "0042500404", slug: de-aaron-fox}
+  - {game_id: "0042500402", slug: karl-anthony-towns}
+  - {game_id: "0042500312", slug: stephon-castle}
+  - {game_id: "0042500311", slug: dylan-harper}
+  - {game_id: "0042500301", slug: jalen-brunson}
+  - {game_id: "0042500173", slug: lebron-james}
+  - {game_id: "0042500164", slug: nikola-jokic}
+  - {game_id: "0022500001", slug: kevin-durant}

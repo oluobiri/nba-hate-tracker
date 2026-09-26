@@ -70,6 +70,7 @@ from utils.player_config import (
     load_player_metadata,
     resolve_player,
 )
+from utils.recaps_config import load_recaps_config_version
 from utils.season_config import (
     get_active_season,
     load_season_config,
@@ -1377,6 +1378,7 @@ class TestBuildManifest:
             "players": load_player_config_version(),
             "teams": load_team_config_version(),
             "season": load_season_config_version(),
+            "recaps": load_recaps_config_version(),
         }
         assert manifest["corpus"]["classified"] == 3
         assert manifest["corpus"]["usable"] == 2

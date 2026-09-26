@@ -61,6 +61,10 @@ from utils.constants import (
     FANBASE_MIN_N,
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
+    RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_WINDOW_SECONDS,
+    RECAP_ROOM_BODIES_PER_BUCKET,
+    RECAP_ROOM_BUCKET_SECONDS,
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
@@ -1139,10 +1143,10 @@ def _make_temporal_records(
     )
 
 
-def _manifest_inputs() -> tuple[dict, dict, dict, dict]:
-    """Minimal (outputs, metadata, season_config, config_versions) for
-    build_manifest: empty frames except a two-row player_overall, a
-    verified receipts block, both classifier stages stamped."""
+def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
+    """Minimal (outputs, metadata, season_config, config_versions, recaps)
+    for build_manifest: empty frames except a two-row player_overall, a
+    verified receipts block, both classifier stages stamped, no recaps."""
     outputs = {
         name: pl.DataFrame(schema=schema)
         for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items()
@@ -1187,7 +1191,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict]:
         "corpus": {"raw_comments": 100, "population_submitted": 50},
     }
     config_versions = {"players": "4.5", "teams": "2.2", "season": "2.0"}
-    return outputs, metadata, season_config, config_versions
+    return outputs, metadata, season_config, config_versions, {}
 
 
 class TestBuildManifest:
@@ -1238,20 +1242,20 @@ class TestBuildManifest:
 
     def test_unstamped_stage_is_absent(self):
         """Feature detection: a stage with no stamps has no block, not nulls."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata["classifier_target_model"] = None
         metadata["classifier_target_prompt_version"] = None
 
-        manifest = build_manifest(outputs, metadata, season_config, versions)
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
 
         assert list(manifest["classifiers"]) == ["sentiment"]
 
     def test_half_stamped_stage_is_absent(self):
         """A stage needs both stamps to be an identity; one alone is no block."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata["classifier_target_prompt_version"] = None
 
-        manifest = build_manifest(outputs, metadata, season_config, versions)
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
 
         assert list(manifest["classifiers"]) == ["sentiment"]
 
@@ -1275,7 +1279,41 @@ class TestBuildManifest:
             "belt_min_n": BELT_MIN_N,
             "game_min_n": GAME_MIN_N,
         }
+        assert rules["recaps"] == {
+            "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,
+            "room_bodies_per_bucket": RECAP_ROOM_BODIES_PER_BUCKET,
+            "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
+            "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
+        }
         assert rules["metrics"] == METRIC_FORMULAS
+
+    def test_recaps_block_is_the_registry_passed_in_and_last(self):
+        """The recap registry rides as the last block, exactly as built,
+        in page order; a season with none has an empty block."""
+        outputs, metadata, season_config, versions, _ = _manifest_inputs()
+        entry = {
+            "file": "recaps/0042500317-chet-holmgren.json",
+            "rows": 3,
+            "game_id": "0042500317",
+            "attributed_player": "Chet Holmgren",
+            "player_id": 1631096,
+            "slug": "chet-holmgren",
+            "live_n": 2,
+            "room_n": 40,
+            "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
+            "swing": 0.0,
+            "error_seconds": None,
+            "minutes_diff": 0,
+            "population": "live_thread",
+        }
+        recaps = {"0042500317-chet-holmgren": entry}
+
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
+
+        assert list(manifest)[-1] == "recaps"
+        assert manifest["recaps"] == recaps
+        assert manifest["recaps"] is not recaps
+        assert build_manifest(*_manifest_inputs())["recaps"] == {}
 
     def test_receipts_figures_pass_through(self):
         """The verifier's figures ride under rules.receipts."""
@@ -1290,7 +1328,7 @@ class TestBuildManifest:
 
     def test_gate_only_fallback_says_so(self):
         """Without a sidecar the samples admit on the gate and the figures are null."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata.update(
             receipts_verified=False,
             receipts_coverage=None,
@@ -1298,7 +1336,9 @@ class TestBuildManifest:
             attribution_toward_share=None,
         )
 
-        rules = build_manifest(outputs, metadata, season_config, versions)["rules"]
+        rules = build_manifest(outputs, metadata, season_config, versions, recaps)[
+            "rules"
+        ]
 
         assert rules["samples"]["admission"] == "gate_only"
         assert rules["samples"]["requires_target"] is True

@@ -8,6 +8,7 @@ the manifest that fronts them.
 """
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from pipeline.schemas import (
     TABLE_POPULATIONS,
     TEAMS_SCHEMA,
     Manifest,
+    RecapEntry,
     validate_nullability,
     validate_schema,
 )
@@ -51,6 +53,10 @@ from utils.constants import (
     FANBASE_MIN_N,
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
+    RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_WINDOW_SECONDS,
+    RECAP_ROOM_BODIES_PER_BUCKET,
+    RECAP_ROOM_BUCKET_SECONDS,
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
@@ -424,7 +430,9 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         validate_schema(outputs[name], schema, name)
         validate_nullability(outputs[name], NULLABLE_COLUMNS[name], name)
 
-    manifest = build_manifest(outputs, metadata, season_config, config_versions())
+    manifest = build_manifest(
+        outputs, metadata, season_config, config_versions(), recaps={}
+    )
     return {
         **outputs,
         "manifest": manifest,
@@ -437,16 +445,18 @@ def build_manifest(
     metadata: dict,
     season_config: dict,
     config_versions: dict[str, str],
+    recaps: Mapping[str, RecapEntry],
 ) -> Manifest:
     """
     Project a build onto the Manifest contract.
 
     Rules, identity and existence, never results: the published
     constants, the stamps the build read, the season facts relayed
-    from config, and the table registry generated from
-    DASHBOARD_OUTPUT_SCHEMAS. Counts are the build's own (classified,
-    usable, attributed) or season.yaml's (raw, submitted); nothing is
-    transcribed. A classifier stage with no stamps has no block.
+    from config, the table registry generated from
+    DASHBOARD_OUTPUT_SCHEMAS and the recap registry the build produced.
+    Counts are the build's own (classified, usable, attributed) or
+    season.yaml's (raw, submitted); nothing is transcribed. A classifier
+    stage with no stamps has no block.
 
     Args:
         outputs: The produced tables, keyed as DASHBOARD_OUTPUT_SCHEMAS.
@@ -454,6 +464,8 @@ def build_manifest(
             figures, snapshot dates, season and generated_at.
         season_config: The active season's facts (load_season_config()).
         config_versions: Config name -> version (lineage.config_versions()).
+        recaps: Recap key -> registry entry, in page order; empty when
+            the season curates none.
 
     Returns:
         The manifest, JSON-serializable, keys in block order.
@@ -509,6 +521,12 @@ def build_manifest(
                 "belt_min_n": BELT_MIN_N,
                 "game_min_n": GAME_MIN_N,
             },
+            "recaps": {
+                "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,
+                "room_bodies_per_bucket": RECAP_ROOM_BODIES_PER_BUCKET,
+                "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
+                "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
+            },
             "metrics": dict(METRIC_FORMULAS),
         },
         "calendar": dict(season_config["calendar"]),
@@ -527,6 +545,7 @@ def build_manifest(
             }
             for name in DASHBOARD_OUTPUT_SCHEMAS
         },
+        "recaps": dict(recaps),
     }
 
 

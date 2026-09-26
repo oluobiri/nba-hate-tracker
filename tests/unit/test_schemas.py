@@ -16,9 +16,17 @@ from pipeline.schemas import (
     METRIC_FORMULAS,
     NULLABLE_COLUMNS,
     POPULATIONS,
+    RECAP_FRAME_SCHEMAS,
+    RECAP_NULLABLE_COLUMNS,
+    RECAP_POPULATION,
     TABLE_POPULATIONS,
     Corpus,
     Manifest,
+    RecapEntry,
+    RecapHeader,
+    RecapsRule,
+    Rules,
+    recap_file,
     GAME_SENTIMENT_SCHEMA,
     GAMES_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
@@ -452,8 +460,8 @@ class TestManifestContract:
     """The manifest's typed shape and the vocabularies it publishes."""
 
     def test_blocks_in_order(self):
-        """Identity, rules, season facts, registry: the four blocks, in
-        that order, so the file reads top-down and the TS type mirrors it."""
+        """Identity, rules, season facts, registries: the blocks in that
+        order, so the file reads top-down and the TS type mirrors it."""
         assert list(Manifest.__annotations__) == [
             "schema_version",
             "season",
@@ -466,6 +474,18 @@ class TestManifestContract:
             "corpus",
             "populations",
             "tables",
+            "recaps",
+        ]
+
+    def test_recap_rules_are_published(self):
+        """The recap selection and measurement rules sit beside the floors,
+        so the page states the rule it was built under."""
+        assert Rules.__annotations__["recaps"] is RecapsRule
+        assert list(RecapsRule.__annotations__) == [
+            "room_bucket_seconds",
+            "room_bodies_per_bucket",
+            "anchor_window_seconds",
+            "anchor_min_reactions",
         ]
 
     def test_table_populations_enumerate_every_output(self):
@@ -520,6 +540,71 @@ class TestManifestContract:
         )
 
 
+class TestRecapContract:
+    """The recap document's frames, header and registry entry."""
+
+    def test_frames_in_document_order(self):
+        """The clock first, then what hangs on it, the comments last."""
+        assert list(RECAP_FRAME_SCHEMAS) == [
+            "periods",
+            "threads",
+            "anchors",
+            "stints",
+            "plays",
+            "comments",
+        ]
+
+    def test_nullable_registry_enumerates_every_frame(self):
+        """Every frame declares its nullable set, naming real columns."""
+        assert set(RECAP_NULLABLE_COLUMNS) == set(RECAP_FRAME_SCHEMAS)
+        for name, columns in RECAP_NULLABLE_COLUMNS.items():
+            unknown = columns - set(RECAP_FRAME_SCHEMAS[name].names())
+            assert not unknown, f"{name}: {sorted(unknown)}"
+
+    def test_the_clocks_are_never_null(self):
+        """Every play and comment sits on both clocks; the periods, stints
+        and threads hold on every row."""
+        for name in ("periods", "threads", "stints"):
+            assert RECAP_NULLABLE_COLUMNS[name] == frozenset(), name
+        for name in ("plays", "comments"):
+            assert "game_seconds" not in RECAP_NULLABLE_COLUMNS[name], name
+        assert "wall_clock" not in RECAP_NULLABLE_COLUMNS["plays"]
+        assert "created_utc" not in RECAP_NULLABLE_COLUMNS["comments"]
+
+    def test_bodies_and_the_fan_role_are_nullable(self):
+        """A body outside the selection rule and an unflaired commenter."""
+        assert RECAP_NULLABLE_COLUMNS["comments"] == frozenset({"fan_team", "body"})
+
+    def test_no_bare_team_on_any_frame(self):
+        """Team columns are the archive's abbreviation under its own name
+        or the fan role; bare team is the Team dimension's key alone."""
+        for name, schema in RECAP_FRAME_SCHEMAS.items():
+            assert "team" not in schema.names(), name
+        assert "team_tricode" in RECAP_FRAME_SCHEMAS["plays"].names()
+        assert "fan_team" in RECAP_FRAME_SCHEMAS["comments"].names()
+
+    def test_player_id_follows_the_display_key(self):
+        """Header and registry entry carry the stable id right after the
+        display key, like every player-keyed table."""
+        for typed_dict in (RecapHeader, RecapEntry):
+            fields = list(typed_dict.__annotations__)
+            at = fields.index("attributed_player")
+            assert fields[at + 1] == "player_id", typed_dict.__name__
+
+    def test_population_is_defined(self):
+        """The recap's comment universe is a POPULATIONS key of its own:
+        live threads only, unlike game_sentiment's in_thread."""
+        assert RECAP_POPULATION == "live_thread"
+        assert RECAP_POPULATION in POPULATIONS
+        assert RECAP_POPULATION != TABLE_POPULATIONS["game_sentiment"]
+
+    def test_recap_file_is_under_the_recaps_directory(self):
+        """A recap's registered path is its key under recaps/."""
+        assert recap_file("0042500317-chet-holmgren") == (
+            "recaps/0042500317-chet-holmgren.json"
+        )
+
+
 class TestLoadManifest:
     """Tests for load_manifest, the contract's read side."""
 
@@ -527,7 +612,7 @@ class TestLoadManifest:
     def manifest_dict(self) -> dict:
         """Every Manifest block present, values as the writer shapes them."""
         return {
-            "schema_version": 5,
+            "schema_version": 6,
             "season": "2025-26",
             "generated_at": "2026-09-16T12:00:00+00:00",
             "config_versions": {"players": "4.5"},
@@ -544,7 +629,50 @@ class TestLoadManifest:
                     "population": "attributed",
                 }
             },
+            "recaps": {
+                "0042500317-chet-holmgren": {
+                    "file": "recaps/0042500317-chet-holmgren.json",
+                    "rows": 3,
+                    "game_id": "0042500317",
+                    "attributed_player": "Chet Holmgren",
+                    "player_id": 1631096,
+                    "slug": "chet-holmgren",
+                    "live_n": 2,
+                    "room_n": 40,
+                    "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
+                    "swing": 0.0,
+                    "error_seconds": None,
+                    "minutes_diff": 0,
+                    "population": "live_thread",
+                }
+            },
         }
+
+    def test_recap_entry_missing_field_raises(self, tmp_path, manifest_dict):
+        """A recap registered without every RecapEntry field names the recap."""
+        # Arrange
+        del manifest_dict["recaps"]["0042500317-chet-holmgren"]["error_seconds"]
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_dict))
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="0042500317-chet-holmgren") as exc:
+            load_manifest(path)
+        assert "error_seconds" in str(exc.value)
+
+    def test_recap_file_must_be_its_key_under_recaps(self, tmp_path, manifest_dict):
+        """A recap's file value is its key under recaps/ and nothing else,
+        for the same path-safety reason as the tables."""
+        # Arrange
+        entry = manifest_dict["recaps"]["0042500317-chet-holmgren"]
+        entry["file"] = "../0042500317-chet-holmgren.json"
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_dict))
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="0042500317-chet-holmgren") as exc:
+            load_manifest(path)
+        assert "recaps/0042500317-chet-holmgren.json" in str(exc.value)
 
     def test_round_trips_the_written_file(self, tmp_path, manifest_dict):
         """What the aggregation script writes reads back as the same dict."""

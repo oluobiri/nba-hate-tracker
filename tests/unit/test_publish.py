@@ -102,6 +102,7 @@ def manifest() -> dict:
             },
             "teams": {"file": "teams.parquet", "rows": 2, "population": None},
         },
+        "recaps": {},
     }
 
 

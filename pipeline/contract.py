@@ -1,13 +1,16 @@
 """
 The contract described as data: schema.json.
 
-pipeline/schemas.py declares the produced tables and the manifest's
-shape; this module renders those declarations as one JSON document a
-consumer generates its types from, so no column list is ever written
-by hand in a second language. Two vocabularies, deliberately: a table
-column's dtype is parquet-side (what the file holds), a manifest
-field's type is JSON-side (what the document holds). The document has
-no timestamp, so a rebuild under the same contract is byte-identical.
+pipeline/schemas.py declares the produced tables, the manifest's shape
+and the recap document's frames; this module renders those declarations
+as one JSON document a consumer generates its types from, so no column
+list is ever written by hand in a second language. Two vocabularies,
+deliberately: a table column's dtype is parquet-side (what the file
+holds), a manifest field's type is JSON-side (what the document holds).
+A document that is not a table (a recap) is a JSON-side header plus
+frames described in the tables' column vocabulary, since each frame is
+a table serialized as column arrays. The file has no timestamp, so a
+rebuild under the same contract is byte-identical.
 """
 
 import types
@@ -18,8 +21,11 @@ import polars as pl
 from pipeline.schemas import (
     DASHBOARD_OUTPUT_SCHEMAS,
     NULLABLE_COLUMNS,
+    RECAP_FRAME_SCHEMAS,
+    RECAP_NULLABLE_COLUMNS,
     SCHEMA_VERSION,
     Manifest,
+    RecapHeader,
 )
 
 # Parquet-side dtype names: the closed vocabulary a type generator needs.
@@ -43,43 +49,72 @@ MANIFEST_PRIMITIVES: dict[type, str] = {
 
 MANIFEST_ROOT = Manifest
 
+# Document name -> (header root, frame schemas, nullable registry): the
+# JSON files that are not tables, each a scalar header and named frames.
+DOCUMENT_ROOTS: dict[
+    str, tuple[type, dict[str, pl.Schema], dict[str, frozenset[str]]]
+] = {
+    "recap": (RecapHeader, RECAP_FRAME_SCHEMAS, RECAP_NULLABLE_COLUMNS),
+}
+
 
 def build_contract_schema() -> dict:
     """
-    Describe the published contract: every table's columns and the manifest's shape.
+    Describe the published contract: tables, the manifest's shape, the documents.
 
     Returns:
         A JSON-serializable dict: ``schema_version``; ``tables``, the
         registry in order, each with its ordered ``columns`` of
-        ``name`` / ``dtype`` / ``nullable``; and ``manifest``, the
-        TypedDict family as named ``types`` under a ``root``, each field
-        a node of ``type`` / ``nullable`` (maps add ``values``).
+        ``name`` / ``dtype`` / ``nullable``; ``manifest``, the TypedDict
+        family as named ``types`` under a ``root``, each field a node of
+        ``type`` / ``nullable`` (maps add ``values``); and ``documents``,
+        each with its ``header`` (a typed block like the manifest's) and
+        its ``frames`` (columns like the tables').
 
     Raises:
         ValueError: If a produced column's dtype is outside TABLE_DTYPES.
-        TypeError: If a manifest field's annotation is outside the
-            supported vocabulary.
+        TypeError: If a manifest or header field's annotation is outside
+            the supported vocabulary.
     """
     tables = {
-        name: {
-            "columns": [
-                {
-                    "name": column,
-                    "dtype": _table_dtype(name, column, dtype),
-                    "nullable": column in NULLABLE_COLUMNS[name],
-                }
-                for column, dtype in schema.items()
-            ]
-        }
+        name: {"columns": _columns(name, schema, NULLABLE_COLUMNS[name])}
         for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items()
     }
-    named_types: dict[str, dict] = {}
-    _register_typed_dict(MANIFEST_ROOT, named_types)
+    documents = {
+        name: {
+            "header": _typed_dict_block(root),
+            "frames": {
+                frame: {"columns": _columns(f"{name}.{frame}", schema, nullable[frame])}
+                for frame, schema in frames.items()
+            },
+        }
+        for name, (root, frames, nullable) in DOCUMENT_ROOTS.items()
+    }
     return {
         "schema_version": SCHEMA_VERSION,
         "tables": tables,
-        "manifest": {"root": MANIFEST_ROOT.__name__, "types": named_types},
+        "manifest": _typed_dict_block(MANIFEST_ROOT),
+        "documents": documents,
     }
+
+
+def _columns(where: str, schema: pl.Schema, nullable: frozenset[str]) -> list[dict]:
+    """Render a frame's columns in order, each with its dtype name and flag."""
+    return [
+        {
+            "name": column,
+            "dtype": _table_dtype(where, column, dtype),
+            "nullable": column in nullable,
+        }
+        for column, dtype in schema.items()
+    ]
+
+
+def _typed_dict_block(root: type) -> dict:
+    """Render a TypedDict family as named types under its root."""
+    named_types: dict[str, dict] = {}
+    _register_typed_dict(root, named_types)
+    return {"root": root.__name__, "types": named_types}
 
 
 def _table_dtype(table: str, column: str, dtype: pl.DataType) -> str:

@@ -23,6 +23,8 @@ from pipeline.publish import (
     MULTIPART_THRESHOLD_BYTES,
     PARQUET_CACHE_CONTROL,
     PARQUET_CONTENT_TYPE,
+    RECAP_CACHE_CONTROL,
+    RECAP_CONTENT_TYPE,
     LocalObject,
     PublishError,
     PublishPlan,
@@ -116,6 +118,59 @@ def dashboard_dir(tmp_path, manifest) -> Path:
     _write_json(tmp_path / SCHEMA_FILENAME, build_contract_schema())
     _write_manifest(tmp_path, manifest)
     return tmp_path
+
+
+RECAP_KEY = "0042500317-chet-holmgren"
+RECAP_FILE = f"recaps/{RECAP_KEY}.json"
+
+
+def _recap_document(rows: int = 3, **header_overrides) -> dict:
+    """A recap file the way pipeline/recaps.py writes it: header plus frames."""
+    header = {
+        "schema_version": SCHEMA_VERSION,
+        "season": SEASON,
+        "generated_at": "2026-09-26T12:00:00+00:00",
+        "game_id": "0042500317",
+        "attributed_player": "Chet Holmgren",
+        "player_id": 1631096,
+        "slug": "chet-holmgren",
+        "config_versions": {"recaps": "1.0", "players": "4.6", "teams": "2.3"},
+        "classifiers": {},
+        **header_overrides,
+    }
+    comment_ids = [f"c{i}" for i in range(rows)]
+    return {
+        "header": header,
+        "frames": {"comments": {"comment_id": comment_ids, "body": [None] * rows}},
+    }
+
+
+def _recap_entry(rows: int = 3) -> dict:
+    return {
+        "file": RECAP_FILE,
+        "rows": rows,
+        "game_id": "0042500317",
+        "attributed_player": "Chet Holmgren",
+        "player_id": 1631096,
+        "slug": "chet-holmgren",
+        "live_n": 2,
+        "room_n": 40,
+        "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
+        "swing": 0.0,
+        "error_seconds": None,
+        "minutes_diff": 0,
+        "population": "live_thread",
+    }
+
+
+@pytest.fixture
+def recap_dashboard_dir(dashboard_dir, manifest) -> Path:
+    """The dashboard directory with one curated recap registered and on disk."""
+    manifest["recaps"] = {RECAP_KEY: _recap_entry()}
+    (dashboard_dir / "recaps").mkdir()
+    _write_json(dashboard_dir / RECAP_FILE, _recap_document())
+    _write_manifest(dashboard_dir, manifest)
+    return dashboard_dir
 
 
 class TestSeasonPrefix:
@@ -276,6 +331,90 @@ def _listing(objects: list[LocalObject], **extra) -> dict:
     }
 
 
+class TestBuildUploadSetRecaps:
+    """Tests for the recap files' place in the pre-flight and the set."""
+
+    def test_recaps_ship_after_the_tables_and_before_the_schema(
+        self, recap_dashboard_dir
+    ):
+        """A reader never sees a manifest naming a recap that is not there."""
+        _, objects = build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+        assert [o.key for o in objects] == [
+            "data/season=2025-26/player_overall.parquet",
+            "data/season=2025-26/teams.parquet",
+            f"data/season=2025-26/{RECAP_FILE}",
+            "data/season=2025-26/schema.json",
+            "data/season=2025-26/manifest.json",
+        ]
+
+    def test_recap_headers(self, recap_dashboard_dir):
+        """JSON content, cached like a parquet: it changes only with a drop."""
+        _, objects = build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+        recap = objects[2]
+
+        assert recap.content_type == RECAP_CONTENT_TYPE == JSON_CONTENT_TYPE
+        assert recap.cache_control == RECAP_CACHE_CONTROL == PARQUET_CACHE_CONTROL
+
+    def test_missing_recap_aborts(self, recap_dashboard_dir):
+        """A registered recap that is not on disk stops the drop."""
+        (recap_dashboard_dir / RECAP_FILE).unlink()
+
+        with pytest.raises(PublishError, match="registered recap missing"):
+            build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+    def test_wrong_contract_version_aborts(self, recap_dashboard_dir):
+        """A recap built under another contract never ships beside this one."""
+        _write_json(
+            recap_dashboard_dir / RECAP_FILE,
+            _recap_document(schema_version=SCHEMA_VERSION - 1),
+        )
+
+        with pytest.raises(PublishError, match="schema_version"):
+            build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+    def test_wrong_season_aborts(self, recap_dashboard_dir):
+        """A recap from another season under this season's prefix is refused."""
+        _write_json(recap_dashboard_dir / RECAP_FILE, _recap_document(season="2024-25"))
+
+        with pytest.raises(PublishError, match="2024-25"):
+            build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+    def test_key_mismatch_aborts(self, recap_dashboard_dir):
+        """The header must name the recap the registry filed it under."""
+        _write_json(
+            recap_dashboard_dir / RECAP_FILE, _recap_document(slug="victor-wembanyama")
+        )
+
+        with pytest.raises(PublishError, match="registered as"):
+            build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+    def test_row_count_mismatch_aborts(self, recap_dashboard_dir):
+        """The comments on disk must be the rows the registry promises."""
+        _write_json(recap_dashboard_dir / RECAP_FILE, _recap_document(rows=2))
+
+        with pytest.raises(PublishError, match="2 comments"):
+            build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+    def test_oversize_recap_aborts(self, recap_dashboard_dir, monkeypatch):
+        """The single-PUT cap applies to a recap as to a table."""
+        monkeypatch.setattr("pipeline.publish.MULTIPART_THRESHOLD_BYTES", 10)
+
+        with pytest.raises(PublishError, match="single-PUT limit"):
+            build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+    def test_unregistered_recap_on_disk_never_ships(self, recap_dashboard_dir):
+        """Only the registry's recaps join the set; a stray file does not."""
+        _write_json(
+            recap_dashboard_dir / "recaps" / "0022500001-kevin-durant.json",
+            _recap_document(game_id="0022500001", slug="kevin-durant"),
+        )
+
+        _, objects = build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
+
+        assert sum(o.key.startswith(f"{KEY_PREFIX}recaps/") for o in objects) == 1
+
+
 class TestListRemote:
     """Tests for list_remote, the bucket-side state of the season prefix."""
 
@@ -355,6 +494,16 @@ class TestBuildPlan:
         plan = build_plan([a], remote)
 
         assert plan.delete == (KEY_PREFIX + "old_name.parquet",)
+
+    def test_stale_remote_recap_deletes(self):
+        """A recap dropped from the curation is pruned under recaps/ too."""
+        a = _object("a.parquet")
+        stale = KEY_PREFIX + "recaps/0022500001-kevin-durant.json"
+        remote = {a.key: a.md5, stale: "abc"}
+
+        plan = build_plan([a], remote)
+
+        assert plan.delete == (stale,)
 
     def test_upload_order_is_preserved(self):
         """The manifest stays last in the upload list."""

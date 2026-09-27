@@ -9,7 +9,7 @@ One hostname, split by path, over two private buckets and one CloudFront distrib
 | Path | Origin | Contents |
 |---|---|---|
 | `/` (default) | `courtsentiment-web` | The site, deployed by the workflow below. A CloudFront Function rewrites directory requests to `index.html`. |
-| `/data/*` | `courtsentiment-data` | The published data contract: one `season=<season>/` prefix per season holding the manifest, the schema and its parquets. |
+| `/data/*` | `courtsentiment-data` | The published data contract: one `season=<season>/` prefix per season holding the manifest, the schema, its parquets and its recap files under `recaps/`. |
 | `/media/*` | `courtsentiment-data` | First-party images: headshots and logos, key = `media/<name>`. |
 
 - Both buckets block all public access at the account and bucket level. CloudFront reads them through one Origin Access Control; each bucket policy grants the CloudFront service principal `GetObject` and `ListBucket` conditioned on the distribution ARN. `ListBucket` is what makes a missing key a 404 rather than a 403.
@@ -32,13 +32,13 @@ The CLI profile `courtsentiment-publish` in `~/.aws/config` names the publish ro
 
 `scripts/publish_dashboard.py` is the entry point; `pipeline/publish.py` holds the logic; `config/publish.yaml` names the bucket, the data and media prefixes, distribution, base URL, and profile. The file holds no credentials.
 
-The upload set is `manifest.json`, `schema.json` and exactly the files the manifest's table registry names. Nothing else in the dashboard directory ships, and a season without a manifest cannot be published.
+The upload set is `manifest.json`, `schema.json` and exactly the files the manifest's table and recap registries name. Nothing else in the dashboard directory ships, and a season without a manifest cannot be published.
 
 A run, in order:
 
-1. **Pre-flight**, before any write. The manifest's `season` matches the flag and its `schema_version` matches the contract. Every registered parquet exists, carries the same `schema_version` stamp, has the registry's row count, and is under 8 MiB (each object is one PUT held in memory; the cap flags a table that has outgrown the contract). `schema.json` equals what the running code generates, so a file from an older checkout never ships. Any failure aborts with nothing touched.
+1. **Pre-flight**, before any write. The manifest's `season` matches the flag and its `schema_version` matches the contract. Every registered parquet exists, carries the same `schema_version` stamp, has the registry's row count, and is under 8 MiB (each object is one PUT held in memory; the cap flags a table that has outgrown the contract). Every registered recap exists, is under the same cap, and its header carries the contract's `schema_version`, the season and its own key, with as many comments as the registry promises rows. `schema.json` equals what the running code generates, so a file from an older checkout never ships. Any failure aborts with nothing touched.
 2. **Diff** the set against the bucket listing under `data/season=<season>/`. An object whose MD5 equals the remote ETag is skipped, so the bucket's version history records real changes only. Remote keys the registry does not name are marked for deletion.
-3. **Write**: parquets in registry order, then the schema, then the manifest, each with its own headers.
+3. **Write**: parquets in registry order, then the recap files in page order, then the schema, then the manifest, each with its own headers.
 4. **Delete** stale keys, after the manifest lands, so an old manifest's tables stay readable until the new one is in place.
 5. **Invalidate** `/data/season=<season>/*` and wait for completion.
 6. **Verify**: fetch the public manifest over HTTPS and require its `generated_at` to equal the local one.
@@ -50,6 +50,7 @@ Objects are overwritten in place, so for the seconds an upload takes the old man
 | Object | Content-Type | Cache-Control |
 |---|---|---|
 | `*.parquet` | `application/vnd.apache.parquet` | `public, max-age=86400` |
+| `recaps/*.json` | `application/json` | `public, max-age=86400` |
 | `manifest.json`, `schema.json` | `application/json` | `public, max-age=300` |
 
 ## The media drop
@@ -135,6 +136,7 @@ uv run python -m scripts.publish_dashboard --season 2025-26
 curl -sI https://courtsentiment.com/data/season=2025-26/manifest.json
 curl -sI https://courtsentiment.com/data/season=2025-26/schema.json
 curl -sI https://courtsentiment.com/data/season=2025-26/player_overall.parquet
+curl -sI https://courtsentiment.com/data/season=2025-26/recaps/0042500317-chet-holmgren.json
 duckdb -c "SELECT attributed_player, neg_rate
            FROM read_parquet('https://courtsentiment.com/data/season=2025-26/player_overall.parquet')
            ORDER BY neg_rate DESC LIMIT 5"
@@ -166,7 +168,7 @@ aws cloudfront create-invalidation --profile courtsentiment-publish \
   --distribution-id E2X7LKN4E54XA2 --paths "/data/season=2025-26/*"
 ```
 
-Restore the tables before the manifest, for the same reason the publish step writes them first. The copy is a new version of the object, so the history records the rollback too.
+Restore the tables and the recap files before the manifest, for the same reason the publish step writes them first. The copy is a new version of the object, so the history records the rollback too.
 
 Media keys are versioned the same way. The same copy recipe restores one, with its image content type and `public, max-age=604800`, followed by an invalidation of `/media/*`.
 

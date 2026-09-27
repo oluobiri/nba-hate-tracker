@@ -11,7 +11,7 @@
 scripts/          → CLI entry points (download, filter, batch, aggregate, publish)
 pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
-config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts; teams.yaml; publish.yaml target)
+config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts + recaps.yaml curation; teams.yaml; publish.yaml target)
 app/              → Streamlit dashboard (V1 lab, retires in #114)
 web/              → The site: Astro + React islands, built from the published contract (conventions: web/CLAUDE.md)
 tests/            → pytest (unit/, conftest.py)
@@ -23,7 +23,7 @@ data/             → Not committed
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
   │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs, play_by_play/<game_id>.parquet) + posts_bridge.parquet + corpus_daily.parquet
-  │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json
+  │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json + recaps/<game_id>-<slug>.json
   ├── 2025-26/    → V2 season data (same structure)
   └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed
 ```
@@ -56,6 +56,10 @@ npm run codegen                      # Refresh src/data/schema.json + types.gen.
 npm run check && npm run lint && npm test   # The pre-commit gate for web/
 npm run walk                         # Playwright over dist/ at 1280 and 400
 
+# Recaps (curated in config/<season>/recaps.yaml; built by aggregate_sentiment)
+uv run python -m scripts.build_recaps --season 2025-26 --scan     # Candidate report to reference/, never published
+uv run python -m scripts.build_recaps --season 2025-26 --dry-run  # Build in memory, report error/stints/size, write nothing
+
 # Media (headshots + logos from cdn.nba.com into data/media/, WebP variants derived; resumable)
 uv run python -m scripts.fetch_media --dry-run  # Plan only, no request
 uv run python -m scripts.fetch_media            # Fetch what is missing, exit 1 on any miss
@@ -85,16 +89,16 @@ uv run python -m scripts.publish_media                                 # Media d
 - `data/2024-25/batches/<stage>/responses/*.jsonl`
 
 **Published outputs (safe to load):**
-- `data/<season>/dashboard/*.parquet` + `manifest.json` + `schema.json` — the contract; `schema.json` is generated from `pipeline/schemas.py` (columns, dtypes, nullability, and the manifest's own shape) and is what the frontend generates its types from. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
+- `data/<season>/dashboard/*.parquet` + `recaps/*.json` + `manifest.json` + `schema.json` — the contract; `schema.json` is generated from `pipeline/schemas.py` (columns, dtypes, nullability, the manifest's own shape, and the recap document's header and frames) and is what the frontend generates its types from. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
 
 **Schema contracts:**
 - `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views), the per-table nullable sets (`NULLABLE_COLUMNS`, enforced at the write boundary) and the `Manifest` typed contract (identity, rules, season facts, table registry); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.
 - `pipeline/contract.py` — renders `schemas.py` as `schema.json`; the publish pre-flight requires the file on disk to equal its output.
 - `pipeline/lineage.py` — the config-lineage registry: which config version stamps which produced file. Stamp keys are spelled there only.
-- `pipeline/publish.py` — the publish step: the upload set is `manifest.json`, `schema.json` and exactly the manifest's table registry, pre-flighted against the contract before any write. `docs/publishing.md` has the as-built AWS shape and the runbook.
+- `pipeline/publish.py` — the publish step: the upload set is `manifest.json`, `schema.json` and exactly the manifest's table and recap registries, pre-flighted against the contract before any write. `docs/publishing.md` has the as-built AWS shape and the runbook.
 
 **Conceptual model:**
-- `docs/data-model.md` — the star schema (one `ClassifiedComment` fact + Player/Team/Date dimensions), the role-playing `team` (roster vs. fan), and the view-lineage "cheap / needs-a-join / expensive" map. Read before designing a new aggregate view; it's the relationships behind `schemas.py`'s structure.
+- `docs/data-model.md` — the star schema (one `ClassifiedComment` fact + Player/Team/Date dimensions, the game layer, Play on its own GameClock), the role-playing `team` (roster vs. fan), and the view-lineage "cheap / needs-a-join / expensive" map. Read before designing a new aggregate view; it's the relationships behind `schemas.py`'s structure.
 
 ## DuckDB CLI
 

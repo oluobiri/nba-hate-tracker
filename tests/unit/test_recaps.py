@@ -15,13 +15,28 @@ import pytest
 
 from pipeline.recaps import (
     PERIOD_COLUMNS,
+    Focus,
     RecapError,
     align_comments,
     build_periods,
+    build_stints,
+    derive_kind,
+    fill_scores,
+    focus_identity,
+    pair_blocks,
     parse_clock_seconds,
+    parse_running_totals,
     place_plays,
+    slice_plays,
 )
-from pipeline.schemas import PLAY_BY_PLAY_SCHEMA
+from pipeline.schemas import (
+    PLAY_BY_PLAY_SCHEMA,
+    RECAP_NULLABLE_COLUMNS,
+    RECAP_PLAYS_SCHEMA,
+    RECAP_STINTS_SCHEMA,
+    validate_nullability,
+    validate_schema,
+)
 
 GAME = "0042500317"
 OTHER = "0022500001"
@@ -427,3 +442,521 @@ class TestPlacePlays:
 
         with pytest.raises(RecapError, match="'6:00' does not parse"):
             place_plays(plays, g7_periods)
+
+
+# --- Plays and stints -------------------------------------------------------
+
+OKC, SAS = 1610612760, 1610612759
+CHET = 1631096
+CHET_FOCUS = Focus(CHET, "Holmgren", OKC)
+
+
+def _okc(**over) -> dict:
+    return _action(team_id=OKC, team_tricode="OKC", **over)
+
+
+def _sas(**over) -> dict:
+    return _action(team_id=SAS, team_tricode="SAS", **over)
+
+
+def _chet(**over) -> dict:
+    return _okc(
+        person_id=CHET, player_name="Holmgren", player_name_i="C. Holmgren", **over
+    )
+
+
+# A G7-shaped game: the eight markers plus the plays the rules turn on.
+G7_PLAYS = [
+    G7_MARKERS[0],
+    _chet(
+        action_id=2,
+        action_number=4,
+        action_type="Jump Ball",
+        description="Jump Ball Holmgren vs. Wembanyama: Tip to Castle",
+    ),
+    _chet(
+        action_id=8,
+        action_number=14,
+        clock="PT10M41.00S",
+        action_type="Made Shot",
+        sub_type="Step Back Jump shot",
+        shot_result="Made",
+        is_field_goal=1,
+        shot_value=2,
+        x_legacy=118,
+        y_legacy=0,
+        shot_distance=12,
+        score_home="2",
+        score_away="4",
+        description="Holmgren 12' Step Back Jump Shot (2 PTS) (Wallace 1 AST)",
+    ),
+    _chet(
+        action_id=12,
+        action_number=21,
+        clock="PT09M39.00S",
+        action_type="Missed Shot",
+        sub_type="Driving Floating Jump Shot",
+        shot_result="Missed",
+        is_field_goal=1,
+        shot_value=2,
+        x_legacy=-61,
+        y_legacy=57,
+        shot_distance=8,
+        description="MISS Holmgren 8' Driving Floating Jump Shot",
+    ),
+    _chet(
+        action_id=41,
+        action_number=58,
+        clock="PT06M33.00S",
+        action_type="Substitution",
+        description="SUB: McCain FOR Holmgren",
+    ),
+    _okc(
+        action_id=62,
+        action_number=87,
+        clock="PT04M24.00S",
+        action_type="Substitution",
+        person_id=1641717,
+        player_name="Wallace",
+        player_name_i="C. Wallace",
+        description="SUB: Holmgren FOR Wallace",
+    ),
+    _sas(
+        action_id=63,
+        action_number=88,
+        clock="PT04M24.00S",
+        action_type="Substitution",
+        person_id=1627936,
+        player_name="Vassell",
+        player_name_i="D. Vassell",
+        description="SUB: Holmgren FOR Vassell",
+    ),
+    _chet(
+        action_id=100,
+        action_number=136,
+        clock="PT01M12.00S",
+        action_type="Substitution",
+        description="SUB: Hartenstein FOR Holmgren",
+    ),
+    G7_MARKERS[1],
+    G7_MARKERS[2],
+    _okc(
+        action_id=128,
+        action_number=180,
+        period=2,
+        clock="PT11M07.00S",
+        action_type="Substitution",
+        person_id=1628983,
+        player_name="Gilgeous-Alexander",
+        player_name_i="S. Gilgeous-Alexander",
+        description="SUB: Holmgren FOR Gilgeous-Alexander",
+    ),
+    _sas(
+        action_id=157,
+        action_number=220,
+        period=2,
+        clock="PT07M40.00S",
+        action_type="Missed Shot",
+        sub_type="Driving Dunk Shot",
+        shot_result="Missed",
+        is_field_goal=1,
+        shot_value=2,
+        x_legacy=-5,
+        y_legacy=10,
+        shot_distance=2,
+        person_id=1642844,
+        player_name="Harper",
+        player_name_i="D. Harper",
+        description="MISS Harper 2' Driving Dunk",
+    ),
+    _chet(
+        action_id=158,
+        action_number=220,
+        period=2,
+        clock="PT07M40.00S",
+        description="Holmgren BLOCK (1 BLK)",
+    ),
+    _chet(
+        action_id=170,
+        action_number=237,
+        period=2,
+        clock="PT07M02.00S",
+        action_type="Foul",
+        sub_type="Shooting",
+        description="Holmgren S.FOUL (P1.T2) (J.Tiven)",
+    ),
+    _chet(
+        action_id=178,
+        action_number=249,
+        period=2,
+        clock="PT06M30.00S",
+        action_type="Rebound",
+        sub_type="Unknown",
+        description="Holmgren REBOUND (Off:1 Def:1)",
+    ),
+    _chet(
+        action_id=187,
+        action_number=263,
+        period=2,
+        clock="PT05M30.00S",
+        action_type="Free Throw",
+        sub_type="Free Throw 1 of 2",
+        description="MISS Holmgren Free Throw 1 of 2",
+    ),
+    _chet(
+        action_id=188,
+        action_number=264,
+        period=2,
+        clock="PT05M30.00S",
+        action_type="Free Throw",
+        sub_type="Free Throw 2 of 2",
+        score_home="30",
+        score_away="35",
+        description="Holmgren Free Throw 2 of 2 (3 PTS)",
+    ),
+    _sas(
+        action_id=190,
+        action_number=270,
+        period=2,
+        clock="PT05M10.00S",
+        action_type="Free Throw",
+        sub_type="Free Throw 1 of 1",
+        person_id=1641705,
+        player_name="Wembanyama",
+        player_name_i="V. Wembanyama",
+        score_home="30",
+        score_away="36",
+        description="Wembanyama Free Throw 1 of 1 (10 PTS)",
+    ),
+    _okc(
+        action_id=195,
+        action_number=280,
+        period=2,
+        clock="PT04M50.00S",
+        action_type="Made Shot",
+        sub_type="Layup Shot",
+        shot_result="Made",
+        is_field_goal=1,
+        shot_value=2,
+        x_legacy=10,
+        y_legacy=15,
+        shot_distance=3,
+        person_id=1641717,
+        player_name="Wallace",
+        player_name_i="C. Wallace",
+        score_home="32",
+        score_away="36",
+        description="Wallace 3' Layup Shot (4 PTS) (Holmgren 1 AST)",
+    ),
+    _chet(
+        action_id=200,
+        action_number=290,
+        period=2,
+        clock="PT04M00.00S",
+        action_type="Turnover",
+        sub_type="Lost Ball",
+        description="Holmgren Lost Ball Turnover (P1.T3)",
+    ),
+    _sas(
+        action_id=209,
+        action_number=300,
+        period=2,
+        clock="PT03M20.00S",
+        action_type="Turnover",
+        sub_type="Bad Pass",
+        person_id=1642264,
+        player_name="Castle",
+        player_name_i="S. Castle",
+        description="Castle Bad Pass Turnover (P1.T4)",
+    ),
+    _chet(
+        action_id=210,
+        action_number=300,
+        period=2,
+        clock="PT03M20.00S",
+        description="Holmgren STEAL (1 STL)",
+    ),
+    _action(
+        action_id=230,
+        action_number=320,
+        period=2,
+        clock="PT02M00.00S",
+        action_type="Timeout",
+        sub_type="Regular",
+        person_id=SAS,
+        description="Spurs Timeout: Regular (Reg.2 Short 0)",
+    ),
+    G7_MARKERS[3],
+    G7_MARKERS[4],
+    _chet(
+        action_id=312,
+        action_number=439,
+        period=3,
+        clock="PT05M00.00S",
+        action_type="Rebound",
+        sub_type="Unknown",
+        description="Holmgren REBOUND (Off:1 Def:2)",
+    ),
+    G7_MARKERS[5],
+    G7_MARKERS[6],
+    G7_MARKERS[7],
+]
+
+
+@pytest.fixture
+def g7_game() -> pl.DataFrame:
+    return _pbp(G7_PLAYS)
+
+
+@pytest.fixture
+def g7_plays(g7_game, g7_periods) -> pl.DataFrame:
+    return slice_plays(g7_game, g7_periods, CHET_FOCUS)
+
+
+def _by_action(frame: pl.DataFrame, action_id: int) -> dict:
+    return frame.filter(pl.col("action_id") == action_id).row(0, named=True)
+
+
+class TestFocusIdentity:
+    """The focus player as the archive names him."""
+
+    def test_name_and_team_from_his_rows(self, g7_game):
+        """The surname the descriptions use, and the team his rows carry."""
+        assert focus_identity(g7_game, CHET) == CHET_FOCUS
+
+    def test_no_action_raises(self, g7_game):
+        """A player with no row in the game cannot anchor a recap."""
+        with pytest.raises(RecapError, match=f"{GAME}: player 999 has no action"):
+            focus_identity(g7_game, 999)
+
+
+class TestFillScores:
+    """The running score on every row."""
+
+    def test_carries_the_score_across_rows_that_do_not_change_it(self, g7_game):
+        """A missed free throw and a rebound read the last score written."""
+        filled = fill_scores(g7_game)
+
+        assert _by_action(filled, 187)["score_home"] == 2
+        assert _by_action(filled, 187)["score_away"] == 4
+        assert _by_action(filled, 200)["score_away"] == 36
+
+    def test_zero_before_the_first_score(self, g7_game):
+        """Tip-off is 0-0, not null."""
+        filled = fill_scores(g7_game)
+
+        assert _by_action(filled, 2)["score_home"] == 0
+        assert filled["score_home"].dtype == pl.Int64
+        assert filled["score_home"].null_count() == 0
+
+    def test_sorted_by_action(self, g7_game):
+        """The fill runs in action order whatever order the rows arrive in."""
+        filled = fill_scores(g7_game.sample(fraction=1.0, shuffle=True, seed=1))
+
+        assert filled["action_id"].is_sorted()
+        assert _by_action(filled, 195)["score_home"] == 32
+
+
+class TestDeriveKind:
+    """Every play's kind, and whose play it is."""
+
+    @pytest.fixture
+    def kinds(self, g7_game) -> pl.DataFrame:
+        return derive_kind(g7_game, CHET_FOCUS)
+
+    @pytest.mark.parametrize(
+        "action_id,kind",
+        [
+            (1, "period_start"),
+            (121, "period_end"),
+            (158, "block"),
+            (210, "steal"),
+            (41, "sub_out"),
+            (62, "sub_in"),
+            (128, "sub_in"),
+            (8, "shot"),
+            (157, "shot"),
+            (188, "free_throw"),
+            (178, "rebound"),
+            (200, "turnover"),
+            (170, "foul"),
+            (230, "timeout"),
+            (2, "jump_ball"),
+        ],
+    )
+    def test_kind(self, kinds, action_id, kind):
+        """Blank types read from the description; the rest from action_type."""
+        assert _by_action(kinds, action_id)["kind"] == kind
+
+    def test_same_surname_on_the_other_bench_is_not_a_check_in(self, kinds):
+        """SUB: Holmgren FOR Vassell on the Spurs' side is someone else."""
+        assert _by_action(kinds, 63)["kind"] == "other"
+        assert _by_action(kinds, 63)["is_focus"] is False
+
+    def test_is_focus_covers_his_rows_check_ins_and_assists(self, kinds):
+        """His own rows, the substitutions that bring him on, and the
+        teammate's made shot that credits him."""
+        assert _by_action(kinds, 8)["is_focus"] is True
+        assert _by_action(kinds, 62)["is_focus"] is True
+        assert _by_action(kinds, 195)["is_focus"] is True
+        assert _by_action(kinds, 157)["is_focus"] is False
+        assert _by_action(kinds, 190)["is_focus"] is False
+
+
+class TestPairBlocks:
+    """A block or steal points at the play it ended."""
+
+    @pytest.fixture
+    def paired(self, g7_game) -> pl.DataFrame:
+        return pair_blocks(derive_kind(g7_game, CHET_FOCUS))
+
+    def test_block_takes_the_shots_id_and_location(self, paired):
+        """The block draws where Harper's dunk was attempted."""
+        block = _by_action(paired, 158)
+        assert block["paired_action_id"] == 157
+        assert (block["x_legacy"], block["y_legacy"], block["shot_distance"]) == (
+            -5,
+            10,
+            2,
+        )
+
+    def test_steal_takes_the_turnovers_id_only(self, paired):
+        """A turnover has no location to borrow."""
+        steal = _by_action(paired, 210)
+        assert steal["paired_action_id"] == 209
+        assert (steal["x_legacy"], steal["y_legacy"]) == (0, 0)
+
+    def test_other_rows_are_unpaired_and_untouched(self, paired):
+        """A shot keeps its own coordinates and pairs with nothing."""
+        shot = _by_action(paired, 8)
+        assert shot["paired_action_id"] is None
+        assert shot["x_legacy"] == 118
+        assert paired.height == len(G7_PLAYS)
+
+    def test_unpaired_block_raises(self, g7_game):
+        """A block whose number no play shares is an archive defect."""
+        orphan = g7_game.filter(pl.col("action_id") != 157)
+
+        with pytest.raises(RecapError, match="block at action 158"):
+            pair_blocks(derive_kind(orphan, CHET_FOCUS))
+
+
+class TestParseRunningTotals:
+    """The focus player's line, read off his descriptions."""
+
+    @pytest.mark.parametrize(
+        "action_id,column,value",
+        [
+            (8, "pts", 2),
+            (188, "pts", 3),
+            (178, "reb", 2),
+            (158, "blk", 1),
+            (210, "stl", 1),
+            (170, "pf", 1),
+            (200, "tov", 1),
+            (195, "ast", 1),
+        ],
+    )
+    def test_reads_each_total(self, g7_plays, action_id, column, value):
+        """Each parenthesis pattern lands in its column on the row that carries it."""
+        assert _by_action(g7_plays, action_id)[column] == value
+
+    def test_carries_forward_over_his_rows_only(self, g7_plays):
+        """His steal still shows 3 points and the assist; the timeout after it
+        shows nothing, and so does the jump ball before any total."""
+        steal = _by_action(g7_plays, 210)
+        assert (steal["pts"], steal["ast"], steal["blk"]) == (3, 1, 1)
+        timeout = _by_action(g7_plays, 230)
+        assert all(
+            timeout[c] is None for c in ("pts", "reb", "ast", "blk", "stl", "tov", "pf")
+        )
+        assert _by_action(g7_plays, 2)["pts"] is None
+
+    def test_a_teammates_points_are_not_his(self, g7_plays):
+        """Wallace's (4 PTS) on the assist row does not become Holmgren's."""
+        assert _by_action(g7_plays, 195)["pts"] == 3
+
+    def test_ast_only_under_his_name(self, g7_game, g7_periods):
+        """(Wallace 1 AST) on his own shot is Wallace's assist, not his."""
+        plays = parse_running_totals(
+            place_plays(derive_kind(fill_scores(g7_game), CHET_FOCUS), g7_periods),
+            CHET_FOCUS,
+        )
+        assert _by_action(plays, 8)["ast"] is None
+
+
+class TestSlicePlays:
+    """What a recap ships, in the contract's shape."""
+
+    def test_conforms_to_the_plays_frame(self, g7_plays):
+        """Column names, dtypes, order and nullability are the contract's."""
+        validate_schema(g7_plays.drop("game_id"), RECAP_PLAYS_SCHEMA, "plays")
+        validate_nullability(
+            g7_plays.drop("game_id"), RECAP_NULLABLE_COLUMNS["plays"], "plays"
+        )
+        assert g7_plays["action_id"].is_sorted()
+
+    def test_keeps_his_plays_both_teams_shots_markers_and_timeouts(self, g7_plays):
+        """Check-ins and the assist row count as his; Harper's miss is a shot."""
+        kept = set(g7_plays["action_id"].to_list())
+        assert {
+            2,
+            8,
+            12,
+            41,
+            62,
+            100,
+            128,
+            157,
+            158,
+            170,
+            178,
+            187,
+            188,
+            195,
+            200,
+            210,
+            230,
+            312,
+        } <= kept
+        assert {1, 121, 122, 250, 251, 392, 393, 507} <= kept
+
+    def test_drops_other_players_free_throws_turnovers_and_subs(self, g7_plays):
+        """Wembanyama's free throw, Castle's turnover and the Spurs' sub are not drawn."""
+        kept = set(g7_plays["action_id"].to_list())
+        assert not {190, 209, 63} & kept
+
+    def test_score_carries_the_dropped_free_throw(self, g7_plays):
+        """The assist row after Wembanyama's free throw reads 32-36, not 32-35."""
+        assert _by_action(g7_plays, 195)["score_away"] == 36
+        assert _by_action(g7_plays, 200)["score_away"] == 36
+
+    def test_made_is_null_off_a_shot(self, g7_plays):
+        """True, False, or null when nothing was shot."""
+        assert _by_action(g7_plays, 8)["made"] is True
+        assert _by_action(g7_plays, 157)["made"] is False
+        assert _by_action(g7_plays, 178)["made"] is None
+
+    def test_both_clocks(self, g7_plays, g7_periods):
+        """The block sits at Q2 4:20 elapsed, on Q2's line."""
+        block = _by_action(g7_plays, 158)
+        assert block["game_seconds"] == 720 + 260
+        start, end = g7_periods["start_wall"][1], g7_periods["end_wall"][1]
+        assert block["wall_clock"] == start + round((end - start) * 260 / 720)
+
+
+class TestBuildStints:
+    """On-court intervals from the substitutions and the period openings."""
+
+    def test_stints(self, g7_plays, g7_periods):
+        """Started Q1 and left at 6:33 (first sub takes him off), back at 4:24 to 1:12; Q2 from
+        11:07 to the buzzer; all of Q3 on a rebound alone; none of Q4."""
+        stints = build_stints(g7_plays, g7_periods)
+
+        assert stints.schema == RECAP_STINTS_SCHEMA
+        assert stints.rows() == [
+            (1, 0, 327),
+            (1, 456, 648),
+            (2, 773, 1440),
+            (3, 1440, 2160),
+        ]

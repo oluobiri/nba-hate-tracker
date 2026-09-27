@@ -1301,6 +1301,46 @@ def g7_doc(g7_fact, g7_game, pbp_dir):
     )
 
 
+class TestBuildStintsWithoutSubstitutions:
+    """A player the archive never substitutes: on the floor where he acted."""
+
+    def test_on_in_every_period_he_played_in(self, g7_periods):
+        """A rebound in Q1, Q2 and Q4 and nothing in Q3: three full periods."""
+        rows = [
+            *G7_MARKERS,
+            _chet(
+                action_id=3,
+                action_number=5,
+                period=1,
+                clock="PT06M00.00S",
+                action_type="Rebound",
+                description="Holmgren REBOUND (Off:0 Def:1)",
+            ),
+            _chet(
+                action_id=130,
+                action_number=190,
+                period=2,
+                clock="PT06M00.00S",
+                action_type="Rebound",
+                description="Holmgren REBOUND (Off:0 Def:2)",
+            ),
+            _chet(
+                action_id=400,
+                action_number=560,
+                period=4,
+                clock="PT06M00.00S",
+                action_type="Rebound",
+                description="Holmgren REBOUND (Off:0 Def:3)",
+            ),
+        ]
+        plays = slice_plays(_pbp(rows), g7_periods, CHET_FOCUS)
+
+        stints = build_stints(plays, g7_periods)
+
+        assert stints.rows() == [(1, 0, 720), (2, 720, 1440), (4, 2160, 2880)]
+        assert stint_minutes(stints) == 36
+
+
 class TestSelectComments:
     """Every aligned comment, bodies by rule."""
 
@@ -1621,6 +1661,35 @@ class TestBuildRecap:
         assert stint_minutes(g7_doc.frames["stints"]) == 32
         assert g7_doc.entry["minutes_diff"] == -1
 
+    def test_silent_focus_player_still_builds(self, g7_fact, g7_game, pbp_dir):
+        """A room that never mentions him: zero focus comments, no anchor,
+        no swing, every frame still valid."""
+        fact = g7_fact.filter(
+            (pl.col("attributed_player") != CHET_NAME).fill_null(True)
+        )
+
+        doc = build_recap(
+            _spec(pbp_dir),
+            fact=fact,
+            posts=_posts(),
+            games=_games(),
+            player_games=_player_games(),
+            pbp=g7_game,
+            stamps=STAMPS,
+        )
+
+        for name, schema in RECAP_FRAME_SCHEMAS.items():
+            validate_schema(doc.frames[name], schema, name)
+            validate_nullability(doc.frames[name], RECAP_NULLABLE_COLUMNS[name], name)
+        assert doc.entry["live_n"] == 0
+        assert doc.entry["rows"] == doc.frames["comments"].height == 3
+        assert doc.entry["swing"] == 0.0
+        assert doc.entry["error_seconds"] is None
+        assert all(
+            v == {"neg": 0, "pos": 0, "neu": 0} for v in doc.entry["by_period"].values()
+        )
+        assert doc.frames["anchors"]["accepted"].to_list() == [False, False]
+
     def test_missing_box_score_line_raises(self, g7_fact, g7_game, pbp_dir):
         with pytest.raises(RecapError, match="no box-score line"):
             build_recap(
@@ -1684,6 +1753,7 @@ class TestScanCandidates:
         assert row["home_team"] == "Oklahoma City Thunder"
         assert row["swing"] == pytest.approx(-1 / 3)
         assert row["neg_shares"].startswith("p1:1.0;p2:0.667")
+        assert row["curation"] == '- {game_id: "0042500317", slug: chet-holmgren}'
 
     def test_defective_markers_are_skipped_not_fatal(self, g7_fact, tmp_path, caplog):
         """A game whose markers fail to build is logged and skipped."""

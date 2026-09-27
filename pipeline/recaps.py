@@ -236,6 +236,9 @@ def build_periods(pbp: pl.DataFrame, game_dates: pl.DataFrame) -> pl.DataFrame:
         pl.col("minute_of_day") % 60,
     )
     parts = parts.with_columns(
+        # The hour that repeats when daylight time ends is 1-2 AM Eastern;
+        # a marker there takes the first instance, and a wrong guess fails
+        # the ordering checks below rather than shipping
         local.dt.replace_time_zone(str(GAME_TZ), ambiguous="earliest")
         .dt.epoch("s")
         .alias("wall")
@@ -330,6 +333,8 @@ def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFram
     Returns:
         The comments with ``game_seconds``, ``phase`` and ``period``
         (null outside live and break) added, in the input's row order.
+        A comment whose game has no clock in ``periods`` reads as
+        ``pre``; callers pass the games they aligned.
     """
     bound_columns = [
         "game_id",
@@ -923,8 +928,8 @@ def measure_anchors(plays: pl.DataFrame, comments: pl.DataFrame) -> pl.DataFrame
     published window of its mapped wall clock, the wall-clock minute in
     which most of his comments with a body name the play is its
     reaction; the anchor is accepted when that minute reaches the
-    published floor. The offset is the first naming comment's timestamp
-    minus the play's mapped wall clock. Nothing is moved.
+    published floor. The offset is the first naming comment in that
+    minute minus the play's mapped wall clock. Nothing is moved.
 
     Args:
         plays: The recap's plays (slice_plays).
@@ -1306,8 +1311,10 @@ def scan_candidates(
 
     Returns:
         The candidates, one row per (game, player), sorted by |swing|
-        descending, and the ids of games skipped for a missing or
-        defective play-by-play.
+        descending, with a ``curation`` column holding the recaps.yaml
+        entry to paste (a spreadsheet would read the bare game id as a
+        number and drop its leading zero), and the ids of games skipped
+        for a missing or defective play-by-play.
     """
     threads = posts.filter(
         (pl.col("post_type") == GAME_THREAD) & pl.col("game_id").is_not_null()
@@ -1377,6 +1384,11 @@ def scan_candidates(
             how="left",
         )
         .sort(pl.col("swing").abs(), descending=True)
+        .with_columns(
+            pl.format(
+                '- {game_id: "{}", slug: {}}', pl.col("game_id"), pl.col("slug")
+            ).alias("curation")
+        )
         .select(
             "game_id",
             "game_date",
@@ -1389,6 +1401,7 @@ def scan_candidates(
             "last_neg_share",
             "swing",
             "neg_shares",
+            "curation",
         )
     )
     return candidates, skipped

@@ -542,9 +542,14 @@ def _build_recaps(
             stamps=stamps,
         )
         entry = doc.entry
+        error = (
+            "unmeasured"
+            if entry["error_seconds"] is None
+            else f"{entry['error_seconds']} s"
+        )
         logger.info(
             f"recap {doc.key}: live_n {entry['live_n']:,}, room_n {entry['room_n']:,}, "
-            f"error {entry['error_seconds']} s, minutes_diff {entry['minutes_diff']:+d}"
+            f"error {error}, minutes_diff {entry['minutes_diff']:+d}"
         )
         documents.append(doc)
     return documents

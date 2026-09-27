@@ -4,10 +4,11 @@ Aggregate sentiment data into the published tables.
 Reads classified sentiment parquet, computes player rankings, flair
 segmentation, temporal trends, the game layer and the receipts. Writes
 one parquet per produced table (the fact views, the players and teams
-dimensions, the game layer, and the comment_samples fact subset) plus
-manifest.json, the front door that describes them, and schema.json, the
-contract's own description, into the season's dashboard directory for
-ad-hoc DuckDB queries and the v2 frontend.
+dimensions, the game layer, and the comment_samples fact subset), one
+JSON per curated recap under recaps/, plus manifest.json, the front door
+that describes them, and schema.json, the contract's own description,
+into the season's dashboard directory for ad-hoc DuckDB queries and the
+v2 frontend.
 
 Usage:
     uv run python -m scripts.aggregate_sentiment
@@ -24,9 +25,11 @@ from pipeline.aggregation import aggregate_sentiment
 from pipeline.contract import build_contract_schema
 from pipeline.lineage import config_stamps
 from pipeline.receipts import samples_stamps
+from pipeline.recaps import write_recaps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
 from utils.paths import get_dashboard_dir, get_processed_dir
+from utils.recaps_config import load_recaps_config
 from utils.season_config import set_season_override
 
 # -----------------------------------------------------------------------------
@@ -121,9 +124,13 @@ def main() -> None:
     stamps: dict[str, dict[str, str]] = {
         name: config_stamps(name) for name in DASHBOARD_OUTPUT_SCHEMAS
     }
+    # The recaps carry their stamps inside each file; the curation's
+    # version is pre-flighted here for the same reason
+    config_stamps("recaps")
+    recaps = load_recaps_config()
 
     # Run aggregation
-    result = aggregate_sentiment(input_path, targets_path)
+    result = aggregate_sentiment(input_path, targets_path, recaps=recaps)
     # The samples stamp is read back from the sidecar inside aggregation
     # (verified flag + verifier identity), so it joins the set here
     stamps["comment_samples"].update(samples_stamps(result["metadata"]))
@@ -159,6 +166,10 @@ def main() -> None:
         )
         logger.info(f"Wrote {parquet_path}")
 
+    # One JSON per curated recap under recaps/, stale ones removed, before
+    # the manifest that registers them
+    write_recaps(result["recaps"], output_dir)
+
     # The manifest is a rebuild-stable projection except for generated_at;
     # verify a rebuild as identical modulo that one field
     manifest_path = output_dir / MANIFEST_FILENAME
@@ -190,6 +201,7 @@ def main() -> None:
     logger.info(f"Games:               {meta['game_count']:,}")
     logger.info(f"Player-game lines:   {meta['player_game_count']:,}")
     logger.info(f"Posts:               {meta['post_count']:,}")
+    logger.info(f"Recaps:              {meta['recap_count']}")
     logger.info(f"Receipts verified:   {meta['receipts_verified']}")
     # Both are None in the fallback; precision is also None when no
     # would-have-shipped row carries a verdict

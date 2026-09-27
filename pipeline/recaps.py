@@ -46,6 +46,7 @@ from pipeline.schemas import (
     validate_schema,
 )
 from utils.constants import (
+    RECAPS_SUBDIR,
     RECAP_ANCHOR_MIN_REACTIONS,
     RECAP_ANCHOR_WINDOW_SECONDS,
     RECAP_ROOM_BODIES_PER_BUCKET,
@@ -1365,3 +1366,32 @@ def scan_candidates(
         )
     )
     return candidates, skipped
+
+
+def write_recaps(documents: Sequence[RecapDocument], dashboard_dir: Path) -> list[Path]:
+    """
+    Write every built recap under the dashboard and remove any that is no longer curated.
+
+    A recap dropped from the curation must not linger beside the
+    registry: the publish step ships only what the manifest names, and a
+    local stray would outlive its entry.
+
+    Args:
+        documents: The built recaps, in page order.
+        dashboard_dir: The season's dashboard directory.
+
+    Returns:
+        The paths written, in page order.
+    """
+    written = []
+    for doc in documents:
+        path, size = write_recap(doc, dashboard_dir)
+        logger.info(f"Wrote {path} ({size:,} bytes)")
+        written.append(path)
+    recaps_dir = dashboard_dir / RECAPS_SUBDIR
+    if recaps_dir.exists():
+        for stale in sorted(recaps_dir.glob("*.json")):
+            if stale not in written:
+                stale.unlink()
+                logger.info(f"Removed {stale}: no longer curated")
+    return written

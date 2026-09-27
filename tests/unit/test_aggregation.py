@@ -7,7 +7,8 @@ frame loader, and aggregate_sentiment end to end.
 
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 import polars as pl
@@ -29,6 +30,9 @@ from pipeline.aggregation import (
 from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
+from pipeline.recaps import RecapError
+from pipeline.schemas import PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
+from utils.recaps_config import RecapSpec
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     CORPUS_DAILY_SCHEMA,
@@ -2250,3 +2254,146 @@ class TestAggregateGameSentiment:
         totals = result["player_overall"].select("attributed_player", "comment_count")
         joined = per_player.join(totals, on="attributed_player", suffix="_overall")
         assert (joined["comment_count"] <= joined["comment_count_overall"]).all()
+
+
+def _game_time(hour: int, minute: int) -> int:
+    """Epoch seconds of an Eastern time on the game log's date."""
+    return int(
+        datetime(
+            2025, 10, 21, hour, minute, tzinfo=ZoneInfo("America/New_York")
+        ).timestamp()
+    )
+
+
+def _write_play_by_play(pbp_dir):
+    """The LeBron game's markers (7:30 to 9:45 PM ET) and one LeBron rebound."""
+
+    def marker(period, sub_type, label, action_id):
+        word = "Start" if sub_type == "start" else "End"
+        return {
+            "game_id": "0022500001",
+            "action_number": action_id,
+            "clock": "PT12M00.00S" if sub_type == "start" else "PT00M00.00S",
+            "period": period,
+            "team_id": 0,
+            "team_tricode": "",
+            "person_id": 0,
+            "player_name": "",
+            "player_name_i": "",
+            "x_legacy": 0,
+            "y_legacy": 0,
+            "shot_distance": 0,
+            "shot_result": "",
+            "is_field_goal": 0,
+            "score_home": "0",
+            "score_away": "0",
+            "points_total": 0,
+            "location": "",
+            "description": f"{word} of {period}th Period ({label} EST)",
+            "action_type": "period",
+            "sub_type": sub_type,
+            "video_available": 0,
+            "shot_value": 0,
+            "action_id": action_id,
+        }
+
+    rows = [
+        marker(1, "start", "7:30 PM", 1),
+        {
+            **marker(1, "start", "7:30 PM", 5),
+            "team_id": 1610612747,
+            "team_tricode": "LAL",
+            "person_id": 2544,
+            "player_name": "James",
+            "player_name_i": "L. James",
+            "clock": "PT06M00.00S",
+            "description": "James REBOUND (Off:0 Def:1)",
+            "action_type": "Rebound",
+            "sub_type": "Unknown",
+        },
+        marker(1, "end", "8:00 PM", 50),
+        marker(2, "start", "8:03 PM", 51),
+        marker(2, "end", "8:33 PM", 100),
+        marker(3, "start", "8:50 PM", 101),
+        marker(3, "end", "9:20 PM", 150),
+        marker(4, "start", "9:23 PM", 151),
+        marker(4, "end", "9:55 PM", 200),
+    ]
+    pbp_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(rows, schema=PLAY_BY_PLAY_SCHEMA).write_parquet(
+        pbp_dir / "0022500001.parquet", metadata={"season": get_active_season()}
+    )
+
+
+class TestAggregateRecaps:
+    """Tests for the curated recaps' passage through aggregate_sentiment."""
+
+    @pytest.fixture
+    def pbp_dir(self, monkeypatch, tmp_path):
+        pbp_dir = tmp_path / "reference" / "play_by_play"
+        monkeypatch.setattr(
+            "pipeline.aggregation.get_play_by_play_dir", lambda: pbp_dir
+        )
+        return pbp_dir
+
+    def test_no_curation_builds_nothing(self, tmp_path, pinned_snapshot):
+        """The default is an empty registry and no documents, not a failure."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["recaps"] == []
+        assert result["manifest"]["recaps"] == {}
+        assert result["metadata"]["recap_count"] == 0
+
+    def test_builds_the_curated_recap_from_the_tables(
+        self, tmp_path, pinned_snapshot, pbp_dir
+    ):
+        """LeBron's live-thread comment during Q1 lands in the recap; the
+        registry entry and the header carry the build's lineage."""
+        _write_game_logs(pinned_snapshot)
+        _write_posts_bridge(
+            pinned_snapshot,
+            [
+                _post_row("t3_post123", "game_thread", "0022500001", True),
+                _post_row("t3_post456", "other", None, False),
+            ],
+        )
+        _write_play_by_play(pbp_dir)
+        rows = _lebron_rows()
+        rows["created_utc"] = [_game_time(19, 45), _game_time(22, 30)]
+        path = _make_test_parquet(tmp_path, rows)
+
+        result = aggregate_sentiment(
+            path, recaps=(RecapSpec("0022500001", "lebron-james"),)
+        )
+
+        [doc] = result["recaps"]
+        assert doc.key == "0022500001-lebron-james"
+        assert list(doc.frames) == list(RECAP_FRAME_SCHEMAS)
+        comments = doc.frames["comments"]
+        assert comments["comment_id"].to_list() == ["c1"]
+        assert comments["phase"].to_list() == ["live"]
+        assert comments["game_seconds"][0] == 360
+        assert doc.frames["stints"].rows() == [(1, 0, 720)]
+        entry = result["manifest"]["recaps"][doc.key]
+        assert entry is doc.entry
+        assert entry["live_n"] == 1
+        assert entry["room_n"] == 10
+        assert entry["minutes_diff"] == 12 - 34
+        assert entry["error_seconds"] is None
+        header = doc.header
+        assert header["season"] == result["metadata"]["season"]
+        assert header["generated_at"] == result["metadata"]["generated_at"]
+        assert set(header["config_versions"]) == {"recaps", "players", "teams"}
+        assert header["config_versions"]["players"] == load_player_config_version()
+        assert header["classifiers"] == result["manifest"]["classifiers"]
+        assert result["metadata"]["recap_count"] == 1
+
+    def test_unresolvable_curation_fails_loudly(
+        self, tmp_path, pinned_snapshot, pbp_dir
+    ):
+        """A curated game the tables do not carry stops the build by name."""
+        with pytest.raises(RecapError, match="0000000000 / lebron-james"):
+            aggregate_sentiment(
+                _lebron_parquet(tmp_path),
+                recaps=(RecapSpec("0000000000", "lebron-james"),),
+            )

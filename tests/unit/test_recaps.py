@@ -44,6 +44,7 @@ from pipeline.recaps import (
     stint_minutes,
     swing,
     write_recap,
+    write_recaps,
 )
 from pipeline.schemas import (
     PLAY_BY_PLAY_SCHEMA,
@@ -1596,3 +1597,30 @@ class TestScanCandidates:
         assert skipped == [GAME]
         assert candidates.is_empty()
         assert any("scan skips" in r.message for r in caplog.records)
+
+
+class TestWriteRecaps:
+    """The recaps directory holds exactly the curated set."""
+
+    def test_writes_in_page_order_and_prunes_the_rest(self, g7_doc, tmp_path):
+        """A file no longer curated is removed; other files are left alone."""
+        recaps_dir = tmp_path / "recaps"
+        recaps_dir.mkdir()
+        stale = recaps_dir / "0022500001-kevin-durant.json"
+        stale.write_text("{}")
+        other = recaps_dir / "notes.txt"
+        other.write_text("keep")
+
+        written = write_recaps([g7_doc], tmp_path)
+
+        assert written == [recaps_dir / f"{GAME}-chet-holmgren.json"]
+        assert not stale.exists()
+        assert other.exists()
+        assert sorted(p.name for p in recaps_dir.glob("*.json")) == [
+            f"{GAME}-chet-holmgren.json"
+        ]
+
+    def test_nothing_curated_leaves_no_directory(self, tmp_path):
+        """A season without recaps writes nothing and creates nothing."""
+        assert write_recaps([], tmp_path) == []
+        assert not (tmp_path / "recaps").exists()

@@ -8,7 +8,7 @@ the manifest that fronts them.
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,9 +16,15 @@ import polars as pl
 
 from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_game_tables
-from pipeline.lineage import check_config_stamps, config_versions
-from pipeline.nba_stats import check_snapshot_season
+from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
+from pipeline.nba_stats import check_snapshot_season, load_play_by_play
 from pipeline.posts import load_posts_table
+from pipeline.recaps import (
+    RecapDocument,
+    RecapStamps,
+    build_recap,
+    resolve_recap_specs,
+)
 from pipeline.receipts import (
     build_comment_samples,
     load_receipt_verdicts,
@@ -39,6 +45,7 @@ from pipeline.schemas import (
     SENTIMENT_SCHEMA,
     TABLE_POPULATIONS,
     TEAMS_SCHEMA,
+    ClassifierIdentity,
     Manifest,
     RecapEntry,
     validate_nullability,
@@ -60,8 +67,9 @@ from utils.constants import (
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
-from utils.paths import get_reference_dir
+from utils.paths import get_play_by_play_dir, get_reference_dir
 from utils.player_config import build_alias_to_player_map, load_player_metadata
+from utils.recaps_config import RecapSpec
 from utils.season_config import get_active_season, load_season_config
 from utils.formatting import slugify
 from utils.team_config import load_team_config
@@ -249,29 +257,38 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     return df, excluded_rows
 
 
-def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> dict:
+def aggregate_sentiment(
+    input_path: Path,
+    targets_path: Path | None = None,
+    *,
+    recaps: Sequence[RecapSpec] = (),
+) -> dict:
     """
-    Aggregate classified sentiment data into the published tables.
+    Aggregate classified sentiment data into the published tables and recaps.
 
     Reads the sentiment parquet and computes all aggregation views. The
     comment samples are verified against the target-verifier sidecar
     when one exists and fall back to the gate-only rule when it doesn't;
-    metadata says which (receipts_verified).
+    metadata says which (receipts_verified). The curated recaps are
+    built from the same fact against the banked play-by-play.
 
     Args:
         input_path: Path to sentiment.parquet file.
         targets_path: Path to sentiment_targets.parquet; None or a
             missing file selects the fallback posture.
+        recaps: The curation (load_recaps_config); empty builds none.
 
     Returns:
         Dict where player_overall, player_temporal, player_fan_team,
         fan_team_overall, game_sentiment, players, teams, games, player_games,
         posts, comment_samples and corpus_daily hold pl.DataFrames
-        conforming to DASHBOARD_OUTPUT_SCHEMAS; manifest is the Manifest built from
-        them; metadata is the build's internal block (the stamp source
-        for the write site).
+        conforming to DASHBOARD_OUTPUT_SCHEMAS; recaps is the list of
+        built RecapDocument in page order; manifest is the Manifest built
+        from them; metadata is the build's internal block (the stamp
+        source for the write site).
 
     Raises:
+        RecapError: If a curated recap cannot be resolved or built.
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
             or a computed output does not match its schema contract.
     """
@@ -406,10 +423,29 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         f"{game_sentiment['game_id'].n_unique():,} games"
     )
 
+    # The curated recaps: every input is a table built above or the
+    # banked archive, so a recap can never disagree with the tables
+    versions = config_versions()
+    documents = _build_recaps(
+        recaps,
+        fact=df,
+        posts=posts,
+        games=games,
+        players=players,
+        player_games=player_games,
+        stamps=RecapStamps(
+            season=metadata["season"],
+            generated_at=metadata["generated_at"],
+            config_versions={name: versions[name] for name in OUTPUT_CONFIGS["recaps"]},
+            classifiers=classifier_identities(metadata),
+        ),
+    )
+    metadata["recap_count"] = len(documents)
+
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks, "
-        f"{comment_samples.height:,} comment samples"
+        f"{comment_samples.height:,} comment samples, {len(documents)} recaps"
     )
 
     outputs = {
@@ -431,13 +467,78 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         validate_nullability(outputs[name], NULLABLE_COLUMNS[name], name)
 
     manifest = build_manifest(
-        outputs, metadata, season_config, config_versions(), recaps={}
+        outputs,
+        metadata,
+        season_config,
+        versions,
+        recaps={doc.key: doc.entry for doc in documents},
     )
     return {
         **outputs,
+        "recaps": documents,
         "manifest": manifest,
         "metadata": metadata,
     }
+
+
+def _build_recaps(
+    specs: Sequence[RecapSpec],
+    *,
+    fact: pl.DataFrame,
+    posts: pl.DataFrame,
+    games: pl.DataFrame,
+    players: pl.DataFrame,
+    player_games: pl.DataFrame,
+    stamps: RecapStamps,
+) -> list[RecapDocument]:
+    """Resolve the curation against the built tables and build each recap."""
+    if not specs:
+        return []
+    logger.info(f"Building {len(specs)} recaps...")
+    resolved = resolve_recap_specs(specs, games, players, posts, get_play_by_play_dir())
+    documents = []
+    for spec in resolved:
+        doc = build_recap(
+            spec,
+            fact=fact,
+            posts=posts,
+            games=games,
+            player_games=player_games,
+            pbp=load_play_by_play(spec.pbp_path, log=logger),
+            stamps=stamps,
+        )
+        entry = doc.entry
+        logger.info(
+            f"recap {doc.key}: live_n {entry['live_n']:,}, room_n {entry['room_n']:,}, "
+            f"error {entry['error_seconds']} s, minutes_diff {entry['minutes_diff']:+d}"
+        )
+        documents.append(doc)
+    return documents
+
+
+def classifier_identities(metadata: dict) -> dict[str, ClassifierIdentity]:
+    """
+    The classifier stages the build carries stamps for, by stage name.
+
+    A stage needs both its model and its prompt version to be an
+    identity; one alone, or none, is no block.
+
+    Args:
+        metadata: The build's internal block.
+
+    Returns:
+        Stage name -> identity, in STAGE_NAMES order.
+    """
+    classifiers: dict[str, ClassifierIdentity] = {}
+    for stage in STAGE_NAMES:
+        model_key, prompt_key = classifier_stamp_keys(stage)
+        stamps = (metadata.get(model_key), metadata.get(prompt_key))
+        if None not in stamps:
+            classifiers[stage] = {
+                "model": metadata[model_key],
+                "prompt_version": metadata[prompt_key],
+            }
+    return classifiers
 
 
 def build_manifest(
@@ -470,16 +571,6 @@ def build_manifest(
     Returns:
         The manifest, JSON-serializable, keys in block order.
     """
-    classifiers = {}
-    for stage in STAGE_NAMES:
-        model_key, prompt_key = classifier_stamp_keys(stage)
-        stamps = (metadata.get(model_key), metadata.get(prompt_key))
-        if None not in stamps:
-            classifiers[stage] = {
-                "model": metadata[model_key],
-                "prompt_version": metadata[prompt_key],
-            }
-
     verified = metadata["receipts_verified"]
     derived_counts = {
         "classified": metadata["total_comments"],
@@ -493,7 +584,7 @@ def build_manifest(
         "season": metadata["season"],
         "generated_at": metadata["generated_at"],
         "config_versions": dict(config_versions),
-        "classifiers": classifiers,
+        "classifiers": classifier_identities(metadata),
         "snapshots": {
             "games_fetched_at": metadata["games_fetched_at"],
             "posts_processed_at": metadata["posts_processed_at"],

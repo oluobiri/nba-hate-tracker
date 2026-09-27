@@ -655,6 +655,32 @@ def has_valid_play_by_play(path: Path) -> bool:
     return frame.height > 0
 
 
+def load_play_by_play(path: Path, *, log: logging.Logger) -> pl.DataFrame:
+    """
+    Read a banked play-by-play snapshot for a consumer.
+
+    Validates the frame against PLAY_BY_PLAY_SCHEMA and warns through the
+    caller's logger if the season stamp is off. The contract version is
+    not checked: the archive is a reference asset banked once, and it
+    predates later contract bumps by design.
+
+    Args:
+        path: The snapshot's path.
+        log: The consumer's logger, for the season warning.
+
+    Returns:
+        The game's actions as served, in archive order.
+
+    Raises:
+        FileNotFoundError: If the snapshot is not on disk.
+        ValueError: If the frame does not match PLAY_BY_PLAY_SCHEMA.
+    """
+    frame = pl.read_parquet(path)
+    validate_schema(frame, PLAY_BY_PLAY_SCHEMA, path.name)
+    check_snapshot_season(path, subject="play-by-play", log=log)
+    return frame
+
+
 def _write_parquet_atomic(
     frame: pl.DataFrame, path: Path, metadata: dict[str, str]
 ) -> None:

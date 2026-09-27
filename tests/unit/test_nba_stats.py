@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import date
 from unittest.mock import Mock, call, patch
 
@@ -16,6 +17,7 @@ from pipeline.nba_stats import (
     fetch_rosters,
     fetch_team_game_log,
     has_valid_play_by_play,
+    load_play_by_play,
     sync_play_by_play,
 )
 from pipeline.schemas import (
@@ -578,6 +580,14 @@ def _raw_action(**overrides) -> dict:
     return row
 
 
+def _snake_action(**overrides) -> dict:
+    """One banked action: _raw_action's row under PLAY_BY_PLAY_SCHEMA's names."""
+    return {
+        re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key).lower(): value
+        for key, value in _raw_action(**overrides).items()
+    }
+
+
 def _game_frame(game_id: str) -> pd.DataFrame:
     """A two-action raw frame: the period start, then a made shot with coordinates."""
     return pd.DataFrame(
@@ -858,3 +868,47 @@ class TestHasValidPlayByPlay:
         path = tmp_path / f"{GAME_A}.parquet"
         pl.DataFrame(schema=PLAY_BY_PLAY_SCHEMA).write_parquet(path)
         assert not has_valid_play_by_play(path)
+
+
+class TestLoadPlayByPlay:
+    """Tests for the consumer-side read of a banked snapshot."""
+
+    def _bank(self, path, season: str = "2025-26") -> None:
+        pl.DataFrame(
+            [_snake_action()], schema=PLAY_BY_PLAY_SCHEMA
+        ).write_parquet(path, metadata={"season": season, "schema_version": "5"})
+
+    def test_reads_a_conforming_snapshot(self, tmp_path):
+        """A banked file comes back as served, without a contract-version check."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        self._bank(path)
+
+        frame = load_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
+
+        assert frame.schema == PLAY_BY_PLAY_SCHEMA
+        assert frame["game_id"].to_list() == [GAME_A]
+
+    def test_wrong_schema_raises(self, tmp_path):
+        """A parquet outside the contract is refused by name."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        pl.DataFrame({"game_id": [GAME_A]}).write_parquet(path)
+
+        with pytest.raises(ValueError, match=path.name):
+            load_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
+
+    def test_missing_file_raises(self, tmp_path):
+        """A recap for a game that was never banked fails, never fabricates."""
+        with pytest.raises(FileNotFoundError):
+            load_play_by_play(
+                tmp_path / f"{GAME_A}.parquet", log=logging.getLogger("tests")
+            )
+
+    def test_warns_on_a_stale_season_stamp(self, tmp_path, caplog):
+        """A snapshot from another season reads, but says so on the caller's logger."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        self._bank(path, season="2024-25")
+
+        with caplog.at_level(logging.WARNING, logger="tests.nba_stats"):
+            load_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
+
+        assert any("season stamp" in r.message for r in caplog.records)

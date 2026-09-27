@@ -1244,11 +1244,17 @@ def write_recap(doc: RecapDocument, dashboard_dir: Path) -> tuple[Path, int]:
     """
     path = dashboard_dir / recap_file(doc.key)
     path.parent.mkdir(parents=True, exist_ok=True)
-    body = json.dumps(serialize_recap(doc), separators=(",", ":"), ensure_ascii=False)
     tmp = path.with_name(path.name + _TMP_SUFFIX)
-    tmp.write_text(body, encoding="utf-8")
+    tmp.write_bytes(encode_recap(doc))
     os.replace(tmp, path)
     return path, path.stat().st_size
+
+
+def encode_recap(doc: RecapDocument) -> bytes:
+    """The bytes write_recap puts on disk: compact UTF-8 JSON."""
+    return json.dumps(
+        serialize_recap(doc), separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
 
 
 # --- The candidate scan -----------------------------------------------------

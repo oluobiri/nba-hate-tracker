@@ -16,7 +16,6 @@ import pytest
 
 from pipeline.aggregation import (
     _build_players_dimension,
-    load_attributed_frame,
     aggregate_sentiment,
     attach_player_id,
     build_manifest,
@@ -24,6 +23,8 @@ from pipeline.aggregation import (
     compute_cumulative_metrics,
     compute_game_sentiment,
     compute_metrics,
+    load_attributed_frame,
+    load_fact_subset,
     mask_below_threshold,
     pivot_bar_race_wide,
 )
@@ -268,6 +269,30 @@ def _lebron_rows_with_error() -> dict:
         "sentiment": "error",
     }
     return {k: v + [extra[k]] for k, v in rows.items()}
+
+
+class TestLoadFactSubset:
+    """Tests for load_fact_subset, the filtered read the curation tools use."""
+
+    def test_matches_the_full_frame_for_the_named_posts(self, tmp_path):
+        """The same usable rows load_attributed_frame keeps, for those
+        posts only, minus the week column."""
+        path = _make_test_parquet(tmp_path, _lebron_rows_with_error())
+        full, _ = load_attributed_frame(path)
+
+        subset = load_fact_subset(path, ["t3_post123"])
+
+        assert subset.columns == full.drop("week").columns
+        assert subset["comment_id"].to_list() == ["c1"]
+        assert "error" not in subset["sentiment"].to_list()
+
+    def test_wrong_schema_raises(self, tmp_path):
+        """A parquet outside the contract is refused before any row is read."""
+        path = tmp_path / "odd.parquet"
+        pl.DataFrame({"link_id": ["t3_x"]}).write_parquet(path)
+
+        with pytest.raises(ValueError, match="Schema validation failed"):
+            load_fact_subset(path, ["t3_x"])
 
 
 class TestLoadAttributedFrame:

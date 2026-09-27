@@ -195,6 +195,52 @@ def read_classifier_stamps(input_path: Path) -> dict[str, str | None]:
     return stamps
 
 
+def _check_fact_lineage(input_path: Path) -> None:
+    """Warn on missing or drifted config stamps: the derived columns reflect
+    the configs the parquet was assembled under, and stale attribution is
+    legitimate to read, just not silently."""
+    check_config_stamps(
+        input_path,
+        pl.read_parquet_metadata(input_path),
+        "sentiment",
+        subject="fact",
+        remedy="attributed_player / fan_team may not reflect the current config; "
+        "reassemble sentiment.parquet",
+        log=logger,
+    )
+
+
+def load_fact_subset(input_path: Path, link_ids: Sequence[str]) -> pl.DataFrame:
+    """
+    Load the usable fact rows posted in the given posts, and only those.
+
+    The same file, checks and error drop as load_attributed_frame, read
+    through a filter so a recap can be built without holding the whole
+    fact in memory.
+
+    Args:
+        input_path: Path to sentiment.parquet.
+        link_ids: The posts (t3_ fullnames) whose comments to load.
+
+    Returns:
+        The usable rows whose link_id is one of link_ids, without the
+        week column.
+
+    Raises:
+        ValueError: If the parquet does not match SENTIMENT_SCHEMA.
+    """
+    lazy = pl.scan_parquet(input_path)
+    validate_schema(
+        pl.DataFrame(schema=lazy.collect_schema()), SENTIMENT_SCHEMA, str(input_path)
+    )
+    _check_fact_lineage(input_path)
+    df = lazy.filter(
+        pl.col("link_id").is_in(list(link_ids)) & (pl.col("sentiment") != "error")
+    ).collect()
+    logger.info(f"Loaded {df.height:,} usable rows from {len(link_ids)} posts")
+    return df
+
+
 def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     """
     Load the fact with its config-versioned attributes.
@@ -220,19 +266,7 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     logger.info(f"Loading sentiment data from {input_path}")
     df = pl.read_parquet(input_path)
     validate_schema(df, SENTIMENT_SCHEMA, str(input_path))
-
-    # Config-lineage checks: the derived columns reflect the configs the
-    # parquet was assembled under; stale attribution is legitimate to
-    # read, just not silently.
-    check_config_stamps(
-        input_path,
-        pl.read_parquet_metadata(input_path),
-        "sentiment",
-        subject="fact",
-        remedy="attributed_player / fan_team may not reflect the current config; "
-        "reassemble sentiment.parquet",
-        log=logger,
-    )
+    _check_fact_lineage(input_path)
 
     total_rows = len(df)
     logger.info(f"Loaded {total_rows:,} rows")

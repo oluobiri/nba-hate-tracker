@@ -18,6 +18,8 @@ read at the edges by the aggregation stage.
 import json
 import logging
 import os
+import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -486,24 +488,38 @@ def place_plays(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
 
 @dataclass(frozen=True)
 class Focus:
-    """The focus player as the archive names him: id, surname, team."""
+    """The focus player as the archive names him: id, name forms, team."""
 
     person_id: int
-    name: str
+    names: tuple[str, ...]  # every form a description may use, ASCII-folded
     team_id: int
+
+    @property
+    def pattern(self) -> str:
+        """A regex alternation over his name forms."""
+        return "(?:" + "|".join(re.escape(name) for name in self.names) + ")"
+
+
+def _fold(name: str) -> str:
+    """The archive's descriptions write names without diacritics."""
+    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
 
 
 def focus_identity(pbp: pl.DataFrame, person_id: int) -> Focus:
     """
-    Read the focus player's archive name and team from his own rows.
+    Read the focus player's archive names and team from his own rows.
+
+    A description names a player by surname ("Jokic", folded from the
+    row's "Jokić") or, when a surname is shared, by initial and surname
+    ("L. James"), so both forms are kept.
 
     Args:
         pbp: One game's play-by-play.
         person_id: The player's stats.nba.com id (players.player_id).
 
     Returns:
-        The Focus: the ``player_name`` the descriptions use for him and
-        the ``team_id`` his rows carry.
+        The Focus: the folded ``player_name`` and ``player_name_i`` the
+        descriptions use for him, and the ``team_id`` his rows carry.
 
     Raises:
         RecapError: If he has no row in the game.
@@ -512,9 +528,13 @@ def focus_identity(pbp: pl.DataFrame, person_id: int) -> Focus:
     if not own.height:
         game_id = pbp["game_id"][0] if pbp.height else "?"
         raise RecapError(f"{game_id}: player {person_id} has no action in the game")
-    name = own["player_name"].mode().sort()[0]
+    names = []
+    for column in ("player_name", "player_name_i"):
+        folded = _fold(own[column].mode().sort()[0])
+        if folded and folded not in names:
+            names.append(folded)
     team_id = own["team_id"].mode().sort()[0]
-    return Focus(person_id, name, team_id)
+    return Focus(person_id, tuple(names), team_id)
 
 
 def fill_scores(pbp: pl.DataFrame) -> pl.DataFrame:
@@ -568,10 +588,10 @@ def derive_kind(pbp: pl.DataFrame, focus: Focus) -> pl.DataFrame:
         The rows with ``kind`` and ``is_focus`` added.
     """
     description = pl.col("description")
-    checks_in = description.str.starts_with(f"SUB: {focus.name} FOR ") & (
+    checks_in = description.str.contains(rf"^SUB: {focus.pattern} FOR ") & (
         pl.col("team_id") == focus.team_id
     )
-    assists = description.str.contains(rf"\({focus.name} \d+ AST\)")
+    assists = description.str.contains(rf"\({focus.pattern} \d+ AST\)")
 
     kind = pl.when(pl.col("action_type") == PERIOD_ACTION_TYPE).then(
         pl.when(pl.col("sub_type") == PERIOD_START)
@@ -691,7 +711,7 @@ def parse_running_totals(plays: pl.DataFrame, focus: Focus) -> pl.DataFrame:
 
     totals = {name: own_count(pattern) for name, pattern in _TOTAL_PATTERNS.items()}
     totals["reb"] = own_count(_OFFENSIVE_REBOUNDS) + own_count(_DEFENSIVE_REBOUNDS)
-    totals["ast"] = description.str.extract(rf"\({focus.name} (\d+) AST\)", 1).cast(
+    totals["ast"] = description.str.extract(rf"\({focus.pattern} (\d+) AST\)", 1).cast(
         pl.Int64
     )
     totals["tov"] = pl.when(own & (pl.col("kind") == "turnover")).then(

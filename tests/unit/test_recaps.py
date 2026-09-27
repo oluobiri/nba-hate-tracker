@@ -9,6 +9,7 @@ are derived with zoneinfo in the test, never from the code under test.
 
 import json
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -470,7 +471,7 @@ class TestPlacePlays:
 
 OKC, SAS = 1610612760, 1610612759
 CHET = 1631096
-CHET_FOCUS = Focus(CHET, "Holmgren", OKC)
+CHET_FOCUS = Focus(CHET, ("Holmgren", "C. Holmgren"), OKC)
 
 
 def _okc(**over) -> dict:
@@ -742,9 +743,23 @@ def _by_action(frame: pl.DataFrame, action_id: int) -> dict:
 class TestFocusIdentity:
     """The focus player as the archive names him."""
 
-    def test_name_and_team_from_his_rows(self, g7_game):
-        """The surname the descriptions use, and the team his rows carry."""
+    def test_name_forms_and_team_from_his_rows(self, g7_game):
+        """Both name forms the descriptions use, and the team his rows carry."""
         assert focus_identity(g7_game, CHET) == CHET_FOCUS
+
+    def test_names_are_folded_to_ascii(self):
+        """The rows say Jokić; the descriptions say Jokic."""
+        pbp = _pbp(
+            [_action(person_id=203999, player_name="Jokić", player_name_i="N. Jokić")]
+        )
+        assert focus_identity(pbp, 203999).names == ("Jokic", "N. Jokic")
+
+    def test_pattern_matches_either_form(self):
+        """The alternation covers the surname and the initial form."""
+        focus = Focus(2544, ("James", "L. James"), 1610612747)
+        assert re.fullmatch(focus.pattern, "L. James")
+        assert re.fullmatch(focus.pattern, "James")
+        assert not re.fullmatch(focus.pattern, "B. James")
 
     def test_no_action_raises(self, g7_game):
         """A player with no row in the game cannot anchor a recap."""
@@ -809,6 +824,93 @@ class TestDeriveKind:
     def test_kind(self, kinds, action_id, kind):
         """Blank types read from the description; the rest from action_type."""
         assert _by_action(kinds, action_id)["kind"] == kind
+
+    def test_check_in_and_assist_under_the_initial_form(self, g7_periods):
+        """With a surname shared, the archive writes L. James everywhere: the
+        check-in and the assist credit both still count as his."""
+        lebron = 2544
+        rows = [
+            *G7_MARKERS,
+            _okc(
+                action_id=3,
+                action_number=5,
+                action_type="Rebound",
+                person_id=lebron,
+                player_name="James",
+                player_name_i="L. James",
+                description="L. James REBOUND (Off:0 Def:1)",
+            ),
+            _okc(
+                action_id=4,
+                action_number=6,
+                clock="PT08M00.00S",
+                action_type="Substitution",
+                person_id=lebron,
+                player_name="James",
+                player_name_i="L. James",
+                description="SUB: Smart FOR L. James",
+            ),
+            _okc(
+                action_id=5,
+                action_number=7,
+                clock="PT04M00.00S",
+                action_type="Substitution",
+                person_id=1627936,
+                player_name="Smart",
+                player_name_i="M. Smart",
+                description="SUB: L. James FOR Smart",
+            ),
+            _okc(
+                action_id=6,
+                action_number=8,
+                clock="PT03M00.00S",
+                action_type="Made Shot",
+                sub_type="Jump Shot",
+                shot_result="Made",
+                shot_value=3,
+                score_home="3",
+                score_away="0",
+                person_id=1641717,
+                player_name="Wallace",
+                player_name_i="C. Wallace",
+                description="Wallace 25' 3PT Jump Shot (3 PTS) (L. James 1 AST)",
+            ),
+        ]
+        plays = slice_plays(_pbp(rows), g7_periods, focus_identity(_pbp(rows), lebron))
+        assert _by_action(plays, 5)["kind"] == "sub_in"
+        assert _by_action(plays, 6)["is_focus"] is True
+        assert _by_action(plays, 6)["ast"] == 1
+        assert build_stints(plays, g7_periods).rows() == [(1, 0, 240), (1, 480, 720)]
+
+    def test_check_in_under_a_folded_diacritic(self, g7_periods):
+        """The rows say Jokić, the substitution says Jokic: still his check-in."""
+        jokic = 203999
+        rows = [
+            *G7_MARKERS,
+            _okc(
+                action_id=3,
+                action_number=5,
+                clock="PT09M00.00S",
+                action_type="Substitution",
+                person_id=jokic,
+                player_name="Jokić",
+                player_name_i="N. Jokić",
+                description="SUB: Johnson FOR Jokic",
+            ),
+            _okc(
+                action_id=4,
+                action_number=6,
+                clock="PT05M00.00S",
+                action_type="Substitution",
+                person_id=1641717,
+                player_name="Wallace",
+                player_name_i="C. Wallace",
+                description="SUB: Jokic FOR Wallace",
+            ),
+        ]
+        plays = slice_plays(_pbp(rows), g7_periods, focus_identity(_pbp(rows), jokic))
+        assert _by_action(plays, 4)["kind"] == "sub_in"
+        assert build_stints(plays, g7_periods).rows() == [(1, 0, 180), (1, 420, 720)]
 
     def test_same_surname_on_the_other_bench_is_not_a_check_in(self, kinds):
         """SUB: Holmgren FOR Vassell on the Spurs' side is someone else."""

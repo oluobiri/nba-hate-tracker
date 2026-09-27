@@ -15,12 +15,45 @@ Every function here is a frame transform; the archive and the fact are
 read at the edges by the aggregation stage.
 """
 
+import json
+import logging
+import os
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import polars as pl
 
-from pipeline.posts import POST_LOCAL_TZ
-from pipeline.schemas import RECAP_PLAYS_SCHEMA, RECAP_STINTS_SCHEMA
+from pipeline.nba_stats import play_by_play_path
+from pipeline.posts import GAME_THREAD, POST_LOCAL_TZ
+from pipeline.schemas import (
+    RECAP_ANCHORS_SCHEMA,
+    RECAP_COMMENTS_SCHEMA,
+    RECAP_FRAME_SCHEMAS,
+    RECAP_NULLABLE_COLUMNS,
+    RECAP_PERIODS_SCHEMA,
+    RECAP_PLAYS_SCHEMA,
+    RECAP_POPULATION,
+    RECAP_STINTS_SCHEMA,
+    RECAP_THREADS_SCHEMA,
+    SCHEMA_VERSION,
+    ClassifierIdentity,
+    PeriodCounts,
+    RecapEntry,
+    RecapHeader,
+    recap_file,
+    validate_nullability,
+    validate_schema,
+)
+from utils.constants import (
+    RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_WINDOW_SECONDS,
+    RECAP_ROOM_BODIES_PER_BUCKET,
+    RECAP_ROOM_BUCKET_SECONDS,
+)
+from utils.recaps_config import RecapSpec
+
+logger = logging.getLogger(__name__)
 
 # --- The game clock ----------------------------------------------------------
 
@@ -86,6 +119,17 @@ _OFFENSIVE_REBOUNDS = r"\(Off:(\d+) Def:\d+\)"
 _DEFENSIVE_REBOUNDS = r"\(Off:\d+ Def:(\d+)\)"
 _PERSONAL_COUNT = r"\(P(\d+)[.)]"
 TOTAL_COLUMNS = ["pts", "reb", "ast", "blk", "stl", "tov", "pf"]
+
+
+# --- Comments, anchors, the document ---------------------------------------
+
+SENTIMENTS = ("neg", "pos", "neu")
+# A reaction anchor: a focus play the room names within a minute of it.
+# The keyword is looked for in the focus player's comments.
+_ANCHOR_KINDS = {"block": "block", "steal": "steal"}
+_DUNK_KEYWORD = "dunk"
+SCAN_MIN_LIVE_N = 500
+_TMP_SUFFIX = ".part"
 
 
 class RecapError(ValueError):
@@ -749,3 +793,575 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
         if opened is not None:
             stints.append((period, opened, end))
     return pl.DataFrame(stints, schema=RECAP_STINTS_SCHEMA, orient="row")
+
+
+# --- Comments ---------------------------------------------------------------
+
+
+def select_comments(aligned: pl.DataFrame, focus_player: str) -> pl.DataFrame:
+    """
+    The comments frame: every aligned comment, bodies by rule.
+
+    A body is kept for the focus player's comments and for the room's
+    loudest per wall-clock bucket (the highest scores, ties by id); every
+    other body is null. A kept body is verbatim.
+
+    Args:
+        aligned: Fact rows in the live threads after align_comments:
+            comment_id, link_id, created_utc, sentiment, score, fan_team,
+            attributed_player, body, game_seconds, phase.
+        focus_player: The recap's attributed_player.
+
+    Returns:
+        RECAP_COMMENTS_SCHEMA rows sorted by created_utc, then comment_id.
+    """
+    is_focus = (pl.col("attributed_player") == focus_player).fill_null(False)
+    bucket = pl.col("created_utc") // RECAP_ROOM_BUCKET_SECONDS
+    ranked = (
+        aligned.with_columns(is_focus.alias("is_focus"), bucket.alias("_bucket"))
+        .sort(["score", "comment_id"], descending=[True, False], nulls_last=True)
+        .with_columns(pl.int_range(pl.len()).over("_bucket", "is_focus").alias("_rank"))
+    )
+    keeps_body = pl.col("is_focus") | (pl.col("_rank") < RECAP_ROOM_BODIES_PER_BUCKET)
+    return (
+        ranked.with_columns(
+            pl.when(keeps_body).then(pl.col("body")).otherwise(None).alias("body"),
+            pl.col("link_id").alias("post_id"),
+        )
+        .sort("created_utc", "comment_id")
+        .select(RECAP_COMMENTS_SCHEMA.names())
+    )
+
+
+def period_counts(
+    aligned: pl.DataFrame, focus_player: str, n_periods: int
+) -> dict[str, PeriodCounts]:
+    """
+    The focus player's sentiment counts per period, zero-filled.
+
+    Live and break comments count in their period; pre and post do not.
+
+    Args:
+        aligned: Fact rows after align_comments, with attributed_player,
+            sentiment and period.
+        focus_player: The recap's attributed_player.
+        n_periods: How many periods the game had.
+
+    Returns:
+        Period number as a string -> counts, "1" through n_periods.
+    """
+    counted = (
+        aligned.filter(
+            (pl.col("attributed_player") == focus_player)
+            & pl.col("period").is_not_null()
+        )
+        .group_by("period", "sentiment")
+        .len()
+    )
+    counts = {
+        str(period): {name: 0 for name in SENTIMENTS}
+        for period in range(1, n_periods + 1)
+    }
+    for period, sentiment, n in counted.rows():
+        if sentiment in SENTIMENTS:
+            counts[str(period)][sentiment] = n
+    return counts  # type: ignore[return-value]
+
+
+def swing(by_period: dict[str, PeriodCounts]) -> float:
+    """
+    Negative share in the last period minus the first, as the index hook.
+
+    Args:
+        by_period: period_counts() output.
+
+    Returns:
+        The change in negative share between the first and the last
+        period with any comment; 0.0 with fewer than two such periods.
+    """
+
+    def total(counts: PeriodCounts) -> int:
+        return counts["neg"] + counts["pos"] + counts["neu"]
+
+    spoken = [
+        by_period[key] for key in sorted(by_period, key=int) if total(by_period[key])
+    ]
+    if len(spoken) < 2:
+        return 0.0
+    return spoken[-1]["neg"] / total(spoken[-1]) - spoken[0]["neg"] / total(spoken[0])
+
+
+# --- Anchors ----------------------------------------------------------------
+
+
+def measure_anchors(plays: pl.DataFrame, comments: pl.DataFrame) -> pl.DataFrame:
+    """
+    Measure the alignment against the room's reactions to the focus player.
+
+    A block, steal or dunk of his is an anchor candidate. Within the
+    published window of its mapped wall clock, the wall-clock minute in
+    which most of his comments with a body name the play is its
+    reaction; the anchor is accepted when that minute reaches the
+    published floor. The offset is the first naming comment's timestamp
+    minus the play's mapped wall clock. Nothing is moved.
+
+    Args:
+        plays: The recap's plays (slice_plays).
+        comments: The comments frame (select_comments).
+
+    Returns:
+        RECAP_ANCHORS_SCHEMA rows in game order, accepted or not.
+    """
+    is_dunk = (
+        (pl.col("kind") == "shot")
+        & pl.col("made").fill_null(False)
+        & pl.col("sub_type").str.contains("Dunk", literal=True)
+    )
+    keyword = (
+        pl.col("kind")
+        .replace_strict(_ANCHOR_KINDS, default=None, return_dtype=pl.String)
+        .fill_null(pl.when(is_dunk).then(pl.lit(_DUNK_KEYWORD)))
+    )
+    candidates = (
+        plays.filter(pl.col("is_focus"))
+        .with_columns(keyword.alias("keyword"))
+        .filter(pl.col("keyword").is_not_null())
+        .select("action_id", "kind", "keyword", "game_seconds", "wall_clock")
+    )
+    reactions = comments.filter(
+        pl.col("is_focus") & pl.col("body").is_not_null()
+    ).select(
+        (pl.col("created_utc") // 60 * 60).alias("reaction_minute"),
+        "created_utc",
+        pl.col("body").str.to_lowercase().alias("_body"),
+    )
+    named = (
+        candidates.join(reactions, how="cross")
+        .filter(
+            pl.col("_body").str.contains(pl.col("keyword"), literal=True)
+            & (
+                (pl.col("reaction_minute") - pl.col("wall_clock")).abs()
+                <= RECAP_ANCHOR_WINDOW_SECONDS
+            )
+        )
+        .group_by("action_id", "reaction_minute")
+        .agg(
+            pl.len().cast(pl.Int64).alias("reaction_n"),
+            pl.col("created_utc").min().alias("first_reaction_utc"),
+        )
+        .sort(
+            ["action_id", "reaction_n", "reaction_minute"],
+            descending=[False, True, False],
+        )
+        .unique(subset=["action_id"], keep="first", maintain_order=True)
+    )
+    measured = candidates.join(named, on="action_id", how="left").with_columns(
+        pl.col("reaction_n").fill_null(0)
+    )
+    accepted = pl.col("reaction_n") >= RECAP_ANCHOR_MIN_REACTIONS
+    return (
+        measured.with_columns(
+            accepted.alias("accepted"),
+            pl.when(accepted)
+            .then(pl.col("first_reaction_utc") - pl.col("wall_clock"))
+            .otherwise(None)
+            .alias("offset_seconds"),
+        )
+        .sort("action_id")
+        .select(RECAP_ANCHORS_SCHEMA.names())
+    )
+
+
+def error_seconds(anchors: pl.DataFrame) -> int | None:
+    """
+    The recap's alignment error: the largest accepted offset, in seconds.
+
+    Args:
+        anchors: measure_anchors() output.
+
+    Returns:
+        max |offset_seconds| over accepted anchors; None when none was.
+    """
+    accepted = anchors.filter(pl.col("accepted"))
+    if not accepted.height:
+        return None
+    return int(accepted["offset_seconds"].abs().max())
+
+
+# --- The document -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResolvedSpec:
+    """A curated recap with its identities resolved against the frames."""
+
+    game_id: str
+    slug: str
+    attributed_player: str
+    player_id: int
+    thread_ids: tuple[str, ...]
+    room_n: int
+    pbp_path: Path
+
+    @property
+    def key(self) -> str:
+        return recap_key(self.game_id, self.slug)
+
+
+@dataclass(frozen=True)
+class RecapStamps:
+    """What every recap header carries about the build it came from."""
+
+    season: str
+    generated_at: str
+    config_versions: dict[str, str]
+    classifiers: dict[str, ClassifierIdentity]
+
+
+@dataclass(frozen=True)
+class RecapDocument:
+    """One built recap: its header, its frames and its registry entry."""
+
+    key: str
+    header: RecapHeader
+    frames: dict[str, pl.DataFrame]
+    entry: RecapEntry
+
+
+def recap_key(game_id: str, slug: str) -> str:
+    """The recap's key, the file's stem and the registry's key."""
+    return f"{game_id}-{slug}"
+
+
+def resolve_recap_specs(
+    specs: Sequence[RecapSpec],
+    games: pl.DataFrame,
+    players: pl.DataFrame,
+    posts: pl.DataFrame,
+    pbp_dir: Path,
+) -> list[ResolvedSpec]:
+    """
+    Check every curated recap against the frames and resolve its identities.
+
+    Args:
+        specs: The curation (load_recaps_config).
+        games: The Game dimension (game_id).
+        players: The Player dimension (slug, attributed_player, player_id).
+        posts: The Post bridge (post_id, post_type, game_id, num_comments).
+        pbp_dir: The season's play-by-play directory.
+
+    Returns:
+        One ResolvedSpec per entry, in page order.
+
+    Raises:
+        RecapError: If a game is not in the dimension, a slug is not a
+            player, a game has no live thread, or its play-by-play is
+            not banked. The message names the entry and the cause.
+    """
+    game_ids = set(games["game_id"].to_list())
+    by_slug = {
+        slug: (player, player_id)
+        for slug, player, player_id in players.select(
+            "slug", "attributed_player", "player_id"
+        ).rows()
+    }
+    live = posts.filter(pl.col("post_type") == GAME_THREAD)
+    resolved = []
+    for spec in specs:
+        where = f"recap {spec.game_id} / {spec.slug}"
+        if spec.game_id not in game_ids:
+            raise RecapError(f"{where}: game is not in the Game dimension")
+        if spec.slug not in by_slug:
+            raise RecapError(f"{where}: slug is not in the Player dimension")
+        threads = live.filter(pl.col("game_id") == spec.game_id)
+        if not threads.height:
+            raise RecapError(f"{where}: game has no live game thread")
+        path = play_by_play_path(pbp_dir, spec.game_id)
+        if not path.exists():
+            raise RecapError(f"{where}: play-by-play is not banked at {path}")
+        player, player_id = by_slug[spec.slug]
+        resolved.append(
+            ResolvedSpec(
+                game_id=spec.game_id,
+                slug=spec.slug,
+                attributed_player=player,
+                player_id=int(player_id),
+                thread_ids=tuple(threads["post_id"].to_list()),
+                room_n=int(threads["num_comments"].sum()),
+                pbp_path=path,
+            )
+        )
+    return resolved
+
+
+def stint_minutes(stints: pl.DataFrame) -> int:
+    """Minutes on the floor, rounded, from the stints frame."""
+    if not stints.height:
+        return 0
+    return int(round((stints["end_seconds"] - stints["start_seconds"]).sum() / 60))
+
+
+def build_recap(
+    spec: ResolvedSpec,
+    *,
+    fact: pl.DataFrame,
+    posts: pl.DataFrame,
+    games: pl.DataFrame,
+    player_games: pl.DataFrame,
+    pbp: pl.DataFrame,
+    stamps: RecapStamps,
+) -> RecapDocument:
+    """
+    Build one recap: the clock, the plays, the comments, the measurements.
+
+    Args:
+        spec: The resolved curation entry.
+        fact: The usable fact rows (load_attributed_frame or a subset
+            covering the game's live threads).
+        posts: The Post bridge.
+        games: The Game dimension (game_id, game_date).
+        player_games: The box-score lines (game_id, attributed_player,
+            minutes).
+        pbp: The game's play-by-play (load_play_by_play).
+        stamps: The build's lineage for the header.
+
+    Returns:
+        The document, every frame validated against its schema.
+
+    Raises:
+        RecapError: From the alignment and the plays, or if the focus
+            player has no box-score line in the game.
+    """
+    periods = build_periods(pbp, games.select("game_id", "game_date"))
+    focus = focus_identity(pbp, spec.player_id)
+    plays = slice_plays(pbp, periods, focus)
+    stints = build_stints(plays, periods)
+
+    aligned = align_comments(
+        fact.filter(pl.col("link_id").is_in(list(spec.thread_ids))).with_columns(
+            pl.lit(spec.game_id).alias("game_id")
+        ),
+        periods,
+    )
+    comments = select_comments(aligned, spec.attributed_player)
+    threads = (
+        posts.filter(pl.col("post_id").is_in(list(spec.thread_ids)))
+        .join(
+            comments.group_by("post_id").agg(pl.len().alias("comment_n")),
+            on="post_id",
+            how="left",
+        )
+        .with_columns(pl.col("comment_n").fill_null(0).cast(pl.Int64))
+        .sort("created_utc")
+        .select(RECAP_THREADS_SCHEMA.names())
+    )
+    anchors = measure_anchors(plays, comments)
+
+    line = player_games.filter(
+        (pl.col("game_id") == spec.game_id)
+        & (pl.col("attributed_player") == spec.attributed_player)
+    )
+    if not line.height:
+        raise RecapError(f"recap {spec.key}: no box-score line for the focus player")
+    minutes_diff = stint_minutes(stints) - int(line["minutes"][0])
+
+    n_periods = int(periods["period"].max())
+    by_period = period_counts(aligned, spec.attributed_player, n_periods)
+    frames = {
+        "periods": periods.select(RECAP_PERIODS_SCHEMA.names()),
+        "threads": threads,
+        "anchors": anchors,
+        "stints": stints,
+        "plays": plays.select(RECAP_PLAYS_SCHEMA.names()),
+        "comments": comments,
+    }
+    for name in RECAP_FRAME_SCHEMAS:
+        validate_schema(frames[name], RECAP_FRAME_SCHEMAS[name], f"{spec.key}.{name}")
+        validate_nullability(
+            frames[name], RECAP_NULLABLE_COLUMNS[name], f"{spec.key}.{name}"
+        )
+
+    header: RecapHeader = {
+        "schema_version": SCHEMA_VERSION,
+        "season": stamps.season,
+        "generated_at": stamps.generated_at,
+        "game_id": spec.game_id,
+        "attributed_player": spec.attributed_player,
+        "player_id": spec.player_id,
+        "slug": spec.slug,
+        "config_versions": dict(stamps.config_versions),
+        "classifiers": dict(stamps.classifiers),
+    }
+    entry: RecapEntry = {
+        "file": recap_file(spec.key),
+        "rows": comments.height,
+        "game_id": spec.game_id,
+        "attributed_player": spec.attributed_player,
+        "player_id": spec.player_id,
+        "slug": spec.slug,
+        "live_n": int(comments["is_focus"].sum()),
+        "room_n": spec.room_n,
+        "by_period": by_period,
+        "swing": swing(by_period),
+        "error_seconds": error_seconds(anchors),
+        "minutes_diff": minutes_diff,
+        "population": RECAP_POPULATION,
+    }
+    return RecapDocument(spec.key, header, frames, entry)
+
+
+def serialize_recap(doc: RecapDocument) -> dict:
+    """
+    The document as JSON data: the header, then each frame as column arrays.
+
+    Args:
+        doc: A built recap.
+
+    Returns:
+        ``{"header": ..., "frames": {name: {column: [values]}}}``,
+        frames in RECAP_FRAME_SCHEMAS order, nulls as JSON null.
+    """
+    return {
+        "header": dict(doc.header),
+        "frames": {
+            name: doc.frames[name].to_dict(as_series=False)
+            for name in RECAP_FRAME_SCHEMAS
+        },
+    }
+
+
+def write_recap(doc: RecapDocument, dashboard_dir: Path) -> tuple[Path, int]:
+    """
+    Write a recap under the dashboard directory, atomically.
+
+    Args:
+        doc: A built recap.
+        dashboard_dir: The season's dashboard directory.
+
+    Returns:
+        The path written and its size in bytes.
+    """
+    path = dashboard_dir / recap_file(doc.key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = json.dumps(serialize_recap(doc), separators=(",", ":"), ensure_ascii=False)
+    tmp = path.with_name(path.name + _TMP_SUFFIX)
+    tmp.write_text(body, encoding="utf-8")
+    os.replace(tmp, path)
+    return path, path.stat().st_size
+
+
+# --- The candidate scan -----------------------------------------------------
+
+
+def scan_candidates(
+    fact: pl.DataFrame,
+    posts: pl.DataFrame,
+    games: pl.DataFrame,
+    players: pl.DataFrame,
+    pbp_dir: Path,
+    *,
+    min_live_n: int = SCAN_MIN_LIVE_N,
+) -> tuple[pl.DataFrame, list[str]]:
+    """
+    Rank every (game, player) with a live thread by the swing in his negative share.
+
+    The Player x Game x Period grain over every threaded game, sorted by
+    the size of the swing, as the input to curation. Alignment is the
+    recaps' own, so the scan and a recap can never disagree.
+
+    Args:
+        fact: The usable fact rows, at least those in game threads.
+        posts: The Post bridge.
+        games: The Game dimension (game_id, game_date, home_team, away_team).
+        players: The Player dimension (attributed_player, slug).
+        pbp_dir: The season's play-by-play directory.
+        min_live_n: Fewest live-thread comments a pair needs to rank.
+
+    Returns:
+        The candidates, one row per (game, player), sorted by |swing|
+        descending, and the ids of games skipped for a missing or
+        defective play-by-play.
+    """
+    threads = posts.filter(
+        (pl.col("post_type") == GAME_THREAD) & pl.col("game_id").is_not_null()
+    ).select("post_id", "game_id")
+    game_dates = games.select("game_id", "game_date")
+    periods: list[pl.DataFrame] = []
+    skipped: list[str] = []
+    for game_id in sorted(threads["game_id"].unique().to_list()):
+        path = play_by_play_path(pbp_dir, game_id)
+        if not path.exists():
+            skipped.append(game_id)
+            continue
+        markers = pl.read_parquet(path).filter(
+            pl.col("action_type") == PERIOD_ACTION_TYPE
+        )
+        try:
+            periods.append(build_periods(markers, game_dates))
+        except RecapError as e:
+            logger.warning(f"scan skips {game_id}: {e}")
+            skipped.append(game_id)
+    if not periods:
+        return pl.DataFrame(), skipped
+    clock = pl.concat(periods)
+
+    aligned = align_comments(
+        fact.filter(pl.col("attributed_player").is_not_null())
+        .join(threads, left_on="link_id", right_on="post_id", how="inner")
+        .filter(pl.col("game_id").is_in(clock["game_id"].unique().to_list())),
+        clock,
+    ).filter(pl.col("period").is_not_null())
+    per_period = (
+        aligned.group_by("game_id", "attributed_player", "period")
+        .agg(
+            pl.len().cast(pl.Int64).alias("n"),
+            (pl.col("sentiment") == "neg").sum().cast(pl.Int64).alias("neg"),
+        )
+        .with_columns((pl.col("neg") / pl.col("n")).alias("neg_share"))
+        .sort("game_id", "attributed_player", "period")
+    )
+    candidates = (
+        per_period.group_by("game_id", "attributed_player", maintain_order=True)
+        .agg(
+            pl.col("n").sum().alias("live_n"),
+            pl.col("neg_share").first().alias("first_neg_share"),
+            pl.col("neg_share").last().alias("last_neg_share"),
+            pl.concat_str(
+                pl.lit("p"),
+                pl.col("period").cast(pl.String),
+                pl.lit(":"),
+                pl.col("neg_share").round(3).cast(pl.String),
+            )
+            .str.join(";")
+            .alias("neg_shares"),
+        )
+        .filter(pl.col("live_n") >= min_live_n)
+        .with_columns(
+            (pl.col("last_neg_share") - pl.col("first_neg_share")).alias("swing")
+        )
+        .join(
+            games.select("game_id", "game_date", "home_team", "away_team"),
+            on="game_id",
+            how="left",
+        )
+        .join(
+            players.select("attributed_player", "slug"),
+            on="attributed_player",
+            how="left",
+        )
+        .sort(pl.col("swing").abs(), descending=True)
+        .select(
+            "game_id",
+            "game_date",
+            "home_team",
+            "away_team",
+            "attributed_player",
+            "slug",
+            "live_n",
+            "first_neg_share",
+            "last_neg_share",
+            "swing",
+            "neg_shares",
+        )
+    )
+    return candidates, skipped

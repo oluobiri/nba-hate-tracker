@@ -7,7 +7,10 @@ comment row with the columns the alignment needs. Wall-clock expectations
 are derived with zoneinfo in the test, never from the code under test.
 """
 
+import json
+import logging
 from datetime import date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import polars as pl
@@ -17,26 +20,44 @@ from pipeline.recaps import (
     PERIOD_COLUMNS,
     Focus,
     RecapError,
+    RecapStamps,
+    ResolvedSpec,
     align_comments,
     build_periods,
+    build_recap,
     build_stints,
     derive_kind,
+    error_seconds,
     fill_scores,
     focus_identity,
+    measure_anchors,
     pair_blocks,
     parse_clock_seconds,
     parse_running_totals,
+    period_counts,
     place_plays,
+    resolve_recap_specs,
+    scan_candidates,
+    select_comments,
+    serialize_recap,
     slice_plays,
+    stint_minutes,
+    swing,
+    write_recap,
 )
 from pipeline.schemas import (
     PLAY_BY_PLAY_SCHEMA,
+    RECAP_ANCHORS_SCHEMA,
+    RECAP_COMMENTS_SCHEMA,
+    RECAP_FRAME_SCHEMAS,
     RECAP_NULLABLE_COLUMNS,
     RECAP_PLAYS_SCHEMA,
     RECAP_STINTS_SCHEMA,
+    SCHEMA_VERSION,
     validate_nullability,
     validate_schema,
 )
+from utils.recaps_config import RecapSpec
 
 GAME = "0042500317"
 OTHER = "0022500001"
@@ -960,3 +981,618 @@ class TestBuildStints:
             (2, 773, 1440),
             (3, 1440, 2160),
         ]
+
+
+# --- Comments, anchors, the document ---------------------------------------
+
+LIVE, SPLIT, PGT = "t3_live", "t3_split", "t3_pgt"
+CHET_NAME = "Chet Holmgren"
+
+
+def _fact_row(
+    comment_id: str,
+    created_utc: int,
+    *,
+    sentiment: str = "neg",
+    score: int = 1,
+    player: str | None = CHET_NAME,
+    body: str = "chet",
+    link_id: str = LIVE,
+    fan_team: str | None = "Oklahoma City Thunder",
+) -> dict:
+    return {
+        "comment_id": comment_id,
+        "link_id": link_id,
+        "created_utc": created_utc,
+        "sentiment": sentiment,
+        "score": score,
+        "fan_team": fan_team,
+        "attributed_player": player,
+        "body": body,
+    }
+
+
+FACT_SCHEMA = {
+    "comment_id": pl.String,
+    "link_id": pl.String,
+    "created_utc": pl.Int64,
+    "sentiment": pl.String,
+    "score": pl.Int64,
+    "fan_team": pl.String,
+    "attributed_player": pl.String,
+    "body": pl.String,
+}
+
+
+def _fact(rows: list[dict]) -> pl.DataFrame:
+    return pl.DataFrame(rows, schema=FACT_SCHEMA)
+
+
+def _posts() -> pl.DataFrame:
+    rows = [
+        (
+            LIVE,
+            "Game Thread: SAS vs OKC",
+            1_000,
+            100,
+            40_000,
+            "Game Thread",
+            "game_thread",
+            GAME,
+            True,
+        ),
+        (
+            SPLIT,
+            "Game Thread: second half",
+            1_500,
+            50,
+            7_000,
+            "Game Thread",
+            "game_thread",
+            GAME,
+            False,
+        ),
+        (
+            PGT,
+            "[Post Game Thread] Spurs advance",
+            9_000,
+            90,
+            4_000,
+            "Post Game Thread",
+            "post_game_thread",
+            GAME,
+            True,
+        ),
+    ]
+    return pl.DataFrame(
+        rows,
+        schema={
+            "post_id": pl.String,
+            "title": pl.String,
+            "created_utc": pl.Int64,
+            "score": pl.Int64,
+            "num_comments": pl.Int64,
+            "link_flair_text": pl.String,
+            "post_type": pl.String,
+            "game_id": pl.String,
+            "is_primary": pl.Boolean,
+        },
+        orient="row",
+    )
+
+
+def _games() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "game_id": [GAME, OTHER],
+            "game_date": [JUNE, JANUARY],
+            "home_team": ["Oklahoma City Thunder", "Los Angeles Lakers"],
+            "away_team": ["San Antonio Spurs", "Golden State Warriors"],
+        },
+        schema={
+            "game_id": pl.String,
+            "game_date": pl.Date,
+            "home_team": pl.String,
+            "away_team": pl.String,
+        },
+    )
+
+
+def _players() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "attributed_player": [CHET_NAME, "Victor Wembanyama"],
+            "slug": ["chet-holmgren", "victor-wembanyama"],
+            "player_id": [CHET, 1641705],
+        },
+        schema={
+            "attributed_player": pl.String,
+            "slug": pl.String,
+            "player_id": pl.Int64,
+        },
+    )
+
+
+def _player_games(minutes: int = 33) -> pl.DataFrame:
+    return pl.DataFrame(
+        {"game_id": [GAME], "attributed_player": [CHET_NAME], "minutes": [minutes]},
+        schema={
+            "game_id": pl.String,
+            "attributed_player": pl.String,
+            "minutes": pl.Int64,
+        },
+    )
+
+
+STAMPS = RecapStamps(
+    season="2025-26",
+    generated_at="2026-09-26T12:00:00+00:00",
+    config_versions={"recaps": "1.0", "players": "4.6", "teams": "2.3"},
+    classifiers={
+        "sentiment": {"model": "claude-haiku-4-5-20251001", "prompt_version": "v2"}
+    },
+)
+
+
+def _spec(pbp_dir) -> ResolvedSpec:
+    return ResolvedSpec(
+        game_id=GAME,
+        slug="chet-holmgren",
+        attributed_player=CHET_NAME,
+        player_id=CHET,
+        thread_ids=(LIVE, SPLIT),
+        room_n=47_000,
+        pbp_path=pbp_dir / f"{GAME}.parquet",
+    )
+
+
+@pytest.fixture
+def g7_fact(g7_periods, g7_plays) -> pl.DataFrame:
+    """Comments around the G7 clock: a Q1 bucket of room noise, a block
+    pile-on, a steal with two reactions, halftime, pre and post chatter."""
+    q1 = g7_periods["start_wall"][0]
+    bucket = (q1 + 600) // 120 * 120
+    block_wall = _by_action(g7_plays, 158)["wall_clock"]
+    minute = (block_wall // 60 + 1) * 60
+    steal_wall = _by_action(g7_plays, 210)["wall_clock"]
+    steal_minute = (steal_wall // 60 + 1) * 60
+    halftime = g7_periods["end_wall"][1] + 300
+    rows = [
+        _fact_row("pre1", q1 - 100, body="tip soon", sentiment="neu"),
+        _fact_row(
+            "r50", bucket + 1, score=50, player="Victor Wembanyama", body="wemby!"
+        ),
+        _fact_row("r40", bucket + 2, score=40, player=None, body="refs"),
+        _fact_row(
+            "r30", bucket + 3, score=30, player="Victor Wembanyama", body="quiet"
+        ),
+        _fact_row("f1", bucket + 4, score=2, body="chet is cooked", link_id=SPLIT),
+        _fact_row("b1", minute + 5, body="WHAT A BLOCK by Chet"),
+        _fact_row("b2", minute + 10, body="chet block!!!", sentiment="pos"),
+        _fact_row("b3", minute + 15, body="that block though"),
+        _fact_row("s1", steal_minute + 5, body="chet steal"),
+        _fact_row("s2", steal_minute + 9, body="steal!"),
+        _fact_row("h1", halftime, body="halftime chet", sentiment="pos"),
+        _fact_row("post1", g7_periods["end_wall"][3] + 60, body="gg", sentiment="neu"),
+        _fact_row("pgt1", 9_500, body="post game", link_id=PGT),
+    ]
+    return _fact(rows)
+
+
+@pytest.fixture
+def pbp_dir(tmp_path, g7_game) -> Path:
+    g7_game.write_parquet(tmp_path / f"{GAME}.parquet", metadata={"season": "2025-26"})
+    return tmp_path
+
+
+@pytest.fixture
+def g7_doc(g7_fact, g7_game, pbp_dir):
+    return build_recap(
+        _spec(pbp_dir),
+        fact=g7_fact,
+        posts=_posts(),
+        games=_games(),
+        player_games=_player_games(),
+        pbp=g7_game,
+        stamps=STAMPS,
+    )
+
+
+class TestSelectComments:
+    """Every aligned comment, bodies by rule."""
+
+    @pytest.fixture
+    def comments(self, g7_fact, g7_periods) -> pl.DataFrame:
+        aligned = align_comments(
+            g7_fact.filter(pl.col("link_id") != PGT).with_columns(
+                pl.lit(GAME).alias("game_id")
+            ),
+            g7_periods,
+        )
+        return select_comments(aligned, CHET_NAME)
+
+    def test_conforms(self, comments):
+        """The contract's columns, order and nullability, sorted by time."""
+        validate_schema(comments, RECAP_COMMENTS_SCHEMA, "comments")
+        validate_nullability(comments, RECAP_NULLABLE_COLUMNS["comments"], "comments")
+        assert comments["created_utc"].is_sorted()
+
+    def test_focus_bodies_are_always_kept(self, comments):
+        """His comments carry their body wherever they fall."""
+        focus = comments.filter(pl.col("is_focus"))
+        assert focus["body"].null_count() == 0
+        assert focus["comment_id"].to_list() == [
+            "pre1",
+            "f1",
+            "b1",
+            "b2",
+            "b3",
+            "s1",
+            "s2",
+            "h1",
+            "post1",
+        ]
+
+    def test_the_rooms_two_loudest_per_bucket_keep_theirs(self, comments):
+        """Scores 50 and 40 keep a body in the Q1 bucket; 30 does not."""
+        by_id = {row["comment_id"]: row for row in comments.rows(named=True)}
+        assert by_id["r50"]["body"] == "wemby!"
+        assert by_id["r40"]["body"] == "refs"
+        assert by_id["r30"]["body"] is None
+
+    def test_ties_break_by_comment_id(self, g7_periods):
+        """Equal scores keep the lower ids, so the rule is deterministic."""
+        t = g7_periods["start_wall"][0] // 120 * 120 + 240
+        aligned = align_comments(
+            _fact(
+                [
+                    _fact_row("c", t + 1, score=5, player=None, body="c"),
+                    _fact_row("a", t + 2, score=5, player=None, body="a"),
+                    _fact_row("b", t + 3, score=5, player=None, body="b"),
+                ]
+            ).with_columns(pl.lit(GAME).alias("game_id")),
+            g7_periods,
+        )
+        comments = select_comments(aligned, CHET_NAME)
+        kept = comments.filter(pl.col("body").is_not_null())["comment_id"].to_list()
+        assert sorted(kept) == ["a", "b"]
+
+    def test_is_focus_is_attribution(self, comments):
+        """A comment counts for him when attributed_player is him, no more."""
+        by_id = {
+            row["comment_id"]: row["is_focus"] for row in comments.rows(named=True)
+        }
+        assert by_id["f1"] is True
+        assert by_id["r50"] is False
+        assert by_id["r40"] is False
+
+    def test_post_id_is_the_thread(self, comments):
+        """The split thread's comment names the split thread."""
+        by_id = {row["comment_id"]: row["post_id"] for row in comments.rows(named=True)}
+        assert by_id["f1"] == SPLIT
+        assert by_id["b1"] == LIVE
+
+
+class TestPeriodCountsAndSwing:
+    """The Player x Game x Period rollup and the index hook."""
+
+    @pytest.fixture
+    def aligned(self, g7_fact, g7_periods) -> pl.DataFrame:
+        return align_comments(
+            g7_fact.filter(pl.col("link_id") != PGT).with_columns(
+                pl.lit(GAME).alias("game_id")
+            ),
+            g7_periods,
+        )
+
+    def test_counts_live_and_break_by_period_zero_filled(self, aligned):
+        """Q1 has the split-thread comment; Q2 has the block, steal and
+        halftime comments; Q3 and Q4 are zero; pre and post are out."""
+        assert period_counts(aligned, CHET_NAME, 4) == {
+            "1": {"neg": 1, "pos": 0, "neu": 0},
+            "2": {"neg": 4, "pos": 2, "neu": 0},
+            "3": {"neg": 0, "pos": 0, "neu": 0},
+            "4": {"neg": 0, "pos": 0, "neu": 0},
+        }
+
+    def test_swing_is_last_minus_first_negative_share(self):
+        """60 % negative in Q1 to 10 % in Q4 is a swing of -0.5; a period
+        nobody spoke in is skipped, and one spoken period is no swing."""
+        by_period = {
+            "1": {"neg": 6, "pos": 2, "neu": 2},
+            "2": {"neg": 0, "pos": 0, "neu": 0},
+            "3": {"neg": 5, "pos": 5, "neu": 0},
+            "4": {"neg": 1, "pos": 9, "neu": 0},
+        }
+        assert swing(by_period) == pytest.approx(-0.5)
+        assert swing({"1": by_period["2"], "2": by_period["4"]}) == 0.0
+
+
+class TestMeasureAnchors:
+    """The alignment measured against the room, never moved."""
+
+    @pytest.fixture
+    def anchors(self, g7_doc) -> pl.DataFrame:
+        return g7_doc.frames["anchors"]
+
+    def test_conforms_and_lists_every_candidate(self, anchors):
+        """The block and the steal are candidates, accepted or not."""
+        validate_schema(anchors, RECAP_ANCHORS_SCHEMA, "anchors")
+        validate_nullability(anchors, RECAP_NULLABLE_COLUMNS["anchors"], "anchors")
+        assert anchors["action_id"].to_list() == [158, 210]
+        assert anchors["keyword"].to_list() == ["block", "steal"]
+
+    def test_pile_on_is_accepted_with_its_offset(self, anchors, g7_plays):
+        """Three comments naming the block in one minute: accepted, and the
+        offset is the first of them minus the play's mapped wall clock."""
+        block = anchors.row(0, named=True)
+        wall = _by_action(g7_plays, 158)["wall_clock"]
+        assert block["accepted"] is True
+        assert block["reaction_n"] == 3
+        assert block["offset_seconds"] == block["first_reaction_utc"] - wall
+        assert 0 < block["offset_seconds"] < 120
+
+    def test_two_reactions_are_not_an_anchor(self, anchors):
+        """The steal drew two: measured, not accepted, no offset."""
+        steal = anchors.row(1, named=True)
+        assert steal["accepted"] is False
+        assert steal["reaction_n"] == 2
+        assert steal["offset_seconds"] is None
+
+    def test_no_reaction_leaves_nulls(self, g7_plays, g7_periods):
+        """A candidate nobody named has no minute and no offset."""
+        anchors = measure_anchors(g7_plays, pl.DataFrame(schema=RECAP_COMMENTS_SCHEMA))
+        assert anchors["reaction_n"].to_list() == [0, 0]
+        assert anchors["reaction_minute"].null_count() == 2
+        assert error_seconds(anchors) is None
+
+    def test_reaction_outside_the_window_is_ignored(self, g7_plays, g7_periods):
+        """Naming the block nine minutes later is not a reaction to it."""
+        wall = _by_action(g7_plays, 158)["wall_clock"]
+        late = (wall // 60 + 9) * 60
+        comments = select_comments(
+            align_comments(
+                _fact(
+                    [_fact_row(f"l{i}", late + i, body="block") for i in range(3)]
+                ).with_columns(pl.lit(GAME).alias("game_id")),
+                g7_periods,
+            ),
+            CHET_NAME,
+        )
+        anchors = measure_anchors(g7_plays, comments)
+        assert anchors.filter(pl.col("kind") == "block")["accepted"][0] is False
+
+    def test_dunk_is_a_candidate_by_sub_type(self, g7_periods):
+        """A made shot whose sub_type says Dunk is looked for as 'dunk'."""
+        dunk = _chet(
+            action_id=9,
+            action_number=15,
+            clock="PT10M00.00S",
+            action_type="Made Shot",
+            sub_type="Driving Dunk Shot",
+            shot_result="Made",
+            shot_value=2,
+            score_home="4",
+            score_away="4",
+            description="Holmgren 1' Driving Dunk (4 PTS)",
+        )
+        plays = slice_plays(_pbp([*G7_MARKERS, dunk]), g7_periods, CHET_FOCUS)
+        anchors = measure_anchors(plays, pl.DataFrame(schema=RECAP_COMMENTS_SCHEMA))
+        assert anchors["keyword"].to_list() == ["dunk"]
+
+    def test_error_is_the_largest_accepted_offset(self):
+        """Signed offsets, absolute maximum, accepted rows only."""
+        anchors = pl.DataFrame(
+            {
+                "action_id": [1, 2, 3],
+                "kind": ["block"] * 3,
+                "keyword": ["block"] * 3,
+                "game_seconds": [1, 2, 3],
+                "wall_clock": [10, 20, 30],
+                "reaction_minute": [0, 0, 0],
+                "reaction_n": [3, 3, 1],
+                "first_reaction_utc": [40, 0, 0],
+                "offset_seconds": [30, -45, None],
+                "accepted": [True, True, False],
+            },
+            schema=RECAP_ANCHORS_SCHEMA,
+        )
+        assert error_seconds(anchors) == 45
+
+    def test_the_timeline_is_not_moved(self, g7_doc, g7_plays):
+        """The plays' wall clocks are the period-marker line, before and after."""
+        assert (
+            g7_doc.frames["plays"]["wall_clock"].to_list()
+            == g7_plays["wall_clock"].to_list()
+        )
+
+
+class TestResolveRecapSpecs:
+    """Curation checked against the frames."""
+
+    def test_resolves_identities_threads_room_and_path(self, pbp_dir):
+        """A good entry gets its player, its live threads and its file."""
+        [resolved] = resolve_recap_specs(
+            [RecapSpec(GAME, "chet-holmgren")], _games(), _players(), _posts(), pbp_dir
+        )
+        assert resolved.attributed_player == CHET_NAME
+        assert resolved.player_id == CHET
+        assert set(resolved.thread_ids) == {LIVE, SPLIT}
+        assert resolved.room_n == 47_000
+        assert resolved.pbp_path == pbp_dir / f"{GAME}.parquet"
+        assert resolved.key == f"{GAME}-chet-holmgren"
+
+    def test_unknown_game_raises(self, pbp_dir):
+        with pytest.raises(RecapError, match="0000000000 / chet-holmgren: game is not"):
+            resolve_recap_specs(
+                [RecapSpec("0000000000", "chet-holmgren")],
+                _games(),
+                _players(),
+                _posts(),
+                pbp_dir,
+            )
+
+    def test_unknown_slug_raises(self, pbp_dir):
+        with pytest.raises(RecapError, match="slug is not in the Player dimension"):
+            resolve_recap_specs(
+                [RecapSpec(GAME, "nobody")], _games(), _players(), _posts(), pbp_dir
+            )
+
+    def test_game_without_a_live_thread_raises(self, pbp_dir):
+        """Post-game threads alone are not a recap."""
+        posts = _posts().filter(pl.col("post_type") != "game_thread")
+        with pytest.raises(RecapError, match="no live game thread"):
+            resolve_recap_specs(
+                [RecapSpec(GAME, "chet-holmgren")], _games(), _players(), posts, pbp_dir
+            )
+
+    def test_unbanked_play_by_play_raises(self, tmp_path):
+        with pytest.raises(RecapError, match="not banked"):
+            resolve_recap_specs(
+                [RecapSpec(GAME, "chet-holmgren")],
+                _games(),
+                _players(),
+                _posts(),
+                tmp_path,
+            )
+
+
+class TestBuildRecap:
+    """One recap end to end."""
+
+    def test_header_carries_identity_and_lineage(self, g7_doc):
+        assert g7_doc.key == f"{GAME}-chet-holmgren"
+        assert g7_doc.header == {
+            "schema_version": SCHEMA_VERSION,
+            "season": "2025-26",
+            "generated_at": "2026-09-26T12:00:00+00:00",
+            "game_id": GAME,
+            "attributed_player": CHET_NAME,
+            "player_id": CHET,
+            "slug": "chet-holmgren",
+            "config_versions": {"recaps": "1.0", "players": "4.6", "teams": "2.3"},
+            "classifiers": {
+                "sentiment": {
+                    "model": "claude-haiku-4-5-20251001",
+                    "prompt_version": "v2",
+                }
+            },
+        }
+
+    def test_frames_in_registry_order_and_valid(self, g7_doc):
+        assert list(g7_doc.frames) == list(RECAP_FRAME_SCHEMAS)
+        for name, schema in RECAP_FRAME_SCHEMAS.items():
+            validate_schema(g7_doc.frames[name], schema, name)
+            validate_nullability(
+                g7_doc.frames[name], RECAP_NULLABLE_COLUMNS[name], name
+            )
+
+    def test_live_threads_only_merged(self, g7_doc):
+        """Both game threads, never the post-game thread."""
+        assert set(g7_doc.frames["comments"]["post_id"].to_list()) == {LIVE, SPLIT}
+        threads = g7_doc.frames["threads"]
+        assert threads["post_id"].to_list() == [LIVE, SPLIT]
+        assert threads["comment_n"].to_list() == [11, 1]
+        assert threads["is_primary"].to_list() == [True, False]
+
+    def test_entry_is_the_rollup(self, g7_doc):
+        entry = g7_doc.entry
+        assert entry["file"] == f"recaps/{GAME}-chet-holmgren.json"
+        assert entry["rows"] == g7_doc.frames["comments"].height == 12
+        assert entry["live_n"] == 9
+        assert entry["room_n"] == 47_000
+        assert list(entry["by_period"]) == ["1", "2", "3", "4"]
+        assert entry["by_period"]["2"] == {"neg": 4, "pos": 2, "neu": 0}
+        assert entry["swing"] == pytest.approx(-1 / 3)
+        assert 0 < entry["error_seconds"] < 120
+        assert entry["population"] == "live_thread"
+        assert (
+            entry["game_id"],
+            entry["attributed_player"],
+            entry["player_id"],
+            entry["slug"],
+        ) == (GAME, CHET_NAME, CHET, "chet-holmgren")
+
+    def test_minutes_reconcile_against_the_box_score(self, g7_doc):
+        """32 stint minutes against a 33-minute line is a difference of -1."""
+        assert stint_minutes(g7_doc.frames["stints"]) == 32
+        assert g7_doc.entry["minutes_diff"] == -1
+
+    def test_missing_box_score_line_raises(self, g7_fact, g7_game, pbp_dir):
+        with pytest.raises(RecapError, match="no box-score line"):
+            build_recap(
+                _spec(pbp_dir),
+                fact=g7_fact,
+                posts=_posts(),
+                games=_games(),
+                player_games=_player_games().clear(),
+                pbp=g7_game,
+                stamps=STAMPS,
+            )
+
+
+class TestSerializeAndWrite:
+    """The file on disk."""
+
+    def test_serialize_is_header_plus_column_arrays(self, g7_doc):
+        data = serialize_recap(g7_doc)
+        assert list(data) == ["header", "frames"]
+        assert list(data["frames"]) == list(RECAP_FRAME_SCHEMAS)
+        comments = data["frames"]["comments"]
+        assert list(comments) == RECAP_COMMENTS_SCHEMA.names()
+        assert len(comments["comment_id"]) == 12
+        assert None in comments["body"]
+
+    def test_write_lands_under_recaps_and_reports_bytes(self, g7_doc, tmp_path):
+        path, size = write_recap(g7_doc, tmp_path)
+
+        assert path == tmp_path / "recaps" / f"{GAME}-chet-holmgren.json"
+        assert size == path.stat().st_size > 0
+        assert not list(path.parent.glob("*.part"))
+        with open(path, encoding="utf-8") as f:
+            assert json.load(f) == serialize_recap(g7_doc)
+
+
+class TestScanCandidates:
+    """The Player x Game x Period grain over every threaded game."""
+
+    def test_ranks_pairs_by_swing_and_skips_unbanked_games(self, g7_fact, pbp_dir):
+        """Chet over the threshold; Wembanyama below it; OTHER has a thread
+        but no play-by-play, so it is skipped and counted."""
+        posts = pl.concat(
+            [
+                _posts(),
+                _posts()
+                .head(1)
+                .with_columns(
+                    pl.lit("t3_other").alias("post_id"), pl.lit(OTHER).alias("game_id")
+                ),
+            ]
+        )
+        candidates, skipped = scan_candidates(
+            g7_fact, posts, _games(), _players(), pbp_dir, min_live_n=3
+        )
+
+        assert skipped == [OTHER]
+        assert candidates["attributed_player"].to_list() == [CHET_NAME]
+        row = candidates.row(0, named=True)
+        assert row["live_n"] == 7
+        assert row["slug"] == "chet-holmgren"
+        assert row["home_team"] == "Oklahoma City Thunder"
+        assert row["swing"] == pytest.approx(-1 / 3)
+        assert row["neg_shares"].startswith("p1:1.0;p2:0.667")
+
+    def test_defective_markers_are_skipped_not_fatal(self, g7_fact, tmp_path, caplog):
+        """A game whose markers fail to build is logged and skipped."""
+        _pbp([m for m in G7_MARKERS if m["period"] != 2]).write_parquet(
+            tmp_path / f"{GAME}.parquet"
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.recaps"):
+            candidates, skipped = scan_candidates(
+                g7_fact, _posts(), _games(), _players(), tmp_path
+            )
+
+        assert skipped == [GAME]
+        assert candidates.is_empty()
+        assert any("scan skips" in r.message for r in caplog.records)

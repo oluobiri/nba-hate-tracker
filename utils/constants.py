@@ -193,6 +193,29 @@ BELT_MIN_N = 300  # the weekly leader ("the belt")
 GAME_MIN_N = 20  # player x game cell
 
 # =============================================================================
+# Published recap rules (manifest rules.recaps; pipeline/recaps.py)
+# =============================================================================
+# How a recap's feed keeps bodies and how its alignment error is measured.
+# Published so the page states the rule it was built under.
+RECAP_ROOM_BUCKET_SECONDS = 120  # wall-clock bucket for the room's top-voted comments
+RECAP_ROOM_BODIES_PER_BUCKET = 2  # non-focus bodies kept per bucket, by score
+RECAP_ANCHOR_WINDOW_SECONDS = 480  # a play's reaction is looked for within this
+RECAP_ANCHOR_MIN_REACTIONS = 3  # comments naming the play in one minute to count
+# How the room names each anchor kind, matched against the lowercased body.
+# The word is what ties a reaction to one play; nicknames stay out
+RECAP_ANCHOR_VOCABULARY = {
+    "block": r"\b(?:block|swat|reject|denied|erased|volleyball)",
+    "steal": (
+        r"\b(?:steal|stole|swipe|pickpocket|pick(?:ed|s)? (?:his )?pocket"
+        r"|strip(?:ped|s)?\b|jumped the (?:lane|pass))"
+    ),
+    "dunk": (
+        r"\b(?:dunk|slam|poster|flush|hammer|jam(?:med|s)?\b|yam(?:med|s)?\b"
+        r"|throw(?:s|n)? (?:it )?down)"
+    ),
+}
+
+# =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)
 # =============================================================================
 
@@ -206,6 +229,8 @@ MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "schema.json"
 REFERENCE_DATA_SUBDIR = "reference"
 PLAY_BY_PLAY_SUBDIR = "play_by_play"
+RECAPS_SUBDIR = "recaps"  # under dashboard/: one JSON per curated recap
+RECAP_CANDIDATES_FILENAME = "recap_candidates.csv"  # under reference/, never published
 
 # Season-independent: one set of originals and variants serves every
 # season, so it sits beside the season directories, not under them.

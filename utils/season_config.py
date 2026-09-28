@@ -317,6 +317,7 @@ def _ensure_season_caches_cold() -> None:
         load_player_config_version,
         load_player_metadata,
     )
+    from utils.recaps_config import load_recaps_config, load_recaps_config_version
 
     warm = [
         fn.__name__
@@ -326,6 +327,8 @@ def _ensure_season_caches_cold() -> None:
             build_alias_to_player_map,
             load_player_metadata,
             load_player_config_version,
+            load_recaps_config,
+            load_recaps_config_version,
         )
         if fn.cache_info().currsize > 0
     ]

@@ -2,9 +2,9 @@
 The publish steps: a season's dashboard drop and the media drop.
 
 The dashboard upload set is manifest.json, schema.json and exactly the
-files the manifest's table registry names, so nothing else in the
-dashboard directory ever ships and a season without a manifest cannot be
-published. The media upload set is
+files the manifest's table and recap registries name, so nothing else in
+the dashboard directory ever ships and a season without a manifest
+cannot be published. The media upload set is
 exactly the names the dimension tables' ids imply, across every season,
 so a stray file never ships either. Pre-flight checks every file before a
 single byte is written; both drops share the list, diff, write, delete and
@@ -26,7 +26,8 @@ from botocore.exceptions import WaiterError
 
 from pipeline.contract import build_contract_schema
 from pipeline.media import expected_media_names
-from pipeline.schemas import SCHEMA_VERSION, Manifest, load_manifest
+from pipeline.recaps import recap_key
+from pipeline.schemas import SCHEMA_VERSION, Manifest, RecapEntry, load_manifest
 from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
 from utils.publish_config import PublishTarget
 
@@ -38,6 +39,10 @@ PARQUET_CACHE_CONTROL = "public, max-age=86400"
 # One rule for both JSON files: the manifest changes every drop and the
 # schema must never lag it
 JSON_CACHE_CONTROL = "public, max-age=300"
+# A recap changes only with a drop, but the page fetches it at runtime
+# and the drop's invalidation never reaches a browser's copy
+RECAP_CONTENT_TYPE = JSON_CONTENT_TYPE
+RECAP_CACHE_CONTROL = JSON_CACHE_CONTROL
 
 MEDIA_CONTENT_TYPES = {
     ".png": "image/png",
@@ -137,6 +142,44 @@ def _check_table(path: Path, expected_rows: int) -> None:
         )
 
 
+def _check_recap(path: Path, key: str, entry: RecapEntry, season: str) -> None:
+    """Fail unless the recap exists, is a single PUT, and its header and rows match the registry."""
+    if not path.exists():
+        raise PublishError(f"registered recap missing: {path}")
+
+    size = path.stat().st_size
+    if size >= MULTIPART_THRESHOLD_BYTES:
+        raise PublishError(
+            f"{path} is {size} bytes, at or above the single-PUT limit of "
+            f"{MULTIPART_THRESHOLD_BYTES} bytes"
+        )
+
+    with open(path, encoding="utf-8") as f:
+        document = json.load(f)
+    header = document.get("header") or {}
+    if header.get("schema_version") != SCHEMA_VERSION:
+        raise PublishError(
+            f"{path}: schema_version {header.get('schema_version')!r}, "
+            f"contract is {SCHEMA_VERSION}"
+        )
+    if header.get("season") != season:
+        raise PublishError(
+            f"{path} is for season {header.get('season')!r}, not {season!r}"
+        )
+    named = recap_key(str(header.get("game_id")), str(header.get("slug")))
+    if named != key:
+        raise PublishError(
+            f"{path}: header names recap {named!r}, registered as {key!r}"
+        )
+
+    frames = document.get("frames") or {}
+    rows = len((frames.get("comments") or {}).get("comment_id") or [])
+    if rows != entry["rows"]:
+        raise PublishError(
+            f"{path}: {rows} comments, but the manifest registers {entry['rows']} rows"
+        )
+
+
 def _check_contract_schema(path: Path) -> None:
     """Fail unless schema.json exists and is what the running contract generates."""
     if not path.exists():
@@ -174,9 +217,10 @@ def build_upload_set(
     Pre-flight a season's dashboard directory and build its upload set.
 
     Every check runs before any object is built, so a failure leaves
-    nothing half-prepared. The set is the registry's files in registry
-    order, then the schema, then the manifest, so a reader never sees a
-    new manifest over old tables or an old schema.
+    nothing half-prepared. The set is the table registry's files in
+    registry order, then the recaps in page order, then the schema, then
+    the manifest, so a reader never sees a new manifest over old files
+    or an old schema.
 
     Args:
         dashboard_dir: The season's dashboard directory.
@@ -213,6 +257,8 @@ def build_upload_set(
 
     for entry in manifest["tables"].values():
         _check_table(dashboard_dir / entry["file"], entry["rows"])
+    for key, recap in manifest["recaps"].items():
+        _check_recap(dashboard_dir / recap["file"], key, recap, season)
     schema_path = dashboard_dir / SCHEMA_FILENAME
     _check_contract_schema(schema_path)
 
@@ -226,6 +272,15 @@ def build_upload_set(
         )
         for entry in manifest["tables"].values()
     ]
+    objects.extend(
+        _local_object(
+            key_prefix + recap["file"],
+            dashboard_dir / recap["file"],
+            RECAP_CONTENT_TYPE,
+            RECAP_CACHE_CONTROL,
+        )
+        for recap in manifest["recaps"].values()
+    )
     for path in (schema_path, manifest_path):
         objects.append(
             _local_object(
@@ -233,8 +288,8 @@ def build_upload_set(
             )
         )
     logger.info(
-        f"Pre-flight passed: {len(manifest['tables'])} tables + schema + manifest "
-        f"for {season}"
+        f"Pre-flight passed: {len(manifest['tables'])} tables + "
+        f"{len(manifest['recaps'])} recaps + schema + manifest for {season}"
     )
     return manifest, objects
 

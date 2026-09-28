@@ -8,6 +8,7 @@ the manifest that fronts them.
 """
 
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,9 +16,17 @@ import polars as pl
 
 from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_game_tables
-from pipeline.lineage import check_config_stamps, config_versions
-from pipeline.nba_stats import check_snapshot_season
+from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
+from pipeline.nba_stats import check_snapshot_season, load_play_by_play
 from pipeline.posts import load_posts_table
+from pipeline.recaps import (
+    RecapDocument,
+    RecapStamps,
+    build_recap,
+    measure_alignment,
+    resolve_recap_specs,
+    unmeasured_alignment,
+)
 from pipeline.receipts import (
     build_comment_samples,
     load_receipt_verdicts,
@@ -38,7 +47,9 @@ from pipeline.schemas import (
     SENTIMENT_SCHEMA,
     TABLE_POPULATIONS,
     TEAMS_SCHEMA,
+    ClassifierIdentity,
     Manifest,
+    RecapEntry,
     validate_nullability,
     validate_schema,
 )
@@ -51,11 +62,17 @@ from utils.constants import (
     FANBASE_MIN_N,
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
+    RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_VOCABULARY,
+    RECAP_ANCHOR_WINDOW_SECONDS,
+    RECAP_ROOM_BODIES_PER_BUCKET,
+    RECAP_ROOM_BUCKET_SECONDS,
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
-from utils.paths import get_reference_dir
+from utils.paths import get_play_by_play_dir, get_reference_dir
 from utils.player_config import build_alias_to_player_map, load_player_metadata
+from utils.recaps_config import RecapSpec
 from utils.season_config import get_active_season, load_season_config
 from utils.formatting import slugify
 from utils.team_config import load_team_config
@@ -181,6 +198,52 @@ def read_classifier_stamps(input_path: Path) -> dict[str, str | None]:
     return stamps
 
 
+def _check_fact_lineage(input_path: Path) -> None:
+    """Warn on missing or drifted config stamps: the derived columns reflect
+    the configs the parquet was assembled under, and stale attribution is
+    legitimate to read, just not silently."""
+    check_config_stamps(
+        input_path,
+        pl.read_parquet_metadata(input_path),
+        "sentiment",
+        subject="fact",
+        remedy="attributed_player / fan_team may not reflect the current config; "
+        "reassemble sentiment.parquet",
+        log=logger,
+    )
+
+
+def load_fact_subset(input_path: Path, link_ids: Sequence[str]) -> pl.DataFrame:
+    """
+    Load the usable fact rows posted in the given posts, and only those.
+
+    The same file, checks and error drop as load_attributed_frame, read
+    through a filter so a recap can be built without holding the whole
+    fact in memory.
+
+    Args:
+        input_path: Path to sentiment.parquet.
+        link_ids: The posts (t3_ fullnames) whose comments to load.
+
+    Returns:
+        The usable rows whose link_id is one of link_ids, without the
+        week column.
+
+    Raises:
+        ValueError: If the parquet does not match SENTIMENT_SCHEMA.
+    """
+    lazy = pl.scan_parquet(input_path)
+    validate_schema(
+        pl.DataFrame(schema=lazy.collect_schema()), SENTIMENT_SCHEMA, str(input_path)
+    )
+    _check_fact_lineage(input_path)
+    df = lazy.filter(
+        pl.col("link_id").is_in(list(link_ids)) & (pl.col("sentiment") != "error")
+    ).collect()
+    logger.info(f"Loaded {df.height:,} usable rows from {len(link_ids)} posts")
+    return df
+
+
 def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     """
     Load the fact with its config-versioned attributes.
@@ -206,19 +269,7 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     logger.info(f"Loading sentiment data from {input_path}")
     df = pl.read_parquet(input_path)
     validate_schema(df, SENTIMENT_SCHEMA, str(input_path))
-
-    # Config-lineage checks: the derived columns reflect the configs the
-    # parquet was assembled under; stale attribution is legitimate to
-    # read, just not silently.
-    check_config_stamps(
-        input_path,
-        pl.read_parquet_metadata(input_path),
-        "sentiment",
-        subject="fact",
-        remedy="attributed_player / fan_team may not reflect the current config; "
-        "reassemble sentiment.parquet",
-        log=logger,
-    )
+    _check_fact_lineage(input_path)
 
     total_rows = len(df)
     logger.info(f"Loaded {total_rows:,} rows")
@@ -243,29 +294,38 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     return df, excluded_rows
 
 
-def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> dict:
+def aggregate_sentiment(
+    input_path: Path,
+    targets_path: Path | None = None,
+    *,
+    recaps: Sequence[RecapSpec] = (),
+) -> dict:
     """
-    Aggregate classified sentiment data into the published tables.
+    Aggregate classified sentiment data into the published tables and recaps.
 
     Reads the sentiment parquet and computes all aggregation views. The
     comment samples are verified against the target-verifier sidecar
     when one exists and fall back to the gate-only rule when it doesn't;
-    metadata says which (receipts_verified).
+    metadata says which (receipts_verified). The curated recaps are
+    built from the same fact against the banked play-by-play.
 
     Args:
         input_path: Path to sentiment.parquet file.
         targets_path: Path to sentiment_targets.parquet; None or a
             missing file selects the fallback posture.
+        recaps: The curation (load_recaps_config); empty builds none.
 
     Returns:
         Dict where player_overall, player_temporal, player_fan_team,
         fan_team_overall, game_sentiment, players, teams, games, player_games,
         posts, comment_samples and corpus_daily hold pl.DataFrames
-        conforming to DASHBOARD_OUTPUT_SCHEMAS; manifest is the Manifest built from
-        them; metadata is the build's internal block (the stamp source
-        for the write site).
+        conforming to DASHBOARD_OUTPUT_SCHEMAS; recaps is the list of
+        built RecapDocument in page order; manifest is the Manifest built
+        from them; metadata is the build's internal block (the stamp
+        source for the write site).
 
     Raises:
+        RecapError: If a curated recap cannot be resolved or built.
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
             or a computed output does not match its schema contract.
     """
@@ -400,10 +460,37 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         f"{game_sentiment['game_id'].n_unique():,} games"
     )
 
+    # The curated recaps: every input is a table built above or the
+    # banked archive, so a recap can never disagree with the tables
+    versions = config_versions()
+    documents = _build_recaps(
+        recaps,
+        fact=df,
+        posts=posts,
+        games=games,
+        players=players,
+        player_games=player_games,
+        stamps=RecapStamps(
+            season=metadata["season"],
+            generated_at=metadata["generated_at"],
+            config_versions={name: versions[name] for name in OUTPUT_CONFIGS["recaps"]},
+            classifiers=classifier_identities(metadata),
+        ),
+    )
+    metadata["recap_count"] = len(documents)
+    # The clock is one method for every game, so its error is measured
+    # once, season-wide, and only for a season that curates a recap
+    if documents:
+        _, metadata["recap_alignment"] = measure_alignment(
+            df, posts, games, players, get_play_by_play_dir()
+        )
+    else:
+        metadata["recap_alignment"] = unmeasured_alignment()
+
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks, "
-        f"{comment_samples.height:,} comment samples"
+        f"{comment_samples.height:,} comment samples, {len(documents)} recaps"
     )
 
     outputs = {
@@ -424,41 +511,71 @@ def aggregate_sentiment(input_path: Path, targets_path: Path | None = None) -> d
         validate_schema(outputs[name], schema, name)
         validate_nullability(outputs[name], NULLABLE_COLUMNS[name], name)
 
-    manifest = build_manifest(outputs, metadata, season_config, config_versions())
+    manifest = build_manifest(
+        outputs,
+        metadata,
+        season_config,
+        versions,
+        recaps={doc.key: doc.entry for doc in documents},
+    )
     return {
         **outputs,
+        "recaps": documents,
         "manifest": manifest,
         "metadata": metadata,
     }
 
 
-def build_manifest(
-    outputs: dict[str, pl.DataFrame],
-    metadata: dict,
-    season_config: dict,
-    config_versions: dict[str, str],
-) -> Manifest:
-    """
-    Project a build onto the Manifest contract.
+def _build_recaps(
+    specs: Sequence[RecapSpec],
+    *,
+    fact: pl.DataFrame,
+    posts: pl.DataFrame,
+    games: pl.DataFrame,
+    players: pl.DataFrame,
+    player_games: pl.DataFrame,
+    stamps: RecapStamps,
+) -> list[RecapDocument]:
+    """Resolve the curation against the built tables and build each recap."""
+    if not specs:
+        return []
+    logger.info(f"Building {len(specs)} recaps...")
+    resolved = resolve_recap_specs(specs, games, players, posts, get_play_by_play_dir())
+    documents = []
+    for spec in resolved:
+        doc = build_recap(
+            spec,
+            fact=fact,
+            posts=posts,
+            games=games,
+            player_games=player_games,
+            players=players,
+            pbp=load_play_by_play(spec.pbp_path, log=logger),
+            stamps=stamps,
+        )
+        entry = doc.entry
+        logger.info(
+            f"recap {doc.key}: live_n {entry['live_n']:,}, room_n {entry['room_n']:,}, "
+            f"minutes_diff {entry['minutes_diff']:+d}"
+        )
+        documents.append(doc)
+    return documents
 
-    Rules, identity and existence, never results: the published
-    constants, the stamps the build read, the season facts relayed
-    from config, and the table registry generated from
-    DASHBOARD_OUTPUT_SCHEMAS. Counts are the build's own (classified,
-    usable, attributed) or season.yaml's (raw, submitted); nothing is
-    transcribed. A classifier stage with no stamps has no block.
+
+def classifier_identities(metadata: dict) -> dict[str, ClassifierIdentity]:
+    """
+    The classifier stages the build carries stamps for, by stage name.
+
+    A stage needs both its model and its prompt version to be an
+    identity; one alone, or none, is no block.
 
     Args:
-        outputs: The produced tables, keyed as DASHBOARD_OUTPUT_SCHEMAS.
-        metadata: The build's internal block: counts, stamps, receipts
-            figures, snapshot dates, season and generated_at.
-        season_config: The active season's facts (load_season_config()).
-        config_versions: Config name -> version (lineage.config_versions()).
+        metadata: The build's internal block.
 
     Returns:
-        The manifest, JSON-serializable, keys in block order.
+        Stage name -> identity, in STAGE_NAMES order.
     """
-    classifiers = {}
+    classifiers: dict[str, ClassifierIdentity] = {}
     for stage in STAGE_NAMES:
         model_key, prompt_key = classifier_stamp_keys(stage)
         stamps = (metadata.get(model_key), metadata.get(prompt_key))
@@ -467,7 +584,39 @@ def build_manifest(
                 "model": metadata[model_key],
                 "prompt_version": metadata[prompt_key],
             }
+    return classifiers
 
+
+def build_manifest(
+    outputs: dict[str, pl.DataFrame],
+    metadata: dict,
+    season_config: dict,
+    config_versions: dict[str, str],
+    recaps: Mapping[str, RecapEntry],
+) -> Manifest:
+    """
+    Project a build onto the Manifest contract.
+
+    Rules, identity and existence, never results: the published
+    constants, the stamps the build read, the season facts relayed
+    from config, the table registry generated from
+    DASHBOARD_OUTPUT_SCHEMAS and the recap registry the build produced.
+    Counts are the build's own (classified, usable, attributed) or
+    season.yaml's (raw, submitted); nothing is transcribed. A classifier
+    stage with no stamps has no block.
+
+    Args:
+        outputs: The produced tables, keyed as DASHBOARD_OUTPUT_SCHEMAS.
+        metadata: The build's internal block: counts, stamps, receipts
+            figures, snapshot dates, season and generated_at.
+        season_config: The active season's facts (load_season_config()).
+        config_versions: Config name -> version (lineage.config_versions()).
+        recaps: Recap key -> registry entry, in page order; empty when
+            the season curates none.
+
+    Returns:
+        The manifest, JSON-serializable, keys in block order.
+    """
     verified = metadata["receipts_verified"]
     derived_counts = {
         "classified": metadata["total_comments"],
@@ -481,7 +630,7 @@ def build_manifest(
         "season": metadata["season"],
         "generated_at": metadata["generated_at"],
         "config_versions": dict(config_versions),
-        "classifiers": classifiers,
+        "classifiers": classifier_identities(metadata),
         "snapshots": {
             "games_fetched_at": metadata["games_fetched_at"],
             "posts_processed_at": metadata["posts_processed_at"],
@@ -509,6 +658,14 @@ def build_manifest(
                 "belt_min_n": BELT_MIN_N,
                 "game_min_n": GAME_MIN_N,
             },
+            "recaps": {
+                "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,
+                "room_bodies_per_bucket": RECAP_ROOM_BODIES_PER_BUCKET,
+                "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
+                "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
+                "anchor_vocabulary": dict(RECAP_ANCHOR_VOCABULARY),
+                "alignment": metadata["recap_alignment"],
+            },
             "metrics": dict(METRIC_FORMULAS),
         },
         "calendar": dict(season_config["calendar"]),
@@ -527,6 +684,7 @@ def build_manifest(
             }
             for name in DASHBOARD_OUTPUT_SCHEMAS
         },
+        "recaps": dict(recaps),
     }
 
 

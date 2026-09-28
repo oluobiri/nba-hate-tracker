@@ -21,6 +21,7 @@ from pipeline.lineage import (
 )
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS
 from utils.player_config import load_player_config_version
+from utils.recaps_config import load_recaps_config_version
 from utils.season_config import load_season_config_version
 from utils.team_config import load_team_config_version
 
@@ -29,11 +30,12 @@ class TestConfigVersionLoaders:
     """The config name -> version-loader registry."""
 
     def test_registers_every_versioned_config(self):
-        """players, teams and season are the three versioned configs."""
+        """players, teams, season and recaps are the four versioned configs."""
         assert CONFIG_VERSION_LOADERS == {
             "players": load_player_config_version,
             "teams": load_team_config_version,
             "season": load_season_config_version,
+            "recaps": load_recaps_config_version,
         }
 
     def test_config_versions_reads_every_loader(self):
@@ -49,7 +51,7 @@ class TestConfigVersionLoaders:
 class TestConfigStampKey:
     """The parquet metadata key a config's version is stamped under."""
 
-    @pytest.mark.parametrize("config", ["players", "teams", "season"])
+    @pytest.mark.parametrize("config", ["players", "teams", "season", "recaps"])
     def test_spells_the_stamp_key(self, config):
         """<config>_config_version, the key every write and read site uses."""
         assert config_stamp_key(config) == f"{config}_config_version"
@@ -76,6 +78,11 @@ class TestOutputConfigs:
         """The Player and Team dimensions are exports of their configs."""
         assert OUTPUT_CONFIGS["players"] == ("players",)
         assert OUTPUT_CONFIGS["teams"] == ("teams",)
+
+    def test_recaps_carry_curation_and_the_fact_configs(self):
+        """A recap is curated by recaps.yaml and selects fact rows resolved
+        under the players and teams configs, so it carries all three."""
+        assert OUTPUT_CONFIGS["recaps"] == ("recaps", "players", "teams")
 
     def test_declared_configs_have_loaders(self):
         """Every config an output declares is a registered, loadable config."""

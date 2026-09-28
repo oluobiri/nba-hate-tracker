@@ -569,6 +569,7 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
         load_player_config_version,
         load_player_metadata,
     )
+    from utils.recaps_config import load_recaps_config, load_recaps_config_version
     from utils.season_config import (
         clear_season_override,
         load_season_config,
@@ -582,6 +583,8 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
             build_alias_to_player_map,
             load_player_metadata,
             load_player_config_version,
+            load_recaps_config,
+            load_recaps_config_version,
         ):
             fn.cache_clear()
         # cache_clear() is a side door the override's warm-cache guard

@@ -1,0 +1,9 @@
+# Curated recaps — 2024-25. One entry per recap, in page order:
+# game_id -> games.parquet, slug -> players.parquet. game_id stays quoted
+# (a leading zero reads as octal otherwise). Empty list = nothing curated.
+# version: MAJOR = entry add/drop, MINOR = reorder.
+
+version: "1.0"
+season: "2024-25"
+
+recaps: []

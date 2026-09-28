@@ -10,11 +10,18 @@ from pipeline.contract import TABLE_DTYPES, build_contract_schema
 from pipeline.schemas import (
     DASHBOARD_OUTPUT_SCHEMAS,
     NULLABLE_COLUMNS,
+    RECAP_FRAME_SCHEMAS,
+    RECAP_NULLABLE_COLUMNS,
     SCHEMA_VERSION,
     ClassifierIdentity,
     Corpus,
     Floors,
     Manifest,
+    PeriodCounts,
+    RecapEntry,
+    RecapHeader,
+    AlignmentFigures,
+    RecapsRule,
     ReceiptsFigures,
     Rules,
     SamplesRule,
@@ -27,16 +34,21 @@ MANIFEST_FAMILY = (
     SamplesRule,
     ReceiptsFigures,
     Floors,
+    AlignmentFigures,
+    AlignmentFigures,
+    RecapsRule,
     Rules,
     Corpus,
     TableEntry,
+    PeriodCounts,
+    RecapEntry,
 )
 
 
-def _distinct_dashboard_dtypes() -> list[pl.DataType]:
-    """Every dtype used by a produced table, once each."""
+def _distinct_dtypes(schemas: dict[str, pl.Schema]) -> list[pl.DataType]:
+    """Every dtype used by the given frames, once each."""
     seen: list[pl.DataType] = []
-    for schema in DASHBOARD_OUTPUT_SCHEMAS.values():
+    for schema in schemas.values():
         for dtype in schema.dtypes():
             if dtype not in seen:
                 seen.append(dtype)
@@ -44,7 +56,7 @@ def _distinct_dashboard_dtypes() -> list[pl.DataType]:
 
 
 class TestBuildContractSchema:
-    """The file's three blocks: version, tables, manifest."""
+    """The file's four blocks: version, tables, manifest, documents."""
 
     @pytest.fixture
     def contract(self) -> dict:
@@ -53,7 +65,7 @@ class TestBuildContractSchema:
     def test_stamps_the_contract_version(self, contract):
         """The file says which contract it describes."""
         assert contract["schema_version"] == SCHEMA_VERSION
-        assert list(contract) == ["schema_version", "tables", "manifest"]
+        assert list(contract) == ["schema_version", "tables", "manifest", "documents"]
 
     def test_is_deterministic_json(self, contract):
         """No timestamp, no set ordering: two builds are byte-identical, so
@@ -77,7 +89,9 @@ class TestBuildContractSchema:
                 expected = column["name"] in NULLABLE_COLUMNS[name]
                 assert column["nullable"] is expected, f"{name}.{column['name']}"
 
-    @pytest.mark.parametrize("dtype", _distinct_dashboard_dtypes(), ids=repr)
+    @pytest.mark.parametrize(
+        "dtype", _distinct_dtypes(DASHBOARD_OUTPUT_SCHEMAS), ids=repr
+    )
     def test_every_dashboard_dtype_is_in_the_vocabulary(self, dtype):
         """The closed vocabulary covers every dtype a produced table uses."""
         assert dtype in TABLE_DTYPES
@@ -177,6 +191,25 @@ class TestManifestBlock:
             "values": {"type": "TableEntry", "nullable": False},
             "nullable": False,
         }
+        assert root["recaps"] == {
+            "type": "map",
+            "values": {"type": "RecapEntry", "nullable": False},
+            "nullable": False,
+        }
+        assert manifest["types"]["RecapEntry"]["by_period"] == {
+            "type": "map",
+            "values": {"type": "PeriodCounts", "nullable": False},
+            "nullable": False,
+        }
+        assert manifest["types"]["RecapsRule"]["alignment"] == {
+            "type": "AlignmentFigures",
+            "nullable": False,
+        }
+        assert manifest["types"]["AlignmentFigures"]["median_offset_seconds"] == {
+            "type": "int",
+            "nullable": True,
+        }
+        assert "error_seconds" not in manifest["types"]["RecapEntry"]
 
     def test_nested_typed_dicts_are_refs(self, manifest):
         """A nested TypedDict field references its type by name."""
@@ -221,4 +254,65 @@ class TestManifestBlock:
         monkeypatch.setattr("pipeline.contract.MANIFEST_ROOT", Odd)
 
         with pytest.raises(TypeError, match="Odd.items"):
+            build_contract_schema()
+
+
+class TestDocumentsBlock:
+    """The JSON files that are not tables: a header and frames each."""
+
+    @pytest.fixture
+    def documents(self) -> dict:
+        return build_contract_schema()["documents"]
+
+    def test_recap_is_the_one_document(self, documents):
+        """One document today, with a header block and a frames block."""
+        assert list(documents) == ["recap"]
+        assert list(documents["recap"]) == ["header", "frames"]
+
+    def test_header_is_a_typed_block_rooted_at_recap_header(self, documents):
+        """The header renders like the manifest: named types under a root,
+        the root first, its one nested type registered."""
+        header = documents["recap"]["header"]
+        assert header["root"] == "RecapHeader"
+        assert list(header["types"]) == ["RecapHeader", "ClassifierIdentity"]
+        assert list(header["types"]["RecapHeader"]) == list(RecapHeader.__annotations__)
+        assert header["types"]["RecapHeader"]["classifiers"] == {
+            "type": "map",
+            "values": {"type": "ClassifierIdentity", "nullable": False},
+            "nullable": False,
+        }
+
+    def test_frames_follow_the_registry_in_order(self, documents):
+        """Every recap frame appears, keyed and ordered as the registry."""
+        assert list(documents["recap"]["frames"]) == list(RECAP_FRAME_SCHEMAS)
+
+    def test_frame_columns_follow_each_schema(self, documents):
+        """Column order and the nullable flag are the frame's declarations,
+        in the tables' vocabulary."""
+        for name, schema in RECAP_FRAME_SCHEMAS.items():
+            columns = documents["recap"]["frames"][name]["columns"]
+            assert [c["name"] for c in columns] == schema.names(), name
+            for column in columns:
+                expected = column["name"] in RECAP_NULLABLE_COLUMNS[name]
+                assert column["nullable"] is expected, f"{name}.{column['name']}"
+
+    @pytest.mark.parametrize("dtype", _distinct_dtypes(RECAP_FRAME_SCHEMAS), ids=repr)
+    def test_every_recap_dtype_is_in_the_vocabulary(self, dtype):
+        """The frames use the tables' closed vocabulary, nothing new."""
+        assert dtype in TABLE_DTYPES
+
+    def test_unmapped_frame_dtype_names_the_document(self, monkeypatch):
+        """A frame column outside the vocabulary fails by document.frame.column."""
+        monkeypatch.setattr(
+            "pipeline.contract.DOCUMENT_ROOTS",
+            {
+                "odd": (
+                    RecapHeader,
+                    {"rows": pl.Schema({"x": pl.Int32})},
+                    {"rows": frozenset()},
+                )
+            },
+        )
+
+        with pytest.raises(ValueError, match="odd.rows.x"):
             build_contract_schema()

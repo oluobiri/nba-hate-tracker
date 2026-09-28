@@ -20,6 +20,7 @@ from utils.player_config import (
     load_player_config_version,
     load_player_metadata,
 )
+from utils.recaps_config import load_recaps_config, load_recaps_config_version
 from utils.season_config import (
     CALENDAR_KEYS,
     CORPUS_KEYS,
@@ -58,6 +59,8 @@ def _clear_season_caches() -> None:
         build_alias_to_player_map,
         load_player_metadata,
         load_player_config_version,
+        load_recaps_config,
+        load_recaps_config_version,
     ):
         fn.cache_clear()
     pipeline.processors._player_patterns = None
@@ -460,8 +463,20 @@ class TestSeasonOverride:
 
     @pytest.mark.parametrize(
         "warming_call",
-        [load_season_config, load_player_config, load_player_config_version],
-        ids=["season_config", "player_config", "config_version"],
+        [
+            load_season_config,
+            load_player_config,
+            load_player_config_version,
+            load_recaps_config,
+            load_recaps_config_version,
+        ],
+        ids=[
+            "season_config",
+            "player_config",
+            "config_version",
+            "recaps_config",
+            "recaps_version",
+        ],
     )
     def test_raises_if_caches_already_warm(self, warming_call):
         """Setting the override after config loading fails loud.

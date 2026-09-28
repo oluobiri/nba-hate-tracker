@@ -7,7 +7,8 @@ frame loader, and aggregate_sentiment end to end.
 
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 import polars as pl
@@ -15,7 +16,6 @@ import pytest
 
 from pipeline.aggregation import (
     _build_players_dimension,
-    load_attributed_frame,
     aggregate_sentiment,
     attach_player_id,
     build_manifest,
@@ -23,12 +23,17 @@ from pipeline.aggregation import (
     compute_cumulative_metrics,
     compute_game_sentiment,
     compute_metrics,
+    load_attributed_frame,
+    load_fact_subset,
     mask_below_threshold,
     pivot_bar_race_wide,
 )
 from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
+from pipeline.recaps import RecapError
+from pipeline.schemas import PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
+from utils.recaps_config import RecapSpec
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     CORPUS_DAILY_SCHEMA,
@@ -61,6 +66,11 @@ from utils.constants import (
     FANBASE_MIN_N,
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
+    RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_VOCABULARY,
+    RECAP_ANCHOR_WINDOW_SECONDS,
+    RECAP_ROOM_BODIES_PER_BUCKET,
+    RECAP_ROOM_BUCKET_SECONDS,
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
@@ -70,6 +80,7 @@ from utils.player_config import (
     load_player_metadata,
     resolve_player,
 )
+from utils.recaps_config import load_recaps_config_version
 from utils.season_config import (
     get_active_season,
     load_season_config,
@@ -259,6 +270,30 @@ def _lebron_rows_with_error() -> dict:
         "sentiment": "error",
     }
     return {k: v + [extra[k]] for k, v in rows.items()}
+
+
+class TestLoadFactSubset:
+    """Tests for load_fact_subset, the filtered read the curation tools use."""
+
+    def test_matches_the_full_frame_for_the_named_posts(self, tmp_path):
+        """The same usable rows load_attributed_frame keeps, for those
+        posts only, minus the week column."""
+        path = _make_test_parquet(tmp_path, _lebron_rows_with_error())
+        full, _ = load_attributed_frame(path)
+
+        subset = load_fact_subset(path, ["t3_post123"])
+
+        assert subset.columns == full.drop("week").columns
+        assert subset["comment_id"].to_list() == ["c1"]
+        assert "error" not in subset["sentiment"].to_list()
+
+    def test_wrong_schema_raises(self, tmp_path):
+        """A parquet outside the contract is refused before any row is read."""
+        path = tmp_path / "odd.parquet"
+        pl.DataFrame({"link_id": ["t3_x"]}).write_parquet(path)
+
+        with pytest.raises(ValueError, match="Schema validation failed"):
+            load_fact_subset(path, ["t3_x"])
 
 
 class TestLoadAttributedFrame:
@@ -1138,10 +1173,20 @@ def _make_temporal_records(
     )
 
 
-def _manifest_inputs() -> tuple[dict, dict, dict, dict]:
-    """Minimal (outputs, metadata, season_config, config_versions) for
-    build_manifest: empty frames except a two-row player_overall, a
-    verified receipts block, both classifier stages stamped."""
+ALIGNMENT = {
+    "candidates": 40,
+    "anchors": 12,
+    "games": 5,
+    "median_offset_seconds": -40,
+    "p25_offset_seconds": -90,
+    "p75_offset_seconds": 20,
+}
+
+
+def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
+    """Minimal (outputs, metadata, season_config, config_versions, recaps)
+    for build_manifest: empty frames except a two-row player_overall, a
+    verified receipts block, both classifier stages stamped, no recaps."""
     outputs = {
         name: pl.DataFrame(schema=schema)
         for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items()
@@ -1180,13 +1225,14 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict]:
         "receipts_coverage": 0.999,
         "receipts_precision": 0.777,
         "attribution_toward_share": 0.74,
+        "recap_alignment": ALIGNMENT,
     }
     season_config = {
         "calendar": {"opening_night": "2025-10-21", "finals_end": None},
         "corpus": {"raw_comments": 100, "population_submitted": 50},
     }
     config_versions = {"players": "4.5", "teams": "2.2", "season": "2.0"}
-    return outputs, metadata, season_config, config_versions
+    return outputs, metadata, season_config, config_versions, {}
 
 
 class TestBuildManifest:
@@ -1237,26 +1283,27 @@ class TestBuildManifest:
 
     def test_unstamped_stage_is_absent(self):
         """Feature detection: a stage with no stamps has no block, not nulls."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata["classifier_target_model"] = None
         metadata["classifier_target_prompt_version"] = None
 
-        manifest = build_manifest(outputs, metadata, season_config, versions)
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
 
         assert list(manifest["classifiers"]) == ["sentiment"]
 
     def test_half_stamped_stage_is_absent(self):
         """A stage needs both stamps to be an identity; one alone is no block."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata["classifier_target_prompt_version"] = None
 
-        manifest = build_manifest(outputs, metadata, season_config, versions)
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
 
         assert list(manifest["classifiers"]) == ["sentiment"]
 
     def test_rules_publish_the_constants(self):
         """The threshold, samples rule, floors and formulas are the named
-        constants, never retyped."""
+        constants, never retyped; the recaps rule carries the measured
+        alignment the build passed through."""
         rules = build_manifest(*_manifest_inputs())["rules"]
 
         assert rules["qualified_threshold"] == QUALIFIED_THRESHOLD
@@ -1274,7 +1321,42 @@ class TestBuildManifest:
             "belt_min_n": BELT_MIN_N,
             "game_min_n": GAME_MIN_N,
         }
+        assert rules["recaps"] == {
+            "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,
+            "room_bodies_per_bucket": RECAP_ROOM_BODIES_PER_BUCKET,
+            "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
+            "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
+            "anchor_vocabulary": RECAP_ANCHOR_VOCABULARY,
+            "alignment": ALIGNMENT,
+        }
         assert rules["metrics"] == METRIC_FORMULAS
+
+    def test_recaps_block_is_the_registry_passed_in_and_last(self):
+        """The recap registry rides as the last block, exactly as built,
+        in page order; a season with none has an empty block."""
+        outputs, metadata, season_config, versions, _ = _manifest_inputs()
+        entry = {
+            "file": "recaps/0042500317-chet-holmgren.json",
+            "rows": 3,
+            "game_id": "0042500317",
+            "attributed_player": "Chet Holmgren",
+            "player_id": 1631096,
+            "slug": "chet-holmgren",
+            "live_n": 2,
+            "room_n": 40,
+            "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
+            "swing": 0.0,
+            "minutes_diff": 0,
+            "population": "live_thread",
+        }
+        recaps = {"0042500317-chet-holmgren": entry}
+
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
+
+        assert list(manifest)[-1] == "recaps"
+        assert manifest["recaps"] == recaps
+        assert manifest["recaps"] is not recaps
+        assert build_manifest(*_manifest_inputs())["recaps"] == {}
 
     def test_receipts_figures_pass_through(self):
         """The verifier's figures ride under rules.receipts."""
@@ -1289,7 +1371,7 @@ class TestBuildManifest:
 
     def test_gate_only_fallback_says_so(self):
         """Without a sidecar the samples admit on the gate and the figures are null."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata.update(
             receipts_verified=False,
             receipts_coverage=None,
@@ -1297,7 +1379,9 @@ class TestBuildManifest:
             attribution_toward_share=None,
         )
 
-        rules = build_manifest(outputs, metadata, season_config, versions)["rules"]
+        rules = build_manifest(outputs, metadata, season_config, versions, recaps)[
+            "rules"
+        ]
 
         assert rules["samples"]["admission"] == "gate_only"
         assert rules["samples"]["requires_target"] is True
@@ -1377,6 +1461,7 @@ class TestBuildManifest:
             "players": load_player_config_version(),
             "teams": load_team_config_version(),
             "season": load_season_config_version(),
+            "recaps": load_recaps_config_version(),
         }
         assert manifest["corpus"]["classified"] == 3
         assert manifest["corpus"]["usable"] == 2
@@ -2208,3 +2293,161 @@ class TestAggregateGameSentiment:
         totals = result["player_overall"].select("attributed_player", "comment_count")
         joined = per_player.join(totals, on="attributed_player", suffix="_overall")
         assert (joined["comment_count"] <= joined["comment_count_overall"]).all()
+
+
+def _game_time(hour: int, minute: int) -> int:
+    """Epoch seconds of an Eastern time on the game log's date."""
+    return int(
+        datetime(
+            2025, 10, 21, hour, minute, tzinfo=ZoneInfo("America/New_York")
+        ).timestamp()
+    )
+
+
+def _write_play_by_play(pbp_dir):
+    """The LeBron game's markers (7:30 to 9:45 PM ET) and one LeBron rebound."""
+
+    def marker(period, sub_type, label, action_id):
+        word = "Start" if sub_type == "start" else "End"
+        return {
+            "game_id": "0022500001",
+            "action_number": action_id,
+            "clock": "PT12M00.00S" if sub_type == "start" else "PT00M00.00S",
+            "period": period,
+            "team_id": 0,
+            "team_tricode": "",
+            "person_id": 0,
+            "player_name": "",
+            "player_name_i": "",
+            "x_legacy": 0,
+            "y_legacy": 0,
+            "shot_distance": 0,
+            "shot_result": "",
+            "is_field_goal": 0,
+            "score_home": "0",
+            "score_away": "0",
+            "points_total": 0,
+            "location": "",
+            "description": f"{word} of {period}th Period ({label} EST)",
+            "action_type": "period",
+            "sub_type": sub_type,
+            "video_available": 0,
+            "shot_value": 0,
+            "action_id": action_id,
+        }
+
+    rows = [
+        marker(1, "start", "7:30 PM", 1),
+        {
+            **marker(1, "start", "7:30 PM", 5),
+            "team_id": 1610612747,
+            "team_tricode": "LAL",
+            "person_id": 2544,
+            "player_name": "James",
+            "player_name_i": "L. James",
+            "clock": "PT06M00.00S",
+            "description": "James REBOUND (Off:0 Def:1)",
+            "action_type": "Rebound",
+            "sub_type": "Unknown",
+        },
+        marker(1, "end", "8:00 PM", 50),
+        marker(2, "start", "8:03 PM", 51),
+        marker(2, "end", "8:33 PM", 100),
+        marker(3, "start", "8:50 PM", 101),
+        marker(3, "end", "9:20 PM", 150),
+        marker(4, "start", "9:23 PM", 151),
+        marker(4, "end", "9:55 PM", 200),
+    ]
+    pbp_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(rows, schema=PLAY_BY_PLAY_SCHEMA).write_parquet(
+        pbp_dir / "0022500001.parquet", metadata={"season": get_active_season()}
+    )
+
+
+class TestAggregateRecaps:
+    """Tests for the curated recaps' passage through aggregate_sentiment."""
+
+    @pytest.fixture
+    def pbp_dir(self, monkeypatch, tmp_path):
+        pbp_dir = tmp_path / "reference" / "play_by_play"
+        monkeypatch.setattr(
+            "pipeline.aggregation.get_play_by_play_dir", lambda: pbp_dir
+        )
+        return pbp_dir
+
+    def test_no_curation_builds_nothing(self, tmp_path, pinned_snapshot):
+        """The default is an empty registry and no documents, not a failure."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["recaps"] == []
+        assert result["manifest"]["recaps"] == {}
+        assert result["manifest"]["rules"]["recaps"]["alignment"] == {
+            "candidates": 0,
+            "anchors": 0,
+            "games": 0,
+            "median_offset_seconds": None,
+            "p25_offset_seconds": None,
+            "p75_offset_seconds": None,
+        }
+        assert result["metadata"]["recap_count"] == 0
+
+    def test_builds_the_curated_recap_from_the_tables(
+        self, tmp_path, pinned_snapshot, pbp_dir
+    ):
+        """LeBron's live-thread comment during Q1 lands in the recap; the
+        registry entry and the header carry the build's lineage."""
+        _write_game_logs(pinned_snapshot)
+        _write_posts_bridge(
+            pinned_snapshot,
+            [
+                _post_row("t3_post123", "game_thread", "0022500001", True),
+                _post_row("t3_post456", "other", None, False),
+            ],
+        )
+        _write_play_by_play(pbp_dir)
+        rows = _lebron_rows()
+        rows["created_utc"] = [_game_time(19, 45), _game_time(22, 30)]
+        path = _make_test_parquet(tmp_path, rows)
+
+        result = aggregate_sentiment(
+            path, recaps=(RecapSpec("0022500001", "lebron-james"),)
+        )
+
+        [doc] = result["recaps"]
+        assert doc.key == "0022500001-lebron-james"
+        assert list(doc.frames) == list(RECAP_FRAME_SCHEMAS)
+        comments = doc.frames["comments"]
+        assert comments["comment_id"].to_list() == ["c1"]
+        assert comments["phase"].to_list() == ["live"]
+        assert comments["game_seconds"][0] == 360
+        assert doc.frames["stints"].rows() == [(1, 0, 720)]
+        entry = result["manifest"]["recaps"][doc.key]
+        assert entry is doc.entry
+        assert entry["live_n"] == 1
+        assert entry["room_n"] == 10
+        assert entry["minutes_diff"] == 12 - 34
+        alignment = result["manifest"]["rules"]["recaps"]["alignment"]
+        assert alignment["candidates"] == 0
+        assert alignment["median_offset_seconds"] is None
+        header = doc.header
+        assert header["season"] == result["metadata"]["season"]
+        assert header["generated_at"] == result["metadata"]["generated_at"]
+        assert set(header["config_versions"]) == {"recaps", "players", "teams"}
+        assert header["config_versions"]["players"] == load_player_config_version()
+        classifiers = result["manifest"]["classifiers"]
+        assert header["classifiers"] == {
+            stage: identity
+            for stage, identity in classifiers.items()
+            if stage == "sentiment"
+        }
+        assert result["metadata"]["recap_count"] == 1
+
+    def test_unresolvable_curation_fails_loudly(
+        self, tmp_path, pinned_snapshot, pbp_dir
+    ):
+        """A curated game the tables do not carry stops the build by name."""
+        with pytest.raises(RecapError, match="0000000000 / lebron-james"):
+            aggregate_sentiment(
+                _lebron_parquet(tmp_path),
+                recaps=(RecapSpec("0000000000", "lebron-james"),),
+            )

@@ -41,6 +41,11 @@ pipeline produces. Data dictionary first, enforcement second:
 - NULLABLE_COLUMNS declares, per produced table, which columns may hold
   nulls; every other column is enforced null-free at the same write
   boundary (validate_nullability).
+- RECAP_FRAME_SCHEMAS / RECAP_NULLABLE_COLUMNS describe the frames of a
+  recap file (pipeline/recaps.py): tables serialized as column arrays
+  inside one JSON document per curated recap, validated like every
+  produced table before serialization. RecapHeader is the document's
+  scalar block, RecapEntry its manifest registry entry.
 - Manifest is the typed shape of manifest.json, the front door written
   beside the parquets (pipeline/aggregation.py builds it): rules,
   identity and existence, never results.
@@ -55,8 +60,10 @@ from typing import TypedDict, cast
 
 import polars as pl
 
+from utils.constants import RECAPS_SUBDIR
+
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -561,13 +568,149 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "corpus_daily": frozenset({"attributed"}),
 }
 
+# --- Recap files (built in pipeline/recaps.py) -------------------------------
+# One JSON document per curated recap: a scalar header (RecapHeader) and
+# named frames, each a table serialized as column arrays under its name.
+# The frames are validated like every produced table before they are
+# serialized, and schema.json describes them under documents.recap with
+# the tables' column vocabulary. Time is two clocks: game_seconds since
+# tip-off (720 per period, 300 per overtime) and wall_clock, epoch
+# seconds; a play's wall clock is mapped from the period markers, a
+# comment's game seconds is mapped back through them. The mapping's error
+# is a property of the method, measured once per season under
+# rules.recaps.alignment, never per file. Team columns keep
+# the archive's abbreviation under its own name; a comment carries the
+# fan role; there is no bare team.
+
+# The game clock: one row per period, start and end wall clock from the
+# archive's period markers, game seconds cumulative across periods.
+RECAP_PERIODS_SCHEMA = pl.Schema(
+    {
+        "period": pl.Int64,
+        "start_seconds": pl.Int64,
+        "end_seconds": pl.Int64,
+        "start_wall": pl.Int64,  # epoch seconds, from the start marker
+        "end_wall": pl.Int64,
+        "start_action_id": pl.Int64,
+        "end_action_id": pl.Int64,
+    }
+)
+
+# The live threads the comments were drawn from, primary and split.
+RECAP_THREADS_SCHEMA = pl.Schema(
+    {
+        "post_id": pl.String,  # FK -> posts.parquet; title joins from there
+        "is_primary": pl.Boolean,
+        "created_utc": pl.Int64,
+        "num_comments": pl.Int64,  # the whole room, as posts.parquet
+        "comment_n": pl.Int64,  # classified rows in this recap from the thread
+    }
+)
+
+# The focus player's on-court intervals in game seconds.
+RECAP_STINTS_SCHEMA = pl.Schema(
+    {
+        "period": pl.Int64,
+        "start_seconds": pl.Int64,
+        "end_seconds": pl.Int64,
+    }
+)
+
+# The plays the page draws: the focus player's actions, both teams' shots,
+# the period markers and the timeouts. kind is derived (the archive's
+# action_type is blank on blocks and steals); the score is forward-filled
+# onto every row; a block borrows its shot's location; the running totals
+# are parsed from the focus player's own descriptions.
+RECAP_PLAYS_SCHEMA = pl.Schema(
+    {
+        "action_id": pl.Int64,  # unique within the game: the row key
+        "action_number": pl.Int64,  # shared by a block and the shot it ends
+        "paired_action_id": pl.Int64,  # nullable: the shot a block or steal ends
+        "period": pl.Int64,
+        "clock": pl.String,  # as the archive serves it
+        "game_seconds": pl.Int64,
+        "wall_clock": pl.Int64,  # epoch seconds, mapped from the markers
+        "kind": pl.String,
+        "action_type": pl.String,
+        "sub_type": pl.String,
+        "description": pl.String,
+        "team_tricode": pl.String,
+        "person_id": pl.Int64,  # 0 on team actions
+        "player_name_i": pl.String,
+        "is_focus": pl.Boolean,
+        "made": pl.Boolean,  # nullable: not a shot
+        "shot_value": pl.Int64,
+        "x_legacy": pl.Int64,
+        "y_legacy": pl.Int64,
+        "shot_distance": pl.Int64,
+        "score_home": pl.Int64,  # forward-filled; 0 before the first score
+        "score_away": pl.Int64,
+        "pts": pl.Int64,  # nullable running totals on focus rows
+        "reb": pl.Int64,
+        "ast": pl.Int64,
+        "blk": pl.Int64,
+        "stl": pl.Int64,
+        "tov": pl.Int64,
+        "pf": pl.Int64,
+    }
+)
+
+# Every classified comment in the live threads, on both clocks. body is
+# kept by rule (the focus player's comments and the room's top-voted per
+# bucket) and never truncated; a kept body is the comment verbatim.
+RECAP_COMMENTS_SCHEMA = pl.Schema(
+    {
+        "comment_id": pl.String,
+        "post_id": pl.String,  # -> threads
+        "created_utc": pl.Int64,
+        "game_seconds": pl.Int64,  # mapped through the markers
+        "phase": pl.String,  # pre | live | break | post
+        "sentiment": pl.String,
+        "score": pl.Int64,
+        "fan_team": pl.String,  # nullable: unflaired commenter
+        "player_id": pl.Int64,  # nullable: whom the sentiment is about -> players
+        "is_focus": pl.Boolean,  # attributed_player is the focus player
+        "body": pl.String,  # nullable: outside the selection rule
+    }
+)
+
+# Frame name -> schema, in document order.
+RECAP_FRAME_SCHEMAS: dict[str, pl.Schema] = {
+    "periods": RECAP_PERIODS_SCHEMA,
+    "threads": RECAP_THREADS_SCHEMA,
+    "stints": RECAP_STINTS_SCHEMA,
+    "plays": RECAP_PLAYS_SCHEMA,
+    "comments": RECAP_COMMENTS_SCHEMA,
+}
+
+RECAP_NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
+    "periods": frozenset(),
+    "threads": frozenset(),
+    "stints": frozenset(),
+    "plays": frozenset(
+        {"paired_action_id", "made", "pts", "reb", "ast", "blk", "stl", "tov", "pf"}
+    ),
+    "comments": frozenset({"fan_team", "player_id", "body"}),
+}
+
+# The population every recap's comments draw from (a POPULATIONS key).
+RECAP_POPULATION = "live_thread"
+
+
+def recap_file(key: str) -> str:
+    """The manifest-registered path of a recap, relative to the dashboard."""
+    return f"{RECAPS_SUBDIR}/{key}.json"
+
+
 # --- Manifest (built in pipeline/aggregation.py) ------------------------------
 # The one file the frontend fetches first, which makes everything else
 # self-describing. Invariant: nothing in it is queryable from the tables
-# it fronts, so it can never disagree with them. TypedDicts, so the
+# it fronts, so it can never disagree with them. The one exception is
+# the recap registry entry, a rollup of its own file built in the same
+# pass, so an index renders without opening one. TypedDicts, so the
 # shape is one JSON-serializable contract and the first TS-codegen
 # target. Key order is block order: identity, rules, season facts,
-# table registry.
+# table and recap registries.
 
 # The rate measures as text formulas over the count columns, for the
 # methodology captions. polarization is the non-neutral share.
@@ -595,6 +738,9 @@ POPULATIONS: dict[str, str] = {
     "flaired": "usable comments whose author carries a team flair, attributed or not",
     "attributed_flaired": "attributed comments whose author carries a team flair",
     "in_thread": "attributed comments posted in a game or post-game thread",
+    "live_thread": (
+        "usable comments posted in a game's live game threads, primary and split"
+    ),
 }
 
 # The funnel, in order. The first stages are relayed from season.yaml;
@@ -662,6 +808,28 @@ class Floors(TypedDict):
     game_min_n: int
 
 
+class AlignmentFigures(TypedDict):
+    """What the reaction anchors measured of the game clock, season-wide."""
+
+    candidates: int  # tracked players' blocks, steals and made dunks
+    anchors: int  # candidates whose reaction reached the floor
+    games: int  # games with at least one anchor
+    median_offset_seconds: int | None  # first reaction minus the mapped play
+    p25_offset_seconds: int | None
+    p75_offset_seconds: int | None
+
+
+class RecapsRule(TypedDict):
+    """How a recap keeps bodies and how its clock is measured; utils.constants."""
+
+    room_bucket_seconds: int  # wall-clock bucket for the room's top-voted comments
+    room_bodies_per_bucket: int  # non-focus bodies kept per bucket, by score
+    anchor_window_seconds: int  # a play's reaction is looked for within this
+    anchor_min_reactions: int  # comments naming the play in one minute to count
+    anchor_vocabulary: dict[str, str]  # play kind -> the pattern naming it
+    alignment: AlignmentFigures
+
+
 class Rules(TypedDict):
     """The semantic layer: every number a surface states about its method."""
 
@@ -669,6 +837,7 @@ class Rules(TypedDict):
     samples: SamplesRule
     receipts: ReceiptsFigures
     floors: Floors
+    recaps: RecapsRule
     metrics: dict[str, str]  # METRIC_FORMULAS
 
 
@@ -690,8 +859,47 @@ class TableEntry(TypedDict):
     population: str | None  # a POPULATIONS key
 
 
+class PeriodCounts(TypedDict):
+    """Sentiment counts of the focus player's comments in one period."""
+
+    neg: int
+    pos: int
+    neu: int
+
+
+class RecapEntry(TypedDict):
+    """One curated recap: where it is, how big, and the rollup the index draws."""
+
+    file: str  # recap_file(key)
+    rows: int  # the comments frame's height
+    game_id: str
+    attributed_player: str
+    player_id: int
+    slug: str
+    live_n: int  # focus comments in the live threads
+    room_n: int  # the whole room: posts.num_comments over the live threads
+    by_period: dict[str, PeriodCounts]  # keyed by period; live and break comments
+    swing: float  # negative share, last period minus first
+    minutes_diff: int  # stint minutes minus the box score's
+    population: str  # RECAP_POPULATION
+
+
+class RecapHeader(TypedDict):
+    """A recap file's scalar block: identity and lineage; the frames follow."""
+
+    schema_version: int
+    season: str
+    generated_at: str
+    game_id: str
+    attributed_player: str
+    player_id: int
+    slug: str
+    config_versions: dict[str, str]  # the configs a recap derives from
+    classifiers: dict[str, ClassifierIdentity]  # the sentiment stage
+
+
 class Manifest(TypedDict):
-    """manifest.json: identity, rules, season facts, table registry."""
+    """manifest.json: identity, rules, season facts, table and recap registries."""
 
     schema_version: int
     season: str
@@ -706,6 +914,7 @@ class Manifest(TypedDict):
     corpus: Corpus
     populations: dict[str, str]  # POPULATIONS
     tables: dict[str, TableEntry]  # every DASHBOARD_OUTPUT_SCHEMAS table
+    recaps: dict[str, RecapEntry]  # every curated recap, keyed game_id-slug
 
 
 def load_manifest(path: Path) -> Manifest:
@@ -727,8 +936,9 @@ def load_manifest(path: Path) -> Manifest:
         FileNotFoundError: If the file doesn't exist.
         ValueError: If the document is not a JSON object, lacks any
             Manifest block, registers a table without every TableEntry
-            field, or names a file other than the table's own. The
-            message names the path and the keys.
+            field or a recap without every RecapEntry field, or names a
+            file other than the table's or recap's own. The message
+            names the path and the keys.
     """
     with open(path) as f:
         document = json.load(f)
@@ -752,6 +962,20 @@ def load_manifest(path: Path) -> Manifest:
             raise ValueError(
                 f"{path}: table {name!r} registers file {entry['file']!r}, "
                 f"expected {name + '.parquet'!r}"
+            )
+
+    for key, entry in document["recaps"].items():
+        fields = [k for k in RecapEntry.__required_keys__ if k not in entry]
+        if fields:
+            raise ValueError(
+                f"{path}: recap {key!r} is missing registry fields: {sorted(fields)}"
+            )
+        # Same rule as the tables: the file is named by its key, under
+        # the recaps directory, and nothing else
+        if entry["file"] != recap_file(key):
+            raise ValueError(
+                f"{path}: recap {key!r} registers file {entry['file']!r}, "
+                f"expected {recap_file(key)!r}"
             )
 
     return cast(Manifest, document)

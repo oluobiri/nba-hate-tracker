@@ -133,6 +133,8 @@ _ANCHOR_KINDS = {"block": "block", "steal": "steal"}
 _DUNK_KEYWORD = "dunk"
 SCAN_MIN_LIVE_N = 500
 _TMP_SUFFIX = ".part"
+# A recap reads the fact's sentiment, never the target verifier
+CLASSIFIER_STAGES = ("sentiment",)
 
 
 class RecapError(ValueError):
@@ -1216,7 +1218,11 @@ def build_recap(
         "player_id": spec.player_id,
         "slug": spec.slug,
         "config_versions": dict(stamps.config_versions),
-        "classifiers": dict(stamps.classifiers),
+        "classifiers": {
+            stage: stamps.classifiers[stage]
+            for stage in CLASSIFIER_STAGES
+            if stage in stamps.classifiers
+        },
     }
     entry: RecapEntry = {
         "file": recap_file(spec.key),

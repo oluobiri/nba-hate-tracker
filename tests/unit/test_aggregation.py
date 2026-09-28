@@ -2410,7 +2410,12 @@ class TestAggregateRecaps:
         assert header["generated_at"] == result["metadata"]["generated_at"]
         assert set(header["config_versions"]) == {"recaps", "players", "teams"}
         assert header["config_versions"]["players"] == load_player_config_version()
-        assert header["classifiers"] == result["manifest"]["classifiers"]
+        classifiers = result["manifest"]["classifiers"]
+        assert header["classifiers"] == {
+            stage: identity
+            for stage, identity in classifiers.items()
+            if stage == "sentiment"
+        }
         assert result["metadata"]["recap_count"] == 1
 
     def test_unresolvable_curation_fails_loudly(

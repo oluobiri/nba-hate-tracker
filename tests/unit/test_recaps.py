@@ -1622,6 +1622,31 @@ class TestBuildRecap:
             },
         }
 
+    def test_header_stamps_the_sentiment_classifier_only(
+        self, g7_fact, g7_game, pbp_dir
+    ):
+        """A recap reads the fact's sentiment, never the target verifier,
+        so a verifier re-run does not read as a change to it."""
+        target = {"model": "claude-sonnet-5", "prompt_version": "v1"}
+        stamps = RecapStamps(
+            season=STAMPS.season,
+            generated_at=STAMPS.generated_at,
+            config_versions=STAMPS.config_versions,
+            classifiers={**STAMPS.classifiers, "target": target},
+        )
+
+        doc = build_recap(
+            _spec(pbp_dir),
+            fact=g7_fact,
+            posts=_posts(),
+            games=_games(),
+            player_games=_player_games(),
+            pbp=g7_game,
+            stamps=stamps,
+        )
+
+        assert doc.header["classifiers"] == STAMPS.classifiers
+
     def test_frames_in_registry_order_and_valid(self, g7_doc):
         assert list(g7_doc.frames) == list(RECAP_FRAME_SCHEMAS)
         for name, schema in RECAP_FRAME_SCHEMAS.items():

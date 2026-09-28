@@ -1376,7 +1376,7 @@ class TestSelectComments:
             "post1",
         ]
 
-    def test_the_rooms_two_loudest_per_bucket_keep_theirs(self, comments):
+    def test_the_rooms_two_top_voted_per_bucket_keep_theirs(self, comments):
         """Scores 50 and 40 keep a body in the Q1 bucket; 30 does not."""
         by_id = {row["comment_id"]: row for row in comments.rows(named=True)}
         assert by_id["r50"]["body"] == "wemby!"

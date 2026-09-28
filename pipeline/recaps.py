@@ -829,7 +829,7 @@ def select_comments(aligned: pl.DataFrame, focus_player: str) -> pl.DataFrame:
     The comments frame: every aligned comment, bodies by rule.
 
     A body is kept for the focus player's comments and for the room's
-    loudest per wall-clock bucket (the highest scores, ties by id); every
+    top-voted per wall-clock bucket (the highest scores, ties by id); every
     other body is null. A kept body is verbatim.
 
     Args:

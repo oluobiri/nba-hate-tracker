@@ -672,7 +672,7 @@ RECAP_PLAYS_SCHEMA = pl.Schema(
 )
 
 # Every classified comment in the live threads, on both clocks. body is
-# kept by rule (the focus player's comments and the room's loudest per
+# kept by rule (the focus player's comments and the room's top-voted per
 # bucket) and never truncated; a kept body is the comment verbatim.
 RECAP_COMMENTS_SCHEMA = pl.Schema(
     {
@@ -722,10 +722,12 @@ def recap_file(key: str) -> str:
 # --- Manifest (built in pipeline/aggregation.py) ------------------------------
 # The one file the frontend fetches first, which makes everything else
 # self-describing. Invariant: nothing in it is queryable from the tables
-# it fronts, so it can never disagree with them. TypedDicts, so the
+# it fronts, so it can never disagree with them. The one exception is
+# the recap registry entry, a rollup of its own file built in the same
+# pass, so an index renders without opening one. TypedDicts, so the
 # shape is one JSON-serializable contract and the first TS-codegen
 # target. Key order is block order: identity, rules, season facts,
-# table registry.
+# table and recap registries.
 
 # The rate measures as text formulas over the count columns, for the
 # methodology captions. polarization is the non-neutral share.
@@ -754,7 +756,7 @@ POPULATIONS: dict[str, str] = {
     "attributed_flaired": "attributed comments whose author carries a team flair",
     "in_thread": "attributed comments posted in a game or post-game thread",
     "live_thread": (
-        "classified comments posted in a game's live game threads, primary and split"
+        "usable comments posted in a game's live game threads, primary and split"
     ),
 }
 
@@ -826,7 +828,7 @@ class Floors(TypedDict):
 class RecapsRule(TypedDict):
     """How a recap keeps bodies and measures its alignment; utils.constants."""
 
-    room_bucket_seconds: int  # wall-clock bucket for the room's loudest comments
+    room_bucket_seconds: int  # wall-clock bucket for the room's top-voted comments
     room_bodies_per_bucket: int  # non-focus bodies kept per bucket, by score
     anchor_window_seconds: int  # a play's reaction is looked for within this
     anchor_min_reactions: int  # comments naming the play in one minute to count

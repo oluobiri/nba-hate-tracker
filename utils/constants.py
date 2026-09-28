@@ -197,7 +197,7 @@ GAME_MIN_N = 20  # player x game cell
 # =============================================================================
 # How a recap's feed keeps bodies and how its alignment error is measured.
 # Published so the page states the rule it was built under.
-RECAP_ROOM_BUCKET_SECONDS = 120  # wall-clock bucket for the room's loudest comments
+RECAP_ROOM_BUCKET_SECONDS = 120  # wall-clock bucket for the room's top-voted comments
 RECAP_ROOM_BODIES_PER_BUCKET = 2  # non-focus bodies kept per bucket, by score
 RECAP_ANCHOR_WINDOW_SECONDS = 480  # a play's reaction is looked for within this
 RECAP_ANCHOR_MIN_REACTIONS = 3  # comments naming the play in one minute to count

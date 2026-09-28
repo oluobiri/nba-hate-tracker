@@ -1203,7 +1203,15 @@ def build_recap(
     )
     if not line.height:
         raise RecapError(f"recap {spec.key}: no box-score line for the focus player")
-    minutes_diff = stint_minutes(stints) - int(line["minutes"][0])
+    box_minutes = int(line["minutes"][0])
+    minutes_diff = stint_minutes(stints) - box_minutes
+    if minutes_diff:
+        # An inferred period start is where stints go wrong: a period
+        # played with no substitution and no play reads as bench
+        logger.warning(
+            f"recap {spec.key}: {stint_minutes(stints)} stint minutes against "
+            f"{box_minutes} in the box score ({minutes_diff:+d})"
+        )
 
     n_periods = int(periods["period"].max())
     by_period = period_counts(aligned, spec.attributed_player, n_periods)

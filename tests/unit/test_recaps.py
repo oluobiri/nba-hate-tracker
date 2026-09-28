@@ -1699,6 +1699,28 @@ class TestBuildRecap:
         assert stint_minutes(g7_doc.frames["stints"]) == 32
         assert g7_doc.entry["minutes_diff"] == -1
 
+    @pytest.mark.parametrize("minutes,warned", [(33, True), (32, False)])
+    def test_stints_off_the_box_score_warn(
+        self, g7_fact, g7_game, pbp_dir, caplog, minutes, warned
+    ):
+        """32 stint minutes against a 33-minute line is logged as a warning,
+        since an inferred period start is the one place stints can go wrong;
+        an exact match is silent."""
+        with caplog.at_level(logging.WARNING, logger="pipeline.recaps"):
+            build_recap(
+                _spec(pbp_dir),
+                fact=g7_fact,
+                posts=_posts(),
+                games=_games(),
+                player_games=_player_games(minutes),
+                players=_players(),
+                pbp=g7_game,
+                stamps=STAMPS,
+            )
+
+        messages = [r.message for r in caplog.records]
+        assert any("32 stint minutes" in m and "33" in m for m in messages) is warned
+
     def test_silent_focus_player_still_builds(self, g7_fact, g7_game, pbp_dir):
         """A room that never mentions him: zero focus comments, no anchor,
         no swing, every frame still valid."""

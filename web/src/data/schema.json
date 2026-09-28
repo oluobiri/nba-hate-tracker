@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "tables": {
     "player_overall": {
       "columns": [
@@ -796,6 +796,14 @@
             "nullable": false
           },
           "nullable": false
+        },
+        "recaps": {
+          "type": "map",
+          "values": {
+            "type": "RecapEntry",
+            "nullable": false
+          },
+          "nullable": false
         }
       },
       "ClassifierIdentity": {
@@ -823,6 +831,10 @@
         },
         "floors": {
           "type": "Floors",
+          "nullable": false
+        },
+        "recaps": {
+          "type": "RecapsRule",
           "nullable": false
         },
         "metrics": {
@@ -896,6 +908,62 @@
           "nullable": false
         }
       },
+      "RecapsRule": {
+        "room_bucket_seconds": {
+          "type": "int",
+          "nullable": false
+        },
+        "room_bodies_per_bucket": {
+          "type": "int",
+          "nullable": false
+        },
+        "anchor_window_seconds": {
+          "type": "int",
+          "nullable": false
+        },
+        "anchor_min_reactions": {
+          "type": "int",
+          "nullable": false
+        },
+        "anchor_vocabulary": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "nullable": false
+          },
+          "nullable": false
+        },
+        "alignment": {
+          "type": "AlignmentFigures",
+          "nullable": false
+        }
+      },
+      "AlignmentFigures": {
+        "candidates": {
+          "type": "int",
+          "nullable": false
+        },
+        "anchors": {
+          "type": "int",
+          "nullable": false
+        },
+        "games": {
+          "type": "int",
+          "nullable": false
+        },
+        "median_offset_seconds": {
+          "type": "int",
+          "nullable": true
+        },
+        "p25_offset_seconds": {
+          "type": "int",
+          "nullable": true
+        },
+        "p75_offset_seconds": {
+          "type": "int",
+          "nullable": true
+        }
+      },
       "Corpus": {
         "raw_comments": {
           "type": "int",
@@ -930,6 +998,436 @@
         "population": {
           "type": "string",
           "nullable": true
+        }
+      },
+      "RecapEntry": {
+        "file": {
+          "type": "string",
+          "nullable": false
+        },
+        "rows": {
+          "type": "int",
+          "nullable": false
+        },
+        "game_id": {
+          "type": "string",
+          "nullable": false
+        },
+        "attributed_player": {
+          "type": "string",
+          "nullable": false
+        },
+        "player_id": {
+          "type": "int",
+          "nullable": false
+        },
+        "slug": {
+          "type": "string",
+          "nullable": false
+        },
+        "live_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "room_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "by_period": {
+          "type": "map",
+          "values": {
+            "type": "PeriodCounts",
+            "nullable": false
+          },
+          "nullable": false
+        },
+        "swing": {
+          "type": "float",
+          "nullable": false
+        },
+        "minutes_diff": {
+          "type": "int",
+          "nullable": false
+        },
+        "population": {
+          "type": "string",
+          "nullable": false
+        }
+      },
+      "PeriodCounts": {
+        "neg": {
+          "type": "int",
+          "nullable": false
+        },
+        "pos": {
+          "type": "int",
+          "nullable": false
+        },
+        "neu": {
+          "type": "int",
+          "nullable": false
+        }
+      }
+    }
+  },
+  "documents": {
+    "recap": {
+      "header": {
+        "root": "RecapHeader",
+        "types": {
+          "RecapHeader": {
+            "schema_version": {
+              "type": "int",
+              "nullable": false
+            },
+            "season": {
+              "type": "string",
+              "nullable": false
+            },
+            "generated_at": {
+              "type": "string",
+              "nullable": false
+            },
+            "game_id": {
+              "type": "string",
+              "nullable": false
+            },
+            "attributed_player": {
+              "type": "string",
+              "nullable": false
+            },
+            "player_id": {
+              "type": "int",
+              "nullable": false
+            },
+            "slug": {
+              "type": "string",
+              "nullable": false
+            },
+            "config_versions": {
+              "type": "map",
+              "values": {
+                "type": "string",
+                "nullable": false
+              },
+              "nullable": false
+            },
+            "classifiers": {
+              "type": "map",
+              "values": {
+                "type": "ClassifierIdentity",
+                "nullable": false
+              },
+              "nullable": false
+            }
+          },
+          "ClassifierIdentity": {
+            "model": {
+              "type": "string",
+              "nullable": false
+            },
+            "prompt_version": {
+              "type": "string",
+              "nullable": false
+            }
+          }
+        }
+      },
+      "frames": {
+        "periods": {
+          "columns": [
+            {
+              "name": "period",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "start_seconds",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "end_seconds",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "start_wall",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "end_wall",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "start_action_id",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "end_action_id",
+              "dtype": "int64",
+              "nullable": false
+            }
+          ]
+        },
+        "threads": {
+          "columns": [
+            {
+              "name": "post_id",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "is_primary",
+              "dtype": "bool",
+              "nullable": false
+            },
+            {
+              "name": "created_utc",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "num_comments",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "comment_n",
+              "dtype": "int64",
+              "nullable": false
+            }
+          ]
+        },
+        "stints": {
+          "columns": [
+            {
+              "name": "period",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "start_seconds",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "end_seconds",
+              "dtype": "int64",
+              "nullable": false
+            }
+          ]
+        },
+        "plays": {
+          "columns": [
+            {
+              "name": "action_id",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "action_number",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "paired_action_id",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "period",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "clock",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "game_seconds",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "wall_clock",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "kind",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "action_type",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "sub_type",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "description",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "team_tricode",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "person_id",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "player_name_i",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "is_focus",
+              "dtype": "bool",
+              "nullable": false
+            },
+            {
+              "name": "made",
+              "dtype": "bool",
+              "nullable": true
+            },
+            {
+              "name": "shot_value",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "x_legacy",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "y_legacy",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "shot_distance",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "score_home",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "score_away",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "pts",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "reb",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "ast",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "blk",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "stl",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "tov",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "pf",
+              "dtype": "int64",
+              "nullable": true
+            }
+          ]
+        },
+        "comments": {
+          "columns": [
+            {
+              "name": "comment_id",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "post_id",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "created_utc",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "game_seconds",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "phase",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "sentiment",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
+              "name": "score",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "fan_team",
+              "dtype": "string",
+              "nullable": true
+            },
+            {
+              "name": "player_id",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
+              "name": "is_focus",
+              "dtype": "bool",
+              "nullable": false
+            },
+            {
+              "name": "body",
+              "dtype": "string",
+              "nullable": true
+            }
+          ]
         }
       }
     }

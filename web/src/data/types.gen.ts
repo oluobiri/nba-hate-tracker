@@ -1,4 +1,4 @@
-// GENERATED from src/data/schema.json (schema_version 5) by scripts/codegen.ts.
+// GENERATED from src/data/schema.json (schema_version 6) by scripts/codegen.ts.
 // Do not edit: run `npm run codegen`. The build fails when this file is stale.
 
 /** One row of player_overall.parquet. */
@@ -213,6 +213,7 @@ export interface Manifest {
   corpus: Corpus
   populations: Record<string, string>
   tables: Record<string, TableEntry>
+  recaps: Record<string, RecapEntry>
 }
 
 export interface ClassifierIdentity {
@@ -225,6 +226,7 @@ export interface Rules {
   samples: SamplesRule
   receipts: ReceiptsFigures
   floors: Floors
+  recaps: RecapsRule
   metrics: Record<string, string>
 }
 
@@ -251,6 +253,24 @@ export interface Floors {
   game_min_n: number
 }
 
+export interface RecapsRule {
+  room_bucket_seconds: number
+  room_bodies_per_bucket: number
+  anchor_window_seconds: number
+  anchor_min_reactions: number
+  anchor_vocabulary: Record<string, string>
+  alignment: AlignmentFigures
+}
+
+export interface AlignmentFigures {
+  candidates: number
+  anchors: number
+  games: number
+  median_offset_seconds: number | null
+  p25_offset_seconds: number | null
+  p75_offset_seconds: number | null
+}
+
 export interface Corpus {
   raw_comments: number | null
   population_submitted: number | null
@@ -263,4 +283,25 @@ export interface TableEntry {
   file: string
   rows: number
   population: string | null
+}
+
+export interface RecapEntry {
+  file: string
+  rows: number
+  game_id: string
+  attributed_player: string
+  player_id: number
+  slug: string
+  live_n: number
+  room_n: number
+  by_period: Record<string, PeriodCounts>
+  swing: number
+  minutes_diff: number
+  population: string
+}
+
+export interface PeriodCounts {
+  neg: number
+  pos: number
+  neu: number
 }

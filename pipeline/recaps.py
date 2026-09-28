@@ -826,19 +826,24 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
 # --- Comments ---------------------------------------------------------------
 
 
-def select_comments(aligned: pl.DataFrame, focus_player: str) -> pl.DataFrame:
+def select_comments(
+    aligned: pl.DataFrame, focus_player: str, players: pl.DataFrame
+) -> pl.DataFrame:
     """
     The comments frame: every aligned comment, bodies by rule.
 
-    A body is kept for the focus player's comments and for the room's
-    top-voted per wall-clock bucket (the highest scores, ties by id); every
-    other body is null. A kept body is verbatim.
+    Every comment names its target by the Player dimension's id, null
+    when unattributed. A body is kept for the focus player's comments
+    and for the room's top-voted per wall-clock bucket (the highest
+    scores, ties by id); every other body is null. A kept body is
+    verbatim.
 
     Args:
         aligned: Fact rows in the live threads after align_comments:
             comment_id, link_id, created_utc, sentiment, score, fan_team,
             attributed_player, body, game_seconds, phase.
         focus_player: The recap's attributed_player.
+        players: The Player dimension (attributed_player, player_id).
 
     Returns:
         RECAP_COMMENTS_SCHEMA rows sorted by created_utc, then comment_id.
@@ -846,7 +851,12 @@ def select_comments(aligned: pl.DataFrame, focus_player: str) -> pl.DataFrame:
     is_focus = (pl.col("attributed_player") == focus_player).fill_null(False)
     bucket = pl.col("created_utc") // RECAP_ROOM_BUCKET_SECONDS
     ranked = (
-        aligned.with_columns(is_focus.alias("is_focus"), bucket.alias("_bucket"))
+        aligned.join(
+            players.select("attributed_player", "player_id"),
+            on="attributed_player",
+            how="left",
+        )
+        .with_columns(is_focus.alias("is_focus"), bucket.alias("_bucket"))
         .sort(["score", "comment_id"], descending=[True, False], nulls_last=True)
         .with_columns(pl.int_range(pl.len()).over("_bucket", "is_focus").alias("_rank"))
     )
@@ -1136,6 +1146,7 @@ def build_recap(
     posts: pl.DataFrame,
     games: pl.DataFrame,
     player_games: pl.DataFrame,
+    players: pl.DataFrame,
     pbp: pl.DataFrame,
     stamps: RecapStamps,
 ) -> RecapDocument:
@@ -1150,6 +1161,7 @@ def build_recap(
         games: The Game dimension (game_id, game_date).
         player_games: The box-score lines (game_id, attributed_player,
             minutes).
+        players: The Player dimension (attributed_player, player_id).
         pbp: The game's play-by-play (load_play_by_play).
         stamps: The build's lineage for the header.
 
@@ -1171,7 +1183,7 @@ def build_recap(
         ),
         periods,
     )
-    comments = select_comments(aligned, spec.attributed_player)
+    comments = select_comments(aligned, spec.attributed_player, players)
     threads = (
         posts.filter(pl.col("post_id").is_in(list(spec.thread_ids)))
         .join(

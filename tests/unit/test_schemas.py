@@ -571,9 +571,12 @@ class TestRecapContract:
         assert "wall_clock" not in RECAP_NULLABLE_COLUMNS["plays"]
         assert "created_utc" not in RECAP_NULLABLE_COLUMNS["comments"]
 
-    def test_bodies_and_the_fan_role_are_nullable(self):
-        """A body outside the selection rule and an unflaired commenter."""
-        assert RECAP_NULLABLE_COLUMNS["comments"] == frozenset({"fan_team", "body"})
+    def test_bodies_the_fan_role_and_the_target_are_nullable(self):
+        """A body outside the selection rule, an unflaired commenter and an
+        unattributed comment."""
+        assert RECAP_NULLABLE_COLUMNS["comments"] == frozenset(
+            {"fan_team", "player_id", "body"}
+        )
 
     def test_no_bare_team_on_any_frame(self):
         """Team columns are the archive's abbreviation under its own name

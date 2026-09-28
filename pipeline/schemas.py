@@ -684,6 +684,7 @@ RECAP_COMMENTS_SCHEMA = pl.Schema(
         "sentiment": pl.String,
         "score": pl.Int64,
         "fan_team": pl.String,  # nullable: unflaired commenter
+        "player_id": pl.Int64,  # nullable: whom the sentiment is about -> players
         "is_focus": pl.Boolean,  # attributed_player is the focus player
         "body": pl.String,  # nullable: outside the selection rule
     }
@@ -707,7 +708,7 @@ RECAP_NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "plays": frozenset(
         {"paired_action_id", "made", "pts", "reb", "ast", "blk", "stl", "tov", "pf"}
     ),
-    "comments": frozenset({"fan_team", "body"}),
+    "comments": frozenset({"fan_team", "player_id", "body"}),
 }
 
 # The population every recap's comments draw from (a POPULATIONS key).

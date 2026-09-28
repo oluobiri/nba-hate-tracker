@@ -538,6 +538,7 @@ def _build_recaps(
             posts=posts,
             games=games,
             player_games=player_games,
+            players=players,
             pbp=load_play_by_play(spec.pbp_path, log=logger),
             stamps=stamps,
         )

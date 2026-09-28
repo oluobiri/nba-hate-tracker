@@ -1296,6 +1296,7 @@ def g7_doc(g7_fact, g7_game, pbp_dir):
         posts=_posts(),
         games=_games(),
         player_games=_player_games(),
+        players=_players(),
         pbp=g7_game,
         stamps=STAMPS,
     )
@@ -1352,7 +1353,7 @@ class TestSelectComments:
             ),
             g7_periods,
         )
-        return select_comments(aligned, CHET_NAME)
+        return select_comments(aligned, CHET_NAME, _players())
 
     def test_conforms(self, comments):
         """The contract's columns, order and nullability, sorted by time."""
@@ -1396,7 +1397,7 @@ class TestSelectComments:
             ).with_columns(pl.lit(GAME).alias("game_id")),
             g7_periods,
         )
-        comments = select_comments(aligned, CHET_NAME)
+        comments = select_comments(aligned, CHET_NAME, _players())
         kept = comments.filter(pl.col("body").is_not_null())["comment_id"].to_list()
         assert sorted(kept) == ["a", "b"]
 
@@ -1408,6 +1409,16 @@ class TestSelectComments:
         assert by_id["f1"] is True
         assert by_id["r50"] is False
         assert by_id["r40"] is False
+
+    def test_player_id_is_the_attributed_target(self, comments):
+        """Every comment names who its sentiment is about, by the Player
+        dimension's id; an unattributed comment names no one."""
+        by_id = {
+            row["comment_id"]: row["player_id"] for row in comments.rows(named=True)
+        }
+        assert by_id["f1"] == CHET
+        assert by_id["r50"] == 1641705
+        assert by_id["r40"] is None
 
     def test_post_id_is_the_thread(self, comments):
         """The split thread's comment names the split thread."""
@@ -1501,6 +1512,7 @@ class TestMeasureAnchors:
                 g7_periods,
             ),
             CHET_NAME,
+            _players(),
         )
         anchors = measure_anchors(g7_plays, comments)
         assert anchors.filter(pl.col("kind") == "block")["accepted"][0] is False
@@ -1641,6 +1653,7 @@ class TestBuildRecap:
             posts=_posts(),
             games=_games(),
             player_games=_player_games(),
+            players=_players(),
             pbp=g7_game,
             stamps=stamps,
         )
@@ -1699,6 +1712,7 @@ class TestBuildRecap:
             posts=_posts(),
             games=_games(),
             player_games=_player_games(),
+            players=_players(),
             pbp=g7_game,
             stamps=STAMPS,
         )
@@ -1723,6 +1737,7 @@ class TestBuildRecap:
                 posts=_posts(),
                 games=_games(),
                 player_games=_player_games().clear(),
+                players=_players(),
                 pbp=g7_game,
                 stamps=STAMPS,
             )

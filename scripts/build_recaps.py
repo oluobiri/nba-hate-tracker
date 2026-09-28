@@ -189,6 +189,7 @@ def _dry_run(
             posts=tables["posts"],
             games=tables["games"],
             player_games=tables["player_games"],
+            players=tables["players"],
             pbp=load_play_by_play(spec.pbp_path, log=logger),
             stamps=stamps,
         )

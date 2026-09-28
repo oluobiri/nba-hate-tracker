@@ -67,6 +67,7 @@ from utils.constants import (
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
     RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_VOCABULARY,
     RECAP_ANCHOR_WINDOW_SECONDS,
     RECAP_ROOM_BODIES_PER_BUCKET,
     RECAP_ROOM_BUCKET_SECONDS,
@@ -1172,6 +1173,16 @@ def _make_temporal_records(
     )
 
 
+ALIGNMENT = {
+    "candidates": 40,
+    "anchors": 12,
+    "games": 5,
+    "median_offset_seconds": -40,
+    "p25_offset_seconds": -90,
+    "p75_offset_seconds": 20,
+}
+
+
 def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
     """Minimal (outputs, metadata, season_config, config_versions, recaps)
     for build_manifest: empty frames except a two-row player_overall, a
@@ -1214,6 +1225,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
         "receipts_coverage": 0.999,
         "receipts_precision": 0.777,
         "attribution_toward_share": 0.74,
+        "recap_alignment": ALIGNMENT,
     }
     season_config = {
         "calendar": {"opening_night": "2025-10-21", "finals_end": None},
@@ -1290,7 +1302,8 @@ class TestBuildManifest:
 
     def test_rules_publish_the_constants(self):
         """The threshold, samples rule, floors and formulas are the named
-        constants, never retyped."""
+        constants, never retyped; the recaps rule carries the measured
+        alignment the build passed through."""
         rules = build_manifest(*_manifest_inputs())["rules"]
 
         assert rules["qualified_threshold"] == QUALIFIED_THRESHOLD
@@ -1313,6 +1326,8 @@ class TestBuildManifest:
             "room_bodies_per_bucket": RECAP_ROOM_BODIES_PER_BUCKET,
             "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
             "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
+            "anchor_vocabulary": RECAP_ANCHOR_VOCABULARY,
+            "alignment": ALIGNMENT,
         }
         assert rules["metrics"] == METRIC_FORMULAS
 
@@ -1331,7 +1346,6 @@ class TestBuildManifest:
             "room_n": 40,
             "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
             "swing": 0.0,
-            "error_seconds": None,
             "minutes_diff": 0,
             "population": "live_thread",
         }
@@ -2367,6 +2381,14 @@ class TestAggregateRecaps:
 
         assert result["recaps"] == []
         assert result["manifest"]["recaps"] == {}
+        assert result["manifest"]["rules"]["recaps"]["alignment"] == {
+            "candidates": 0,
+            "anchors": 0,
+            "games": 0,
+            "median_offset_seconds": None,
+            "p25_offset_seconds": None,
+            "p75_offset_seconds": None,
+        }
         assert result["metadata"]["recap_count"] == 0
 
     def test_builds_the_curated_recap_from_the_tables(
@@ -2404,7 +2426,9 @@ class TestAggregateRecaps:
         assert entry["live_n"] == 1
         assert entry["room_n"] == 10
         assert entry["minutes_diff"] == 12 - 34
-        assert entry["error_seconds"] is None
+        alignment = result["manifest"]["rules"]["recaps"]["alignment"]
+        assert alignment["candidates"] == 0
+        assert alignment["median_offset_seconds"] is None
         header = doc.header
         assert header["season"] == result["metadata"]["season"]
         assert header["generated_at"] == result["metadata"]["generated_at"]

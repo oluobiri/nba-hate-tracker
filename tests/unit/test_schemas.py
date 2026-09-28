@@ -24,6 +24,7 @@ from pipeline.schemas import (
     Manifest,
     RecapEntry,
     RecapHeader,
+    AlignmentFigures,
     RecapsRule,
     Rules,
     recap_file,
@@ -479,13 +480,24 @@ class TestManifestContract:
 
     def test_recap_rules_are_published(self):
         """The recap selection and measurement rules sit beside the floors,
-        so the page states the rule it was built under."""
+        with the season's measured alignment, so the page states the rule
+        it was built under and how far its clock is off."""
         assert Rules.__annotations__["recaps"] is RecapsRule
         assert list(RecapsRule.__annotations__) == [
             "room_bucket_seconds",
             "room_bodies_per_bucket",
             "anchor_window_seconds",
             "anchor_min_reactions",
+            "anchor_vocabulary",
+            "alignment",
+        ]
+        assert list(AlignmentFigures.__annotations__) == [
+            "candidates",
+            "anchors",
+            "games",
+            "median_offset_seconds",
+            "p25_offset_seconds",
+            "p75_offset_seconds",
         ]
 
     def test_table_populations_enumerate_every_output(self):
@@ -548,7 +560,6 @@ class TestRecapContract:
         assert list(RECAP_FRAME_SCHEMAS) == [
             "periods",
             "threads",
-            "anchors",
             "stints",
             "plays",
             "comments",
@@ -644,7 +655,6 @@ class TestLoadManifest:
                     "room_n": 40,
                     "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
                     "swing": 0.0,
-                    "error_seconds": None,
                     "minutes_diff": 0,
                     "population": "live_thread",
                 }
@@ -654,14 +664,14 @@ class TestLoadManifest:
     def test_recap_entry_missing_field_raises(self, tmp_path, manifest_dict):
         """A recap registered without every RecapEntry field names the recap."""
         # Arrange
-        del manifest_dict["recaps"]["0042500317-chet-holmgren"]["error_seconds"]
+        del manifest_dict["recaps"]["0042500317-chet-holmgren"]["swing"]
         path = tmp_path / "manifest.json"
         path.write_text(json.dumps(manifest_dict))
 
         # Act / Assert
         with pytest.raises(ValueError, match="0042500317-chet-holmgren") as exc:
             load_manifest(path)
-        assert "error_seconds" in str(exc.value)
+        assert "swing" in str(exc.value)
 
     def test_recap_file_must_be_its_key_under_recaps(self, tmp_path, manifest_dict):
         """A recap's file value is its key under recaps/ and nothing else,

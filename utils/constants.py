@@ -201,6 +201,19 @@ RECAP_ROOM_BUCKET_SECONDS = 120  # wall-clock bucket for the room's top-voted co
 RECAP_ROOM_BODIES_PER_BUCKET = 2  # non-focus bodies kept per bucket, by score
 RECAP_ANCHOR_WINDOW_SECONDS = 480  # a play's reaction is looked for within this
 RECAP_ANCHOR_MIN_REACTIONS = 3  # comments naming the play in one minute to count
+# How the room names each anchor kind, matched against the lowercased body.
+# The word is what ties a reaction to one play; nicknames stay out
+RECAP_ANCHOR_VOCABULARY = {
+    "block": r"\b(?:block|swat|reject|denied|erased|volleyball)",
+    "steal": (
+        r"\b(?:steal|stole|swipe|pickpocket|pick(?:ed|s)? (?:his )?pocket"
+        r"|strip(?:ped|s)?\b|jumped the (?:lane|pass))"
+    ),
+    "dunk": (
+        r"\b(?:dunk|slam|poster|flush|hammer|jam(?:med|s)?\b|yam(?:med|s)?\b"
+        r"|throw(?:s|n)? (?:it )?down)"
+    ),
+}
 
 # =============================================================================
 # FILE PATHS (relative subdirectories - root comes from environment)

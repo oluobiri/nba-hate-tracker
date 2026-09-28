@@ -23,7 +23,9 @@ from pipeline.recaps import (
     RecapDocument,
     RecapStamps,
     build_recap,
+    measure_alignment,
     resolve_recap_specs,
+    unmeasured_alignment,
 )
 from pipeline.receipts import (
     build_comment_samples,
@@ -61,6 +63,7 @@ from utils.constants import (
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
     RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_VOCABULARY,
     RECAP_ANCHOR_WINDOW_SECONDS,
     RECAP_ROOM_BODIES_PER_BUCKET,
     RECAP_ROOM_BUCKET_SECONDS,
@@ -475,6 +478,14 @@ def aggregate_sentiment(
         ),
     )
     metadata["recap_count"] = len(documents)
+    # The clock is one method for every game, so its error is measured
+    # once, season-wide, and only for a season that curates a recap
+    if documents:
+        _, metadata["recap_alignment"] = measure_alignment(
+            df, posts, games, players, get_play_by_play_dir()
+        )
+    else:
+        metadata["recap_alignment"] = unmeasured_alignment()
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "
@@ -543,14 +554,9 @@ def _build_recaps(
             stamps=stamps,
         )
         entry = doc.entry
-        error = (
-            "unmeasured"
-            if entry["error_seconds"] is None
-            else f"{entry['error_seconds']} s"
-        )
         logger.info(
             f"recap {doc.key}: live_n {entry['live_n']:,}, room_n {entry['room_n']:,}, "
-            f"error {error}, minutes_diff {entry['minutes_diff']:+d}"
+            f"minutes_diff {entry['minutes_diff']:+d}"
         )
         documents.append(doc)
     return documents
@@ -657,6 +663,8 @@ def build_manifest(
                 "room_bodies_per_bucket": RECAP_ROOM_BODIES_PER_BUCKET,
                 "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
                 "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
+                "anchor_vocabulary": dict(RECAP_ANCHOR_VOCABULARY),
+                "alignment": metadata["recap_alignment"],
             },
             "metrics": dict(METRIC_FORMULAS),
         },

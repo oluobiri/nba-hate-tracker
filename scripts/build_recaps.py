@@ -194,14 +194,9 @@ def _dry_run(
             stamps=stamps,
         )
         entry = doc.entry
-        error = (
-            "unmeasured"
-            if entry["error_seconds"] is None
-            else f"{entry['error_seconds']} s"
-        )
         logger.info(
             f"{doc.key}: live_n={entry['live_n']:,} room_n={entry['room_n']:,} "
-            f"error={error} minutes_diff={entry['minutes_diff']:+d} "
+            f"minutes_diff={entry['minutes_diff']:+d} "
             f"swing={entry['swing']:+.3f} bytes={len(encode_recap(doc)):,}"
         )
     logger.info(f"Dry run - {len(resolved)} recaps built, nothing written")

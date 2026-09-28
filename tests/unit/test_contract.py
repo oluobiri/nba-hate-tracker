@@ -20,6 +20,7 @@ from pipeline.schemas import (
     PeriodCounts,
     RecapEntry,
     RecapHeader,
+    AlignmentFigures,
     RecapsRule,
     ReceiptsFigures,
     Rules,
@@ -33,6 +34,8 @@ MANIFEST_FAMILY = (
     SamplesRule,
     ReceiptsFigures,
     Floors,
+    AlignmentFigures,
+    AlignmentFigures,
     RecapsRule,
     Rules,
     Corpus,
@@ -198,10 +201,15 @@ class TestManifestBlock:
             "values": {"type": "PeriodCounts", "nullable": False},
             "nullable": False,
         }
-        assert manifest["types"]["RecapEntry"]["error_seconds"] == {
+        assert manifest["types"]["RecapsRule"]["alignment"] == {
+            "type": "AlignmentFigures",
+            "nullable": False,
+        }
+        assert manifest["types"]["AlignmentFigures"]["median_offset_seconds"] == {
             "type": "int",
             "nullable": True,
         }
+        assert "error_seconds" not in manifest["types"]["RecapEntry"]
 
     def test_nested_typed_dicts_are_refs(self, manifest):
         """A nested TypedDict field references its type by name."""

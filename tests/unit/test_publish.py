@@ -157,7 +157,6 @@ def _recap_entry(rows: int = 3) -> dict:
         "room_n": 40,
         "by_period": {"1": {"neg": 1, "pos": 0, "neu": 0}},
         "swing": 0.0,
-        "error_seconds": None,
         "minutes_diff": 0,
         "population": "live_thread",
     }

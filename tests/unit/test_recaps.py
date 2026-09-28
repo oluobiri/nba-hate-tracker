@@ -24,14 +24,14 @@ from pipeline.recaps import (
     RecapStamps,
     ResolvedSpec,
     align_comments,
+    alignment_figures,
     build_periods,
     build_recap,
     build_stints,
     derive_kind,
-    error_seconds,
     fill_scores,
     focus_identity,
-    measure_anchors,
+    measure_alignment,
     pair_blocks,
     parse_clock_seconds,
     parse_running_totals,
@@ -49,7 +49,6 @@ from pipeline.recaps import (
 )
 from pipeline.schemas import (
     PLAY_BY_PLAY_SCHEMA,
-    RECAP_ANCHORS_SCHEMA,
     RECAP_COMMENTS_SCHEMA,
     RECAP_FRAME_SCHEMAS,
     RECAP_NULLABLE_COLUMNS,
@@ -1462,63 +1461,109 @@ class TestPeriodCountsAndSwing:
         assert swing({"1": by_period["2"], "2": by_period["4"]}) == 0.0
 
 
-class TestMeasureAnchors:
-    """The alignment measured against the room, never moved."""
+class TestMeasureAlignment:
+    """The clock's error, measured season-wide against the room, never moved."""
 
     @pytest.fixture
-    def anchors(self, g7_doc) -> pl.DataFrame:
-        return g7_doc.frames["anchors"]
+    def measured(self, g7_fact, pbp_dir):
+        return measure_alignment(g7_fact, _posts(), _games(), _players(), pbp_dir)
 
-    def test_conforms_and_lists_every_candidate(self, anchors):
-        """The block and the steal are candidates, accepted or not."""
-        validate_schema(anchors, RECAP_ANCHORS_SCHEMA, "anchors")
-        validate_nullability(anchors, RECAP_NULLABLE_COLUMNS["anchors"], "anchors")
-        assert anchors["action_id"].to_list() == [158, 210]
-        assert anchors["keyword"].to_list() == ["block", "steal"]
+    def _anchor(self, anchors: pl.DataFrame, action_id: int) -> dict:
+        return anchors.filter(pl.col("action_id") == action_id).row(0, named=True)
 
-    def test_pile_on_is_accepted_with_its_offset(self, anchors, g7_plays):
+    def _block_burst(self, g7_plays, bodies, player=CHET_NAME) -> pl.DataFrame:
+        """Comments in the minute after the block, attributed to player."""
+        minute = (_by_action(g7_plays, 158)["wall_clock"] // 60 + 1) * 60
+        return _fact(
+            [
+                _fact_row(f"x{i}", minute + 5 + i, body=body, player=player)
+                for i, body in enumerate(bodies)
+            ]
+        )
+
+    def test_pile_on_is_an_anchor_with_its_offset(self, measured, g7_plays):
         """Three comments naming the block in one minute: accepted, and the
         offset is the first of them minus the play's mapped wall clock."""
-        block = anchors.row(0, named=True)
-        wall = _by_action(g7_plays, 158)["wall_clock"]
+        anchors, _ = measured
+        block = self._anchor(anchors, 158)
+        assert block["kind"] == "block"
         assert block["accepted"] is True
         assert block["reaction_n"] == 3
+        wall = _by_action(g7_plays, 158)["wall_clock"]
         assert block["offset_seconds"] == block["first_reaction_utc"] - wall
         assert 0 < block["offset_seconds"] < 120
 
-    def test_two_reactions_are_not_an_anchor(self, anchors):
-        """The steal drew two: measured, not accepted, no offset."""
-        steal = anchors.row(1, named=True)
+    def test_two_reactions_are_not_an_anchor(self, measured):
+        """The steal drew two: counted, not accepted, no offset."""
+        anchors, _ = measured
+        steal = self._anchor(anchors, 210)
         assert steal["accepted"] is False
         assert steal["reaction_n"] == 2
         assert steal["offset_seconds"] is None
 
-    def test_no_reaction_leaves_nulls(self, g7_plays, g7_periods):
-        """A candidate nobody named has no minute and no offset."""
-        anchors = measure_anchors(g7_plays, pl.DataFrame(schema=RECAP_COMMENTS_SCHEMA))
-        assert anchors["reaction_n"].to_list() == [0, 0]
-        assert anchors["reaction_minute"].null_count() == 2
-        assert error_seconds(anchors) is None
+    def test_figures_summarize_the_accepted_offsets(self, measured):
+        """Two candidates, one anchor in one game; its offset is every quantile."""
+        anchors, figures = measured
+        offset = self._anchor(anchors, 158)["offset_seconds"]
+        assert figures == {
+            "candidates": 2,
+            "anchors": 1,
+            "games": 1,
+            "median_offset_seconds": offset,
+            "p25_offset_seconds": offset,
+            "p75_offset_seconds": offset,
+        }
 
-    def test_reaction_outside_the_window_is_ignored(self, g7_plays, g7_periods):
-        """Naming the block nine minutes later is not a reaction to it."""
-        wall = _by_action(g7_plays, 158)["wall_clock"]
-        late = (wall // 60 + 9) * 60
-        comments = select_comments(
-            align_comments(
-                _fact(
-                    [_fact_row(f"l{i}", late + i, body="block") for i in range(3)]
-                ).with_columns(pl.lit(GAME).alias("game_id")),
-                g7_periods,
-            ),
-            CHET_NAME,
-            _players(),
+    def test_the_vocabulary_names_a_play_without_its_word(self, g7_plays, pbp_dir):
+        """'Swat', 'rejected' and 'denied' are how a block gets named."""
+        fact = self._block_burst(g7_plays, ["what a swat", "REJECTED", "denied!!"])
+
+        anchors, _ = measure_alignment(fact, _posts(), _games(), _players(), pbp_dir)
+
+        assert self._anchor(anchors, 158)["accepted"] is True
+
+    def test_reactions_count_for_the_plays_own_player(self, g7_plays, pbp_dir):
+        """A burst about Wembanyama never anchors Holmgren's block."""
+        fact = self._block_burst(
+            g7_plays, ["block", "block", "block"], player="Victor Wembanyama"
         )
-        anchors = measure_anchors(g7_plays, comments)
-        assert anchors.filter(pl.col("kind") == "block")["accepted"][0] is False
 
-    def test_dunk_is_a_candidate_by_sub_type(self, g7_periods):
-        """A made shot whose sub_type says Dunk is looked for as 'dunk'."""
+        anchors, _ = measure_alignment(fact, _posts(), _games(), _players(), pbp_dir)
+
+        assert self._anchor(anchors, 158)["reaction_n"] == 0
+
+    def test_one_burst_counts_for_one_play(self, g7_plays, g7_periods, tmp_path):
+        """Two blocks inside one window share a burst only once: it goes to
+        the nearer play, and the other is left with nothing."""
+        second = _chet(
+            action_id=175,
+            action_number=245,
+            period=2,
+            clock="PT06M00.00S",
+            description="Holmgren BLOCK (2 BLK)",
+        )
+        _pbp([*G7_PLAYS, second]).write_parquet(tmp_path / f"{GAME}.parquet")
+        fact = self._block_burst(g7_plays, ["block", "block", "block"])
+
+        anchors, figures = measure_alignment(
+            fact, _posts(), _games(), _players(), tmp_path
+        )
+
+        assert self._anchor(anchors, 158)["accepted"] is True
+        assert self._anchor(anchors, 175)["reaction_n"] == 0
+        assert figures["anchors"] == 1
+
+    def test_reaction_outside_the_window_is_ignored(self, g7_plays, pbp_dir):
+        """Naming the block nine minutes later is not a reaction to it."""
+        late = (_by_action(g7_plays, 158)["wall_clock"] // 60 + 9) * 60
+        fact = _fact([_fact_row(f"l{i}", late + i, body="block") for i in range(3)])
+
+        anchors, _ = measure_alignment(fact, _posts(), _games(), _players(), pbp_dir)
+
+        assert self._anchor(anchors, 158)["accepted"] is False
+
+    def test_made_dunk_is_a_candidate_by_sub_type(self, tmp_path):
+        """A made shot whose sub_type says Dunk is looked for as a dunk."""
         dunk = _chet(
             action_id=9,
             action_number=15,
@@ -1526,40 +1571,73 @@ class TestMeasureAnchors:
             action_type="Made Shot",
             sub_type="Driving Dunk Shot",
             shot_result="Made",
-            shot_value=2,
-            score_home="4",
-            score_away="4",
             description="Holmgren 1' Driving Dunk (4 PTS)",
         )
-        plays = slice_plays(_pbp([*G7_MARKERS, dunk]), g7_periods, CHET_FOCUS)
-        anchors = measure_anchors(plays, pl.DataFrame(schema=RECAP_COMMENTS_SCHEMA))
-        assert anchors["keyword"].to_list() == ["dunk"]
+        _pbp([*G7_MARKERS, dunk]).write_parquet(tmp_path / f"{GAME}.parquet")
 
-    def test_error_is_the_largest_accepted_offset(self):
-        """Signed offsets, absolute maximum, accepted rows only."""
+        anchors, _ = measure_alignment(
+            _fact([]), _posts(), _games(), _players(), tmp_path
+        )
+
+        assert anchors["kind"].to_list() == ["dunk"]
+
+    def test_a_game_without_a_clock_is_skipped(self, g7_fact, pbp_dir):
+        """A threaded game with no banked archive adds nothing and fails nothing."""
+        posts = pl.concat(
+            [
+                _posts(),
+                _posts()
+                .head(1)
+                .with_columns(
+                    pl.lit("t3_other").alias("post_id"), pl.lit(OTHER).alias("game_id")
+                ),
+            ]
+        )
+
+        _, figures = measure_alignment(g7_fact, posts, _games(), _players(), pbp_dir)
+
+        assert figures["candidates"] == 2
+        assert figures["games"] == 1
+
+    def test_nothing_accepted_has_no_offsets(self, pbp_dir):
+        """Candidates without reactions: counted, with no quantiles."""
+        _, figures = measure_alignment(
+            _fact([]), _posts(), _games(), _players(), pbp_dir
+        )
+
+        assert figures == {
+            "candidates": 2,
+            "anchors": 0,
+            "games": 0,
+            "median_offset_seconds": None,
+            "p25_offset_seconds": None,
+            "p75_offset_seconds": None,
+        }
+
+    def test_quantiles_are_observed_offsets(self):
+        """Median and quartiles are offsets that happened, never interpolated;
+        rejected candidates count as candidates only."""
         anchors = pl.DataFrame(
             {
-                "action_id": [1, 2, 3],
-                "kind": ["block"] * 3,
-                "keyword": ["block"] * 3,
-                "game_seconds": [1, 2, 3],
-                "wall_clock": [10, 20, 30],
-                "reaction_minute": [0, 0, 0],
-                "reaction_n": [3, 3, 1],
-                "first_reaction_utc": [40, 0, 0],
-                "offset_seconds": [30, -45, None],
-                "accepted": [True, True, False],
+                "game_id": ["a", "a", "b", "b", "c", "c"],
+                "accepted": [True, True, True, True, True, False],
+                "offset_seconds": [-100, -50, 10, 20, 200, None],
             },
-            schema=RECAP_ANCHORS_SCHEMA,
+            schema={
+                "game_id": pl.String,
+                "accepted": pl.Boolean,
+                "offset_seconds": pl.Int64,
+            },
         )
-        assert error_seconds(anchors) == 45
 
-    def test_the_timeline_is_not_moved(self, g7_doc, g7_plays):
-        """The plays' wall clocks are the period-marker line, before and after."""
-        assert (
-            g7_doc.frames["plays"]["wall_clock"].to_list()
-            == g7_plays["wall_clock"].to_list()
-        )
+        assert alignment_figures(anchors) == {
+            "candidates": 6,
+            "anchors": 5,
+            "games": 3,
+            "median_offset_seconds": 10,
+            "p25_offset_seconds": -50,
+            "p75_offset_seconds": 20,
+        }
 
 
 class TestResolveRecapSpecs:
@@ -1685,7 +1763,6 @@ class TestBuildRecap:
         assert list(entry["by_period"]) == ["1", "2", "3", "4"]
         assert entry["by_period"]["2"] == {"neg": 4, "pos": 2, "neu": 0}
         assert entry["swing"] == pytest.approx(-1 / 3)
-        assert 0 < entry["error_seconds"] < 120
         assert entry["population"] == "live_thread"
         assert (
             entry["game_id"],
@@ -1722,8 +1799,8 @@ class TestBuildRecap:
         assert any("32 stint minutes" in m and "33" in m for m in messages) is warned
 
     def test_silent_focus_player_still_builds(self, g7_fact, g7_game, pbp_dir):
-        """A room that never mentions him: zero focus comments, no anchor,
-        no swing, every frame still valid."""
+        """A room that never mentions him: zero focus comments, no swing,
+        every frame still valid."""
         fact = g7_fact.filter(
             (pl.col("attributed_player") != CHET_NAME).fill_null(True)
         )
@@ -1745,11 +1822,9 @@ class TestBuildRecap:
         assert doc.entry["live_n"] == 0
         assert doc.entry["rows"] == doc.frames["comments"].height == 3
         assert doc.entry["swing"] == 0.0
-        assert doc.entry["error_seconds"] is None
         assert all(
             v == {"neg": 0, "pos": 0, "neu": 0} for v in doc.entry["by_period"].values()
         )
-        assert doc.frames["anchors"]["accepted"].to_list() == [False, False]
 
     def test_missing_box_score_line_raises(self, g7_fact, g7_game, pbp_dir):
         with pytest.raises(RecapError, match="no box-score line"):
@@ -1830,7 +1905,7 @@ class TestScanCandidates:
 
         assert skipped == [GAME]
         assert candidates.is_empty()
-        assert any("scan skips" in r.message for r in caplog.records)
+        assert any("no clock for" in r.message for r in caplog.records)
 
 
 class TestWriteRecaps:

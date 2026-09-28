@@ -8,8 +8,8 @@ wall-clock time by a straight line inside each period, and a comment's
 wall-clock timestamp maps back to game seconds through the same line.
 Comments posted during a break pin to the break; comments before tip-off
 and after the buzzer keep their phase. The mapping is a derivation with
-an error, measured (never corrected) by the reactions to the focus
-player's blocks, steals and dunks.
+an error, measured (never corrected) once per season by the room's
+reactions to tracked players' blocks, steals and dunks.
 
 Every function here is a frame transform; the archive and the fact are
 read at the edges by the aggregation stage.
@@ -29,7 +29,6 @@ import polars as pl
 from pipeline.nba_stats import play_by_play_path
 from pipeline.posts import GAME_THREAD, POST_LOCAL_TZ
 from pipeline.schemas import (
-    RECAP_ANCHORS_SCHEMA,
     RECAP_COMMENTS_SCHEMA,
     RECAP_FRAME_SCHEMAS,
     RECAP_NULLABLE_COLUMNS,
@@ -39,6 +38,7 @@ from pipeline.schemas import (
     RECAP_STINTS_SCHEMA,
     RECAP_THREADS_SCHEMA,
     SCHEMA_VERSION,
+    AlignmentFigures,
     ClassifierIdentity,
     PeriodCounts,
     RecapEntry,
@@ -50,6 +50,7 @@ from pipeline.schemas import (
 from utils.constants import (
     RECAPS_SUBDIR,
     RECAP_ANCHOR_MIN_REACTIONS,
+    RECAP_ANCHOR_VOCABULARY,
     RECAP_ANCHOR_WINDOW_SECONDS,
     RECAP_ROOM_BODIES_PER_BUCKET,
     RECAP_ROOM_BUCKET_SECONDS,
@@ -127,10 +128,22 @@ TOTAL_COLUMNS = ["pts", "reb", "ast", "blk", "stl", "tov", "pf"]
 # --- Comments, anchors, the document ---------------------------------------
 
 SENTIMENTS = ("neg", "pos", "neu")
-# A reaction anchor: a focus play the room names within a minute of it.
-# The keyword is looked for in the focus player's comments.
-_ANCHOR_KINDS = {"block": "block", "steal": "steal"}
-_DUNK_KEYWORD = "dunk"
+# A reaction anchor: a tracked player's block, steal or made dunk that
+# comments about him name, by RECAP_ANCHOR_VOCABULARY, within a minute
+MADE_SHOT_ACTION_TYPE = "Made Shot"
+DUNK_SUB_TYPE = "Dunk"
+KIND_DUNK = "dunk"
+ANCHOR_CANDIDATE_SCHEMA = pl.Schema(
+    {
+        "game_id": pl.String,
+        "action_id": pl.Int64,
+        "kind": pl.String,
+        "attributed_player": pl.String,
+        "game_seconds": pl.Int64,
+        "wall_clock": pl.Int64,
+        "third": pl.Int64,  # 1..3: which third of its period the play fell in
+    }
+)
 SCAN_MIN_LIVE_N = 500
 _TMP_SUFFIX = ".part"
 # A recap reads the fact's sentiment, never the target verifier
@@ -929,101 +942,277 @@ def swing(by_period: dict[str, PeriodCounts]) -> float:
     return spoken[-1]["neg"] / total(spoken[-1]) - spoken[0]["neg"] / total(spoken[0])
 
 
-# --- Anchors ----------------------------------------------------------------
+# --- The clock's error, season-wide ------------------------------------------
 
 
-def measure_anchors(plays: pl.DataFrame, comments: pl.DataFrame) -> pl.DataFrame:
+def read_game_clock(
+    game_id: str, game_dates: pl.DataFrame, pbp_dir: Path
+) -> tuple[pl.DataFrame, pl.DataFrame] | None:
     """
-    Measure the alignment against the room's reactions to the focus player.
-
-    A block, steal or dunk of his is an anchor candidate. Within the
-    published window of its mapped wall clock, the wall-clock minute in
-    which most of his comments with a body name the play is its
-    reaction; the anchor is accepted when that minute reaches the
-    published floor. The offset is the first naming comment in that
-    minute minus the play's mapped wall clock. Nothing is moved.
+    One banked game's play-by-play and the clock its markers build.
 
     Args:
-        plays: The recap's plays (slice_plays).
-        comments: The comments frame (select_comments).
+        game_id: The game.
+        game_dates: ``game_id`` and ``game_date`` for the game.
+        pbp_dir: The season's play-by-play directory.
 
     Returns:
-        RECAP_ANCHORS_SCHEMA rows in game order, accepted or not.
+        ``(pbp, periods)``, or None when the archive is not banked or its
+        markers do not build a clock (logged).
     """
-    is_dunk = (
-        (pl.col("kind") == "shot")
-        & pl.col("made").fill_null(False)
-        & pl.col("sub_type").str.contains("Dunk", literal=True)
+    path = play_by_play_path(pbp_dir, game_id)
+    if not path.exists():
+        return None
+    pbp = pl.read_parquet(path)
+    try:
+        return pbp, build_periods(pbp, game_dates)
+    except RecapError as e:
+        logger.warning(f"no clock for {game_id}, skipped: {e}")
+        return None
+
+
+def anchor_candidates(
+    pbp: pl.DataFrame, periods: pl.DataFrame, players: pl.DataFrame
+) -> pl.DataFrame:
+    """
+    A game's anchor candidates: every tracked player's blocks, steals and made dunks.
+
+    Args:
+        pbp: One game's play-by-play.
+        periods: The game's clock (build_periods).
+        players: The Player dimension (attributed_player, player_id).
+
+    Returns:
+        ANCHOR_CANDIDATE_SCHEMA rows: each play on both clocks, its player
+        as the fact names him, and the third of its period it fell in.
+    """
+    description = pl.col("description")
+    kind = pl.when(
+        (pl.col("action_type") == MADE_SHOT_ACTION_TYPE)
+        & pl.col("sub_type").str.contains(DUNK_SUB_TYPE, literal=True)
+    ).then(pl.lit(KIND_DUNK))
+    for token, name in _BLANK_TYPE_KINDS:
+        kind = kind.when(
+            (pl.col("action_type") == "")
+            & description.str.contains(token, literal=True)
+        ).then(pl.lit(name))
+    plays = (
+        pbp.with_columns(kind.alias("kind"))
+        .filter(pl.col("kind").is_not_null())
+        .join(
+            players.select(pl.col("player_id").alias("person_id"), "attributed_player"),
+            on="person_id",
+            how="inner",
+        )
     )
-    keyword = (
-        pl.col("kind")
-        .replace_strict(_ANCHOR_KINDS, default=None, return_dtype=pl.String)
-        .fill_null(pl.when(is_dunk).then(pl.lit(_DUNK_KEYWORD)))
+    placed = place_plays(plays, periods).join(
+        periods.select("game_id", "period", "start_seconds", "end_seconds"),
+        on=["game_id", "period"],
+        how="left",
     )
-    candidates = (
-        plays.filter(pl.col("is_focus"))
-        .with_columns(keyword.alias("keyword"))
-        .filter(pl.col("keyword").is_not_null())
-        .select("action_id", "kind", "keyword", "game_seconds", "wall_clock")
+    third = (
+        (pl.col("game_seconds") - pl.col("start_seconds"))
+        * 3
+        // (pl.col("end_seconds") - pl.col("start_seconds"))
+    ).clip(0, 2) + 1
+    return placed.with_columns(third.cast(pl.Int64).alias("third")).select(
+        ANCHOR_CANDIDATE_SCHEMA.names()
     )
-    reactions = comments.filter(
-        pl.col("is_focus") & pl.col("body").is_not_null()
-    ).select(
-        (pl.col("created_utc") // 60 * 60).alias("reaction_minute"),
-        "created_utc",
-        pl.col("body").str.to_lowercase().alias("_body"),
+
+
+def named_reactions(fact: pl.DataFrame, threads: pl.DataFrame) -> pl.DataFrame:
+    """
+    The live-thread comments that name an anchor kind, by the published vocabulary.
+
+    Args:
+        fact: Usable fact rows (link_id, created_utc, attributed_player, body).
+        threads: The live threads (post_id, game_id).
+
+    Returns:
+        One row per (comment, kind it names): game_id, attributed_player,
+        kind, created_utc. Unattributed comments name no one's play.
+    """
+    room = (
+        fact.filter(pl.col("attributed_player").is_not_null())
+        .join(threads, left_on="link_id", right_on="post_id", how="inner")
+        .select(
+            "game_id",
+            "attributed_player",
+            "created_utc",
+            pl.col("body").str.to_lowercase().alias("_body"),
+        )
     )
-    named = (
-        candidates.join(reactions, how="cross")
-        .filter(
-            pl.col("_body").str.contains(pl.col("keyword"), literal=True)
-            & (
-                (pl.col("reaction_minute") - pl.col("wall_clock")).abs()
-                <= RECAP_ANCHOR_WINDOW_SECONDS
+    return pl.concat(
+        [
+            room.filter(pl.col("_body").str.contains(pattern)).select(
+                "game_id",
+                "attributed_player",
+                pl.lit(kind).alias("kind"),
+                "created_utc",
             )
-        )
-        .group_by("action_id", "reaction_minute")
-        .agg(
-            pl.len().cast(pl.Int64).alias("reaction_n"),
-            pl.col("created_utc").min().alias("first_reaction_utc"),
-        )
-        .sort(
-            ["action_id", "reaction_n", "reaction_minute"],
-            descending=[False, True, False],
-        )
-        .unique(subset=["action_id"], keep="first", maintain_order=True)
+            for kind, pattern in RECAP_ANCHOR_VOCABULARY.items()
+        ]
     )
-    measured = candidates.join(named, on="action_id", how="left").with_columns(
-        pl.col("reaction_n").fill_null(0)
+
+
+def match_anchors(candidates: pl.DataFrame, reactions: pl.DataFrame) -> pl.DataFrame:
+    """
+    Give each candidate the burst of comments that named it, if any.
+
+    A burst is one wall-clock minute of comments about the play's player
+    naming its kind. Bursts within the published window of a play are
+    its reactions, but a burst counts for one play only, the nearest to
+    its first comment; each play then keeps its largest burst, the
+    earliest on a tie. A play is an anchor when that burst reaches the
+    published floor, and its offset is the burst's first comment minus
+    the play's mapped wall clock.
+
+    Args:
+        candidates: anchor_candidates() rows, any number of games.
+        reactions: named_reactions() rows.
+
+    Returns:
+        The candidates with reaction_n, first_reaction_utc, offset_seconds
+        (null unless accepted) and accepted, sorted by game and action.
+    """
+    bursts = reactions.group_by(
+        "game_id",
+        "attributed_player",
+        "kind",
+        (pl.col("created_utc") // 60 * 60).alias("minute"),
+    ).agg(
+        pl.len().cast(pl.Int64).alias("reaction_n"),
+        pl.col("created_utc").min().alias("first_reaction_utc"),
+    )
+    burst_key = ["game_id", "attributed_player", "kind", "minute"]
+    best = (
+        candidates.join(bursts, on=["game_id", "attributed_player", "kind"])
+        .filter(
+            (pl.col("minute") - pl.col("wall_clock")).abs()
+            <= RECAP_ANCHOR_WINDOW_SECONDS
+        )
+        .with_columns(
+            (pl.col("first_reaction_utc") - pl.col("wall_clock")).abs().alias("_gap")
+        )
+        .sort("_gap", "action_id")
+        .unique(subset=burst_key, keep="first", maintain_order=True)
+        .sort(["reaction_n", "minute"], descending=[True, False])
+        .unique(subset=["game_id", "action_id"], keep="first", maintain_order=True)
+        .select("game_id", "action_id", "reaction_n", "first_reaction_utc")
     )
     accepted = pl.col("reaction_n") >= RECAP_ANCHOR_MIN_REACTIONS
     return (
-        measured.with_columns(
+        candidates.join(best, on=["game_id", "action_id"], how="left")
+        .with_columns(pl.col("reaction_n").fill_null(0))
+        .with_columns(
             accepted.alias("accepted"),
             pl.when(accepted)
             .then(pl.col("first_reaction_utc") - pl.col("wall_clock"))
-            .otherwise(None)
             .alias("offset_seconds"),
         )
-        .sort("action_id")
-        .select(RECAP_ANCHORS_SCHEMA.names())
+        .sort("game_id", "action_id")
     )
 
 
-def error_seconds(anchors: pl.DataFrame) -> int | None:
+def alignment_figures(anchors: pl.DataFrame) -> AlignmentFigures:
     """
-    The recap's alignment error: the largest accepted offset, in seconds.
+    Summarize matched candidates as the published alignment figures.
+
+    Quantiles are observed offsets (nearest rank), never interpolated.
 
     Args:
-        anchors: measure_anchors() output.
+        anchors: match_anchors() rows (game_id, accepted, offset_seconds).
 
     Returns:
-        max |offset_seconds| over accepted anchors; None when none was.
+        Candidates, anchors, games with one, and the median and quartile
+        offsets in seconds; the offsets are None with no anchor.
     """
     accepted = anchors.filter(pl.col("accepted"))
-    if not accepted.height:
-        return None
-    return int(accepted["offset_seconds"].abs().max())
+    offsets = accepted["offset_seconds"]
+
+    def quantile(q: float) -> int | None:
+        if not accepted.height:
+            return None
+        return int(offsets.quantile(q, interpolation="nearest"))
+
+    return {
+        "candidates": anchors.height,
+        "anchors": accepted.height,
+        "games": accepted["game_id"].n_unique(),
+        "median_offset_seconds": quantile(0.5),
+        "p25_offset_seconds": quantile(0.25),
+        "p75_offset_seconds": quantile(0.75),
+    }
+
+
+def unmeasured_alignment() -> AlignmentFigures:
+    """The figures of a season that curates no recap: nothing measured."""
+    return {
+        "candidates": 0,
+        "anchors": 0,
+        "games": 0,
+        "median_offset_seconds": None,
+        "p25_offset_seconds": None,
+        "p75_offset_seconds": None,
+    }
+
+
+def measure_alignment(
+    fact: pl.DataFrame,
+    posts: pl.DataFrame,
+    games: pl.DataFrame,
+    players: pl.DataFrame,
+    pbp_dir: Path,
+) -> tuple[pl.DataFrame, AlignmentFigures]:
+    """
+    Measure the game clock against the room's reactions, over every threaded game.
+
+    The clock is one method for every game, so its error is measured
+    once, season-wide: a single game rarely draws enough named reactions
+    to measure its own. The anchors measure the clock; nothing is moved.
+
+    Args:
+        fact: The usable fact rows, at least those in game threads.
+        posts: The Post bridge.
+        games: The Game dimension (game_id, game_date).
+        players: The Player dimension (attributed_player, player_id).
+        pbp_dir: The season's play-by-play directory.
+
+    Returns:
+        Every candidate matched (match_anchors) and the figures
+        (alignment_figures). The median offset per third of the period
+        is logged: the straight line's error is not even across it.
+    """
+    threads = posts.filter(
+        (pl.col("post_type") == GAME_THREAD) & pl.col("game_id").is_not_null()
+    ).select("post_id", "game_id")
+    game_dates = games.select("game_id", "game_date")
+    frames = [ANCHOR_CANDIDATE_SCHEMA.to_frame()]
+    skipped = 0
+    for game_id in sorted(threads["game_id"].unique().to_list()):
+        banked = read_game_clock(game_id, game_dates, pbp_dir)
+        if banked is None:
+            skipped += 1
+            continue
+        frames.append(anchor_candidates(*banked, players))
+    anchors = match_anchors(pl.concat(frames), named_reactions(fact, threads))
+    figures = alignment_figures(anchors)
+
+    by_third = (
+        anchors.filter(pl.col("accepted"))
+        .group_by("third")
+        .agg(pl.col("offset_seconds").median().round(0).cast(pl.Int64))
+        .sort("third")
+        .rows()
+    )
+    logger.info(
+        f"Alignment: {figures['anchors']:,} anchors of {figures['candidates']:,} "
+        f"candidates in {figures['games']:,} games ({skipped:,} without a clock); "
+        f"median offset {figures['median_offset_seconds']} s "
+        f"(p25 {figures['p25_offset_seconds']}, p75 {figures['p75_offset_seconds']}); "
+        f"median by third of the period {dict(by_third)}"
+    )
+    return anchors, figures
 
 
 # --- The document -----------------------------------------------------------
@@ -1195,7 +1384,6 @@ def build_recap(
         .sort("created_utc")
         .select(RECAP_THREADS_SCHEMA.names())
     )
-    anchors = measure_anchors(plays, comments)
 
     line = player_games.filter(
         (pl.col("game_id") == spec.game_id)
@@ -1218,7 +1406,6 @@ def build_recap(
     frames = {
         "periods": periods.select(RECAP_PERIODS_SCHEMA.names()),
         "threads": threads,
-        "anchors": anchors,
         "stints": stints,
         "plays": plays.select(RECAP_PLAYS_SCHEMA.names()),
         "comments": comments,
@@ -1255,7 +1442,6 @@ def build_recap(
         "room_n": spec.room_n,
         "by_period": by_period,
         "swing": swing(by_period),
-        "error_seconds": error_seconds(anchors),
         "minutes_diff": minutes_diff,
         "population": RECAP_POPULATION,
     }
@@ -1349,18 +1535,11 @@ def scan_candidates(
     periods: list[pl.DataFrame] = []
     skipped: list[str] = []
     for game_id in sorted(threads["game_id"].unique().to_list()):
-        path = play_by_play_path(pbp_dir, game_id)
-        if not path.exists():
+        banked = read_game_clock(game_id, game_dates, pbp_dir)
+        if banked is None:
             skipped.append(game_id)
             continue
-        markers = pl.read_parquet(path).filter(
-            pl.col("action_type") == PERIOD_ACTION_TYPE
-        )
-        try:
-            periods.append(build_periods(markers, game_dates))
-        except RecapError as e:
-            logger.warning(f"scan skips {game_id}: {e}")
-            skipped.append(game_id)
+        periods.append(banked[1])
     if not periods:
         return pl.DataFrame(), skipped
     clock = pl.concat(periods)

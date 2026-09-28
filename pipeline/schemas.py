@@ -576,7 +576,9 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
 # the tables' column vocabulary. Time is two clocks: game_seconds since
 # tip-off (720 per period, 300 per overtime) and wall_clock, epoch
 # seconds; a play's wall clock is mapped from the period markers, a
-# comment's game seconds is mapped back through them. Team columns keep
+# comment's game seconds is mapped back through them. The mapping's error
+# is a property of the method, measured once per season under
+# rules.recaps.alignment, never per file. Team columns keep
 # the archive's abbreviation under its own name; a comment carries the
 # fan role; there is no bare team.
 
@@ -602,24 +604,6 @@ RECAP_THREADS_SCHEMA = pl.Schema(
         "created_utc": pl.Int64,
         "num_comments": pl.Int64,  # the whole room, as posts.parquet
         "comment_n": pl.Int64,  # classified rows in this recap from the thread
-    }
-)
-
-# Every reaction-anchor candidate, accepted or not: a focus play the room
-# names, and where its reaction landed against the mapped timeline. The
-# anchors measure the alignment; they never move it.
-RECAP_ANCHORS_SCHEMA = pl.Schema(
-    {
-        "action_id": pl.Int64,  # -> plays
-        "kind": pl.String,
-        "keyword": pl.String,  # the word the reaction is looked for by
-        "game_seconds": pl.Int64,
-        "wall_clock": pl.Int64,  # the play's mapped wall clock
-        "reaction_minute": pl.Int64,  # nullable: no comment named the play
-        "reaction_n": pl.Int64,  # comments naming it in that minute
-        "first_reaction_utc": pl.Int64,  # nullable
-        "offset_seconds": pl.Int64,  # nullable: first reaction minus the play
-        "accepted": pl.Boolean,
     }
 )
 
@@ -694,7 +678,6 @@ RECAP_COMMENTS_SCHEMA = pl.Schema(
 RECAP_FRAME_SCHEMAS: dict[str, pl.Schema] = {
     "periods": RECAP_PERIODS_SCHEMA,
     "threads": RECAP_THREADS_SCHEMA,
-    "anchors": RECAP_ANCHORS_SCHEMA,
     "stints": RECAP_STINTS_SCHEMA,
     "plays": RECAP_PLAYS_SCHEMA,
     "comments": RECAP_COMMENTS_SCHEMA,
@@ -703,7 +686,6 @@ RECAP_FRAME_SCHEMAS: dict[str, pl.Schema] = {
 RECAP_NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "periods": frozenset(),
     "threads": frozenset(),
-    "anchors": frozenset({"reaction_minute", "first_reaction_utc", "offset_seconds"}),
     "stints": frozenset(),
     "plays": frozenset(
         {"paired_action_id", "made", "pts", "reb", "ast", "blk", "stl", "tov", "pf"}
@@ -826,13 +808,26 @@ class Floors(TypedDict):
     game_min_n: int
 
 
+class AlignmentFigures(TypedDict):
+    """What the reaction anchors measured of the game clock, season-wide."""
+
+    candidates: int  # tracked players' blocks, steals and made dunks
+    anchors: int  # candidates whose reaction reached the floor
+    games: int  # games with at least one anchor
+    median_offset_seconds: int | None  # first reaction minus the mapped play
+    p25_offset_seconds: int | None
+    p75_offset_seconds: int | None
+
+
 class RecapsRule(TypedDict):
-    """How a recap keeps bodies and measures its alignment; utils.constants."""
+    """How a recap keeps bodies and how its clock is measured; utils.constants."""
 
     room_bucket_seconds: int  # wall-clock bucket for the room's top-voted comments
     room_bodies_per_bucket: int  # non-focus bodies kept per bucket, by score
     anchor_window_seconds: int  # a play's reaction is looked for within this
     anchor_min_reactions: int  # comments naming the play in one minute to count
+    anchor_vocabulary: dict[str, str]  # play kind -> the pattern naming it
+    alignment: AlignmentFigures
 
 
 class Rules(TypedDict):
@@ -885,7 +880,6 @@ class RecapEntry(TypedDict):
     room_n: int  # the whole room: posts.num_comments over the live threads
     by_period: dict[str, PeriodCounts]  # keyed by period; live and break comments
     swing: float  # negative share, last period minus first
-    error_seconds: int | None  # largest accepted anchor offset; None when none
     minutes_diff: int  # stint minutes minus the box score's
     population: str  # RECAP_POPULATION
 

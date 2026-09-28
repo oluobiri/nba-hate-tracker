@@ -349,12 +349,13 @@ class TestBuildUploadSetRecaps:
         ]
 
     def test_recap_headers(self, recap_dashboard_dir):
-        """JSON content, cached like a parquet: it changes only with a drop."""
+        """JSON content, cached like the manifest: the page fetches it at
+        runtime, and the drop's invalidation never reaches a browser's copy."""
         _, objects = build_upload_set(recap_dashboard_dir, SEASON, PREFIX)
         recap = objects[2]
 
         assert recap.content_type == RECAP_CONTENT_TYPE == JSON_CONTENT_TYPE
-        assert recap.cache_control == RECAP_CACHE_CONTROL == PARQUET_CACHE_CONTROL
+        assert recap.cache_control == RECAP_CACHE_CONTROL == JSON_CACHE_CONTROL
 
     def test_missing_recap_aborts(self, recap_dashboard_dir):
         """A registered recap that is not on disk stops the drop."""

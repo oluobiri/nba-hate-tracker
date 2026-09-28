@@ -39,10 +39,10 @@ PARQUET_CACHE_CONTROL = "public, max-age=86400"
 # One rule for both JSON files: the manifest changes every drop and the
 # schema must never lag it
 JSON_CACHE_CONTROL = "public, max-age=300"
-# A recap is JSON, but it changes only with a drop, like a parquet, and
-# the drop invalidates it
+# A recap changes only with a drop, but the page fetches it at runtime
+# and the drop's invalidation never reaches a browser's copy
 RECAP_CONTENT_TYPE = JSON_CONTENT_TYPE
-RECAP_CACHE_CONTROL = PARQUET_CACHE_CONTROL
+RECAP_CACHE_CONTROL = JSON_CACHE_CONTROL
 
 MEDIA_CONTENT_TYPES = {
     ".png": "image/png",

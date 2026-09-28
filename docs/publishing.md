@@ -50,7 +50,7 @@ Objects are overwritten in place, so for the seconds an upload takes the old man
 | Object | Content-Type | Cache-Control |
 |---|---|---|
 | `*.parquet` | `application/vnd.apache.parquet` | `public, max-age=86400` |
-| `recaps/*.json` | `application/json` | `public, max-age=86400` |
+| `recaps/*.json` | `application/json` | `public, max-age=300` (fetched by the page at runtime; an invalidation never reaches a browser's copy) |
 | `manifest.json`, `schema.json` | `application/json` | `public, max-age=300` |
 
 ## The media drop

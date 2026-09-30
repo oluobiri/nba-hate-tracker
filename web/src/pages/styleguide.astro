@@ -260,6 +260,8 @@ const recapLog = recapLead
       recapHrefs(manifest.recaps, recapLead.entry.attributed_player),
     ).toSorted((a, b) => b.date.localeCompare(a.date))
   : []
+const recapPoints = scatterPoints(recapLog)
+const recapR = pearson(recapPoints.map((p) => p.x), recapPoints.map((p) => p.y))
 const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
 const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
 // The replay's parts on the lead's file, read here as the endpoint reads it:
@@ -687,6 +689,12 @@ function bugAt(t: number): ScoreBugProps {
       <h2>GameScatter</h2>
       <p class="eyebrow">Game Score across, the negative share up; wins filled bone, losses hollow; his usual as a dashed rule. The table is the accessible equivalent.</p>
       <GameScatter points={topPoints} baseline={negRate(top)} lead={scatterLead(top.attributed_player, topPoints.length, topR)} r={topR} />
+      {recapLead && recapPoints.length > 0 && (
+        <figure class="guide__fig">
+          <GameScatter points={recapPoints} baseline={negRate(recapLead.usual)} lead={scatterLead(recapLead.entry.attributed_player, recapPoints.length, recapR)} r={recapR} highlight={recapLead.game.game_id} />
+          <figcaption>one game ringed: the lead recap's night among {recapLead.entry.attributed_player}'s games</figcaption>
+        </figure>
+      )}
     </section>
 
     <section class="guide__section">

@@ -11,6 +11,8 @@ export interface GameScatterProps {
   /** The plain-words lead, from scatterLead. */
   lead: string
   r: number | null
+  /** A gameId to ring: the night a recap page is about. */
+  highlight?: string
 }
 
 const W = 320
@@ -19,7 +21,7 @@ const PAD = { l: 36, r: 12, t: 12, b: 26 }
 
 const nice = (v: number, step: number, up: boolean): number => (up ? Math.ceil(v / step) * step : Math.floor(v / step) * step)
 
-export function GameScatter({ points, baseline, lead, r }: GameScatterProps) {
+export function GameScatter({ points, baseline, lead, r, highlight }: GameScatterProps) {
   const xs = points.map((p) => p.x)
   const x0 = Math.min(0, nice(Math.min(...xs), 10, false))
   const x1 = Math.max(x0 + 10, nice(Math.max(...xs), 10, true))
@@ -68,6 +70,11 @@ export function GameScatter({ points, baseline, lead, r }: GameScatterProps) {
               <title>{p.label}</title>
             </circle>
           ))}
+          {points
+            .filter((p) => p.gameId === highlight)
+            .map((p) => (
+              <circle key={`hl-${p.gameId}`} className="sc__pt--hl" cx={sx(p.x)} cy={sy(p.y)} r={8} />
+            ))}
         </svg>
         <span className="sc__x mono" aria-hidden="true">
           Game Score →
@@ -75,6 +82,12 @@ export function GameScatter({ points, baseline, lead, r }: GameScatterProps) {
       </div>
       <figcaption className="sc__cap mono">
         {rText} · {fmtInt(points.length)} games · <span className="sc__key sc__key--w" /> win <span className="sc__key sc__key--l" /> loss
+        {highlight && points.some((p) => p.gameId === highlight) && (
+          <>
+            {' '}
+            <span className="sc__key sc__key--hl" /> this game
+          </>
+        )}
       </figcaption>
     </figure>
   )

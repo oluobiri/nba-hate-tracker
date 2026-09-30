@@ -1364,6 +1364,12 @@
   stroke: var(--bone);
   stroke-width: 1.5;
 }
+.sc__pt--hl {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
 .sc__cap {
   font-size: 12px;
   color: var(--bone-2);
@@ -1381,6 +1387,9 @@
 }
 .sc__key--l {
   border: 1.5px solid var(--bone);
+}
+.sc__key--hl {
+  border: 1px dashed var(--bone);
 }
 
 /* Timeline: rolling lines over weekly dots; every word is HTML. */

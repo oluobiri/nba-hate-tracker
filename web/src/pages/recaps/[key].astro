@@ -6,13 +6,16 @@ import type { InferGetStaticPropsType } from 'astro'
 
 import { cardHref } from '../../cards/model'
 import { GameLine } from '../../components/GameLine'
+import { GameScatter } from '../../components/GameScatter'
 import { MethodNote } from '../../components/MethodNote'
 import { PeriodStrip } from '../../components/PeriodStrip'
 import { RecapReplay } from '../../components/RecapReplay'
 import { VerdictDelta } from '../../components/VerdictDelta'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
+import { buildGameLog, SCATTER_MIN, scatterLead, scatterPoints } from '../../lib/games'
 import { headshotSrcSet } from '../../lib/media'
+import { negRate, pearson } from '../../lib/metrics'
 import { boxLine, buildRecaps, countsLine, gamePhrase, lagPhrase, nextRecap, nightSentence, recapHref } from '../../lib/recaps'
 import { REPLAY_KEYS } from '../../lib/url'
 
@@ -33,6 +36,22 @@ const lag = lagPhrase(lagSeconds)
 const title = `${name} · ${recap.line.game ?? recap.line.date}`
 const verdict = nightSentence(name, recap.night, recap.usual, floor)
 const flairAbbr = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbreviation]))
+// Where the night sits among his games: the player page's scatter, this game ringed.
+const abbr = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
+const log = buildGameLog(
+  tables.player_games.filter((r) => r.attributed_player === name),
+  tables.game_sentiment.filter((r) => r.attributed_player === name),
+  gamesById,
+  abbr,
+  recap.usual,
+  floor,
+)
+const points = scatterPoints(log)
+const r = pearson(
+  points.map((p) => p.x),
+  points.map((p) => p.y),
+)
 ---
 
 <Base title={title} description={recap.hook} image={cardHref.recap(recap.key)}>
@@ -82,6 +101,15 @@ const flairAbbr = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbrevia
         <p class="rp__verdict-text">{verdict}</p>
       </div>
     </section>
+
+    {
+      points.length >= SCATTER_MIN && (
+        <section class="rp__section" aria-labelledby="scatter-h">
+          <h2 id="scatter-h">Where the night sits among his games</h2>
+          <GameScatter points={points} baseline={negRate(recap.usual)} lead={scatterLead(name, points.length, r)} r={r} highlight={recap.game.game_id} />
+        </section>
+      )
+    }
 
     <MethodNote kind="method">
       The replay and the quarters count his comments in the game's live thread, each on the clock by its own timestamp{lag ? `, and the room takes ${lag} to react to a play` : ''}.

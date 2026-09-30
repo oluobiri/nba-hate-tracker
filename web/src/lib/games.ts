@@ -154,6 +154,9 @@ export function winLossSplit(log: readonly GameLine[], floor: number): { wins: C
   return { wins: side(true), losses: side(false) }
 }
 
+// PROTOTYPE: the scatter needs this many graded games before it is drawn.
+export const SCATTER_MIN = 15
+
 export interface ScatterPoint {
   gameId: string
   x: number

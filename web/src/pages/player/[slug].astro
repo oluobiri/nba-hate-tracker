@@ -23,7 +23,7 @@ import { playerVerdict, rankChips } from '../../lib/annotate'
 import { type FanRow, fanLists, fanSplit, fansSummary } from '../../lib/fans'
 import { bioFacts } from '../../lib/bio'
 import { fmtInt, fmtPct, ordinal } from '../../lib/format'
-import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, seasonAverages, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
+import { buildGameLog, gamesSummary, neverDressedSentence, SCATTER_MIN, scatterLead, scatterPoints, seasonAverages, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
 import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
@@ -39,8 +39,6 @@ const RECEIPTS_TOP = 3
 const FAN_LIST = 5
 const ROLLING_WEEKS = 4
 const LOG_TOP = 10
-// PROTOTYPE: the scatter needs this many graded games before it is drawn.
-const SCATTER_MIN = 15
 
 export async function getStaticPaths() {
   const { manifest, tables } = await getSeason()

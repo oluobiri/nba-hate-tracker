@@ -28,45 +28,45 @@ describe('hook', () => {
   const usual = 0.35
 
   it('reads a rise between a period and a later one', () => {
-    expect(hook(periodCells(periods(29, 34, 50, 60)), usual)).toBe('29% negative in the 1st, 60% by the 4th')
+    expect(hook(periodCells(periods(29, 34, 50, 60)), usual)).toBe('29% negative in the 1st, 60% by the 4th.')
   })
 
   it('reads a fall the same way', () => {
-    expect(hook(periodCells(periods(34, 33, 73, 22)), usual)).toBe('73% negative in the 3rd, 22% by the 4th')
+    expect(hook(periodCells(periods(34, 33, 73, 22)), usual)).toBe('73% negative in the 3rd, 22% by the 4th.')
   })
 
   it('picks the largest move, not the first', () => {
-    expect(hook(periodCells(periods(51, 34, 76, 80)), usual)).toBe('34% negative in the 2nd, 80% by the 4th')
+    expect(hook(periodCells(periods(51, 34, 76, 80)), usual)).toBe('34% negative in the 2nd, 80% by the 4th.')
   })
 
   it('reads one period standing off agreeing neighbours as a spike', () => {
-    expect(hook(periodCells(periods(30, 65, 32, 34)), usual)).toBe('spiked to 65% negative in the 2nd, from 30% either side')
-    expect(hook(periodCells(periods(60, 20, 62, 61)), usual)).toBe('dipped to 20% negative in the 2nd, from 60% either side')
+    expect(hook(periodCells(periods(30, 65, 32, 34)), usual)).toBe('Spiked to 65% negative in the 2nd, from 30% either side.')
+    expect(hook(periodCells(periods(60, 20, 62, 61)), usual)).toBe('Dipped to 20% negative in the 2nd, from 60% either side.')
   })
 
   it('does not call it a spike when the neighbours disagree', () => {
     // 33 and 22 sit 11 points apart, past the return band, so the fall reads
-    expect(hook(periodCells(periods(34, 33, 73, 22)), usual)).not.toMatch(/spiked/)
+    expect(hook(periodCells(periods(34, 33, 73, 22)), usual)).not.toMatch(/Spiked/)
   })
 
   it('reads a night hated from the tip against his usual', () => {
-    expect(hook(periodCells(periods(83, 67, 78, 74)), 0.5)).toBe('83% negative from the tip, 33 points above his usual 50%')
+    expect(hook(periodCells(periods(83, 67, 78, 74)), 0.5)).toBe('83% negative from the tip, 33 points above his usual 50%.')
   })
 
   it('falls back to the range when nothing moved', () => {
-    expect(hook(periodCells(periods(33, 41, 36, 38)), usual)).toBe('held between 33% and 41% negative all night')
+    expect(hook(periodCells(periods(33, 41, 36, 38)), usual)).toBe('Held between 33% and 41% negative all night.')
   })
 
   it('prefers regulation and reads the overtimes only when regulation held no story', () => {
-    expect(hook(periodCells(periods(10, 19, 6, 14, 50, 29)), usual)).toBe('6% negative in the 3rd, 50% by the 1st overtime')
-    expect(hook(periodCells(periods(35, 19, 38, 41, 60, 51)), usual)).toBe('19% negative in the 2nd, 41% by the 4th')
+    expect(hook(periodCells(periods(10, 19, 6, 14, 50, 29)), usual)).toBe('6% negative in the 3rd, 50% by the 1st overtime.')
+    expect(hook(periodCells(periods(35, 19, 38, 41, 60, 51)), usual)).toBe('19% negative in the 2nd, 41% by the 4th.')
   })
 
   it('skips a period nobody spoke in', () => {
     const by = periods(29, 34, 50, 60)
     by['2'] = { neg: 0, pos: 0, neu: 0 }
-    expect(hook(periodCells(by), usual)).toBe('29% negative in the 1st, 60% by the 4th')
-    expect(hook(periodCells(periods(0, 0)), usual)).toBe('held between 0% and 0% negative all night')
+    expect(hook(periodCells(by), usual)).toBe('29% negative in the 1st, 60% by the 4th.')
+    expect(hook(periodCells(periods(0, 0)), usual)).toBe('Held between 0% and 0% negative all night.')
   })
 })
 
@@ -218,9 +218,9 @@ describe('buildRecaps', () => {
   })
 
   it('computes the hook against his usual and the strip over the periods', () => {
-    expect(recaps[0]!.hook).toBe('83% negative from the tip, 33 points above his usual 50%')
+    expect(recaps[0]!.hook).toBe('83% negative from the tip, 33 points above his usual 50%.')
     expect(recaps[0]!.inPeriods).toEqual(c(302, 98, 0))
-    expect(recaps[1]!.hook).toBe('29% negative in the 1st, 60% by the 4th')
+    expect(recaps[1]!.hook).toBe('29% negative in the 1st, 60% by the 4th.')
   })
 
   it('judges the night against his usual where the view has a row, and leaves it null otherwise', () => {

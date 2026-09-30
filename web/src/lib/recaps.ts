@@ -92,6 +92,11 @@ function turn(cells: readonly PeriodCell[]): string | null {
  * holds no story, so a thin overtime never carries the headline.
  */
 export function hook(cells: readonly PeriodCell[], usual: number): string {
+  const raw = hookClause(cells, usual)
+  return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}.`
+}
+
+function hookClause(cells: readonly PeriodCell[], usual: number): string {
   const spoken = cells.filter((c) => c.counts.total > 0)
   const regulation = spoken.filter((c) => c.key <= REGULATION)
   const scopes = spoken.length > regulation.length ? [regulation, spoken] : [regulation]

@@ -2153,3 +2153,171 @@ a.hero__who:hover {
     -webkit-mask-image: none;
   }
 }
+/* The recap hero's own lines: the hook as the sentence, one play affordance. */
+.hero__hook {
+  margin: 0;
+  max-width: 44ch;
+  font-size: clamp(18px, 2vw, 22px);
+  line-height: 1.3;
+  color: var(--bone);
+  text-wrap: balance;
+}
+.hero__play {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  text-decoration: none;
+}
+
+/* GameLine: round · game · away at home · date; the winner bold, the loser gray. */
+.gline__side--w {
+  font-weight: 600;
+  color: var(--bone);
+}
+.gline__side--l {
+  color: var(--bone-2);
+}
+
+/* PeriodStrip: the game by period. Equal-width cells, a mini bar each, the
+   label above and n below; nothing grayed, no floor read. */
+.ps {
+  display: grid;
+  grid-template-columns: repeat(var(--ps-n, 4), minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.ps__cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ps__label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.ps__n {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone-2);
+}
+.ps__cell--silent .sb__track {
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+.ps--hero {
+  gap: 12px;
+}
+.ps--hero .sb--mini {
+  --sb-h: 14px;
+}
+.ps--hero .ps__label {
+  font-size: 12px;
+}
+.ps--hero .ps__n {
+  font-size: 13px;
+}
+
+/* RecapRows: one curated recap per row, the whole row the link; the strip
+   drops to a second line on a phone. */
+.rr {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.rr__row {
+  border-bottom: 1px solid var(--line);
+}
+.rr__link {
+  display: grid;
+  grid-template-columns: 44px minmax(220px, 1.4fr) minmax(180px, 2fr) 72px 20px;
+  grid-template-areas: 'mug who strip n chev';
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 14px 0;
+  text-decoration: none;
+  color: inherit;
+}
+.rr__link:hover {
+  background: var(--ink-2);
+}
+.rr__link:hover .rr__name {
+  text-decoration: underline;
+}
+.rr__mug {
+  grid-area: mug;
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-2);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.rr__who {
+  grid-area: who;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rr__game {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.rr__name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+.rr__hook {
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--bone-2);
+}
+.rr__strip {
+  grid-area: strip;
+  min-width: 0;
+}
+.rr__n {
+  grid-area: n;
+  font-size: 13px;
+  text-align: right;
+  color: var(--bone-2);
+}
+.rr__n-unit {
+  font-size: 11px;
+  color: var(--mute);
+}
+.rr__chevron {
+  grid-area: chev;
+  font-size: 20px;
+  text-align: right;
+  color: var(--mute);
+}
+@media (max-width: 640px) {
+  .rr__link {
+    grid-template-columns: 44px minmax(0, 1fr) 56px 20px;
+    grid-template-areas:
+      'mug who who chev'
+      'strip strip n chev';
+    gap: 10px 12px;
+    align-items: start;
+  }
+  .rr__chevron {
+    align-self: center;
+  }
+  .rr__n {
+    align-self: end;
+  }
+  .rr__n-unit {
+    display: none;
+  }
+}

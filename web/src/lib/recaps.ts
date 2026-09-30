@@ -34,7 +34,7 @@ export interface PeriodCell {
 export const periodLabel = (n: number): string => (n <= REGULATION ? `Q${n}` : `OT${n - REGULATION}`)
 
 /** "1st".."4th", then "1st overtime".., for sentences. */
-const periodWord = (n: number): string => (n <= REGULATION ? ordinal(n) : `${ordinal(n - REGULATION)} overtime`)
+export const periodWord = (n: number): string => (n <= REGULATION ? ordinal(n) : `${ordinal(n - REGULATION)} overtime`)
 
 /** The registry's per-period counts in period order, totals added. */
 export function periodCells(byPeriod: Record<string, PeriodCounts>): PeriodCell[] {

@@ -451,6 +451,100 @@ test('a recap page carries its name, its periods and its verdict', async ({ page
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
+// The replay: the site's one runtime fetch, then the room on the wall clock.
+const RECAP = ROUTES.find((r) => r.startsWith('/recaps/') && r !== '/recaps/')!
+const CLOCK = /^\d{2}:\d{2}$/
+
+test('the replay fetches its file from the site and plays from the tip', async ({ page }) => {
+  const errors = watchErrors(page)
+  const fetched = page.waitForResponse((r) => r.url().endsWith('/data.json'))
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  const res = await fetched
+  expect(res.status()).toBe(200)
+  expect(res.headers()['content-type']).toMatch(/application\/json/)
+  const body = await res.body()
+  console.log(`${RECAP}data.json: ${body.length} bytes, content-encoding ${res.headers()['content-encoding'] ?? 'none'}`)
+  await expect(page.locator('astro-island[component-export="RecapReplay"]')).not.toHaveAttribute('ssr')
+  await expect(page.locator('.bug__time').first()).toHaveText(CLOCK)
+  await expect(page.locator('.bug__toggle').first()).toHaveText('Pause')
+  await expect(page.locator('.scrub__range')).toBeVisible()
+  await expect(page.locator('.replay__note')).toHaveCount(0)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a recap deep link opens paused at its moment, with no jump', async ({ page }) => {
+  await page.goto(`${RECAP}?t=600`, { waitUntil: 'networkidle' })
+  await expect(page.locator('html')).not.toHaveClass(/has-replay-view/)
+  await expect(page.locator('.bug__toggle').first()).toHaveText('Play')
+  const clock = page.locator('.bug__time').first()
+  await expect(clock).toHaveText(CLOCK)
+  const before = await clock.textContent()
+  await page.waitForTimeout(500)
+  expect(await clock.textContent()).toBe(before)
+  await expect(page).toHaveURL(/t=600/)
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('space plays and pauses the replay, the arrows step it, and the moment reaches the URL', async ({ page }) => {
+  await page.goto(`${RECAP}?t=600`, { waitUntil: 'networkidle' })
+  const toggle = page.locator('.bug__toggle').first()
+  const range = page.locator('.scrub__range')
+  await page.locator('.replay').focus()
+  await page.keyboard.press('Space')
+  await expect(toggle).toHaveText('Pause')
+  await page.keyboard.press('Space')
+  await expect(toggle).toHaveText('Play')
+  const at = Number(await range.inputValue())
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => Number(await range.inputValue())).toBeGreaterThan(at)
+  await expect(page).toHaveURL(/t=\d+/)
+  await page.keyboard.press('Home')
+  await expect.poll(async () => Number(await range.inputValue())).toBe(0)
+  await expect(page).toHaveURL(/t=0/)
+})
+
+test('the replay never autoplays under reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await expect(page.locator('.bug__toggle').first()).toHaveText('Play')
+  await page.waitForTimeout(500)
+  await expect(page.locator('.bug__toggle').first()).toHaveText('Play')
+  await expect(page.locator('.scrub__range')).toHaveValue('0')
+})
+
+test('on a phone without JavaScript the quarter box sits behind a details control', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'phone', 'the control is the phone layout')
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: info.project.use.viewport })
+  const page = await context.newPage()
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await expect(page.locator('.replay__note')).toHaveText('Loading the thread…')
+  await expect(page.locator('.ps')).toHaveCount(1)
+  const details = page.locator('details.replay__more')
+  await expect(details).toHaveCount(1)
+  await expect(details.first()).not.toHaveAttribute('open')
+  const summary = details.first().locator('summary')
+  expect((await summary.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  await summary.click()
+  await expect(details.first()).toHaveAttribute('open')
+  await expect(page.locator('.qb')).toBeVisible()
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+  await context.close()
+})
+
+test('every recap page links to the next recap, a live route', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the links are the same at every width')
+  for (const route of ROUTES.filter((r) => r.startsWith('/recaps/') && r !== '/recaps/')) {
+    const html = readFileSync(path.join(DIST, route, 'index.html'), 'utf8')
+    const next = html.match(/<a href="(\/recaps\/[^"]+\/)"[^>]*>\s*Next recap:/)?.[1]
+    expect(next, `next recap on ${route}`).toBeDefined()
+    expect(ROUTES).toContain(next)
+    expect(next).not.toBe(route)
+  }
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await expect(page.getByRole('link', { name: /^Next recap:/ })).toHaveCount(1)
+})
+
 // Share cards: every route names one, its own or the leaderboard's, and
 // every card serves as a 1200 × 630 PNG at the address the meta gives.
 const SITE = 'https://courtsentiment.com'

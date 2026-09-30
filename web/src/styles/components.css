@@ -2346,3 +2346,144 @@ a.hero__who:hover {
     display: none;
   }
 }
+
+/* ScoreBug: the replay's anchor. Away at home, the score in display type,
+   period and game clock in mono, the stoppage where the clock would move,
+   the wall clock in ET. His team bone, the opponent mute; never team
+   colours. Where it sticks is the island's layout. */
+.bug {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.bug__game {
+  display: grid;
+  gap: 4px;
+}
+.bug__teams {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--display);
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.bug__team {
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.bug__team--his {
+  color: var(--bone);
+}
+.bug__score {
+  font-variant-numeric: tabular-nums;
+  color: var(--bone);
+}
+.bug__at {
+  font-size: 16px;
+  color: var(--mute-2);
+}
+.bug__clock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.bug__period {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.bug__time {
+  font-size: 20px;
+  color: var(--bone);
+}
+.bug__stop {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.bug__wall {
+  margin-left: auto;
+  color: var(--mute);
+}
+.bug__line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.bug__who {
+  color: var(--mute);
+}
+.bug__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.bug__toggle {
+  min-width: 88px;
+}
+.bug__speeds {
+  display: flex;
+  gap: 4px;
+}
+.btn--small {
+  padding: 8px 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.bug__pace {
+  font-size: 11px;
+  color: var(--mute);
+}
+.btn:disabled {
+  color: var(--mute);
+  border-color: var(--line);
+}
+.btn:disabled[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--bone-2);
+  border-color: var(--bone-2);
+}
+
+/* Ticker: the last plays, newest at the bottom, stamped on the game clock. */
+.tk {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tk__line {
+  display: grid;
+  grid-template-columns: 9ch minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--bone-2);
+}
+.tk__line:last-child {
+  color: var(--bone);
+}
+.tk__line--empty {
+  grid-template-columns: 1fr;
+  color: var(--mute);
+  font-style: italic;
+}
+.tk__stamp {
+  font-size: 11px;
+  color: var(--mute);
+}
+.tk__text {
+  overflow-wrap: anywhere;
+}

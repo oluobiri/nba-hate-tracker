@@ -13,6 +13,8 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { ScoreBug, type ScoreBugProps } from '../components/replay/ScoreBug'
+import { Ticker } from '../components/replay/Ticker'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
@@ -26,6 +28,8 @@ import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
+import { readJson, seasonLocation } from '../data/env'
+import { assertRecapDocument } from '../data/recap'
 import Base from '../layouts/Base.astro'
 import { deltaLists, fanRosterMatrix, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
@@ -34,7 +38,9 @@ import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
+import { buildRecaps, leadAndList, periodLabel, recapHrefs } from '../lib/recaps'
+import { buildTimeline, defaultSpeed, phaseAt, playCursor, speedPhrase, stoppageAt, stoppageLabel, wallStamp } from '../lib/clock'
+import { clockAt, lineAt, recapRows as rowsOf, scoreAt, ticker } from '../lib/replay'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
@@ -251,6 +257,44 @@ const recapLog = recapLead
   : []
 const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
 const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
+// The replay's parts on the lead's file, read here as the endpoint reads it:
+// the moments by rule (the tip, the first timeout, halftime, the final).
+const replayDoc = recapLead ? assertRecapDocument(await readJson(seasonLocation(manifest.season), recapLead.entry.file), recapLead.entry.file) : null
+const replayRows = replayDoc ? rowsOf(replayDoc) : null
+const replayTl = replayRows ? buildTimeline(replayRows.periods) : null
+const firstTimeout = replayRows?.plays.find((p) => p.kind === 'timeout') ?? null
+const halftime = replayTl?.segments.find((seg) => seg.label === 'Halftime') ?? null
+const replayMoments: { name: string; t: number }[] =
+  replayTl && replayRows
+    ? [
+        { name: 'the tip', t: 0 },
+        ...(firstTimeout ? [{ name: 'the first timeout, a minute in', t: firstTimeout.wall_clock - replayTl.tip + 60 }] : []),
+        ...(halftime ? [{ name: 'halftime', t: Math.floor((halftime.t0 + halftime.t1) / 2) }] : []),
+        { name: 'the final', t: replayTl.total },
+      ]
+    : []
+function bugAt(t: number): ScoreBugProps {
+  const rows = replayRows!
+  const tl = replayTl!
+  const lead = recapLead!
+  const cursor = playCursor(rows.plays, tl, t)
+  const at = scoreAt(rows.plays, cursor)
+  const hisHome = lead.game.home_team === lead.player.roster_team
+  return {
+    away: { abbr: lead.line.away.abbr, score: at.away },
+    home: { abbr: lead.line.home.abbr, score: at.home },
+    his: hisHome ? 'home' : 'away',
+    name: lead.entry.attributed_player,
+    periodLabel: periodLabel(Math.max(1, phaseAt(tl, t).period)),
+    clock: clockAt(rows.plays, tl, t),
+    stoppage: stoppageLabel(stoppageAt(rows.plays, cursor, tl)),
+    wall: wallStamp(tl, t),
+    line: lineAt(rows.plays, cursor),
+    playing: false,
+    speed: defaultSpeed(tl),
+    speedText: speedPhrase(tl, defaultSpeed(tl)),
+  }
+}
 
 ---
 
@@ -467,6 +511,33 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
     </section>
 
     <section class="guide__section">
+      <h2>ScoreBug</h2>
+      <p class="eyebrow">
+        The replay's anchor: away at home, his team bone and the opponent mute, the period and game clock, the stoppage where the clock would move, the wall clock in ET, his running line, play/pause and the speed presets. Moments by rule on the lead's file{recapLead ? `: ${recapLead.entry.attributed_player}` : ''}.
+      </p>
+      <div class="guide__stack">
+        {replayMoments.map((m) => <figure class="guide__fig"><ScoreBug {...bugAt(m.t)} /><figcaption>{m.name} · t={fmtInt(m.t)} s since tip</figcaption></figure>)}
+        {replayTl && recapLead && (
+          <figure class="guide__fig guide__narrow">
+            <ScoreBug {...bugAt(replayMoments[replayMoments.length - 2]?.t ?? 0)}>
+              <SentimentBar counts={recapLead.cells[2]?.counts ?? recapLead.usual} size="mini" subject={recapLead.entry.attributed_player} />
+            </ScoreBug>
+            <figcaption>the phone form: the right-now bar slotted under the controls, at 400 px</figcaption>
+          </figure>
+        )}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Ticker</h2>
+      <p class="eyebrow">The last three plays as the feed describes them, stamped on the game clock, newest at the bottom.</p>
+      <div class="guide__stack">
+        {replayRows && replayTl && replayMoments.slice(1, 3).map((m) => <figure class="guide__fig"><Ticker lines={ticker(replayRows.plays, playCursor(replayRows.plays, replayTl, m.t))} /><figcaption>{m.name}</figcaption></figure>)}
+        <figure class="guide__fig"><Ticker lines={[]} /><figcaption>before the tip</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>TeamPicker</h2>
       <p class="eyebrow">
         The way into a fanbase: one group per conference, alphabetical inside, 44 px tiles. Logos in colour, the site's one exception: they stand alone as the control. Focus drawn on the longest name, {longestName.team}; {abbrNote} this drop.
@@ -676,6 +747,9 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  .guide__narrow {
+    max-width: 400px;
   }
   .guide__card {
     max-width: 100%;

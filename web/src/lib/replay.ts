@@ -277,6 +277,64 @@ export function commentStamp(plays: readonly RecapPlaysRow[], tl: Timeline, t: n
   return clockAt(plays, tl, t) === null ? m.label : `${periodLabel(m.period)} ${clockAt(plays, tl, t)}`
 }
 
+// --- The court ------------------------------------------------------------------
+// The feed's legacy shot coordinates are tenths of a foot from the basket
+// centre, y up the floor. The court is drawn 940 × 500 in the same units,
+// each basket 52.5 in from its baseline. Nothing in the file says which
+// end a team attacked, so the page states the convention: the home team
+// attacks the right basket in the first half and the left after it,
+// overtime keeping the second-half ends.
+
+/** The court's drawn size, in tenths of a foot. */
+export const COURT = { w: 940, h: 500, basket: 52.5 } as const
+/** Game seconds behind the cursor a mark stays bright: a page choice. */
+export const RECENT_SECONDS = 45
+
+export type End = 'left' | 'right'
+
+export function attackingEnd(period: number, isHome: boolean): End {
+  const homeEnd: End = period <= 2 ? 'right' : 'left'
+  if (isHome) return homeEnd
+  return homeEnd === 'right' ? 'left' : 'right'
+}
+
+/** A legacy shot coordinate placed at one end, in the court's units. */
+export function courtPoint(xLegacy: number, yLegacy: number, end: End): { x: number; y: number } {
+  return end === 'right' ? { x: COURT.w - COURT.basket - yLegacy, y: COURT.h / 2 - xLegacy } : { x: COURT.basket + yLegacy, y: COURT.h / 2 + xLegacy }
+}
+
+export interface CourtMark {
+  key: number
+  x: number
+  y: number
+  kind: 'make' | 'miss' | 'block'
+  /** Within RECENT_SECONDS of the cursor, in the same period. */
+  recent: boolean
+  /** "Q3 04:12 · V. Wembanyama running DUNK (2 PTS)" */
+  label: string
+}
+
+/**
+ * His marks up to the cursor: his shots at his team's end, made or missed,
+ * and his blocks as a ring on the shot they ended, at the other end.
+ */
+export function courtMarks(plays: readonly RecapPlaysRow[], cursor: number, his: 'away' | 'home'): CourtMark[] {
+  const at = plays[cursor]
+  const out: CourtMark[] = []
+  for (let i = 0; i <= cursor && i < plays.length; i++) {
+    const p = plays[i]!
+    if (!p.is_focus || p.x_legacy === null || p.y_legacy === null) continue
+    const kind = p.kind === 'block' ? 'block' : p.kind === 'shot' ? (p.made ? 'make' : 'miss') : null
+    if (!kind) continue
+    const ours = attackingEnd(p.period, his === 'home')
+    const end: End = kind === 'block' ? (ours === 'right' ? 'left' : 'right') : ours
+    const { x, y } = courtPoint(p.x_legacy, p.y_legacy, end)
+    const recent = at !== undefined && p.period === at.period && at.game_seconds - p.game_seconds <= RECENT_SECONDS
+    out.push({ key: i, x, y, kind, recent, label: `${playStamp(p)} · ${p.description}` })
+  }
+  return out
+}
+
 // --- The feed -------------------------------------------------------------------
 
 export type FeedView = 'his' | 'room'

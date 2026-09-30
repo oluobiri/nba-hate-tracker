@@ -2640,3 +2640,94 @@ a.hero__who:hover {
 .fd__foot {
   display: flex;
 }
+
+/* Court: the floor in hairlines, the home name along the sidelines, the
+   logo gray at centre; his marks only, the recent ones bright. The apron
+   takes the crowd tint (PROTOTYPE) when the page sets one. */
+.court {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.court__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.court__apron {
+  fill: var(--surface);
+}
+.court--tint .court__apron {
+  fill: var(--court-tint);
+}
+.court__floor {
+  fill: var(--ink-2);
+  stroke: var(--line-2);
+  stroke-width: 2;
+}
+.court__lines {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 2;
+}
+.court__lines rect {
+  stroke: var(--mute-2);
+}
+.court__board {
+  stroke: var(--mute);
+  stroke-width: 3;
+}
+.court__rim {
+  stroke: var(--mute);
+}
+.court__logo {
+  filter: grayscale(1);
+  opacity: 0.22;
+}
+.court__name {
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  fill: var(--mute-2);
+}
+.court__mark {
+  opacity: 0.45;
+}
+.court__mark--recent {
+  opacity: 1;
+}
+.court__shot--make {
+  fill: var(--bone);
+}
+.court__shot--miss {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 2;
+}
+.court__ring {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+}
+.court__cap {
+  font-size: 11px;
+  color: var(--mute);
+}
+.court__key {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 2px 0 6px;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.court__key--make {
+  background: var(--bone);
+}
+.court__key--miss {
+  border: 1.5px solid var(--bone);
+}
+.court__key--block {
+  border: 1.5px dashed var(--bone);
+}

@@ -37,6 +37,14 @@
   text-transform: uppercase;
   color: var(--bone);
 }
+.replay__more > summary::after {
+  content: '+';
+  margin-left: auto;
+  color: var(--mute);
+}
+.replay__more[open] > summary::after {
+  content: '−';
+}
 .replay__more-body {
   display: grid;
   gap: 16px;

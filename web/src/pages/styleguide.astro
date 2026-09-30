@@ -14,6 +14,7 @@ import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapReplay } from '../components/RecapReplay'
 import { RecapRows } from '../components/RecapRows'
+import { Court } from '../components/replay/Court'
 import { Feed } from '../components/replay/Feed'
 import { FeedCard } from '../components/replay/FeedCard'
 import { QuarterBox } from '../components/replay/QuarterBox'
@@ -45,7 +46,7 @@ import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pi
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, periodLabel, recapHrefs } from '../lib/recaps'
 import { buildTimeline, defaultSpeed, etTime, phaseAt, playCursor, speedPhrase, stoppageAt, stoppageLabel, wallStamp } from '../lib/clock'
-import { breakCard, buildRoom, clockAt, commentCursor, commentStamp, feed, lineAt, prepareComments, quarterBox, recapRows as rowsOf, RIGHT_NOW, rightNow, roomByPeriod, scoreAt, soFar, ticker, type ReplayComment } from '../lib/replay'
+import { breakCard, buildRoom, clockAt, commentCursor, commentStamp, courtMarks, feed, lineAt, prepareComments, quarterBox, recapRows as rowsOf, RIGHT_NOW, rightNow, roomByPeriod, scoreAt, soFar, ticker, type ReplayComment } from '../lib/replay'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
@@ -624,7 +625,7 @@ function bugAt(t: number): ScoreBugProps {
           recapKey={recapLead.key}
           name={recapLead.entry.attributed_player}
           away={{ abbr: recapLead.line.away.abbr, name: recapLead.game.away_team }}
-          home={{ abbr: recapLead.line.home.abbr, name: recapLead.game.home_team, logo: '' }}
+          home={{ abbr: recapLead.line.home.abbr, name: recapLead.homeTeam.name, logo: recapLead.homeTeam.logo }}
           his={hisSide}
           cells={recapLead.cells}
           usual={recapLead.usual}
@@ -635,6 +636,19 @@ function bugAt(t: number): ScoreBugProps {
       ) : (
         <p class="eyebrow">No recap is curated this season.</p>
       )}
+    </section>
+
+    <section class="guide__section">
+      <h2>Court</h2>
+      <p class="eyebrow">The floor in hairlines, the home name along the sidelines, the logo gray at centre; his marks only, his blocks ringed on the shot they ended at the other end, the last seconds bright. The home team attacks the right basket in the first half.</p>
+      <div class="guide__stack">
+        {replayRows && replayTl && recapLead && [{ name: 'mid-fourth quarter, the recent marks bright', t: Math.floor((replayTl.periods[3]!.startWall + replayTl.periods[3]!.endWall) / 2) - replayTl.tip }, { name: 'the final, every mark', t: replayTl.total }].map((m) => (
+          <figure class="guide__fig guide__court">
+            <Court marks={courtMarks(replayRows.plays, playCursor(replayRows.plays, replayTl, m.t), hisSide)} homeName={recapLead.homeTeam.name} logo={recapLead.homeTeam.logo} subject={recapLead.entry.attributed_player} />
+            <figcaption>{m.name} · t={fmtInt(m.t)} s since tip</figcaption>
+          </figure>
+        ))}
+      </div>
     </section>
 
     <section class="guide__section">
@@ -856,6 +870,9 @@ function bugAt(t: number): ScoreBugProps {
   }
   .guide__narrow {
     max-width: 400px;
+  }
+  .guide__court {
+    max-width: 640px;
   }
   .guide__card {
     max-width: 100%;

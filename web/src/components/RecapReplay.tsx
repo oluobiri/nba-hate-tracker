@@ -18,6 +18,7 @@ import {
   clockAt,
   commentCursor,
   commentStamp,
+  courtMarks,
   type Density,
   feed,
   type FeedView,
@@ -36,6 +37,7 @@ import {
 } from '../lib/replay'
 import type { Counts } from '../lib/types'
 import { useViewState } from '../lib/url'
+import { Court } from './replay/Court'
 import { Feed } from './replay/Feed'
 import { QuarterBox } from './replay/QuarterBox'
 import { nowDetail, RoomBars } from './replay/RoomBars'
@@ -89,6 +91,7 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
   const [shown, setShown] = useState(FEED_PAGE)
   const region = useRef<HTMLDivElement>(null)
   const more = useRef<HTMLDetailsElement>(null)
+  const floor = useRef<HTMLDetailsElement>(null)
   const urlTimer = useRef(0)
 
   // The URL sees a settled moment, once per drag.
@@ -134,9 +137,10 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
     else if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) playback.play()
   }, [data, ready, view.t, playback])
 
-  // The quarter box opens on a wide screen and stays a control on a phone.
+  // The quarter box and the court open on a wide screen and stay controls on a phone.
   useEffect(() => {
-    if (more.current && window.matchMedia(WIDE).matches) more.current.open = true
+    if (!window.matchMedia(WIDE).matches) return
+    for (const d of [more.current, floor.current]) if (d) d.open = true
   }, [])
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -179,11 +183,12 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
       byPeriod: roomByPeriod(room, ccursor),
       box: quarterBox(plays, tl, cursor),
       lines: ticker(plays, cursor),
+      marks: courtMarks(plays, cursor, his),
       items: items.slice(0, shown),
       more: items.length > shown,
       card: moment.phase === 'break' && moment.segment ? breakCard(room, moment.segment) : null,
     }
-  }, [data, t, feedView, density, shown])
+  }, [data, t, feedView, density, shown, his])
 
   const stamp = useCallback((c: ReplayComment) => (data ? commentStamp(data.plays, data.tl, c.t) : ''), [data])
   const wall = useCallback((c: ReplayComment) => (data ? etTime(data.tl.tip + c.t) : ''), [data])
@@ -231,6 +236,12 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
             <div className="replay__more-body">
               <RoomBars now={at?.now ?? empty} soFar={at?.soFar ?? empty} window={RIGHT_NOW} usual={usual} subject={name} />
               <QuarterBox rows={at?.box ?? []} room={at?.byPeriod ?? cells} away={away.abbr} home={home.abbr} his={his} subject={name} />
+            </div>
+          </details>
+          <details ref={floor} className="replay__more">
+            <summary>The court</summary>
+            <div className="replay__more-body">
+              <Court marks={at?.marks ?? []} homeName={home.name} logo={home.logo} subject={name} />
             </div>
           </details>
         </aside>

@@ -513,7 +513,7 @@ test('the replay never autoplays under reduced motion', async ({ page }) => {
   await expect(page.locator('.scrub__range')).toHaveValue('0')
 })
 
-test('on a phone without JavaScript the quarter box sits behind a details control', async ({ browser }, info) => {
+test('on a phone without JavaScript the quarter box and the court sit behind details controls', async ({ browser }, info) => {
   test.skip(info.project.name !== 'phone', 'the control is the phone layout')
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: info.project.use.viewport })
   const page = await context.newPage()
@@ -521,13 +521,16 @@ test('on a phone without JavaScript the quarter box sits behind a details contro
   await expect(page.locator('.replay__note')).toHaveText('Loading the thread…')
   await expect(page.locator('.ps')).toHaveCount(1)
   const details = page.locator('details.replay__more')
-  await expect(details).toHaveCount(1)
-  await expect(details.first()).not.toHaveAttribute('open')
-  const summary = details.first().locator('summary')
-  expect((await summary.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
-  await summary.click()
+  await expect(details).toHaveCount(2)
+  for (const d of await details.all()) {
+    await expect(d).not.toHaveAttribute('open')
+    expect((await d.locator('summary').boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  }
+  await details.first().locator('summary').click()
   await expect(details.first()).toHaveAttribute('open')
   await expect(page.locator('.qb')).toBeVisible()
+  await details.nth(1).locator('summary').click()
+  await expect(page.locator('.court__svg')).toBeVisible()
   expect(await overflow(page)).toBeLessThanOrEqual(0)
   await context.close()
 })

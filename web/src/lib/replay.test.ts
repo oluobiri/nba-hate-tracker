@@ -7,7 +7,7 @@ import { assertRecapDocument } from '../data/recap'
 import type { Manifest, RecapDocument } from '../data/types.gen'
 import { CURRENT_SEASON } from '../site'
 import { BREAK_CARD, buildTimeline, gameClock, playCursor, stoppageAt, stoppageLabel } from './clock'
-import { breakCard, buildRoom, clockAt, commentCursor, commentStamp, feed, lineAt, periodOf, prepareComments, quarterBox, recapRows, rightNow, roomByPeriod, scoreAt, soFar, ticker, toRows } from './replay'
+import { attackingEnd, breakCard, buildRoom, clockAt, commentCursor, commentStamp, COURT, courtMarks, courtPoint, feed, lineAt, periodOf, prepareComments, quarterBox, recapRows, RECENT_SECONDS, rightNow, roomByPeriod, scoreAt, soFar, ticker, toRows } from './replay'
 import { comment, play, REGULATION } from './replay.fixture'
 import type { Counts } from './types'
 
@@ -215,6 +215,46 @@ describe('feed', () => {
   })
 })
 
+describe('the court', () => {
+  it('sends the home team right in the first half and left after, overtime included; the away team the other way', () => {
+    expect([1, 2, 3, 4, 5, 6].map((p) => attackingEnd(p, true))).toEqual(['right', 'right', 'left', 'left', 'left', 'left'])
+    expect([1, 2, 3, 4, 5, 6].map((p) => attackingEnd(p, false))).toEqual(['left', 'left', 'right', 'right', 'right', 'right'])
+  })
+
+  it('places a shot by its distance up the floor from the basket, mirrored between the ends', () => {
+    expect(courtPoint(0, 0, 'left')).toEqual({ x: COURT.basket, y: COURT.h / 2 })
+    expect(courtPoint(0, 0, 'right')).toEqual({ x: COURT.w - COURT.basket, y: COURT.h / 2 })
+    const left = courtPoint(-100, 200, 'left')
+    const right = courtPoint(-100, 200, 'right')
+    expect(left).toEqual({ x: COURT.basket + 200, y: COURT.h / 2 - 100 })
+    expect(right).toEqual({ x: COURT.w - left.x, y: COURT.h - left.y })
+  })
+
+  it('draws his shots at his end, his blocks at the other, the last seconds bright', () => {
+    const plays = [
+      play({ kind: 'shot', period: 1, game_seconds: 60, is_focus: true, made: true, x_legacy: 0, y_legacy: 10, description: 'V dunk', clock: 'PT11M00.00S' }),
+      play({ kind: 'shot', period: 1, game_seconds: 120, is_focus: true, made: false, x_legacy: 100, y_legacy: 200 }),
+      play({ kind: 'block', period: 1, game_seconds: 130, is_focus: true, x_legacy: 50, y_legacy: 50 }),
+      play({ kind: 'shot', period: 1, game_seconds: 140, is_focus: false, made: true, x_legacy: 0, y_legacy: 0 }),
+      play({ kind: 'heave', period: 1, game_seconds: 150, is_focus: true, x_legacy: null, y_legacy: null }),
+      play({ kind: 'shot', period: 3, game_seconds: 1500, is_focus: true, made: true, x_legacy: 0, y_legacy: 10 }),
+      play({ kind: 'rebound', period: 3, game_seconds: 1500 + RECENT_SECONDS + 1, is_focus: true }),
+    ]
+    const marks = courtMarks(plays, 2, 'home')
+    expect(marks.map((m) => m.kind)).toEqual(['make', 'miss', 'block'])
+    expect(marks[0]).toMatchObject({ ...courtPoint(0, 10, 'right'), recent: false, label: 'Q1 11:00 · V dunk' })
+    expect(marks[1]).toMatchObject({ ...courtPoint(100, 200, 'right'), recent: true })
+    expect(marks[2]).toMatchObject({ ...courtPoint(50, 50, 'left'), recent: true })
+    expect(courtMarks(plays, 2, 'away')[0]).toMatchObject(courtPoint(0, 10, 'left'))
+    const late = courtMarks(plays, 5, 'home')
+    expect(late).toHaveLength(4)
+    expect(late[3]).toMatchObject({ ...courtPoint(0, 10, 'left'), recent: true })
+    expect(late.slice(0, 3).every((m) => !m.recent)).toBe(true)
+    expect(courtMarks(plays, 6, 'home')[3]!.recent).toBe(false)
+    expect(courtMarks(plays, -1, 'home')).toEqual([])
+  })
+})
+
 // The published files, when the repo's data directory is beside the site
 // (never in CI): the clock and the room read them as the extractor wrote them.
 const DASHBOARD = path.resolve(__dirname, '../../../data', CURRENT_SEASON, 'dashboard')
@@ -263,5 +303,8 @@ describe.skipIf(files.length === 0)('the live recap files', () => {
     expect(box.every((row) => !row.running)).toBe(true)
     expect(stoppageLabel(stoppageAt(rows.plays, rows.plays.length - 1, timeline))).toBe('FINAL')
     expect(feed(r, comments.length, 'his', 'all', Infinity).every((x) => x.body !== null)).toBe(true)
+    const marks = courtMarks(rows.plays, rows.plays.length - 1, 'home')
+    expect(marks.length).toBe(rows.plays.filter((p) => p.is_focus && p.x_legacy !== null && (p.kind === 'shot' || p.kind === 'block')).length)
+    expect(marks.every((m) => m.x >= 0 && m.x <= COURT.w && m.y >= 0 && m.y <= COURT.h)).toBe(true)
   })
 })

@@ -34,7 +34,7 @@ import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList } from '../lib/recaps'
+import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
@@ -237,6 +237,20 @@ const silenced = recapLead ? recapLead.cells.map((c, i) => (i === 1 ? { ...c, co
 const longestRecapName = recaps.toSorted((a, b) => b.entry.attributed_player.length - a.entry.attributed_player.length)[0]
 const longestHook = recaps.toSorted((a, b) => b.hook.length - a.hook.length)[0]
 const recapRows = [...new Set([longestRecapName, longestHook])].filter((r) => r !== undefined)
+// The lead's player's log around his recap: the row with the chip among rows without.
+const recapLog = recapLead
+  ? buildGameLog(
+      tables.player_games.filter((r) => r.attributed_player === recapLead.entry.attributed_player),
+      tables.game_sentiment.filter((r) => r.attributed_player === recapLead.entry.attributed_player),
+      gamesById,
+      abbrOf,
+      recapLead.usual,
+      gameFloor,
+      recapHrefs(manifest.recaps, recapLead.entry.attributed_player),
+    ).toSorted((a, b) => b.date.localeCompare(a.date))
+  : []
+const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
+const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
 
 ---
 
@@ -492,6 +506,12 @@ const recapRows = [...new Set([longestRecapName, longestHook])].filter((r) => r 
         {topLog.some((g) => g.home === null) ? 'Includes a neutral-site game. ' : 'He has no neutral-site game this season. '}
         {quiet ? 'Includes a game under the floor.' : ''}
       </p>
+      {chipRows.length > 0 && recapLead && (
+        <>
+          <p class="eyebrow">A game with a curated recap carries a Recap chip at the row's end: {recapLead.entry.attributed_player}'s log around his.</p>
+          <GamesTable rows={chipRows} caption={`${recapLead.entry.attributed_player}'s game log around his recap, a sample`} />
+        </>
+      )}
     </section>
 
     <section class="guide__section">

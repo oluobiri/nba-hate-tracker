@@ -428,6 +428,20 @@ test('the lead and every recap row lead to a live recap page', async ({ page }) 
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
+test("the Recap chip on a player page's game rows leads to a live recap page", async ({ page }) => {
+  const key = ROUTES.find((r) => r.startsWith('/recaps/') && r !== '/recaps/')!
+  const slug = key.split('/')[2]!.replace(/^\d+-/, '')
+  await page.goto(`/player/${slug}/?games=all&log=all#games`, { waitUntil: 'networkidle' })
+  expect(await page.locator('.gt tbody tr').count()).toBeGreaterThan(10)
+  const chips = page.locator('.gt__recap')
+  expect(await chips.count()).toBeGreaterThan(0)
+  for (const c of await chips.all()) {
+    expect(ROUTES).toContain(await c.getAttribute('href'))
+    expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  }
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
 test('a recap page carries its name, its periods and its verdict', async ({ page }) => {
   const route = ROUTES.find((r) => r.startsWith('/recaps/') && r !== '/recaps/')!
   await page.goto(route, { waitUntil: 'networkidle' })

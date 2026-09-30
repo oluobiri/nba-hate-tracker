@@ -5,8 +5,8 @@ The recaps themselves are built and written by scripts.aggregate_sentiment,
 the one writer of the manifest. This script serves curation: --scan ranks
 every (game, player) with a live thread by the swing in his negative share
 and writes the report under reference/ (never published); --dry-run builds
-every recap in recaps.yaml in memory and reports its alignment error,
-stint reconciliation, sizes and counts, writing nothing. Both read the
+every recap in recaps.yaml in memory and reports its stint
+reconciliation, swing, sizes and counts, writing nothing. Both read the
 dashboard tables an aggregate run produced.
 
 Usage:
@@ -36,11 +36,11 @@ from pipeline.recaps import (
     resolve_recap_specs,
     scan_candidates,
 )
-from pipeline.nba_stats import load_play_by_play
+from pipeline.nba_stats import load_live_play_by_play
 from utils.constants import RECAP_CANDIDATES_FILENAME
 from utils.paths import (
     get_dashboard_dir,
-    get_play_by_play_dir,
+    get_live_play_by_play_dir,
     get_processed_dir,
     get_reference_dir,
 )
@@ -116,7 +116,7 @@ def main() -> None:
     season = get_active_season()
     fact_path = get_processed_dir() / FACT_FILENAME
     dashboard_dir = get_dashboard_dir()
-    pbp_dir = get_play_by_play_dir()
+    pbp_dir = get_live_play_by_play_dir()
     if not fact_path.exists():
         logger.error(f"{fact_path} not found")
         sys.exit(1)
@@ -130,7 +130,7 @@ def main() -> None:
     logger.info(f"Recaps: {season} ({'scan' if args.scan else 'dry run'})")
     logger.info(f"  fact:     {fact_path}")
     logger.info(f"  tables:   {dashboard_dir}")
-    logger.info(f"  archive:  {pbp_dir}")
+    logger.info(f"  feed:     {pbp_dir}")
     logger.info("=" * 60)
 
     if args.scan:
@@ -152,7 +152,7 @@ def _scan(fact_path: Path, tables: dict[str, pl.DataFrame], pbp_dir: Path) -> No
     logger.info("=" * 60)
     logger.info(f"Wrote {out}: {candidates.height:,} candidates")
     if skipped:
-        logger.warning(f"Skipped {len(skipped)} games without a usable archive")
+        logger.warning(f"Skipped {len(skipped)} games without a usable clock")
     for row in candidates.head(10).rows(named=True):
         logger.info(
             f"  {row['game_id']}  {row['attributed_player']:<24} "
@@ -187,10 +187,9 @@ def _dry_run(
             spec,
             fact=fact,
             posts=tables["posts"],
-            games=tables["games"],
             player_games=tables["player_games"],
             players=tables["players"],
-            pbp=load_play_by_play(spec.pbp_path, log=logger),
+            pbp=load_live_play_by_play(spec.pbp_path, log=logger),
             stamps=stamps,
         )
         entry = doc.entry

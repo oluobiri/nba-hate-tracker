@@ -20,7 +20,7 @@ from pipeline.schemas import (
     PeriodCounts,
     RecapEntry,
     RecapHeader,
-    AlignmentFigures,
+    ReactionLag,
     RecapsRule,
     ReceiptsFigures,
     Rules,
@@ -34,8 +34,7 @@ MANIFEST_FAMILY = (
     SamplesRule,
     ReceiptsFigures,
     Floors,
-    AlignmentFigures,
-    AlignmentFigures,
+    ReactionLag,
     RecapsRule,
     Rules,
     Corpus,
@@ -201,11 +200,11 @@ class TestManifestBlock:
             "values": {"type": "PeriodCounts", "nullable": False},
             "nullable": False,
         }
-        assert manifest["types"]["RecapsRule"]["alignment"] == {
-            "type": "AlignmentFigures",
+        assert manifest["types"]["RecapsRule"]["reaction_lag"] == {
+            "type": "ReactionLag",
             "nullable": False,
         }
-        assert manifest["types"]["AlignmentFigures"]["median_offset_seconds"] == {
+        assert manifest["types"]["ReactionLag"]["median_offset_seconds"] == {
             "type": "int",
             "nullable": True,
         }

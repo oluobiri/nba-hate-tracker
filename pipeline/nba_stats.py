@@ -2,10 +2,10 @@
 NBA data acquisition: stats.nba.com via the nba_api package, and the
 liveData play-by-play on cdn.nba.com.
 
-Source-named acquisition module: the season roster snapshot, the season
-game logs and the per-game play-by-play archive come from stats.nba.com;
-the per-game live play-by-play archive is a direct GET of the feed
-behind the league's live game pages.
+Source-named acquisition module: the season roster snapshot and the
+season game logs come from stats.nba.com; the per-game play-by-play
+archive is a direct GET of the liveData feed behind the league's live
+game pages.
 Function-shaped rather than a client class — nba_api manages its own
 HTTP per call, so there is no session state to hold.
 
@@ -34,12 +34,11 @@ from typing import Any
 
 import polars as pl
 import requests
-from nba_api.stats.endpoints import commonteamroster, leaguegamelog, playbyplayv3
+from nba_api.stats.endpoints import commonteamroster, leaguegamelog
 from nba_api.stats.static import teams as static_teams
 
 from pipeline.schemas import (
     LIVE_PLAY_BY_PLAY_SCHEMA,
-    PLAY_BY_PLAY_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
@@ -140,12 +139,6 @@ _GAME_LOG_KINDS = {
 # so a killed run never leaves a partial file that reads as banked.
 _PLAY_BY_PLAY_TMP_SUFFIX = ".part"
 _PLAY_BY_PLAY_PROGRESS_EVERY = 50
-
-# Per-game failures that miss the game instead of stopping the run.
-# ValueError covers an unparseable payload (JSONDecodeError) and a
-# response that does not match PLAY_BY_PLAY_SCHEMA; KeyError covers a
-# payload nba_api cannot unpack.
-_PLAY_BY_PLAY_MISS_ERRORS = (requests.RequestException, ValueError, KeyError)
 
 # The live feed's refusal, and the failures that miss a game: ValueError
 # covers a body that is not the feed's JSON, a game with zero actions and
@@ -531,80 +524,13 @@ def fetch_player_game_log(
 
 
 # -----------------------------------------------------------------------------
-# Play-by-play (PlayByPlayV3)
+# Play-by-play (cdn.nba.com liveData)
 # -----------------------------------------------------------------------------
 
 
 def _snake_case(name: str) -> str:
     """Convert an endpoint camelCase column name to snake_case ("playerNameI" -> "player_name_i")."""
     return _CAMEL_BOUNDARY.sub("_", name).lower()
-
-
-def _fetch_play_by_play_frame(game_id: str, timeout: int) -> pl.DataFrame:
-    """
-    Fetch one game's actions and normalize them to snapshot column names.
-
-    Every endpoint column is kept. Columns the schema knows are cast to
-    its dtypes; a column it does not know (or one it misses) survives to
-    fail validation at the write boundary, so endpoint drift is loud.
-
-    Args:
-        game_id: Ten-digit NBA game id.
-        timeout: Per-request timeout in seconds.
-
-    Returns:
-        One row per action; zero rows for a game the endpoint does not know.
-    """
-    raw = playbyplayv3.PlayByPlayV3(game_id=game_id, timeout=timeout).get_data_frames()[
-        0
-    ]
-    renamed = {col: _snake_case(col) for col in raw.columns}
-    selected = raw.copy()
-    for col, snake in renamed.items():
-        if PLAY_BY_PLAY_SCHEMA.get(snake) == pl.String:
-            # Scores are numeric-looking strings; a drift to raw JSON numbers
-            # must not hand pl.from_pandas a mixed object column.
-            selected[col] = selected[col].astype("string")
-    frame = pl.from_pandas(selected).rename(renamed)
-    return frame.cast(
-        {
-            col: PLAY_BY_PLAY_SCHEMA[col]
-            for col in frame.columns
-            if col in PLAY_BY_PLAY_SCHEMA
-        }
-    )
-
-
-def fetch_play_by_play(
-    game_id: str,
-    *,
-    timeout: int = NBA_STATS_TIMEOUT,
-    max_attempts: int = NBA_STATS_MAX_ATTEMPTS,
-    retry_backoff: float = NBA_STATS_RETRY_BACKOFF,
-) -> pl.DataFrame:
-    """
-    Fetch one game's play-by-play, every action and column as served.
-
-    Args:
-        game_id: Ten-digit NBA game id.
-        timeout: Per-request timeout in seconds.
-        max_attempts: Total attempts (1 initial + retries).
-        retry_backoff: Base seconds for exponential backoff between retries.
-
-    Returns:
-        One row per action, snake_cased; zero rows for an unknown game.
-
-    Raises:
-        requests.ConnectionError | requests.Timeout: After max_attempts.
-        requests.RequestException | ValueError | KeyError: On a
-            non-transient endpoint failure, without retries.
-    """
-    return _call_with_retries(
-        partial(_fetch_play_by_play_frame, game_id, timeout),
-        label=f"{game_id} play-by-play",
-        max_attempts=max_attempts,
-        retry_backoff=retry_backoff,
-    )
 
 
 @dataclass(frozen=True)
@@ -629,7 +555,7 @@ class PlayByPlayReport:
         skipped: Game ids already banked on disk.
         misses: Every game that was requested and could not be banked.
         unrequested: Games never requested because the run stopped on
-            refusals in a row (the live feed only).
+            refusals in a row.
     """
 
     fetched: list[str]
@@ -657,52 +583,6 @@ def play_by_play_path(out_dir: Path, game_id: str) -> Path:
     return out_dir / f"{game_id}.parquet"
 
 
-def has_valid_play_by_play(path: Path) -> bool:
-    """
-    Whether a banked snapshot is present, readable, conforming and non-empty.
-
-    Args:
-        path: The snapshot's path.
-
-    Returns:
-        True when the file can be skipped on a resumed run.
-    """
-    if not path.exists():
-        return False
-    try:
-        frame = pl.read_parquet(path)
-        validate_schema(frame, PLAY_BY_PLAY_SCHEMA, path.name)
-    except (OSError, ValueError, pl.exceptions.PolarsError):
-        return False
-    return frame.height > 0
-
-
-def load_play_by_play(path: Path, *, log: logging.Logger) -> pl.DataFrame:
-    """
-    Read a banked play-by-play snapshot for a consumer.
-
-    Validates the frame against PLAY_BY_PLAY_SCHEMA and warns through the
-    caller's logger if the season stamp is off. The contract version is
-    not checked: the archive is a reference asset banked once, and it
-    predates later contract bumps by design.
-
-    Args:
-        path: The snapshot's path.
-        log: The consumer's logger, for the season warning.
-
-    Returns:
-        The game's actions as served, in archive order.
-
-    Raises:
-        FileNotFoundError: If the snapshot is not on disk.
-        ValueError: If the frame does not match PLAY_BY_PLAY_SCHEMA.
-    """
-    frame = pl.read_parquet(path)
-    validate_schema(frame, PLAY_BY_PLAY_SCHEMA, path.name)
-    check_snapshot_season(path, subject="play-by-play", log=log)
-    return frame
-
-
 def _write_parquet_atomic(
     frame: pl.DataFrame, path: Path, metadata: dict[str, str]
 ) -> None:
@@ -710,85 +590,6 @@ def _write_parquet_atomic(
     tmp = path.with_name(path.name + _PLAY_BY_PLAY_TMP_SUFFIX)
     frame.write_parquet(tmp, metadata=metadata)
     os.replace(tmp, path)
-
-
-def sync_play_by_play(
-    game_ids: Iterable[str],
-    out_dir: Path,
-    *,
-    season: str,
-    delay: float = NBA_STATS_REQUEST_DELAY,
-    timeout: int = NBA_STATS_TIMEOUT,
-    max_attempts: int = NBA_STATS_MAX_ATTEMPTS,
-    retry_backoff: float = NBA_STATS_RETRY_BACKOFF,
-) -> PlayByPlayReport:
-    """
-    Bank one play-by-play snapshot per game, resuming from what is on disk.
-
-    A game with a valid file is skipped, so a killed run restarts where it
-    stopped. A game that serves zero actions, or fails in any per-game way
-    once transient retries are spent, is a miss: logged, collected, and the
-    run moves on.
-
-    Args:
-        game_ids: Games to bank, in fetch order.
-        out_dir: The season's play-by-play directory.
-        season: Season stamped into every file's metadata.
-        delay: Seconds to wait after each request, misses included.
-        timeout: Per-request timeout in seconds.
-        max_attempts: Total attempts per game (1 initial + retries).
-        retry_backoff: Base seconds for exponential backoff between retries.
-
-    Returns:
-        The report: what was fetched, skipped and missed.
-    """
-    game_ids = list(game_ids)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamps = {
-        "season": season,
-        "fetched_at": datetime.now(timezone.utc).date().isoformat(),
-        "schema_version": str(SCHEMA_VERSION),
-    }
-    report = PlayByPlayReport(fetched=[], skipped=[], misses=[])
-
-    for game_id in game_ids:
-        path = play_by_play_path(out_dir, game_id)
-        if has_valid_play_by_play(path):
-            report.skipped.append(game_id)
-            continue
-
-        try:
-            frame = fetch_play_by_play(
-                game_id,
-                timeout=timeout,
-                max_attempts=max_attempts,
-                retry_backoff=retry_backoff,
-            )
-            if frame.height == 0:
-                raise ValueError("endpoint served zero actions")
-            validate_schema(frame, PLAY_BY_PLAY_SCHEMA, path.name)
-            _write_parquet_atomic(frame, path, stamps)
-            report.fetched.append(game_id)
-        except _PLAY_BY_PLAY_MISS_ERRORS as e:
-            reason = f"{type(e).__name__}: {e}"
-            logger.warning(f"Missed {game_id} - {reason}")
-            report.misses.append(PlayByPlayMiss(game_id=game_id, reason=reason))
-        time.sleep(delay)
-
-        requested = len(report.fetched) + len(report.misses)
-        if requested % _PLAY_BY_PLAY_PROGRESS_EVERY == 0:
-            logger.info(
-                f"{requested} requested ({len(report.fetched)} banked, "
-                f"{len(report.misses)} missed), {len(report.skipped)} already on disk, "
-                f"of {len(game_ids)}"
-            )
-
-    return report
-
-
-# -----------------------------------------------------------------------------
-# Live play-by-play (cdn.nba.com liveData)
-# -----------------------------------------------------------------------------
 
 
 class LiveFeedRefused(requests.HTTPError):

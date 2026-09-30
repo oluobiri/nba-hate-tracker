@@ -32,8 +32,9 @@ from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.recaps import RecapError
-from pipeline.schemas import PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
+from pipeline.schemas import LIVE_PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
 from utils.recaps_config import RecapSpec
+from tests.conftest import live_action
 from pipeline.schemas import (
     AGGREGATE_VIEW_SCHEMAS,
     CORPUS_DAILY_SCHEMA,
@@ -1173,7 +1174,7 @@ def _make_temporal_records(
     )
 
 
-ALIGNMENT = {
+REACTION_LAG = {
     "candidates": 40,
     "anchors": 12,
     "games": 5,
@@ -1225,7 +1226,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
         "receipts_coverage": 0.999,
         "receipts_precision": 0.777,
         "attribution_toward_share": 0.74,
-        "recap_alignment": ALIGNMENT,
+        "recap_reaction_lag": REACTION_LAG,
     }
     season_config = {
         "calendar": {"opening_night": "2025-10-21", "finals_end": None},
@@ -1303,7 +1304,7 @@ class TestBuildManifest:
     def test_rules_publish_the_constants(self):
         """The threshold, samples rule, floors and formulas are the named
         constants, never retyped; the recaps rule carries the measured
-        alignment the build passed through."""
+        reaction lag the build passed through."""
         rules = build_manifest(*_manifest_inputs())["rules"]
 
         assert rules["qualified_threshold"] == QUALIFIED_THRESHOLD
@@ -1327,7 +1328,7 @@ class TestBuildManifest:
             "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
             "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
             "anchor_vocabulary": RECAP_ANCHOR_VOCABULARY,
-            "alignment": ALIGNMENT,
+            "reaction_lag": REACTION_LAG,
         }
         assert rules["metrics"] == METRIC_FORMULAS
 
@@ -2306,61 +2307,57 @@ def _game_time(hour: int, minute: int) -> int:
 
 
 def _write_play_by_play(pbp_dir):
-    """The LeBron game's markers (7:30 to 9:45 PM ET) and one LeBron rebound."""
+    """The LeBron game's markers (7:30 to 9:55 PM ET) and one LeBron rebound
+    stamped at 7:45, halfway through the first period."""
 
-    def marker(period, sub_type, label, action_id):
-        word = "Start" if sub_type == "start" else "End"
-        return {
-            "game_id": "0022500001",
-            "action_number": action_id,
-            "clock": "PT12M00.00S" if sub_type == "start" else "PT00M00.00S",
-            "period": period,
-            "team_id": 0,
-            "team_tricode": "",
-            "person_id": 0,
-            "player_name": "",
-            "player_name_i": "",
-            "x_legacy": 0,
-            "y_legacy": 0,
-            "shot_distance": 0,
-            "shot_result": "",
-            "is_field_goal": 0,
-            "score_home": "0",
-            "score_away": "0",
-            "points_total": 0,
-            "location": "",
-            "description": f"{word} of {period}th Period ({label} EST)",
-            "action_type": "period",
-            "sub_type": sub_type,
-            "video_available": 0,
-            "shot_value": 0,
-            "action_id": action_id,
-        }
+    def stamped(hour, minute):
+        return datetime.fromtimestamp(
+            _game_time(hour, minute), tz=ZoneInfo("UTC")
+        ).strftime("%Y-%m-%dT%H:%M:%S.0Z")
+
+    def marker(period, sub_type, hour, minute, action_number):
+        return live_action(
+            game_id="0022500001",
+            action_number=action_number,
+            order_number=action_number,
+            clock="PT12M00.00S" if sub_type == "start" else "PT00M00.00S",
+            time_actual=stamped(hour, minute),
+            period=period,
+            action_type="period",
+            sub_type=sub_type,
+            description=f"Period {sub_type.title()}",
+        )
 
     rows = [
-        marker(1, "start", "7:30 PM", 1),
-        {
-            **marker(1, "start", "7:30 PM", 5),
-            "team_id": 1610612747,
-            "team_tricode": "LAL",
-            "person_id": 2544,
-            "player_name": "James",
-            "player_name_i": "L. James",
-            "clock": "PT06M00.00S",
-            "description": "James REBOUND (Off:0 Def:1)",
-            "action_type": "Rebound",
-            "sub_type": "Unknown",
-        },
-        marker(1, "end", "8:00 PM", 50),
-        marker(2, "start", "8:03 PM", 51),
-        marker(2, "end", "8:33 PM", 100),
-        marker(3, "start", "8:50 PM", 101),
-        marker(3, "end", "9:20 PM", 150),
-        marker(4, "start", "9:23 PM", 151),
-        marker(4, "end", "9:55 PM", 200),
+        marker(1, "start", 19, 30, 1),
+        live_action(
+            game_id="0022500001",
+            action_number=5,
+            order_number=5,
+            clock="PT06M00.00S",
+            time_actual=stamped(19, 45),
+            team_id=1610612747,
+            team_tricode="LAL",
+            person_id=2544,
+            player_name="James",
+            player_name_i="L. James",
+            description="L. James REBOUND (Off:0 Def:1)",
+            action_type="rebound",
+            sub_type="defensive",
+            rebound_total=1,
+            rebound_defensive_total=1,
+            rebound_offensive_total=0,
+        ),
+        marker(1, "end", 20, 0, 50),
+        marker(2, "start", 20, 3, 51),
+        marker(2, "end", 20, 33, 100),
+        marker(3, "start", 20, 50, 101),
+        marker(3, "end", 21, 20, 150),
+        marker(4, "start", 21, 23, 151),
+        marker(4, "end", 21, 55, 200),
     ]
     pbp_dir.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame(rows, schema=PLAY_BY_PLAY_SCHEMA).write_parquet(
+    pl.DataFrame(rows, schema=LIVE_PLAY_BY_PLAY_SCHEMA).write_parquet(
         pbp_dir / "0022500001.parquet", metadata={"season": get_active_season()}
     )
 
@@ -2370,9 +2367,9 @@ class TestAggregateRecaps:
 
     @pytest.fixture
     def pbp_dir(self, monkeypatch, tmp_path):
-        pbp_dir = tmp_path / "reference" / "play_by_play"
+        pbp_dir = tmp_path / "reference" / "play_by_play_live"
         monkeypatch.setattr(
-            "pipeline.aggregation.get_play_by_play_dir", lambda: pbp_dir
+            "pipeline.aggregation.get_live_play_by_play_dir", lambda: pbp_dir
         )
         return pbp_dir
 
@@ -2382,7 +2379,7 @@ class TestAggregateRecaps:
 
         assert result["recaps"] == []
         assert result["manifest"]["recaps"] == {}
-        assert result["manifest"]["rules"]["recaps"]["alignment"] == {
+        assert result["manifest"]["rules"]["recaps"]["reaction_lag"] == {
             "candidates": 0,
             "anchors": 0,
             "games": 0,
@@ -2421,15 +2418,22 @@ class TestAggregateRecaps:
         assert comments["comment_id"].to_list() == ["c1"]
         assert comments["phase"].to_list() == ["live"]
         assert comments["game_seconds"][0] == 360
-        assert doc.frames["stints"].rows() == [(1, 0, 720)]
+        # On the floor in Q1 with no substitution logged, and the state
+        # carries across every break
+        assert doc.frames["stints"].rows() == [
+            (1, 0, 720),
+            (2, 720, 1440),
+            (3, 1440, 2160),
+            (4, 2160, 2880),
+        ]
         entry = result["manifest"]["recaps"][doc.key]
         assert entry is doc.entry
         assert entry["live_n"] == 1
         assert entry["room_n"] == 10
-        assert entry["minutes_diff"] == 12 - 34
-        alignment = result["manifest"]["rules"]["recaps"]["alignment"]
-        assert alignment["candidates"] == 0
-        assert alignment["median_offset_seconds"] is None
+        assert entry["minutes_diff"] == 48 - 34
+        reaction_lag = result["manifest"]["rules"]["recaps"]["reaction_lag"]
+        assert reaction_lag["candidates"] == 0
+        assert reaction_lag["median_offset_seconds"] is None
         header = doc.header
         assert header["season"] == result["metadata"]["season"]
         assert header["generated_at"] == result["metadata"]["generated_at"]

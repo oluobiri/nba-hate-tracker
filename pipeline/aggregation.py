@@ -17,15 +17,15 @@ import polars as pl
 from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_game_tables
 from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
-from pipeline.nba_stats import check_snapshot_season, load_play_by_play
+from pipeline.nba_stats import check_snapshot_season, load_live_play_by_play
 from pipeline.posts import load_posts_table
 from pipeline.recaps import (
     RecapDocument,
     RecapStamps,
     build_recap,
-    measure_alignment,
+    measure_reaction_lag,
     resolve_recap_specs,
-    unmeasured_alignment,
+    unmeasured_reaction_lag,
 )
 from pipeline.receipts import (
     build_comment_samples,
@@ -70,7 +70,7 @@ from utils.constants import (
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
-from utils.paths import get_play_by_play_dir, get_reference_dir
+from utils.paths import get_live_play_by_play_dir, get_reference_dir
 from utils.player_config import build_alias_to_player_map, load_player_metadata
 from utils.recaps_config import RecapSpec
 from utils.season_config import get_active_season, load_season_config
@@ -478,14 +478,14 @@ def aggregate_sentiment(
         ),
     )
     metadata["recap_count"] = len(documents)
-    # The clock is one method for every game, so its error is measured
-    # once, season-wide, and only for a season that curates a recap
+    # The room's reaction lag is one figure for every game, so it is
+    # measured once, season-wide, and only for a season that curates a recap
     if documents:
-        _, metadata["recap_alignment"] = measure_alignment(
-            df, posts, games, players, get_play_by_play_dir()
+        _, metadata["recap_reaction_lag"] = measure_reaction_lag(
+            df, posts, players, get_live_play_by_play_dir()
         )
     else:
-        metadata["recap_alignment"] = unmeasured_alignment()
+        metadata["recap_reaction_lag"] = unmeasured_reaction_lag()
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "
@@ -540,17 +540,18 @@ def _build_recaps(
     if not specs:
         return []
     logger.info(f"Building {len(specs)} recaps...")
-    resolved = resolve_recap_specs(specs, games, players, posts, get_play_by_play_dir())
+    resolved = resolve_recap_specs(
+        specs, games, players, posts, get_live_play_by_play_dir()
+    )
     documents = []
     for spec in resolved:
         doc = build_recap(
             spec,
             fact=fact,
             posts=posts,
-            games=games,
             player_games=player_games,
             players=players,
-            pbp=load_play_by_play(spec.pbp_path, log=logger),
+            pbp=load_live_play_by_play(spec.pbp_path, log=logger),
             stamps=stamps,
         )
         entry = doc.entry
@@ -664,7 +665,7 @@ def build_manifest(
                 "anchor_window_seconds": RECAP_ANCHOR_WINDOW_SECONDS,
                 "anchor_min_reactions": RECAP_ANCHOR_MIN_REACTIONS,
                 "anchor_vocabulary": dict(RECAP_ANCHOR_VOCABULARY),
-                "alignment": metadata["recap_alignment"],
+                "reaction_lag": metadata["recap_reaction_lag"],
             },
             "metrics": dict(METRIC_FORMULAS),
         },

@@ -15,6 +15,8 @@ import pytest
 from botocore.stub import Stubber
 from pathlib import Path
 
+from pipeline.schemas import LIVE_PLAY_BY_PLAY_SCHEMA
+
 # ---------------------------------------------------------------------------
 # Sample comment data
 # ---------------------------------------------------------------------------
@@ -633,3 +635,44 @@ def cloudfront():
     with Stubber(client) as stubber:
         yield client, stubber
         stubber.assert_no_pending_responses()
+
+
+# ---------------------------------------------------------------------------
+# The live play-by-play feed, as banked (the recaps' input)
+# ---------------------------------------------------------------------------
+
+
+def live_action(**overrides) -> dict:
+    """
+    One feed row, snake_cased as LIVE_PLAY_BY_PLAY_SCHEMA holds it.
+
+    Every column the schema names, null where the feed omits the field
+    on a row of that kind; the overrides make the row a marker, a shot,
+    a substitution.
+    """
+    row: dict = dict.fromkeys(LIVE_PLAY_BY_PLAY_SCHEMA.names())
+    row.update(
+        game_id="0042500317",
+        action_number=1,
+        clock="PT12M00.00S",
+        time_actual="2026-06-02T00:17:00.0Z",
+        period=1,
+        period_type="REGULAR",
+        action_type="",
+        sub_type="",
+        qualifiers=[],
+        person_id=0,
+        possession=0,
+        score_home="0",
+        score_away="0",
+        edited="",
+        order_number=1,
+        is_target_score_last_period=False,
+        is_field_goal=0,
+        side="",
+        description="",
+        person_ids_filter=[],
+        team_id=0,
+    )
+    row.update(overrides)
+    return row

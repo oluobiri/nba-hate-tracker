@@ -10,7 +10,7 @@
 
 ## The model at a glance
 
-A **star schema**: one fact at the center — `ClassifiedComment` — with three dimensions radiating out, plus the **game layer**: `Game`, a dimension here (a fact in a basketball model — fact-vs-dimension is relative to the star you're in), `PlayerGame`, one tracked player's box-score line in one game, `Post`, the **bridge** from a comment to the game it lived in, and `Play`, one action in one game, which lives on a **second time axis**, `GameClock`. `Team` is a **role-playing dimension**: the same franchise table is referenced in four distinct roles (a player's *roster* team, a commenter's *fan* team, and a game's *home* and *away* teams). `Date` is absolute time, a **modeled target** — it does not exist as a table today (temporal lives as a derived `week` column), but the model names it because the V2 temporal work is built against it. `GameClock` is relative time, one clock per game: plays sit on it exactly, comments reach it through a derivation with an error.
+A **star schema**: one fact at the center — `ClassifiedComment` — with three dimensions radiating out, plus the **game layer**: `Game`, a dimension here (a fact in a basketball model — fact-vs-dimension is relative to the star you're in), `PlayerGame`, one tracked player's box-score line in one game, `Post`, the **bridge** from a comment to the game it lived in, and `Play`, one action in one game, which lives on a **second time axis**, `GameClock`. `Team` is a **role-playing dimension**: the same franchise table is referenced in four distinct roles (a player's *roster* team, a commenter's *fan* team, and a game's *home* and *away* teams). `Date` is absolute time, a **modeled target** — it does not exist as a table today (temporal lives as a derived `week` column), but the model names it because the V2 temporal work is built against it. `GameClock` is relative time, one clock per game: plays sit on it exactly, comments reach it by interpolation between the plays either side of them.
 
 ```mermaid
 erDiagram
@@ -38,7 +38,7 @@ erDiagram
     }
     Play {
         string game_id PK "grain: one action in one game"
-        int action_id PK
+        int action_number PK
     }
     GameClock {
         string game_id PK "grain: one second of one game (axis)"
@@ -51,7 +51,7 @@ erDiagram
     ClassifiedComment }o--o{ Player    : "mentioned_players (M:N, pre-resolution)"
     ClassifiedComment }o--|| Date      : "created_utc to day"
     ClassifiedComment }o--|| Post      : "link_id"
-    ClassifiedComment }o--o| GameClock : "game_seconds (derived, with an error; live threads only)"
+    ClassifiedComment }o--o| GameClock : "game_seconds (interpolated between plays; live threads only)"
     Post              }o--o| Game      : "game_id (0-1; split threads N:1)"
     Game              }o--|| Team      : "home_team"
     Game              }o--|| Team      : "away_team"
@@ -61,7 +61,7 @@ erDiagram
     Play              }o--|| Game      : "game_id"
     Play              }o--o| Player    : "player_id (tracked players only)"
     Play              }o--o| Team      : "team_id"
-    Play              }o--o| Play      : "action_number (a block or steal to the play it ends)"
+    Play              }o--o| Play      : "paired_action_number (a block or steal to the play it ends)"
     Play              }o--|| GameClock : "period, clock (exact)"
     GameClock         }o--|| Game      : "one clock per game"
 ```
@@ -90,7 +90,7 @@ The pipeline produces three classes of table from this model: **rollups** of the
 | `author_flair_text` → `fan_team` | → **Team** (fan role), 0-or-1 (flair may not resolve) — materialized on the fact at assembly |
 | `link_id` | → **Post**, the post the comment lived in; the comment's only path to a **Game** |
 | `created_utc` → `day` | → **Date** |
-| `created_utc` → `game_seconds`, `phase` | → **GameClock**, derived in a recap only: `f(created_utc, the game's period markers)`, with an error measured once per season. Never a column of the fact |
+| `created_utc` → `game_seconds`, `phase` | → **GameClock**, derived in a recap only: interpolated between the two plays either side of the comment on wall clock. Never a column of the fact |
 
 **The player FK is resolved, not raw.** `mentioned_players[]` (M:N) and `sentiment_player` are the *inputs*; `resolve_player()` collapses them to a single `attributed_player` (or null), and the result is stored on the fact. The fact tables join on `attributed_player`. ~1.57M of ~1.93M classified rows resolve to a player.
 
@@ -167,33 +167,33 @@ The distinction matters because the two layers age differently: frozen fields st
 
 ### `Play` — dimension
 
-**Grain:** one action in one game. A fact in a basketball model, a dimension here, like `Game`. Sourced from the banked play-by-play archive (`data/<season>/reference/play_by_play/<game_id>.parquet`, one snapshot per game as the endpoint serves it); never published whole. A recap ships a **slice**: the focus player's actions, both teams' shots, the period markers and the timeouts.
+**Grain:** one action in one game. A fact in a basketball model, a dimension here, like `Game`. Sourced from the banked liveData play-by-play (`data/<season>/reference/play_by_play_live/<game_id>.parquet`, one snapshot per game as the feed serves it); never published whole. A recap ships a **slice**: the focus player's actions, both teams' shots, the period markers and the timeouts. The feed is the game as scored on the night: corrections made afterwards reach the box score and never the feed, and a recap keeps the night-of version, which is what the room reacted to.
 
 | Field | Notes |
 |---|---|
-| `game_id`, `action_id` | PK; `action_id` is unique within a game, the row key |
-| `action_number` | shared by a block or steal and the shot or turnover it ends: the one self-relation. A block borrows its shot's location |
+| `game_id`, `action_number` | PK; `action_number` is unique within a game, the row key |
+| `paired_action_number` | the shot or turnover a block or steal ends: the one self-relation. The feed logs the ender right after the play it ended, and the play names the ender in its own field. A block borrows its shot's location |
 | `period`, `clock`, `game_seconds` | the clock as served, and seconds elapsed since tip-off (720 per period, 300 per overtime) |
-| `wall_clock` | epoch seconds, mapped from the period markers by a straight line inside the period |
-| `kind` | derived. The archive's `action_type` is blank on every block and steal, so the kind is read from the description |
-| `person_id` → `player_id` | → **Player**, 0-or-1: tracked players only. On a substitution the archive names only the player going out; the player coming in is in the description alone, and lineup changes at a period break are never logged, so on-court state is inferred as **stints** |
-| `team_tricode` | the archive's abbreviation under its own name; not a Team FK |
-| `score_home`, `score_away` | forward-filled onto every row; the archive writes the score only where it changes |
-| the running line | points, rebounds, assists, blocks, steals, turnovers, fouls, parsed from the focus player's own descriptions |
+| `wall_clock` | epoch seconds, the play's own timestamp: when the scorer logged it, made monotone in feed order |
+| `kind` | the feed's action type under the recap's vocabulary; a heave is a kind of its own, a shot the feed credits to the team only |
+| `person_id` → `player_id` | → **Player**, 0-or-1: tracked players only. A substitution is two rows, `in` and `out`, each naming its own player, and the lineup changes at a period break are logged at the period's first second; only the first period's opening five is inferred, and the on-court state is written as **stints** |
+| `team_tricode` | the feed's abbreviation under its own name; not a Team FK |
+| `score_home`, `score_away` | on every row, as the feed serves it |
+| the running line | points, rebounds, assists, turnovers, fouls from the feed's totals on the focus player's rows; blocks and steals counted from his rows |
 
 ### `GameClock` — axis (relative time)
 
-**Grain:** one second of one game. Not a table: the function the period markers define, written into each recap as its `periods` frame. Beside `Date` (absolute time) it is the model's second time dimension, and it exists only inside a game.
+**Grain:** one second of one game. Not a table: the function the plays' timestamps define, written into each recap as its `periods` frame and read off its `plays`. Beside `Date` (absolute time) it is the model's second time dimension, and it exists only inside a game.
 
 | Field | Notes |
 |---|---|
 | `game_id`, `second` | one clock per game; seconds elapsed since tip-off |
 | `period`, `clock` | the display form |
-| `wall_clock` | epoch seconds. Every period's start and end marker carries Eastern wall-clock time to the minute, labeled EST all year at every venue, so it is parsed as Eastern local time; the mapping is a straight line inside each period, breaks pin to the break |
+| `wall_clock` | epoch seconds. Every play carries its own timestamp, so a period's bounds are its markers' stamps and a comment maps between the two plays either side of it: flat wherever the feed logs a row on a frozen second, as it does at a timeout's end, breaks pinned to the break |
 | `phase` | `pre` / `live` / `break` / `post`: where a comment fell |
-| the error | the reaction anchors: any tracked player's block, steal or made dunk that comments about him name, by a published vocabulary, within a minute; one burst of comments counts for one play. The straight line spreads a period's stoppages evenly, so its error is uneven across the period. The clock is one method for every game, so the anchors' distance from the mapped timeline is **measured** once per season over every threaded game and published with the rules; the timeline is never moved by them |
+| the reaction lag | the reaction anchors: any tracked player's block, steal or made dunk that comments about him name, by a published vocabulary, within a minute; one burst of comments counts for one play. The clock is the feed's own, so what the anchors' distance from the play measures is how long the room takes to react, **measured** once per season over every threaded game and published with the rules; the timeline is never moved by them |
 
-`Play` sits on the clock exactly. `ClassifiedComment` reaches it through the derivation: a comment's position is `f(created_utc, markers)`, a config-versioned derivation with an error term, the same class as `mentioned_players`. That is why the rule is stated plainly: **a comment is never joined to a play**. It is placed on the same clock, and the page reads the two side by side.
+`Play` sits on the clock exactly. `ClassifiedComment` reaches it by interpolation between the plays either side of it, a derivation like `mentioned_players`, never a stored key. That is why the rule is stated plainly: **a comment is never joined to a play**. It is placed on the same clock, and the page reads the two side by side.
 
 ### `Date` — dimension (materialized at day grain as `corpus_daily`)
 
@@ -262,7 +262,7 @@ Every player-keyed table (`player_overall`, `player_temporal`, `player_fan_team`
 
 The fact subset makes *"show me the receipts"* **cheap** while leaving *"show me every comment"* deliberately **expensive** — the atomic fact is not a shipped table; a full drill is a separate engine (v3), not a view.
 
-**Recaps** are the one produced file that is not a table. `recaps/<game_id>-<slug>.json` bundles three of the classes above for one curated (game, player): a **fact subset** at comment grain (every usable comment in the game's live threads, on both clocks, each naming its target by `player_id`, with `body` kept by a published rule), a **dimension slice** (the game's `Play` rows the page draws, and its `periods`, the `GameClock`), and the focus player's on-court intervals (`stints`). Each frame is a table serialized as column arrays, validated like every produced table, and described in `schema.json` under `documents.recap`. Nothing already in a table is copied in: the page joins `games`, `player_games`, `game_sentiment` and `players` by `game_id` and `player_id`. The manifest's `recaps` registry entry is a **rollup** at Player × Game × Period (counts per period, the swing in negative share, the stint difference), so an index renders from the manifest alone. The clock's error is not per file: it is the method's, published once under the manifest's rules. The recap quotes the live thread; `game_sentiment`, which also counts the post-game threads, is a different population and is shown beside it as the final verdict.
+**Recaps** are the one produced file that is not a table. `recaps/<game_id>-<slug>.json` bundles three of the classes above for one curated (game, player): a **fact subset** at comment grain (every usable comment in the game's live threads, on both clocks, each naming its target by `player_id`, with `body` kept by a published rule), a **dimension slice** (the game's `Play` rows the page draws, and its `periods`, the `GameClock`), and the focus player's on-court intervals (`stints`). Each frame is a table serialized as column arrays, validated like every produced table, and described in `schema.json` under `documents.recap`. Nothing already in a table is copied in: the page joins `games`, `player_games`, `game_sentiment` and `players` by `game_id` and `player_id`. The manifest's `recaps` registry entry is a **rollup** at Player × Game × Period (counts per period, the swing in negative share, the stint difference), so an index renders from the manifest alone. The room's reaction lag is not per file: it is measured once, season-wide, and published under the manifest's rules. The recap quotes the live thread; `game_sentiment`, which also counts the post-game threads, is a different population and is shown beside it as the final verdict.
 
 **Needs a join** (no new pipeline output): any *roster-level* question — "OKC's roster sentiment over time," "own-fans vs. rivals" — joins a player-keyed view to `players.parquet` with `USING (attributed_player)` (or `USING (player_id)`) and groups by `roster_team` (or any other dimension attribute: position, experience, school). Likewise a box score beside a sentiment number: `player_games` joins `game_sentiment` on `(game_id, attributed_player)`, and `games` supplies the date, score and phase. The box score is never pre-joined into a rollup, and neither is the whole-room thread size — that is `posts.num_comments` summed per `game_id`, distinct from the view's `thread_comment_count` (fact rows only). A comment reaches its game through the bridge — `posts` on `link_id = post_id`, then `game_id` — and every hop is many-to-one, so a comment lands in at most one game. The view ships counts, never a verdict: the baseline a game is judged against (the player's season rate) and the display floor are consumer choices.
 

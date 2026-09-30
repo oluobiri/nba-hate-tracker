@@ -25,7 +25,6 @@ from utils.constants import (
     PROCESSED_DATA_SUBDIR,
     DASHBOARD_DATA_SUBDIR,
     REFERENCE_DATA_SUBDIR,
-    PLAY_BY_PLAY_SUBDIR,
     LIVE_PLAY_BY_PLAY_SUBDIR,
     MEDIA_DATA_SUBDIR,
 )
@@ -128,17 +127,6 @@ def get_reference_dir() -> Path:
         Path to reference directory (e.g., data/2024-25/reference/).
     """
     return get_data_dir() / REFERENCE_DATA_SUBDIR
-
-
-def get_play_by_play_dir() -> Path:
-    """
-    Get the per-game play-by-play snapshot directory.
-
-    Returns:
-        Path to the play-by-play directory
-        (e.g., data/2025-26/reference/play_by_play/).
-    """
-    return get_reference_dir() / PLAY_BY_PLAY_SUBDIR
 
 
 def get_live_play_by_play_dir() -> Path:

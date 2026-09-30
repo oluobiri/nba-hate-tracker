@@ -16,8 +16,6 @@ pipeline produces. Data dictionary first, enforcement second:
 - TEAM_GAME_LOG_SCHEMA / PLAYER_GAME_LOG_SCHEMA describe the season
   game-log snapshots from stats.nba.com (scripts/fetch_games.py), the
   reference assets the game tables derive from.
-- PLAY_BY_PLAY_SCHEMA describes the per-game play-by-play snapshots
-  (scripts/fetch_play_by_play.py), enforced at the fetch write boundary.
 - LIVE_PLAY_BY_PLAY_SCHEMA describes the per-game snapshots of the
   liveData play-by-play (scripts/fetch_live_play_by_play.py), enforced
   at the fetch write boundary.
@@ -66,7 +64,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -225,42 +223,6 @@ PLAYER_GAME_LOG_SCHEMA = pl.Schema(
         "matchup": pl.String,
         "wl": pl.String,  # nullable at source
         **_BOX_SCORE_COLUMNS,
-    }
-)
-
-# data/<season>/reference/play_by_play/<game_id>.parquet — one row per
-# action_id, PlayByPlayV3 as served: every column, snake_cased, in endpoint
-# order, nothing filtered. action_number is not unique: a block or steal
-# shares it with the shot or turnover it ends, and the shot row carries
-# the coordinates. The endpoint marks an absent value with "" or 0,
-# never null; clock is an ISO duration ("PT11M39.00S") and the running
-# score is a string, "" on actions that do not change it. Consumers cast.
-PLAY_BY_PLAY_SCHEMA = pl.Schema(
-    {
-        "game_id": pl.String,
-        "action_number": pl.Int64,  # shared by a shot and its block
-        "clock": pl.String,
-        "period": pl.Int64,
-        "team_id": pl.Int64,  # 0 on actions without a team
-        "team_tricode": pl.String,
-        "person_id": pl.Int64,  # 0 on actions without a player
-        "player_name": pl.String,
-        "player_name_i": pl.String,  # "V. Wembanyama"
-        "x_legacy": pl.Int64,  # shot-chart coordinates; 0 off a shot
-        "y_legacy": pl.Int64,
-        "shot_distance": pl.Int64,
-        "shot_result": pl.String,  # "Made" / "Missed" / ""
-        "is_field_goal": pl.Int64,
-        "score_home": pl.String,
-        "score_away": pl.String,
-        "points_total": pl.Int64,
-        "location": pl.String,  # "h" / "v" / ""
-        "description": pl.String,  # period starts carry wall-clock time
-        "action_type": pl.String,
-        "sub_type": pl.String,
-        "video_available": pl.Int64,
-        "shot_value": pl.Int64,
-        "action_id": pl.Int64,  # unique within a game: the row key
     }
 )
 
@@ -651,24 +613,26 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
 # serialized, and schema.json describes them under documents.recap with
 # the tables' column vocabulary. Time is two clocks: game_seconds since
 # tip-off (720 per period, 300 per overtime) and wall_clock, epoch
-# seconds; a play's wall clock is mapped from the period markers, a
-# comment's game seconds is mapped back through them. The mapping's error
-# is a property of the method, measured once per season under
-# rules.recaps.alignment, never per file. Team columns keep
-# the archive's abbreviation under its own name; a comment carries the
-# fan role; there is no bare team.
+# seconds; a play's wall clock is its own timestamp in the feed, a
+# comment's game seconds is interpolated between the plays either side
+# of it. How long the room takes to react is measured once per season
+# under rules.recaps.reaction_lag, never per file. The plays are the
+# game as scored on the night: corrections made afterwards reach the
+# box score, never the feed. Team columns keep the feed's abbreviation
+# under its own name; a comment carries the fan role; there is no bare
+# team.
 
 # The game clock: one row per period, start and end wall clock from the
-# archive's period markers, game seconds cumulative across periods.
+# period markers' own timestamps, game seconds cumulative across periods.
 RECAP_PERIODS_SCHEMA = pl.Schema(
     {
         "period": pl.Int64,
         "start_seconds": pl.Int64,
         "end_seconds": pl.Int64,
-        "start_wall": pl.Int64,  # epoch seconds, from the start marker
+        "start_wall": pl.Int64,  # epoch seconds, the start marker's timestamp
         "end_wall": pl.Int64,
-        "start_action_id": pl.Int64,
-        "end_action_id": pl.Int64,
+        "start_action_number": pl.Int64,
+        "end_action_number": pl.Int64,
     }
 )
 
@@ -692,34 +656,35 @@ RECAP_STINTS_SCHEMA = pl.Schema(
     }
 )
 
-# The plays the page draws: the focus player's actions, both teams' shots,
-# the period markers and the timeouts. kind is derived (the archive's
-# action_type is blank on blocks and steals); the score is forward-filled
-# onto every row; a block borrows its shot's location; the running totals
-# are parsed from the focus player's own descriptions.
+# The plays the page draws: the focus player's actions, both teams' shots
+# (heaves included, which the feed credits to the team only), the period
+# markers, the timeouts, and the turnover a steal of his ended, so every
+# pairing resolves within the frame. kind is the feed's action type under the
+# recap's vocabulary; a substitution is a sub_in or sub_out row naming
+# its own player; a block borrows its shot's location; the running
+# totals are the feed's, on the focus player's rows.
 RECAP_PLAYS_SCHEMA = pl.Schema(
     {
-        "action_id": pl.Int64,  # unique within the game: the row key
-        "action_number": pl.Int64,  # shared by a block and the shot it ends
-        "paired_action_id": pl.Int64,  # nullable: the shot a block or steal ends
+        "action_number": pl.Int64,  # unique within the game: the row key
+        "paired_action_number": pl.Int64,  # nullable: the play a block or steal ends
         "period": pl.Int64,
-        "clock": pl.String,  # as the archive serves it
+        "clock": pl.String,  # as the feed serves it
         "game_seconds": pl.Int64,
-        "wall_clock": pl.Int64,  # epoch seconds, mapped from the markers
+        "wall_clock": pl.Int64,  # epoch seconds, the play's own timestamp
         "kind": pl.String,
         "action_type": pl.String,
         "sub_type": pl.String,
         "description": pl.String,
-        "team_tricode": pl.String,
+        "team_tricode": pl.String,  # nullable: a period marker
         "person_id": pl.Int64,  # 0 on team actions
-        "player_name_i": pl.String,
+        "player_name_i": pl.String,  # nullable: a team action
         "is_focus": pl.Boolean,
         "made": pl.Boolean,  # nullable: not a shot
-        "shot_value": pl.Int64,
-        "x_legacy": pl.Int64,
+        "shot_value": pl.Int64,  # 3, 2, 1, or 0 off a shot
+        "x_legacy": pl.Int64,  # nullable: off a shot
         "y_legacy": pl.Int64,
-        "shot_distance": pl.Int64,
-        "score_home": pl.Int64,  # forward-filled; 0 before the first score
+        "shot_distance": pl.Float64,
+        "score_home": pl.Int64,  # on every row
         "score_away": pl.Int64,
         "pts": pl.Int64,  # nullable running totals on focus rows
         "reb": pl.Int64,
@@ -739,7 +704,7 @@ RECAP_COMMENTS_SCHEMA = pl.Schema(
         "comment_id": pl.String,
         "post_id": pl.String,  # -> threads
         "created_utc": pl.Int64,
-        "game_seconds": pl.Int64,  # mapped through the markers
+        "game_seconds": pl.Int64,  # interpolated between the plays either side
         "phase": pl.String,  # pre | live | break | post
         "sentiment": pl.String,
         "score": pl.Int64,
@@ -764,7 +729,16 @@ RECAP_NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "threads": frozenset(),
     "stints": frozenset(),
     "plays": frozenset(
-        {"paired_action_id", "made", "pts", "reb", "ast", "blk", "stl", "tov", "pf"}
+        {
+            "paired_action_number",
+            "team_tricode",
+            "player_name_i",
+            "made",
+            "x_legacy",
+            "y_legacy",
+            "shot_distance",
+            *("pts", "reb", "ast", "blk", "stl", "tov", "pf"),
+        }
     ),
     "comments": frozenset({"fan_team", "player_id", "body"}),
 }
@@ -884,26 +858,26 @@ class Floors(TypedDict):
     game_min_n: int
 
 
-class AlignmentFigures(TypedDict):
-    """What the reaction anchors measured of the game clock, season-wide."""
+class ReactionLag(TypedDict):
+    """How long the room takes to react to a play, measured season-wide."""
 
     candidates: int  # tracked players' blocks, steals and made dunks
     anchors: int  # candidates whose reaction reached the floor
     games: int  # games with at least one anchor
-    median_offset_seconds: int | None  # first reaction minus the mapped play
+    median_offset_seconds: int | None  # first reaction minus the play's timestamp
     p25_offset_seconds: int | None
     p75_offset_seconds: int | None
 
 
 class RecapsRule(TypedDict):
-    """How a recap keeps bodies and how its clock is measured; utils.constants."""
+    """How a recap keeps bodies and how the room's lag is measured; utils.constants."""
 
     room_bucket_seconds: int  # wall-clock bucket for the room's top-voted comments
     room_bodies_per_bucket: int  # non-focus bodies kept per bucket, by score
     anchor_window_seconds: int  # a play's reaction is looked for within this
     anchor_min_reactions: int  # comments naming the play in one minute to count
     anchor_vocabulary: dict[str, str]  # play kind -> the pattern naming it
-    alignment: AlignmentFigures
+    reaction_lag: ReactionLag
 
 
 class Rules(TypedDict):

@@ -225,7 +225,7 @@ GAME_MIN_N = 20  # player x game cell
 # =============================================================================
 # Published recap rules (manifest rules.recaps; pipeline/recaps.py)
 # =============================================================================
-# How a recap's feed keeps bodies and how its alignment error is measured.
+# How a recap keeps bodies and how the room's reaction lag is measured.
 # Published so the page states the rule it was built under.
 RECAP_ROOM_BUCKET_SECONDS = 120  # wall-clock bucket for the room's top-voted comments
 RECAP_ROOM_BODIES_PER_BUCKET = 2  # non-focus bodies kept per bucket, by score
@@ -258,7 +258,6 @@ DASHBOARD_DATA_SUBDIR = "dashboard"
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "schema.json"
 REFERENCE_DATA_SUBDIR = "reference"
-PLAY_BY_PLAY_SUBDIR = "play_by_play"
 LIVE_PLAY_BY_PLAY_SUBDIR = "play_by_play_live"
 RECAPS_SUBDIR = "recaps"  # under dashboard/: one JSON per curated recap
 RECAP_CANDIDATES_FILENAME = "recap_candidates.csv"  # under reference/, never published

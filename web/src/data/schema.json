@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 8,
   "tables": {
     "player_overall": {
       "columns": [
@@ -630,6 +630,11 @@
           "nullable": false
         },
         {
+          "name": "source",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
           "name": "game_id",
           "dtype": "string",
           "nullable": true
@@ -933,12 +938,12 @@
           },
           "nullable": false
         },
-        "alignment": {
-          "type": "AlignmentFigures",
+        "reaction_lag": {
+          "type": "ReactionLag",
           "nullable": false
         }
       },
-      "AlignmentFigures": {
+      "ReactionLag": {
         "candidates": {
           "type": "int",
           "nullable": false
@@ -1162,12 +1167,12 @@
               "nullable": false
             },
             {
-              "name": "start_action_id",
+              "name": "start_action_number",
               "dtype": "int64",
               "nullable": false
             },
             {
-              "name": "end_action_id",
+              "name": "end_action_number",
               "dtype": "int64",
               "nullable": false
             }
@@ -1224,17 +1229,12 @@
         "plays": {
           "columns": [
             {
-              "name": "action_id",
-              "dtype": "int64",
-              "nullable": false
-            },
-            {
               "name": "action_number",
               "dtype": "int64",
               "nullable": false
             },
             {
-              "name": "paired_action_id",
+              "name": "paired_action_number",
               "dtype": "int64",
               "nullable": true
             },
@@ -1281,7 +1281,7 @@
             {
               "name": "team_tricode",
               "dtype": "string",
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "person_id",
@@ -1291,7 +1291,7 @@
             {
               "name": "player_name_i",
               "dtype": "string",
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "is_focus",
@@ -1311,17 +1311,17 @@
             {
               "name": "x_legacy",
               "dtype": "int64",
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "y_legacy",
               "dtype": "int64",
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "shot_distance",
-              "dtype": "int64",
-              "nullable": false
+              "dtype": "float64",
+              "nullable": true
             },
             {
               "name": "score_home",

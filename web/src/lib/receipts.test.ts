@@ -12,6 +12,7 @@ const post = (post_type: string, game_id: string | null, title = 'A title'): Pos
   link_flair_text: null,
   post_type,
   game_id,
+  source: null,
   is_primary: true,
 })
 const game: GamesRow = {

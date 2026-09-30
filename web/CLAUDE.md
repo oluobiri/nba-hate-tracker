@@ -15,7 +15,7 @@ The design brief is `docs/internal/ux-review.md` (local only, not committed).
 ```
 src/
 ├── pages/        → one .astro per route; see "A page composes in its frontmatter"; card.png.ts endpoints
-│                   beside the index, player and team routes
+│                   beside the index, player, team and recap routes
 ├── components/   → .tsx (in an island, or static HTML without a directive) / .astro (shell only)
 ├── cards/        → the share cards: model.ts (pure, the page's sentence) → frame.tsx (the satori tree) →
 │                   render.ts (resvg); palette.ts pinned to tokens.css; media read once per build

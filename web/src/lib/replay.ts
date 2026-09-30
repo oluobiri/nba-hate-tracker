@@ -4,7 +4,7 @@
 // the feed) is a cursor and a subtraction, never a scan of 17,000 rows.
 // Pure; the island owns the clock.
 import type { Columnar, RecapCommentsRow, RecapDocument, RecapPlaysRow, RecapRows } from '../data/types.gen'
-import { gameClock, type Phase, playCursor, playStamp, type Segment, type Timeline } from './clock'
+import { gameClock, type Phase, phaseAt, playCursor, playStamp, type Segment, type Timeline } from './clock'
 import { type PeriodCell, periodLabel } from './recaps'
 import { type Counts, SENTIMENTS, type Sentiment } from './types'
 
@@ -268,6 +268,13 @@ export function clockAt(plays: readonly RecapPlaysRow[], tl: Timeline, t: number
   const cursor = playCursor(plays, tl, t)
   const p = plays[cursor]
   return p ? gameClock(p.clock) : null
+}
+
+/** A comment's stamp: "Q3 04:12" while the game runs, else where it fell ("Pregame", "Halftime", "Final"). */
+export function commentStamp(plays: readonly RecapPlaysRow[], tl: Timeline, t: number): string {
+  const m = phaseAt(tl, t)
+  if (m.phase !== 'live') return m.label
+  return clockAt(plays, tl, t) === null ? m.label : `${periodLabel(m.period)} ${clockAt(plays, tl, t)}`
 }
 
 // --- The feed -------------------------------------------------------------------

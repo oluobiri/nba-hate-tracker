@@ -7,7 +7,7 @@ import { assertRecapDocument } from '../data/recap'
 import type { Manifest, RecapDocument } from '../data/types.gen'
 import { CURRENT_SEASON } from '../site'
 import { BREAK_CARD, buildTimeline, gameClock, playCursor, stoppageAt, stoppageLabel } from './clock'
-import { breakCard, buildRoom, clockAt, commentCursor, feed, lineAt, periodOf, prepareComments, quarterBox, recapRows, rightNow, roomByPeriod, scoreAt, soFar, ticker, toRows } from './replay'
+import { breakCard, buildRoom, clockAt, commentCursor, commentStamp, feed, lineAt, periodOf, prepareComments, quarterBox, recapRows, rightNow, roomByPeriod, scoreAt, soFar, ticker, toRows } from './replay'
 import { comment, play, REGULATION } from './replay.fixture'
 import type { Counts } from './types'
 
@@ -162,6 +162,14 @@ describe('the game at the cursor', () => {
     ])
     expect(quarterBox(plays, tl, 2)[0]).toEqual({ period: 1, label: 'Q1', away: 3, home: 2, running: true })
     expect(quarterBox(plays, tl, -1).every((row) => row.away === null && !row.running)).toBe(true)
+  })
+
+  it('stamps a comment on the game clock while the game runs, on the phase otherwise', () => {
+    expect(commentStamp(plays, tl, -30)).toBe('Pregame')
+    expect(commentStamp(plays, tl, 300)).toBe('Q1 10:00')
+    expect(commentStamp(plays, tl, 2700)).toBe('Halftime')
+    expect(commentStamp(plays, tl, 3300)).toBe('Q3 12:00')
+    expect(commentStamp(plays, tl, 9000)).toBe('Final')
   })
 
   it('narrates the last few plays, oldest first, stamped on the game clock', () => {

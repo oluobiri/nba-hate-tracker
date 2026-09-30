@@ -2578,3 +2578,56 @@ a.hero__who:hover {
   height: 10px;
   border: 1px dashed var(--line-2);
 }
+
+/* FeedCard: the Exhibit at feed density. */
+.fc {
+  gap: 8px;
+  padding: 10px 12px;
+}
+.fc .exhibit__body {
+  font-size: 15px;
+}
+
+/* Feed: whose comments, at what density, newest first; a break's card on top. */
+.fd {
+  display: grid;
+  gap: 12px;
+}
+.fd__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.fd__views {
+  display: flex;
+  gap: 4px;
+}
+.fd__density {
+  margin-left: auto;
+}
+.fd__card {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-2);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.fd__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fd__empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-2);
+  color: var(--mute);
+}
+.fd__foot {
+  display: flex;
+}

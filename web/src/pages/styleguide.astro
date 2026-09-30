@@ -13,6 +13,8 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { Feed } from '../components/replay/Feed'
+import { FeedCard } from '../components/replay/FeedCard'
 import { QuarterBox } from '../components/replay/QuarterBox'
 import { RoomBars } from '../components/replay/RoomBars'
 import { ScoreBug, type ScoreBugProps } from '../components/replay/ScoreBug'
@@ -41,8 +43,8 @@ import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, periodLabel, recapHrefs } from '../lib/recaps'
-import { buildTimeline, defaultSpeed, phaseAt, playCursor, speedPhrase, stoppageAt, stoppageLabel, wallStamp } from '../lib/clock'
-import { buildRoom, clockAt, commentCursor, lineAt, prepareComments, quarterBox, recapRows as rowsOf, RIGHT_NOW, rightNow, roomByPeriod, scoreAt, soFar, ticker } from '../lib/replay'
+import { buildTimeline, defaultSpeed, etTime, phaseAt, playCursor, speedPhrase, stoppageAt, stoppageLabel, wallStamp } from '../lib/clock'
+import { breakCard, buildRoom, clockAt, commentCursor, commentStamp, feed, lineAt, prepareComments, quarterBox, recapRows as rowsOf, RIGHT_NOW, rightNow, roomByPeriod, scoreAt, soFar, ticker, type ReplayComment } from '../lib/replay'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
@@ -279,6 +281,17 @@ const flairAbbr = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbrevia
 const replayRoom = replayRows && replayTl ? buildRoom(prepareComments(replayRows.comments, replayTl, flairAbbr), replayTl) : null
 const midThird = replayTl ? Math.floor((replayTl.periods[2]!.startWall + replayTl.periods[2]!.endWall) / 2) - replayTl.tip : 0
 const hisSide = recapLead && recapLead.game.home_team === recapLead.player.roster_team ? 'home' : 'away'
+// Feed cards by rule: his top-scored negative, the room's top-scored positive, an unflaired one of his.
+const withBody = replayRoom ? replayRoom.comments.filter((c) => c.body !== null) : []
+const topBy = (pick: (c: ReplayComment) => boolean) => withBody.filter(pick).toSorted((a, b) => b.score - a.score)[0] ?? null
+const feedCards = [
+  { name: 'his top-scored negative', c: topBy((c) => c.isFocus && c.sentiment === 'neg') },
+  { name: "the room's top-scored positive", c: topBy((c) => !c.isFocus && c.sentiment === 'pos') },
+  { name: 'unflaired, his', c: topBy((c) => c.isFocus && c.flair === null) },
+].filter((x): x is { name: string; c: ReplayComment } => x.c !== null)
+const stampOf = (c: ReplayComment): string => (replayRows && replayTl ? commentStamp(replayRows.plays, replayTl, c.t) : '')
+const wallOf = (c: ReplayComment): string => (replayTl ? etTime(replayTl.tip + c.t) : '')
+const FEED_TOP = 4
 function bugAt(t: number): ScoreBugProps {
   const rows = replayRows!
   const tl = replayTl!
@@ -569,6 +582,31 @@ function bugAt(t: number): ScoreBugProps {
             <figure class="guide__fig">
               <RoomBars now={rightNow(replayRoom, cursor)} soFar={soFar(replayRoom, cursor)} window={RIGHT_NOW} usual={recapLead.usual} subject={recapLead.entry.attributed_player} />
               <figcaption>{m.name} · t={fmtInt(m.t)} s since tip</figcaption>
+            </figure>
+          )
+        })}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>FeedCard</h2>
+      <p class="eyebrow">The Exhibit at feed density: the game clock where the exhibit prints its number, the flair, the body verbatim, the score, the wall clock, the source. Never a username. Cases by rule.</p>
+      <div class="guide__stack">
+        {feedCards.map(({ name, c }) => <figure class="guide__fig"><FeedCard comment={c} stamp={stampOf(c)} wall={wallOf(c)} /><figcaption>{name}</figcaption></figure>)}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Feed</h2>
+      <p class="eyebrow">Newest first at halftime, his and the room's; the break's card on top; the first {FEED_TOP} with "Show more".</p>
+      <div class="guide__stack">
+        {replayRoom && replayTl && halftime && recapLead && (['his', 'room'] as const).map((view) => {
+          const t = Math.floor((halftime.t0 + halftime.t1) / 2)
+          const items = feed(replayRoom, commentCursor(replayRoom.comments, t), view, 'all', FEED_TOP + 1)
+          return (
+            <figure class="guide__fig">
+              <Feed items={items.slice(0, FEED_TOP)} more={items.length > FEED_TOP} view={view} density="all" name={recapLead.entry.attributed_player} card={breakCard(replayRoom, halftime)} stamp={stampOf} wall={wallOf} />
+              <figcaption>{view === 'his' ? 'his comments' : "the room's"} at halftime</figcaption>
             </figure>
           )
         })}

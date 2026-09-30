@@ -143,12 +143,16 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
   // stays hidden until then, so a deep link never flashes the tip.
   const settled = useRef(false)
   useLayoutEffect(() => {
+    if (status === 'failed') document.documentElement.classList.remove('has-replay-view')
     if (!data || !ready || settled.current) return
     settled.current = true
     document.documentElement.classList.remove('has-replay-view')
     if (view.t !== null) playback.seek(view.t)
     else if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) playback.play()
-  }, [data, ready, view.t, playback])
+  }, [data, ready, view.t, playback, status])
+
+  // A seek still waiting to reach the URL dies with the island.
+  useEffect(() => () => clearTimeout(urlTimer.current), [])
 
   // The quarter box and the court open on a wide screen and stay controls on a phone.
   useEffect(() => {
@@ -156,12 +160,15 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
     for (const d of [more.current, floor.current]) if (d) d.open = true
   }, [])
 
+  // The browser keeps its own chords (Alt or Cmd with an arrow is history);
+  // a control keeps its own Space; a held Space is one press.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.altKey || e.metaKey || e.ctrlKey) return
     const el = e.target as HTMLElement
-    const native = el.closest('button, a, input, select, textarea')
+    const native = el.closest('button, a, input, select, textarea, summary')
     const stride = e.shiftKey ? STEP * 10 : STEP
     const keys: Record<string, (() => void) | undefined> = {
-      ' ': native ? undefined : playback.toggle,
+      ' ': native || e.repeat ? undefined : playback.toggle,
       ArrowLeft: el.tagName === 'INPUT' ? undefined : () => playback.step(-stride),
       ArrowRight: el.tagName === 'INPUT' ? undefined : () => playback.step(stride),
       Home: el.tagName === 'INPUT' ? undefined : () => playback.seek(0),
@@ -236,7 +243,7 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
               {at && at.now.total > 0 ? <SentimentBar counts={at.now} size="mini" subject={`${name} right now`} /> : <div className="rb__empty" aria-hidden="true" />}
             </div>
           </ScoreBug>
-          {data && <Scrubber tl={data.tl} t={t} valueText={`${at?.stoppage ?? `${period} ${at?.clock ?? ''}`} · ${at?.wall ?? ''}`} lag={lag} onSeek={playback.seek} />}
+          {data && at && <Scrubber tl={data.tl} t={t} valueText={`${period} ${at.clock ?? ''}${at.stoppage ? ` · ${at.stoppage}` : ''} · ${at.wall}`} lag={lag} onSeek={playback.seek} />}
         </div>
 
         <div className="replay__ticker">

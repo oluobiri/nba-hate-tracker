@@ -136,6 +136,18 @@ export function assertRecapIdentity(doc: RecapDocument, key: string, entry: Reca
   if (rows !== entry.rows) throw fail(`${rows} comments, the registry entry says ${entry.rows}`)
 }
 
+/** The clocks the page searches by binary split never run backwards: plays by wall clock, comments by their time. */
+export function assertRecapOrder(doc: RecapDocument, where: string): void {
+  const check = (name: string, col: readonly number[]) => {
+    for (let i = 1; i < col.length; i++) {
+      if (col[i]! < col[i - 1]!) throw new ContractError(`${where}: ${name}[${i}] runs backwards (${col[i]} after ${col[i - 1]})`)
+    }
+  }
+  check('frames.plays.wall_clock', doc.frames.plays.wall_clock)
+  check('frames.plays.game_seconds', doc.frames.plays.game_seconds)
+  check('frames.comments.created_utc', doc.frames.comments.created_utc)
+}
+
 /** Fetch the recap the island plays, from the site's own origin, asserted on arrival. */
 export async function fetchRecap(key: string): Promise<RecapDocument> {
   const href = recapDataHref(key)

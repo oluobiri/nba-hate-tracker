@@ -47,14 +47,23 @@ export function ScoreBug({ away, home, his, name, periodLabel, clock, stoppage, 
   return (
     <div className="bug">
       <div className="bug__game">
-        <p className="bug__teams" aria-label={`${away.abbr} ${score(away.score)} at ${home.abbr} ${score(home.score)}`}>
-          <span className={side('away')}>{away.abbr}</span>
-          <span className="bug__score">{score(away.score)}</span>
+        <p className="bug__teams">
+          <span className="visually-hidden">{`${away.abbr} ${score(away.score)} at ${home.abbr} ${score(home.score)}.`}</span>
+          <span className={side('away')} aria-hidden="true">
+            {away.abbr}
+          </span>
+          <span className="bug__score" aria-hidden="true">
+            {score(away.score)}
+          </span>
           <span className="bug__at" aria-hidden="true">
             @
           </span>
-          <span className="bug__score">{score(home.score)}</span>
-          <span className={side('home')}>{home.abbr}</span>
+          <span className="bug__score" aria-hidden="true">
+            {score(home.score)}
+          </span>
+          <span className={side('home')} aria-hidden="true">
+            {home.abbr}
+          </span>
         </p>
         <p className="bug__clock mono">
           <span className="bug__period">{periodLabel}</span>

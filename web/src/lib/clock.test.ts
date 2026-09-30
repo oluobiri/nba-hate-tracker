@@ -121,6 +121,7 @@ describe('stoppageAt and stoppageLabel', () => {
     play({ kind: 'shot', game_seconds: 25 }),
     play({ kind: 'timeout', game_seconds: 369, team_tricode: 'SAS' }),
     play({ kind: 'sub_out', game_seconds: 369 }),
+    play({ kind: 'free_throw', game_seconds: 369 }),
     play({ kind: 'shot', game_seconds: 376 }),
     play({ kind: 'period_end', period: 1, game_seconds: 720 }),
     play({ kind: 'period_start', period: 2, game_seconds: 720 }),
@@ -129,20 +130,21 @@ describe('stoppageAt and stoppageLabel', () => {
   ]
   const label = (cursor: number) => stoppageLabel(stoppageAt(plays, cursor, tl))
 
-  it('holds a timeout through the substitutions logged on its second', () => {
+  it('holds a timeout through the substitutions logged on its second, until the ball is back in play', () => {
     expect(label(2)).toBe('TIMEOUT · SAS')
     expect(label(3)).toBe('TIMEOUT · SAS')
     expect(label(4)).toBeNull()
+    expect(label(5)).toBeNull()
   })
 
   it('reads the tip, the end of a period, and the final; a period start clears the last end', () => {
     expect(label(-1)).toBe('TIP')
     expect(label(0)).toBe('TIP')
     expect(label(1)).toBeNull()
-    expect(label(5)).toBe('END OF 1ST')
-    expect(label(6)).toBeNull()
+    expect(label(6)).toBe('END OF 1ST')
     expect(label(7)).toBeNull()
-    expect(label(8)).toBe('FINAL')
+    expect(label(8)).toBeNull()
+    expect(label(9)).toBe('FINAL')
   })
 
   it('names halftime, the third, an overtime, and a timeout without a team', () => {

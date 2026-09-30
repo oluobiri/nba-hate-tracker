@@ -69,7 +69,7 @@ export function usePlayback(tl: Timeline | null, onSettle: (t: number) => void):
     committed.current = 0
     setPlaying(true)
     const tick = (now: number) => {
-      pos.current += ((now - last.current) / 1000) * speedRef.current
+      pos.current = Math.max(0, pos.current + ((now - last.current) / 1000) * speedRef.current)
       last.current = now
       if (pos.current >= tl.length) {
         pos.current = tl.length

@@ -20,7 +20,9 @@ export interface QuarterBoxProps {
 const pts = (v: number | null): string => (v === null ? '—' : fmtInt(v))
 const sum = (vs: (number | null)[]): number | null => (vs.some((v) => v !== null) ? vs.reduce<number>((n, v) => n + (v ?? 0), 0) : null)
 
-export function QuarterBox({ rows, room, away, home, his, subject }: QuarterBoxProps) {
+export function QuarterBox({ rows: given, room, away, home, his, subject }: QuarterBoxProps) {
+  // Before the file arrives the periods are the registry's, with no points.
+  const rows: QuarterRow[] = given.length ? given : room.map((c) => ({ period: c.key, label: c.label, away: null, home: null, running: false }))
   const cells = new Map(room.map((c) => [c.key, c]))
   const total = room.reduce((n, c) => n + c.counts.total, 0)
   const teamRow = (side: 'away' | 'home', abbr: string) => (

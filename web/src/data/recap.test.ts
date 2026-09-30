@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { CURRENT_SEASON } from '../site'
 import { CONTRACT, type ColumnSpec, type FieldSpec, SCHEMA_VERSION } from './contract'
-import { assertRecapDocument, assertRecapIdentity, recapDataHref } from './recap'
+import { assertRecapDocument, assertRecapIdentity, assertRecapOrder, recapDataHref } from './recap'
 import type { RecapDocument, RecapEntry } from './types.gen'
 
 // A one-row document fabricated from the contract itself, so the fixture
@@ -107,6 +107,22 @@ describe('assertRecapDocument', () => {
   })
 })
 
+describe('assertRecapOrder', () => {
+  it('passes a document whose clocks never run backwards and names the row that does', () => {
+    const ok = assertRecapDocument(
+      docFrom((d) => {
+        d.frames.plays = Object.fromEntries(Object.entries(d.frames.plays!).map(([k, v]) => [k, [v[0], v[0]]]))
+        d.frames.plays.wall_clock = [5, 5]
+        d.frames.plays.game_seconds = [1, 2]
+      }),
+      WHERE,
+    )
+    expect(() => assertRecapOrder(ok, WHERE)).not.toThrow()
+    const back = { ...ok, frames: { ...ok.frames, plays: { ...ok.frames.plays, wall_clock: [5, 4] } } }
+    expect(() => assertRecapOrder(back, WHERE)).toThrow(`${WHERE}: frames.plays.wall_clock[1] runs backwards (4 after 5)`)
+  })
+})
+
 describe('assertRecapIdentity', () => {
   const entry: RecapEntry = {
     file: WHERE,
@@ -160,5 +176,6 @@ describe.skipIf(files.length === 0)('the live recap files', () => {
     const doc: RecapDocument = assertRecapDocument(JSON.parse(readFileSync(path.join(RECAPS, file), 'utf8')), `recaps/${file}`)
     expect(manifest!.recaps[key]).toBeDefined()
     expect(() => assertRecapIdentity(doc, key, manifest!.recaps[key]!, manifest!.season)).not.toThrow()
+    expect(() => assertRecapOrder(doc, `recaps/${file}`)).not.toThrow()
   })
 })

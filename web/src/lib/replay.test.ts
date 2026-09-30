@@ -162,6 +162,13 @@ describe('the game at the cursor', () => {
     ])
     expect(quarterBox(plays, tl, 2)[0]).toEqual({ period: 1, label: 'Q1', away: 3, home: 2, running: true })
     expect(quarterBox(plays, tl, -1).every((row) => row.away === null && !row.running)).toBe(true)
+    // A period whose end marker never came still closes when the next one starts.
+    const noEnd = plays.filter((p) => !(p.kind === 'period_end' && p.period === 1))
+    expect(quarterBox(noEnd, tl, noEnd.length - 1).slice(0, 3)).toEqual([
+      { period: 1, label: 'Q1', away: 3, home: 2, running: false },
+      { period: 2, label: 'Q2', away: 42, home: 48, running: false },
+      { period: 3, label: 'Q3', away: 5, home: 10, running: true },
+    ])
   })
 
   it('stamps a comment on the game clock while the game runs, on the phase otherwise', () => {

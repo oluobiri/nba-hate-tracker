@@ -7,7 +7,7 @@ import type { APIRoute, InferGetStaticPropsType } from 'astro'
 import { getSeason } from '../../../data'
 import { ContractError } from '../../../data/contract'
 import { readJson, seasonLocation } from '../../../data/env'
-import { assertRecapDocument, assertRecapIdentity } from '../../../data/recap'
+import { assertRecapDocument, assertRecapIdentity, assertRecapOrder } from '../../../data/recap'
 import type { RecapDocument, RecapEntry } from '../../../data/types.gen'
 import { buildTimeline } from '../../../lib/clock'
 import { buildRecaps } from '../../../lib/recaps'
@@ -41,6 +41,7 @@ export const GET: APIRoute<Props> = async ({ props }) => {
   const { key, entry, season } = props
   const doc = assertRecapDocument(await readJson(seasonLocation(season), entry.file), entry.file)
   assertRecapIdentity(doc, key, entry, season)
+  assertRecapOrder(doc, entry.file)
   assertPeriods(doc, entry)
   return new Response(JSON.stringify(doc), { headers: { 'Content-Type': 'application/json' } })
 }

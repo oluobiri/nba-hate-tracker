@@ -220,27 +220,27 @@ export interface QuarterRow {
 
 /** Both teams' points per period from the running score, filling as the game plays. */
 export function quarterBox(plays: readonly RecapPlaysRow[], tl: Timeline, cursor: number): QuarterRow[] {
-  const ends = new Map<number, Score>()
-  const started = new Set<number>()
+  // A period's score is its last row's; it is running while it is the
+  // cursor's period and its end marker has not been logged.
+  const last = new Map<number, Score>()
+  const ended = new Set<number>()
   for (let i = 0; i <= cursor && i < plays.length; i++) {
     const p = plays[i]!
-    started.add(p.period)
-    if (p.kind === 'period_end') ends.set(p.period, { home: p.score_home, away: p.score_away })
+    last.set(p.period, { home: p.score_home, away: p.score_away })
+    if (p.kind === 'period_end') ended.add(p.period)
   }
-  const now = scoreAt(plays, cursor)
+  const current = plays[cursor]?.period ?? 0
   let prev: Score = { home: 0, away: 0 }
   return tl.periods.map((span) => {
-    const end = ends.get(span.period)
-    const running = !end && started.has(span.period)
-    const at = end ?? (running ? now : null)
+    const at = last.get(span.period)
     const row: QuarterRow = {
       period: span.period,
       label: span.label,
       away: at ? at.away - prev.away : null,
       home: at ? at.home - prev.home : null,
-      running,
+      running: at !== undefined && span.period === current && !ended.has(span.period),
     }
-    if (end) prev = end
+    if (at) prev = at
     return row
   })
 }

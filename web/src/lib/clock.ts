@@ -169,6 +169,8 @@ export type Stoppage = { kind: 'tip' } | { kind: 'timeout'; team: string | null 
  * logged on the same game second: a timeout holds through the substitutions
  * made during it; a period's start clears the previous end.
  */
+const STILL: ReadonlySet<string> = new Set(['sub_in', 'sub_out'])
+
 export function stoppageAt(plays: readonly RecapPlaysRow[], cursor: number, tl: Timeline): Stoppage {
   const at = plays[cursor]
   if (!at) return { kind: 'tip' }
@@ -178,6 +180,8 @@ export function stoppageAt(plays: readonly RecapPlaysRow[], cursor: number, tl: 
     if (p.kind === 'period_start') return p.period === 1 && i === cursor ? { kind: 'tip' } : null
     if (p.kind === 'timeout') return { kind: 'timeout', team: p.team_tricode }
     if (p.kind === 'period_end') return { kind: 'period_end', period: p.period, final: p.period === tl.periods.length }
+    // A play with the ball on that second means the game went on.
+    if (!STILL.has(p.kind)) return null
   }
   return null
 }

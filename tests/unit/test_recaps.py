@@ -3,7 +3,7 @@ Tests for pipeline/recaps.py: the shared clock and what sits on it.
 
 Frames are built locally: a feed row in LIVE_PLAY_BY_PLAY_SCHEMA's shape
 with its own timestamp, period markers stamped like the feed stamps
-them, and a comment row with the columns the alignment needs. Wall-clock
+them, and a comment row with the columns the clock needs. Wall-clock
 expectations are derived from the timestamps in the test, never from
 the code under test.
 """
@@ -890,6 +890,27 @@ class TestAlignComments:
             "period",
         ]
 
+    def test_a_period_starting_the_second_after_the_last_has_no_break(self):
+        """Stamped back to back, period 2 opens the second after period 1
+        ends: a comment ten minutes into it is live in period 2, not
+        pinned to a break that never happened."""
+        markers = [
+            _marker(1, "start", _stamp(0, 17), 1),
+            _marker(1, "end", _stamp(0, 46), 121),
+            _marker(2, "start", _stamp(0, 46, 1), 122),
+            _marker(2, "end", _stamp(1, 16), 250),
+        ]
+        pbp = stamp_wall_clock(_pbp(markers))
+        periods = build_periods(pbp)
+
+        aligned = align_comments(
+            _comments(_epoch(0, 56, 1)), periods, game_clock(pbp, periods)
+        )
+
+        assert aligned["phase"][0] == "live"
+        assert aligned["period"][0] == 2
+        assert aligned["game_seconds"][0] == 960
+
     def test_two_games_align_on_their_own_clocks(self):
         """A comment maps through its own game's rows."""
         january = date(2026, 1, 15)
@@ -1189,13 +1210,19 @@ class TestSlicePlays:
         assert {195, 200, 210, 312, 394, 157, 240, 245, 230} <= kept
         assert {1, 121, 122, 250, 251, 392, 393, 507} <= kept
 
-    def test_drops_other_players_free_throws_turnovers_subs_and_the_closing_row(
-        self, g7_plays
-    ):
-        """Wembanyama's free throw, Castle's turnover, the other substitutions
-        and the feed's game-end row are not drawn."""
+    def test_drops_other_players_free_throws_subs_and_the_closing_row(self, g7_plays):
+        """Wembanyama's free throw, the other substitutions and the feed's
+        game-end row are not drawn."""
         kept = set(g7_plays["action_number"].to_list())
-        assert not {190, 209, 42, 62, 65, 66, 101, 123, 232, 395, 508} & kept
+        assert not {190, 42, 62, 65, 66, 101, 123, 232, 395, 508} & kept
+
+    def test_the_turnover_his_steal_ended_rides_along(self, g7_plays):
+        """Castle's turnover is kept so the steal's pairing resolves in the
+        frame; it is not his and carries no running line."""
+        turnover = _by_action(g7_plays, 209)
+        assert turnover["is_focus"] is False
+        assert turnover["pts"] is None
+        assert _by_action(g7_plays, 210)["paired_action_number"] == 209
 
     def test_focus_player_without_an_action_raises(self, g7_game, g7_periods):
         """A player with no row in the game cannot anchor a recap."""
@@ -1300,6 +1327,19 @@ class TestBuildStints:
         plays = slice_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
 
         assert build_stints(plays, g7_periods).rows() == [(1, 360, 720), (2, 720, 960)]
+
+    def test_a_check_out_while_read_as_off_opens_from_the_period_start(
+        self, g7_periods
+    ):
+        """No action and no substitution in Q1 reads as bench, so Q1 is
+        lost; his Q2 check-out proves he was on from the break."""
+        rows = [
+            *G7_MARKERS,
+            _sub(_chet, 130, "out", "PT08M00.00S", _stamp(0, 57), period=2),
+        ]
+        plays = slice_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+
+        assert build_stints(plays, g7_periods).rows() == [(2, 720, 960)]
 
 
 # --- Comments, anchors, the document ---------------------------------------

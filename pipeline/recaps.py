@@ -440,16 +440,23 @@ def align_comments(
         ``pre``; callers pass the games they aligned.
     """
     bound_columns = ["game_id", "period", "end_seconds"]
+    ordered = periods.sort("game_id", "period").with_columns(
+        pl.col("start_wall").shift(-1).over("game_id").alias("_next_start_wall")
+    )
     bounds = pl.concat(
         [
-            periods.select(
+            ordered.select(
                 *bound_columns,
                 pl.col("start_wall").alias("bound"),
                 pl.lit(PHASE_LIVE).alias("phase"),
             ),
-            periods.select(
+            # The end marker's own second is still live; a break exists
+            # only if the next period starts later than the second after
+            ordered.filter(
+                pl.col("_next_start_wall").is_null()
+                | (pl.col("_next_start_wall") > pl.col("end_wall") + 1)
+            ).select(
                 *bound_columns,
-                # The end marker's own second is still live
                 (pl.col("end_wall") + 1).alias("bound"),
                 pl.lit(PHASE_BREAK).alias("phase"),
             ),
@@ -685,8 +692,9 @@ def slice_plays(
     The plays a recap ships, on both clocks, in RECAP_PLAYS_SCHEMA's shape.
 
     The focus player's plays (check-ins and assists included), both
-    teams' shots, the period markers and the timeouts. The feed's
-    closing row is not a play.
+    teams' shots, the period markers, the timeouts, and the turnover a
+    steal of his ended, so every pairing in the frame resolves. The
+    feed's closing row is not a play.
 
     Args:
         pbp: One game's play-by-play after stamp_wall_clock.
@@ -707,11 +715,13 @@ def slice_plays(
     if not prepared["is_focus"].any():
         game_id = pbp["game_id"][0] if pbp.height else "?"
         raise RecapError(f"{game_id}: player {player_id} has no action")
-    kept = prepared.filter(
+    drawn = (
         pl.col("is_focus")
         | pl.col("action_type").is_in(SHOT_ACTION_TYPES)
         | pl.col("kind").is_in(_SLICE_KINDS)
     )
+    partners = prepared.filter(drawn)["paired_action_number"].drop_nulls().to_list()
+    kept = prepared.filter(drawn | pl.col("action_number").is_in(partners))
     placed = running_totals(place_plays(kept, periods), player_id)
     made = (
         pl.when(pl.col("shot_result") == "Made")
@@ -743,7 +753,8 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
     all, on if he recorded any play. From there the substitutions open
     and close intervals; the state carries across each break, where the
     feed logs the lineup changes as substitutions at the period's first
-    second; an interval open at the buzzer closes on it.
+    second; an interval open at the buzzer closes on it. A check-out
+    while he reads as off proves he was on since the period started.
 
     Args:
         plays: The recap's plays (slice_plays) with ``is_focus``, in
@@ -769,9 +780,10 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
             on_court = subs[0][0] == KIND_SUB_OUT if subs else bool(own)
         opened = start if on_court else None
         for kind, seconds in subs:
-            if kind == KIND_SUB_OUT and opened is not None:
-                if seconds > opened:
-                    stints.append((period, opened, seconds))
+            if kind == KIND_SUB_OUT:
+                since = start if opened is None else opened
+                if seconds > since:
+                    stints.append((period, since, seconds))
                 opened = None
             elif kind == KIND_SUB_IN and opened is None:
                 opened = seconds

@@ -658,7 +658,8 @@ RECAP_STINTS_SCHEMA = pl.Schema(
 
 # The plays the page draws: the focus player's actions, both teams' shots
 # (heaves included, which the feed credits to the team only), the period
-# markers and the timeouts. kind is the feed's action type under the
+# markers, the timeouts, and the turnover a steal of his ended, so every
+# pairing resolves within the frame. kind is the feed's action type under the
 # recap's vocabulary; a substitution is a sub_in or sub_out row naming
 # its own player; a block borrows its shot's location; the running
 # totals are the feed's, on the focus player's rows.

@@ -1,0 +1,113 @@
+/* The replay island's layout. Component looks live in components.css. */
+.replay {
+  display: grid;
+  gap: 16px;
+  outline: none;
+}
+/* A deep link with a moment: hidden until the file is in and the island has read the URL. */
+.has-replay-view .replay {
+  visibility: hidden;
+}
+.replay__bug {
+  position: sticky;
+  top: 57px;
+  z-index: 10;
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
+  background: var(--ink);
+}
+.replay__now-phone {
+  display: grid;
+  gap: 4px;
+}
+.replay__side {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.replay__more > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.replay__more-body {
+  display: grid;
+  gap: 16px;
+  padding-top: 8px;
+}
+.replay__note {
+  margin: 0;
+  color: var(--mute);
+}
+
+/* Scrubber: bands at their playback widths under the range. */
+.scrub {
+  display: grid;
+  gap: 4px;
+}
+.scrub__bands {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+}
+.scrub__band {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  padding-inline: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+  background: var(--surface-2);
+}
+.scrub__band--break {
+  background: var(--surface);
+  outline: 1px dashed var(--line-2);
+  outline-offset: -1px;
+}
+.scrub__range {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--bone);
+}
+.scrub__lag {
+  margin: 0;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+@media (min-width: 900px) {
+  .replay {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-areas:
+      'bug bug'
+      'ticker side'
+      'feed side';
+    align-items: start;
+    column-gap: 32px;
+  }
+  .replay__bug {
+    grid-area: bug;
+  }
+  .replay__ticker {
+    grid-area: ticker;
+  }
+  .replay__side {
+    grid-area: side;
+  }
+  .replay__feed {
+    grid-area: feed;
+  }
+  .replay__now-phone {
+    display: none;
+  }
+}

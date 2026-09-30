@@ -12,6 +12,7 @@ import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
+import { RecapReplay } from '../components/RecapReplay'
 import { RecapRows } from '../components/RecapRows'
 import { Feed } from '../components/replay/Feed'
 import { FeedCard } from '../components/replay/FeedCard'
@@ -611,6 +612,27 @@ function bugAt(t: number): ScoreBugProps {
           )
         })}
       </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>RecapReplay</h2>
+      <p class="eyebrow">The island as it renders at build and without JavaScript: the frame with what the page knows, the registry's room row, the loading line. The replay itself is on every recap page.</p>
+      {recapLead ? (
+        <RecapReplay
+          recapKey={recapLead.key}
+          name={recapLead.entry.attributed_player}
+          away={{ abbr: recapLead.line.away.abbr, name: recapLead.game.away_team }}
+          home={{ abbr: recapLead.line.home.abbr, name: recapLead.game.home_team, logo: '' }}
+          his={hisSide}
+          cells={recapLead.cells}
+          usual={recapLead.usual}
+          lagSeconds={manifest.rules.recaps.reaction_lag.median_offset_seconds}
+          flairAbbr={flairAbbr}
+          official={threshold}
+        />
+      ) : (
+        <p class="eyebrow">No recap is curated this season.</p>
+      )}
     </section>
 
     <section class="guide__section">

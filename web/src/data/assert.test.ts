@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { assertManifest, assertParquetSchema, assertTables } from './assert'
+import { assertManifest, assertParquetSchema, assertRecaps, assertTables } from './assert'
 import { SCHEMA_VERSION, TABLE_NAMES } from './contract'
-import type { Manifest, Tables } from './types.gen'
+import type { Manifest, RecapEntry, Tables } from './types.gen'
 
 const counts = (neg: number, neu: number, pos: number) => {
   const total = neg + neu + pos
@@ -86,7 +86,7 @@ function manifestFor(tables: Tables): Manifest {
     },
     calendar: {},
     corpus: { raw_comments: 10, population_submitted: 5, classified: 5, usable: 5, attributed: 4 },
-    populations: {},
+    populations: { live_thread: 'the live threads' },
     tables: registry,
     recaps: {},
   }
@@ -178,5 +178,65 @@ describe('assertTables', () => {
     const t = fixture()
     t.comment_samples[0]!.link_id = 't3_gone'
     expect(assertTables(t, manifestFor(t))).toEqual(['comment_samples: 1 receipt(s) point at a post absent from posts'])
+  })
+})
+
+// One curated recap of g1 for A Player: four periods summing to 8 of 10 live comments.
+const recap = (extra: Partial<RecapEntry> = {}): RecapEntry => ({
+  file: 'recaps/g1-a-player.json',
+  rows: 50,
+  game_id: 'g1',
+  attributed_player: 'A Player',
+  player_id: 1,
+  slug: 'a-player',
+  live_n: 10,
+  room_n: 40,
+  by_period: { '1': { neg: 1, pos: 1, neu: 0 }, '2': { neg: 2, pos: 0, neu: 0 }, '3': { neg: 1, pos: 0, neu: 1 }, '4': { neg: 2, pos: 0, neu: 0 } },
+  swing: 0.5,
+  minutes_diff: 0,
+  population: 'live_thread',
+  ...extra,
+})
+
+describe('assertRecaps', () => {
+  const check = (key: string, entry: RecapEntry) => {
+    const t = fixture()
+    const m = manifestFor(t)
+    m.recaps = { [key]: entry }
+    return () => assertRecaps(m, t)
+  }
+
+  it('passes a consistent registry, and an empty one', () => {
+    expect(check('g1-a-player', recap())).not.toThrow()
+    const t = fixture()
+    expect(() => assertRecaps(manifestFor(t), t)).not.toThrow()
+  })
+
+  it('refuses a key or file that does not spell game_id-slug', () => {
+    expect(check('g1-b-player', recap())).toThrow('manifest.recaps.g1-b-player: key does not match g1-a-player')
+    expect(check('g1-a-player', recap({ file: 'recaps/other.json' }))).toThrow('registers file recaps/other.json, expected recaps/g1-a-player.json')
+  })
+
+  it('refuses an entry whose game or player is not in the dimensions, or whom he did not dress for', () => {
+    expect(check('g2-a-player', recap({ game_id: 'g2', file: 'recaps/g2-a-player.json' }))).toThrow('game_id g2 has no match in games.game_id')
+    expect(check('g1-c-player', recap({ attributed_player: 'C Player', slug: 'c-player', file: 'recaps/g1-c-player.json' }))).toThrow('C Player has no match in players.attributed_player')
+    expect(check('g1-a-player', recap({ player_id: 9 }))).toThrow('player_id 9 and slug a-player do not match players (1, a-player)')
+    expect(check('g1-b-player', recap({ attributed_player: 'B Player', player_id: 2, slug: 'b-player', file: 'recaps/g1-b-player.json' }))).toThrow('B Player has no player_games row for g1')
+  })
+
+  it('refuses periods that are not 1..n with n ≥ 4, or a count that is not a non-negative integer', () => {
+    const { '4': _four, ...three } = recap().by_period
+    expect(check('g1-a-player', recap({ by_period: three }))).toThrow('by_period keys [1, 2, 3] are not 1..n with n ≥ 4')
+    expect(check('g1-a-player', recap({ by_period: { ...recap().by_period, '6': { neg: 0, pos: 0, neu: 0 } } }))).toThrow('are not 1..n')
+    expect(check('g1-a-player', recap({ by_period: { ...recap().by_period, '2': { neg: -1, pos: 0, neu: 0 } } }))).toThrow('by_period.2 has a count that is not a non-negative integer')
+  })
+
+  it('refuses counts that exceed the live thread, or a live thread that exceeds the room', () => {
+    expect(check('g1-a-player', recap({ live_n: 7 }))).toThrow('by_period sums to 8, more than live_n 7')
+    expect(check('g1-a-player', recap({ room_n: 9 }))).toThrow('live_n 10 exceeds room_n 9')
+  })
+
+  it('refuses a population the manifest does not define', () => {
+    expect(check('g1-a-player', recap({ population: 'in_thread' }))).toThrow('population in_thread is not defined in manifest.populations')
   })
 })

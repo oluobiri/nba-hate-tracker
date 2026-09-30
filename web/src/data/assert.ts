@@ -157,3 +157,36 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
 
   return warnings
 }
+
+// A recap registry entry is a rollup of a file the site never opens at
+// build, so what can be checked is its identity against the dimensions
+// and its own arithmetic.
+export function assertRecaps(manifest: Manifest, tables: Tables): void {
+  const games = new Set(tables.games.map((g) => g.game_id))
+  const players = new Map(tables.players.map((p) => [p.attributed_player, p]))
+  const dressed = new Set(tables.player_games.map((r) => `${r.game_id} ${r.attributed_player}`))
+  for (const [key, e] of Object.entries(manifest.recaps)) {
+    const fail = (what: string) => new ContractError(`manifest.recaps.${key}: ${what}`)
+    if (key !== `${e.game_id}-${e.slug}`) throw fail(`key does not match ${e.game_id}-${e.slug}`)
+    if (e.file !== `recaps/${key}.json`) throw fail(`registers file ${e.file}, expected recaps/${key}.json`)
+    if (!games.has(e.game_id)) throw fail(`game_id ${e.game_id} has no match in games.game_id`)
+    const p = players.get(e.attributed_player)
+    if (!p) throw fail(`${e.attributed_player} has no match in players.attributed_player`)
+    if (p.player_id !== e.player_id || p.slug !== e.slug)
+      throw fail(`player_id ${e.player_id} and slug ${e.slug} do not match players (${p.player_id}, ${p.slug})`)
+    if (!dressed.has(`${e.game_id} ${e.attributed_player}`)) throw fail(`${e.attributed_player} has no player_games row for ${e.game_id}`)
+    const periods = Object.keys(e.by_period).map(Number).toSorted((a, b) => a - b)
+    if (periods.length < 4 || periods.some((n, i) => n !== i + 1))
+      throw fail(`by_period keys [${Object.keys(e.by_period).join(', ')}] are not 1..n with n ≥ 4`)
+    let inPeriods = 0
+    for (const [period, c] of Object.entries(e.by_period)) {
+      for (const v of [c.neg, c.pos, c.neu]) {
+        if (!Number.isInteger(v) || v < 0) throw fail(`by_period.${period} has a count that is not a non-negative integer`)
+      }
+      inPeriods += c.neg + c.pos + c.neu
+    }
+    if (inPeriods > e.live_n) throw fail(`by_period sums to ${inPeriods}, more than live_n ${e.live_n}`)
+    if (e.live_n > e.room_n) throw fail(`live_n ${e.live_n} exceeds room_n ${e.room_n}`)
+    if (!(e.population in manifest.populations)) throw fail(`population ${e.population} is not defined in manifest.populations`)
+  }
+}

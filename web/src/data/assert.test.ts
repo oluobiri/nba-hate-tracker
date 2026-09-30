@@ -44,7 +44,7 @@ function fixture(): Tables {
     fan_team_overall: [{ fan_team: 'Team Two', ...counts(3, 0, 0), abbreviation: 'TWO', conference: 'East', logo_url: '' }],
     game_sentiment: [{ attributed_player: 'A Player', player_id: 1, game_id: 'g1', ...counts(2, 0, 0), thread_comment_count: 5 }],
     player_games: [{ game_id: 'g1', attributed_player: 'A Player', player_id: 1, roster_team: 'Team One', opponent: 'Team Two', is_home: true, wl: 'W', minutes: 30, fgm: 1, fga: 2, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 2, plus_minus: 1 }],
-    posts: [{ post_id: 't3_x', title: 'Game Thread', created_utc: 1, score: 1, num_comments: 1, link_flair_text: null, post_type: 'game_thread', game_id: 'g1', is_primary: true }],
+    posts: [{ post_id: 't3_x', title: 'Game Thread', created_utc: 1, score: 1, num_comments: 1, link_flair_text: null, post_type: 'game_thread', source: null, game_id: 'g1', is_primary: true }],
     comment_samples: [{ attributed_player: 'A Player', player_id: 1, sentiment: 'neg', rank: 1, comment_id: 'c1', link_id: 't3_x', body: 'nope', score: 3, created_utc: 1, fan_team: null }],
     corpus_daily: [{ day: '2025-10-21', raw_comments: 10, population_submitted: 5, usable: 5, attributed: 4 }],
   }
@@ -73,7 +73,7 @@ function manifestFor(tables: Tables): Manifest {
         anchor_window_seconds: 480,
         anchor_min_reactions: 3,
         anchor_vocabulary: {},
-        alignment: {
+        reaction_lag: {
           candidates: 0,
           anchors: 0,
           games: 0,

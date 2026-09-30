@@ -1,4 +1,4 @@
-// GENERATED from src/data/schema.json (schema_version 6) by scripts/codegen.ts.
+// GENERATED from src/data/schema.json (schema_version 8) by scripts/codegen.ts.
 // Do not edit: run `npm run codegen`. The build fails when this file is stale.
 
 /** One row of player_overall.parquet. */
@@ -157,6 +157,7 @@ export interface PostsRow {
   num_comments: number
   link_flair_text: string | null
   post_type: string
+  source: string | null
   game_id: string | null
   is_primary: boolean
 }
@@ -259,10 +260,10 @@ export interface RecapsRule {
   anchor_window_seconds: number
   anchor_min_reactions: number
   anchor_vocabulary: Record<string, string>
-  alignment: AlignmentFigures
+  reaction_lag: ReactionLag
 }
 
-export interface AlignmentFigures {
+export interface ReactionLag {
   candidates: number
   anchors: number
   games: number

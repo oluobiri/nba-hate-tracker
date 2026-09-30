@@ -1,0 +1,154 @@
+---
+// One recap's page: the static shell. The header, the periods, the night
+// against his usual and the method are HTML at build; the replay island
+// lands in the placeholder in its own ticket.
+import type { InferGetStaticPropsType } from 'astro'
+
+import { cardHref } from '../../cards/model'
+import { GameLine } from '../../components/GameLine'
+import { MethodNote } from '../../components/MethodNote'
+import { PeriodStrip } from '../../components/PeriodStrip'
+import { VerdictDelta } from '../../components/VerdictDelta'
+import { getSeason } from '../../data'
+import Base from '../../layouts/Base.astro'
+import { headshotSrcSet } from '../../lib/media'
+import { boxLine, buildRecaps, countsLine, lagPhrase, nightSentence } from '../../lib/recaps'
+
+export async function getStaticPaths() {
+  const { manifest, tables } = await getSeason()
+  return buildRecaps(manifest, tables).map((recap) => ({ params: { key: recap.key }, props: { recap } }))
+}
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>
+const { recap } = Astro.props
+const { manifest } = await getSeason()
+const name = recap.entry.attributed_player
+const headshot = recap.player.headshot_url
+const floor = manifest.rules.floors.game_min_n
+const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
+const title = `${name} · ${recap.line.game ?? recap.line.date}`
+const verdict = nightSentence(name, recap.night, recap.usual, floor)
+---
+
+<Base title={title} description={recap.hook} image={cardHref.recap(recap.key)}>
+  <main id="main" class="wrap page rp">
+    <header class="rp__head">
+      <div class="rp__head-text">
+        <p class="eyebrow"><a class="rp__up" href="/recaps/">Recaps</a> · <GameLine parts={recap.line} /></p>
+        <h1 class={`rp__name rp__name--${recap.tone}`}>{name}</h1>
+        <p class="rp__hook">{recap.hook}</p>
+        <p class="rp__meta mono">{boxLine(recap.box)} · {countsLine(recap.entry)}</p>
+      </div>
+      <img class="rp__mug" src={headshot} srcset={headshotSrcSet(headshot, [180, 420])} sizes="96px" alt="" width="96" height="96" decoding="async" />
+    </header>
+
+    <section class="rp__section" aria-labelledby="periods-h">
+      <h2 id="periods-h">The room, by period</h2>
+      <PeriodStrip cells={recap.cells} size="hero" subject={name} />
+      <p class="rp__soon">The replay, every comment on the game clock beside the play-by-play, is on its way. Until it lands, the periods tell the arc.</p>
+    </section>
+
+    <section class="rp__section" aria-labelledby="night-h">
+      <h2 id="night-h">The night against his usual</h2>
+      <div class="rp__verdict">
+        <VerdictDelta delta={recap.delta} n={recap.night?.total ?? 0} />
+        <p class="rp__verdict-text">{verdict}</p>
+      </div>
+    </section>
+
+    <MethodNote kind="method">
+      The periods count his comments in the game's live thread, the primary and any split; the verdict counts every thread about him that night, post-game included, against his
+      season, so the two are different populations. Each comment sits on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play` : ''}.
+    </MethodNote>
+
+    <p class="rp__links mono">
+      <a href={`/player/${recap.player.slug}/`}>{name}'s season page →</a>
+      <a href="/recaps/">All recaps</a>
+    </p>
+  </main>
+</Base>
+
+<style>
+  .rp {
+    gap: 40px;
+  }
+  .rp__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 96px;
+    gap: 16px;
+    align-items: start;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  .rp__head-text {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .rp__up {
+    color: var(--mute);
+  }
+  .rp__name {
+    margin: 0;
+  }
+  .rp__name--neg {
+    color: var(--heat);
+  }
+  .rp__name--pos {
+    color: var(--ice);
+  }
+  .rp__hook {
+    max-width: 44ch;
+    margin: 0;
+    font-size: clamp(18px, 2vw, 22px);
+    line-height: 1.3;
+    text-wrap: balance;
+  }
+  .rp__meta {
+    margin: 0;
+    font-size: 13px;
+    color: var(--bone-2);
+  }
+  .rp__mug {
+    width: 96px;
+    height: 96px;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+    object-fit: cover;
+    object-position: top;
+    background: var(--surface-2);
+    filter: grayscale(0.85) contrast(1.05);
+  }
+  .rp__section {
+    display: grid;
+    gap: 16px;
+  }
+  .rp__section h2 {
+    margin: 0;
+  }
+  .rp__soon {
+    max-width: 60ch;
+    margin: 0;
+    color: var(--bone-2);
+  }
+  .rp__verdict {
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+  }
+  .rp__verdict-text {
+    max-width: 60ch;
+    margin: 0;
+    color: var(--bone-2);
+  }
+  .rp__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin: 0;
+    font-size: 13px;
+  }
+  .rp__links a {
+    color: var(--bone-2);
+  }
+</style>

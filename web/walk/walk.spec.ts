@@ -36,6 +36,8 @@ test('dist/ has the routes the site promises', () => {
   expect(ROUTES).toContain('/styleguide/')
   expect(ROUTES.filter((r) => r.startsWith('/player/')).length).toBeGreaterThan(200)
   expect(ROUTES.filter((r) => r.startsWith('/fanbases/') && r !== '/fanbases/')).toHaveLength(30)
+  // One route per curated recap, as config/<season>/recaps.yaml lists them.
+  expect(ROUTES.filter((r) => r.startsWith('/recaps/') && r !== '/recaps/')).toHaveLength(10)
 })
 
 for (const route of ROUTES) {
@@ -411,10 +413,34 @@ test('the grid walks by arrow key, the tip opens on focus, the crosshair follows
   await expect(page.locator('thead .fg__ch').nth(5)).toHaveClass(/fg__ch--x/)
 })
 
+// The recaps index: the lead in the hero with one play link, the rest as rows;
+// every link a live recap page, every target touch-sized.
+test('the lead and every recap row lead to a live recap page', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/recaps/', { waitUntil: 'networkidle' })
+  const play = page.locator('.hero__play')
+  await expect(play).toHaveCount(1)
+  const hrefs = await page.locator('.hero__play, .rr__link').evaluateAll((as) => as.map((a) => a.getAttribute('href')!))
+  expect(hrefs).toHaveLength(10)
+  for (const h of hrefs) expect(ROUTES).toContain(h)
+  for (const c of [play, ...(await page.locator('.rr__link').all())]) expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a recap page carries its name, its periods and its verdict', async ({ page }) => {
+  const route = ROUTES.find((r) => r.startsWith('/recaps/') && r !== '/recaps/')!
+  await page.goto(route, { waitUntil: 'networkidle' })
+  await expect(page.getByRole('heading', { level: 1 })).not.toBeEmpty()
+  await expect(page.locator('.ps')).toHaveCount(1)
+  await expect(page.locator('.vd')).toHaveCount(1)
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
 // Share cards: every route names one, its own or the leaderboard's, and
 // every card serves as a 1200 × 630 PNG at the address the meta gives.
 const SITE = 'https://courtsentiment.com'
-const OWN_CARD = /^\/(player\/[^/]+|fanbases\/[a-z]{3})\/$/
+const OWN_CARD = /^\/(player\/[^/]+|fanbases\/[a-z]{3}|recaps\/[^/]+)\/$/
 const meta = (html: string, key: string): string | null => html.match(new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`))?.[1] ?? null
 
 test('every route names a share card, and every card is a 1200 × 630 PNG', async ({ request }, info) => {

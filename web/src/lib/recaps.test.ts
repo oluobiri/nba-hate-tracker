@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
-import { boxLine, buildRecaps, countsLine, hook, lagPhrase, leadAndList, periodCells, periodsText, recapDelta, recapHrefs, recapTone } from './recaps'
+import { boxLine, buildRecaps, countsLine, gamePhrase, hook, indexLede, lagPhrase, leadAndList, nightSentence, periodCells, periodsText, recapDelta, recapHrefs, recapTone } from './recaps'
 import type { Counts } from './types'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
@@ -239,6 +239,29 @@ describe('buildRecaps', () => {
   it('throws with the key when an entry does not join', () => {
     const broken = { ...MANIFEST, recaps: { 'g9-one-player': entry('g9', 'One Player', 1, 'one-player', periods(1)) } } as Manifest
     expect(() => buildRecaps(broken, TABLES)).toThrow('recap g9-one-player: the registry entry does not join')
+  })
+})
+
+describe('the page sentences', () => {
+  const recaps = buildRecaps(MANIFEST, TABLES)
+
+  it('phrases the game for a sentence', () => {
+    expect(gamePhrase(recaps[0]!.line)).toBe('Game 7, West Finals')
+    expect(gamePhrase(recaps[1]!.line)).toBe('Regular season, Oct 21')
+  })
+
+  it('opens the index with the tagline and the lead', () => {
+    expect(indexLede(recaps[0]!)).toBe('Every comment, as it landed. The room on One Player, Game 7, West Finals: 83% negative from the tip, 33 points above his usual 50%.')
+    expect(indexLede(null)).toBe('Every comment, as it landed. No recap is curated this season.')
+  })
+
+  it('states the night against his usual, and says when it cannot', () => {
+    const usual = c(50, 30, 20)
+    expect(nightSentence('One Player', c(60, 20, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 60% negative of 100 comments, 10 points harsher than his usual 50%.')
+    expect(nightSentence('One Player', c(40, 40, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 40% negative of 100 comments, 10 points kinder than his usual 50%.')
+    expect(nightSentence('One Player', c(50, 50, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 50% negative of 100 comments, at his usual.')
+    expect(nightSentence('One Player', c(3, 1, 1), usual, 20)).toBe('Too few comments about One Player that night to judge: 5.')
+    expect(nightSentence('One Player', null, usual, 20)).toBe("Nobody mentioned One Player in the game's threads that night.")
   })
 })
 

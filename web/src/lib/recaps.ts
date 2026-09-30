@@ -205,5 +205,25 @@ export function buildRecaps(manifest: Manifest, tables: Tables): Recap[] {
   })
 }
 
+/** "Game 7, West Finals" or "Regular season, Oct 21": the game as a phrase. */
+export const gamePhrase = (line: GameLineParts): string => (line.game ? `${line.game}, ${line.round}` : `${line.round}, ${line.date}`)
+
+/** The index's description: the tagline, then the lead's night. */
+export function indexLede(lead: Recap | null): string {
+  const tagline = 'Every comment, as it landed.'
+  if (!lead) return `${tagline} No recap is curated this season.`
+  return `${tagline} The room on ${lead.entry.attributed_player}, ${gamePhrase(lead.line)}: ${lead.hook}`
+}
+
+/** The final verdict's sentence: every thread about him that night against his usual. */
+export function nightSentence(name: string, night: Counts | null, usual: Counts, floor: number): string {
+  if (!night) return `Nobody mentioned ${name} in the game's threads that night.`
+  if (night.total < floor) return `Too few comments about ${name} that night to judge: ${fmtInt(night.total)}.`
+  const delta = negRate(night) - negRate(usual)
+  const points = Math.abs(Math.round(100 * delta))
+  const against = points === 0 ? 'at his usual' : `${fmtInt(points)} points ${delta > 0 ? 'harsher' : 'kinder'} than his usual ${fmtPct(negRate(usual), 0)}`
+  return `Every thread about ${name} that night, post-game included: ${fmtPct(negRate(night), 0)} negative of ${fmtInt(night.total)} comments, ${against}.`
+}
+
 /** The first recap leads; the rest are the list. */
 export const leadAndList = (recaps: readonly Recap[]): { lead: Recap | null; list: Recap[] } => ({ lead: recaps[0] ?? null, list: recaps.slice(1) })

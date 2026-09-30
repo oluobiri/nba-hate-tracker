@@ -7,6 +7,7 @@ import { fanbaseVerdict } from '../lib/fanbase'
 import { possessive } from '../lib/fans'
 import { fmtInt, fmtPct } from '../lib/format'
 import { negRate, neuRate, posRate, type Ranked } from '../lib/metrics'
+import type { Recap } from '../lib/recaps'
 import type { Standing } from '../lib/standings'
 import { type Counts, SENTIMENTS, type Sentiment } from '../lib/types'
 
@@ -63,7 +64,14 @@ export interface BoardCard extends CardBase {
   kicker: string
 }
 
-export type Card = PlayerCard | TeamCard | BoardCard
+export interface RecapCard extends CardBase {
+  kind: 'recap'
+  name: string
+  /** "WEST FINALS · GAME 7 · SAS 111 @ OKC 103 · MAY 30". */
+  eyebrow: string
+}
+
+export type Card = PlayerCard | TeamCard | BoardCard | RecapCard
 
 /** The hero bar's segments, negative → neutral → positive, labels placed by the same width rule as the CSS. */
 export function barSegments(counts: Counts, width: number = BAR_WIDTH): Segment[] {
@@ -128,9 +136,26 @@ export function boardCard(ranked: readonly Ranked<Standing>[], official: number,
   }
 }
 
+/** A recap's card: the night's hook over the bar of his comments inside the periods, the strip's population. */
+export function recapCard(recap: Recap, season: string): RecapCard {
+  const name = recap.entry.attributed_player
+  return {
+    kind: 'recap',
+    season,
+    name,
+    eyebrow: recap.line.text.toUpperCase(),
+    sentence: recap.hook,
+    segments: barSegments(recap.inPeriods),
+    nLine: `n=${fmtInt(recap.inPeriods.total)} comments about ${name} while the game was on`,
+    stamp: null,
+    image: recap.player.headshot_url,
+  }
+}
+
 /** Where each card lives, so pages and endpoints agree. */
 export const cardHref = {
   player: (slug: string): string => `/player/${slug}/card.png`,
   team: (abbreviation: string): string => `/fanbases/${abbreviation.toLowerCase()}/card.png`,
+  recap: (key: string): string => `/recaps/${key}/card.png`,
   board: '/card.png',
 } as const

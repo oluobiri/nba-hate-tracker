@@ -17,13 +17,9 @@ Usage:
 import argparse
 import logging
 import sys
-from pathlib import Path
 
-import polars as pl
-
-from pipeline.games import TEAM_GAME_LOG_FILENAME, build_games
+from pipeline.games import TEAM_GAME_LOG_FILENAME, load_game_ids
 from pipeline.nba_stats import (
-    check_snapshot_season,
     has_valid_play_by_play,
     play_by_play_path,
     sync_play_by_play,
@@ -47,24 +43,6 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # CLI
 # -----------------------------------------------------------------------------
-
-
-def load_game_ids(team_path: Path) -> list[str]:
-    """
-    List the season's game ids: every game the games table keeps.
-
-    Args:
-        team_path: The banked team game-log snapshot.
-
-    Returns:
-        Game ids in date order.
-    """
-    check_snapshot_season(team_path, subject="the game list", log=logger)
-    abbr_to_team = {
-        info["abbreviation"]: team for team, info in load_team_config().items()
-    }
-    games = build_games(pl.read_parquet(team_path), abbr_to_team)
-    return games["game_id"].to_list()
 
 
 def main() -> None:
@@ -96,7 +74,7 @@ def main() -> None:
         logger.error(f"{team_path} not found - run scripts.fetch_games first")
         sys.exit(1)
 
-    game_ids = load_game_ids(team_path)
+    game_ids = load_game_ids(team_path, load_team_config(), log=logger)
     banked = sum(
         has_valid_play_by_play(play_by_play_path(out_dir, g)) for g in game_ids
     )

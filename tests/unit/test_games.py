@@ -11,6 +11,7 @@ from pipeline.games import (
     TEAM_GAME_LOG_FILENAME,
     build_games,
     build_player_games,
+    load_game_ids,
     load_game_tables,
 )
 from pipeline.schemas import (
@@ -519,3 +520,27 @@ class TestLoadGameTables:
 
         assert "different fetch dates" in caplog.text
         assert meta["games_fetched_at"] == "2026-09-12"
+
+
+class TestLoadGameIds:
+    """Tests for the game list the per-game archives are fetched from."""
+
+    def test_lists_the_games_the_table_keeps_in_date_order(self, tmp_path, two_games):
+        """One id per game, sorted as the games table sorts them."""
+        path = tmp_path / TEAM_GAME_LOG_FILENAME
+        two_games.write_parquet(path, metadata={"season": get_active_season()})
+
+        game_ids = load_game_ids(path, TEAM_CONFIG, log=logging.getLogger("tests"))
+
+        assert game_ids == build_games(two_games, ABBR_TO_TEAM)["game_id"].to_list()
+        assert len(game_ids) == 2
+
+    def test_warns_on_a_stale_season_stamp(self, tmp_path, two_games, caplog):
+        """A team log from another season lists its games, but says so."""
+        path = tmp_path / TEAM_GAME_LOG_FILENAME
+        two_games.write_parquet(path, metadata={"season": "1999-00"})
+
+        with caplog.at_level(logging.WARNING, logger="tests.games"):
+            load_game_ids(path, TEAM_CONFIG, log=logging.getLogger("tests.games"))
+
+        assert any("season stamp" in r.message for r in caplog.records)

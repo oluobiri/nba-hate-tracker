@@ -24,7 +24,7 @@ from pipeline.schemas import (
     Manifest,
     RecapEntry,
     RecapHeader,
-    AlignmentFigures,
+    ReactionLag,
     RecapsRule,
     Rules,
     recap_file,
@@ -487,8 +487,8 @@ class TestManifestContract:
 
     def test_recap_rules_are_published(self):
         """The recap selection and measurement rules sit beside the floors,
-        with the season's measured alignment, so the page states the rule
-        it was built under and how far its clock is off."""
+        with the season's measured reaction lag, so the page states the rule
+        it was built under and how long the room takes to react."""
         assert Rules.__annotations__["recaps"] is RecapsRule
         assert list(RecapsRule.__annotations__) == [
             "room_bucket_seconds",
@@ -496,9 +496,9 @@ class TestManifestContract:
             "anchor_window_seconds",
             "anchor_min_reactions",
             "anchor_vocabulary",
-            "alignment",
+            "reaction_lag",
         ]
-        assert list(AlignmentFigures.__annotations__) == [
+        assert list(ReactionLag.__annotations__) == [
             "candidates",
             "anchors",
             "games",

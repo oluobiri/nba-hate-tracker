@@ -2,24 +2,28 @@
 Recaps: a game's live thread replayed against its play-by-play.
 
 A recap places one game's plays and one player's comments on a shared
-clock. The archive's period markers carry Eastern wall-clock time to the
-minute ("Start of 1st Period (8:17 PM EST)"), so the game clock maps to
-wall-clock time by a straight line inside each period, and a comment's
-wall-clock timestamp maps back to game seconds through the same line.
-Comments posted during a break pin to the break; comments before tip-off
-and after the buzzer keep their phase. The mapping is a derivation with
-an error, measured (never corrected) once per season by the room's
-reactions to tracked players' blocks, steals and dunks.
+clock. The feed stamps every action with the time it was scored, so a
+play's wall clock is read, not modeled: a comment maps to game seconds
+by interpolation between the two rows either side of it on wall clock,
+so a stoppage is flat wherever the feed logs a row on its frozen second
+(the substitutions at a timeout's end) and otherwise spread over the few
+seconds of play to the next row. Comments posted during a break pin to
+the break; comments before tip-off and after the buzzer keep their phase. The plays, the stints and the focus
+player's running line are read from the feed's fields. What the room's
+reactions measure, once per season, is how long the room takes to
+react; nothing is moved by it.
 
-Every function here is a frame transform; the archive and the fact are
+The feed is the game as scored on the night. Corrections made
+afterwards reach the box score and never the feed; a recap keeps the
+night-of version, which is what the room reacted to.
+
+Every function here is a frame transform; the feed and the fact are
 read at the edges by the aggregation stage.
 """
 
 import json
 import logging
 import os
-import re
-import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +31,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.nba_stats import play_by_play_path
-from pipeline.posts import GAME_THREAD, POST_LOCAL_TZ
+from pipeline.posts import GAME_THREAD
 from pipeline.schemas import (
     RECAP_COMMENTS_SCHEMA,
     RECAP_FRAME_SCHEMAS,
@@ -38,9 +42,9 @@ from pipeline.schemas import (
     RECAP_STINTS_SCHEMA,
     RECAP_THREADS_SCHEMA,
     SCHEMA_VERSION,
-    AlignmentFigures,
     ClassifierIdentity,
     PeriodCounts,
+    ReactionLag,
     RecapEntry,
     RecapHeader,
     recap_file,
@@ -67,15 +71,15 @@ REGULATION_PERIODS = 4
 PERIOD_ACTION_TYPE = "period"
 PERIOD_START = "start"
 PERIOD_END = "end"
+GAME_ACTION_TYPE = "game"  # the feed's closing row, after the last period end
 PHASE_PRE, PHASE_LIVE, PHASE_BREAK, PHASE_POST = "pre", "live", "break", "post"
 
-# The marker's wall clock, e.g. "(8:17 PM EST)". The label reads EST all
-# year at every venue, so it is Eastern local time, parsed in GAME_TZ.
-_WALL_CLOCK = r"\((?P<hour>\d{1,2}):(?P<minute>\d{2}) (?P<meridiem>AM|PM) E[SD]T\)"
-# The archive's clock, e.g. "PT11M21.00S": time remaining in the period.
+# The feed's timestamp, e.g. "2026-05-31T00:23:08.2Z": UTC, to a tenth
+_TIMESTAMP = "%Y-%m-%dT%H:%M:%S%.fZ"
+# The feed's clock, e.g. "PT11M21.00S": time remaining in the period.
 _CLOCK = r"^PT(?P<minutes>\d+)M(?P<seconds>\d+(?:\.\d+)?)S$"
-GAME_TZ = POST_LOCAL_TZ
-_ROLLOVER_MINUTES = 12 * 60  # a drop this large in a marker's clock is midnight
+# No period takes longer than this on the wall; a longer one has bad stamps
+MAX_PERIOD_WALL_SECONDS = 90 * 60
 
 PERIOD_COLUMNS = [
     "period",
@@ -83,46 +87,51 @@ PERIOD_COLUMNS = [
     "end_seconds",
     "start_wall",
     "end_wall",
-    "start_action_id",
-    "end_action_id",
+    "start_action_number",
+    "end_action_number",
 ]
 
 
 # --- The plays --------------------------------------------------------------
 
-SHOT_ACTION_TYPES = ("Made Shot", "Missed Shot")
-SUBSTITUTION_ACTION_TYPE = "Substitution"
-# The archive's action_type is blank on every block and steal; the kind
-# is read from the description instead.
-_BLANK_TYPE_KINDS = (("BLOCK", "block"), ("STEAL", "steal"))
-ACTION_TYPE_KINDS = {
-    "Made Shot": "shot",
-    "Missed Shot": "shot",
-    "Free Throw": "free_throw",
-    "Rebound": "rebound",
-    "Turnover": "turnover",
-    "Foul": "foul",
-    "Timeout": "timeout",
-    "Jump Ball": "jump_ball",
-    "Violation": "violation",
-    "Ejection": "ejection",
-}
+# Field goals, heaves included: a heave is a shot the feed credits to
+# the team only
+SHOT_ACTION_TYPES = ("2pt", "3pt", "heave")
+SUBSTITUTION_ACTION_TYPE = "substitution"
+SUB_IN_SUB_TYPE, SUB_OUT_SUB_TYPE = "in", "out"
 KIND_PERIOD_START, KIND_PERIOD_END = "period_start", "period_end"
 KIND_SUB_IN, KIND_SUB_OUT, KIND_OTHER = "sub_in", "sub_out", "other"
+KIND_BLOCK, KIND_STEAL, KIND_HEAVE = "block", "steal", "heave"
+ACTION_TYPE_KINDS = {
+    "2pt": "shot",
+    "3pt": "shot",
+    "heave": KIND_HEAVE,
+    "freethrow": "free_throw",
+    "rebound": "rebound",
+    "turnover": "turnover",
+    "foul": "foul",
+    "timeout": "timeout",
+    "jumpball": "jump_ball",
+    "violation": "violation",
+    "ejection": "ejection",
+    "block": KIND_BLOCK,
+    "steal": KIND_STEAL,
+}
+SHOT_VALUES = {"3pt": 3, "2pt": 2, "freethrow": 1}
 SUB_KINDS = (KIND_SUB_IN, KIND_SUB_OUT)
 # Every kind the slice keeps regardless of who acted
 _SLICE_KINDS = (KIND_PERIOD_START, KIND_PERIOD_END, "timeout")
-# Running totals the focus player's own descriptions carry, e.g.
-# "(2 PTS)", "(Off:1 Def:3)", "(1 BLK)", "(P1.T2)" on a foul or turnover.
-_TOTAL_PATTERNS = {
-    "pts": r"\((\d+) PTS\)",
-    "blk": r"\((\d+) BLK\)",
-    "stl": r"\((\d+) STL\)",
-}
-_OFFENSIVE_REBOUNDS = r"\(Off:(\d+) Def:\d+\)"
-_DEFENSIVE_REBOUNDS = r"\(Off:\d+ Def:(\d+)\)"
-_PERSONAL_COUNT = r"\(P(\d+)[.)]"
+# A block or steal follows the play it ended, which names the ender here
+_ENDER_FIELDS = {KIND_BLOCK: "block_person_id", KIND_STEAL: "steal_person_id"}
 TOTAL_COLUMNS = ["pts", "reb", "ast", "blk", "stl", "tov", "pf"]
+# The running totals the feed carries on the player's own rows; assists
+# sit on the teammate's made shot, blocks and steals are counted
+_TOTAL_FIELDS = {
+    "pts": "points_total",
+    "reb": "rebound_total",
+    "tov": "turnover_total",
+    "pf": "foul_personal_total",
+}
 
 
 # --- Comments, anchors, the document ---------------------------------------
@@ -130,13 +139,12 @@ TOTAL_COLUMNS = ["pts", "reb", "ast", "blk", "stl", "tov", "pf"]
 SENTIMENTS = ("neg", "pos", "neu")
 # A reaction anchor: a tracked player's block, steal or made dunk that
 # comments about him name, by RECAP_ANCHOR_VOCABULARY, within a minute
-MADE_SHOT_ACTION_TYPE = "Made Shot"
-DUNK_SUB_TYPE = "Dunk"
+DUNK_SUB_TYPE = "DUNK"
 KIND_DUNK = "dunk"
 ANCHOR_CANDIDATE_SCHEMA = pl.Schema(
     {
         "game_id": pl.String,
-        "action_id": pl.Int64,
+        "action_number": pl.Int64,
         "kind": pl.String,
         "attributed_player": pl.String,
         "game_seconds": pl.Int64,
@@ -166,101 +174,86 @@ def period_length() -> pl.Expr:
 
 def parse_clock_seconds(clock: pl.Expr) -> pl.Expr:
     """
-    Seconds remaining in the period from the archive's clock string.
+    Seconds remaining in the period from the feed's clock string.
 
     Args:
-        clock: An expression over clock strings ("PT11M21.00S").
+        clock: A String column of "PT<m>M<s>S" values.
 
     Returns:
-        A Float64 expression, null where the string does not parse.
+        A Float64 expression; null where the string does not match.
     """
     parts = clock.str.extract_groups(_CLOCK)
-    return parts.struct.field("minutes").cast(pl.Float64) * 60 + parts.struct.field(
+    return parts.struct.field("minutes").cast(pl.Int64) * 60 + parts.struct.field(
         "seconds"
     ).cast(pl.Float64)
 
 
-def build_periods(pbp: pl.DataFrame, game_dates: pl.DataFrame) -> pl.DataFrame:
+def stamp_wall_clock(pbp: pl.DataFrame) -> pl.DataFrame:
+    """
+    Every row's wall clock from its own timestamp, monotone in feed order.
+
+    The feed stamps an action when it was scored, to a tenth of a
+    second, and a few rows are stamped earlier than the row before
+    them. Order is the feed's: a row stamped earlier than its
+    predecessor takes the predecessor's second.
+
+    Args:
+        pbp: Play-by-play rows (LIVE_PLAY_BY_PLAY_SCHEMA), one or more games.
+
+    Returns:
+        The rows in feed order (game, then ``order_number``) with
+        ``wall_clock`` (epoch seconds) added.
+
+    Raises:
+        RecapError: If a timestamp does not parse.
+    """
+    stamped = pbp.sort("game_id", "order_number").with_columns(
+        pl.col("time_actual")
+        .str.to_datetime(_TIMESTAMP, time_zone="UTC", strict=False)
+        .dt.epoch("s")
+        .alias("_stamp")
+    )
+    unparsed = stamped.filter(pl.col("_stamp").is_null())
+    if unparsed.height:
+        first = unparsed.row(0, named=True)
+        raise RecapError(
+            f"{first['game_id']}: timestamp {first['time_actual']!r} does not parse "
+            f"(action {first['action_number']})"
+        )
+    return stamped.with_columns(
+        pl.col("_stamp").cum_max().over("game_id").alias("wall_clock")
+    ).drop("_stamp")
+
+
+def build_periods(pbp: pl.DataFrame) -> pl.DataFrame:
     """
     The game clock of one or more games from their period markers.
 
-    Each period's start and end marker gives its wall-clock bounds; game
-    seconds accumulate across periods (720 each in regulation, 300 in
-    overtime). A marker's time is combined with the game's date in
-    GAME_TZ, rolling to the next day once the clock passes midnight.
+    Each period's start and end marker gives its wall-clock bounds from
+    the markers' own timestamps; game seconds accumulate across periods
+    (720 each in regulation, 300 in overtime).
 
     Args:
-        pbp: Play-by-play rows (PLAY_BY_PLAY_SCHEMA), one or more games.
-        game_dates: ``game_id`` and ``game_date`` (Date) for every game.
+        pbp: Play-by-play rows after stamp_wall_clock, one or more games.
 
     Returns:
         One row per (game_id, period): ``game_id`` then PERIOD_COLUMNS,
         sorted by game and period.
 
     Raises:
-        RecapError: If a game has no date, a marker does not carry a
-            wall clock, a period lacks a start or an end, a marker
+        RecapError: If a period lacks a start or an end, a marker
             repeats, periods are not 1..N, a period ends before it
-            starts, or a period starts before the previous one ended.
+            starts, a period starts before the previous one ended, or a
+            period's wall length is shorter than its game length or
+            longer than MAX_PERIOD_WALL_SECONDS.
     """
-    markers = (
-        pbp.filter(pl.col("action_type") == PERIOD_ACTION_TYPE)
-        .select("game_id", "period", "sub_type", "description", "action_id")
-        .join(game_dates.select("game_id", "game_date"), on="game_id", how="left")
-        .sort("game_id", "action_id")
+    markers = pbp.filter(pl.col("action_type") == PERIOD_ACTION_TYPE).select(
+        "game_id", "period", "sub_type", "action_number", "wall_clock"
     )
-    undated = markers.filter(pl.col("game_date").is_null())
-    if undated.height:
-        raise RecapError(
-            f"no game date for {sorted(undated['game_id'].unique().to_list())}"
-        )
-
-    parts = markers.with_columns(
-        pl.col("description").str.extract_groups(_WALL_CLOCK).alias("wall")
-    ).unnest("wall")
-    unparsed = parts.filter(pl.col("hour").is_null())
-    if unparsed.height:
-        first = unparsed.row(0, named=True)
-        raise RecapError(
-            f"{first['game_id']}: period marker without a wall clock at "
-            f"action {first['action_id']}: {first['description']!r}"
-        )
-
-    hour24 = (pl.col("hour").cast(pl.Int64) % 12) + pl.when(
-        pl.col("meridiem") == "PM"
-    ).then(12).otherwise(0)
-    minute_of_day = hour24 * 60 + pl.col("minute").cast(pl.Int64)
-    parts = parts.with_columns(minute_of_day.alias("minute_of_day")).with_columns(
-        # A clock reading half a day earlier than it did is the game
-        # crossing midnight; a smaller drop is a defective marker
-        (
-            pl.col("minute_of_day")
-            < pl.col("minute_of_day").cum_max().over("game_id") - _ROLLOVER_MINUTES
-        )
-        .cast(pl.Int64)
-        .cum_max()
-        .over("game_id")
-        .alias("day_offset")
-    )
-    day = pl.col("game_date") + pl.duration(days=pl.col("day_offset"))
-    local = pl.datetime(
-        day.dt.year(),
-        day.dt.month(),
-        day.dt.day(),
-        pl.col("minute_of_day") // 60,
-        pl.col("minute_of_day") % 60,
-    )
-    parts = parts.with_columns(
-        # The hour that repeats when daylight time ends is 1-2 AM Eastern;
-        # a marker there takes the first instance, and a wrong guess fails
-        # the ordering checks below rather than shipping
-        local.dt.replace_time_zone(str(GAME_TZ), ambiguous="earliest")
-        .dt.epoch("s")
-        .alias("wall")
-    )
-
     repeated = (
-        parts.group_by("game_id", "period", "sub_type").len().filter(pl.col("len") > 1)
+        markers.group_by("game_id", "period", "sub_type")
+        .len()
+        .filter(pl.col("len") > 1)
     )
     if repeated.height:
         first = repeated.row(0, named=True)
@@ -270,11 +263,11 @@ def build_periods(pbp: pl.DataFrame, game_dates: pl.DataFrame) -> pl.DataFrame:
         )
 
     def side(sub_type: str, prefix: str) -> pl.DataFrame:
-        return parts.filter(pl.col("sub_type") == sub_type).select(
+        return markers.filter(pl.col("sub_type") == sub_type).select(
             "game_id",
             "period",
-            pl.col("wall").alias(f"{prefix}_wall"),
-            pl.col("action_id").alias(f"{prefix}_action_id"),
+            pl.col("wall_clock").alias(f"{prefix}_wall"),
+            pl.col("action_number").alias(f"{prefix}_action_number"),
         )
 
     periods = (
@@ -297,6 +290,7 @@ def build_periods(pbp: pl.DataFrame, game_dates: pl.DataFrame) -> pl.DataFrame:
     periods = periods.with_columns(
         (pl.int_range(pl.len()).over("game_id") + 1).alias("expected_period"),
         pl.col("start_wall").shift(-1).over("game_id").alias("next_start_wall"),
+        period_length().alias("length"),
     )
     gap = periods.filter(pl.col("period") != pl.col("expected_period"))
     if gap.height:
@@ -318,10 +312,27 @@ def build_periods(pbp: pl.DataFrame, game_dates: pl.DataFrame) -> pl.DataFrame:
             f"{first['game_id']}: period {first['period'] + 1} starts before "
             f"period {first['period']} ends"
         )
+    # The clock only stops, so a period takes at least its own length on
+    # the wall; one that takes hours has stamps from another day
+    wall_length = pl.col("end_wall") - pl.col("start_wall")
+    short = periods.filter(wall_length < pl.col("length"))
+    if short.height:
+        first = short.row(0, named=True)
+        raise RecapError(
+            f"{first['game_id']}: period {first['period']} takes "
+            f"{first['end_wall'] - first['start_wall']} s of wall clock for "
+            f"{first['length']} s of play"
+        )
+    long = periods.filter(wall_length > MAX_PERIOD_WALL_SECONDS)
+    if long.height:
+        first = long.row(0, named=True)
+        raise RecapError(
+            f"{first['game_id']}: period {first['period']} takes "
+            f"{(first['end_wall'] - first['start_wall']) / 60:.0f} minutes of wall clock"
+        )
 
     return (
-        periods.with_columns(period_length().alias("length"))
-        .with_columns(
+        periods.with_columns(
             (pl.col("length").cum_sum().over("game_id") - pl.col("length")).alias(
                 "start_seconds"
             )
@@ -331,19 +342,96 @@ def build_periods(pbp: pl.DataFrame, game_dates: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+def place_plays(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+    """
+    Put plays on the game clock: seconds since tip-off from the period and the clock.
+
+    Args:
+        plays: Play-by-play rows with ``game_id``, ``period`` and ``clock``.
+        periods: The game clock from build_periods, ``game_id`` included.
+
+    Returns:
+        The plays with ``game_seconds`` added, in the input's row order.
+
+    Raises:
+        RecapError: If a clock string does not parse, or a play's period
+            has no markers.
+    """
+    placed = plays.with_row_index("_order").join(
+        periods.select("game_id", "period", "end_seconds"),
+        on=["game_id", "period"],
+        how="left",
+    )
+    unplaced = placed.filter(pl.col("end_seconds").is_null())
+    if unplaced.height:
+        first = unplaced.row(0, named=True)
+        raise RecapError(
+            f"{first['game_id']}: period {first['period']} has no markers "
+            f"(action {first['action_number']})"
+        )
+    placed = placed.with_columns(
+        parse_clock_seconds(pl.col("clock")).alias("_remaining")
+    )
+    unparsed = placed.filter(pl.col("_remaining").is_null())
+    if unparsed.height:
+        first = unparsed.row(0, named=True)
+        raise RecapError(
+            f"{first['game_id']}: clock {first['clock']!r} does not parse "
+            f"(action {first['action_number']})"
+        )
+    game_seconds = (
+        (pl.col("end_seconds") - pl.col("_remaining")).round(0).cast(pl.Int64)
+    )
+    return (
+        placed.with_columns(game_seconds.alias("game_seconds"))
+        .sort("_order")
+        .drop("_order", "_remaining", "end_seconds")
+    )
+
+
+def game_clock(pbp: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+    """
+    The mapping from wall clock to game seconds: every row of the game, on both.
+
+    One row per wall-clock second the feed stamped (the last row on
+    that second, in feed order), game seconds monotone so the mapping
+    never runs backwards.
+
+    Args:
+        pbp: Play-by-play rows after stamp_wall_clock, one or more games.
+        periods: The game clock from build_periods, ``game_id`` included.
+
+    Returns:
+        ``game_id``, ``wall_clock``, ``game_seconds``, sorted by game
+        and wall clock.
+    """
+    return (
+        place_plays(pbp.filter(pl.col("action_type") != GAME_ACTION_TYPE), periods)
+        .with_columns(pl.col("game_seconds").cum_max().over("game_id"))
+        .select("game_id", "wall_clock", "game_seconds")
+        .unique(subset=["game_id", "wall_clock"], keep="last", maintain_order=True)
+        .sort("game_id", "wall_clock")
+    )
+
+
+def align_comments(
+    comments: pl.DataFrame, periods: pl.DataFrame, clock: pl.DataFrame
+) -> pl.DataFrame:
     """
     Place comments on the game clock of their game.
 
-    A comment posted inside a period maps by a straight line between the
-    period's markers; one posted in a break pins to the end of the period
-    just played; before tip-off it is ``pre`` at second 0, after the last
-    buzzer ``post`` at the game's last second.
+    A comment posted inside a period maps by interpolation between the
+    two feed rows either side of it on wall clock: flat between two rows
+    on one game second, as a timeout and the substitutions at its end
+    are; one posted in a break pins to the end of
+    the period just played; before tip-off it is ``pre`` at second 0,
+    after the last buzzer ``post`` at the game's last second.
 
     Args:
         comments: Rows with ``game_id`` and ``created_utc``; any other
             columns ride along.
         periods: The game clock from build_periods, ``game_id`` included.
+        clock: The mapping from game_clock for the same games.
 
     Returns:
         The comments with ``game_seconds``, ``phase`` and ``period``
@@ -351,14 +439,7 @@ def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFram
         A comment whose game has no clock in ``periods`` reads as
         ``pre``; callers pass the games they aligned.
     """
-    bound_columns = [
-        "game_id",
-        "period",
-        "start_seconds",
-        "end_seconds",
-        "start_wall",
-        "end_wall",
-    ]
+    bound_columns = ["game_id", "period", "end_seconds"]
     bounds = pl.concat(
         [
             periods.select(
@@ -378,6 +459,13 @@ def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFram
         pl.col("period").max().alias("last_period"),
         pl.col("end_seconds").max().alias("total_seconds"),
     )
+    neighbours = clock.sort("game_id", "wall_clock").select(
+        "game_id",
+        pl.col("wall_clock").alias("_wall"),
+        pl.col("game_seconds").alias("_seconds"),
+        pl.col("wall_clock").shift(-1).over("game_id").alias("_next_wall"),
+        pl.col("game_seconds").shift(-1).over("game_id").alias("_next_seconds"),
+    )
 
     placed = (
         comments.with_row_index("_order")
@@ -386,6 +474,14 @@ def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFram
             bounds,
             left_on="created_utc",
             right_on="bound",
+            by="game_id",
+            strategy="backward",
+            check_sortedness=False,
+        )
+        .join_asof(
+            neighbours,
+            left_on="created_utc",
+            right_on="_wall",
             by="game_id",
             strategy="backward",
             check_sortedness=False,
@@ -402,12 +498,19 @@ def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFram
         .then(pl.lit(PHASE_POST))
         .otherwise(pl.col("phase"))
     )
-    elapsed = (pl.col("created_utc") - pl.col("start_wall")) / (
-        pl.col("end_wall") - pl.col("start_wall")
+    fraction = (pl.col("created_utc") - pl.col("_wall")) / (
+        pl.col("_next_wall") - pl.col("_wall")
     )
-    live_seconds = pl.col("start_seconds") + (
-        elapsed * (pl.col("end_seconds") - pl.col("start_seconds"))
-    ).round(0)
+    live_seconds = (
+        pl.when(
+            pl.col("_next_wall").is_null() | (pl.col("_next_wall") == pl.col("_wall"))
+        )
+        .then(pl.col("_seconds"))
+        .otherwise(
+            pl.col("_seconds")
+            + (fraction * (pl.col("_next_seconds") - pl.col("_seconds"))).round(0)
+        )
+    )
     game_seconds = (
         pl.when(pl.col("phase") == PHASE_PRE)
         .then(0)
@@ -432,377 +535,219 @@ def align_comments(comments: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFram
     )
 
 
-def place_plays(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
-    """
-    Put plays on both clocks: game seconds from the period clock, wall clock by the line.
-
-    Args:
-        plays: Play-by-play rows with ``game_id``, ``period`` and ``clock``.
-        periods: The game clock from build_periods, ``game_id`` included.
-
-    Returns:
-        The plays with ``game_seconds`` and ``wall_clock`` (epoch seconds)
-        added, in the input's row order.
-
-    Raises:
-        RecapError: If a clock string does not parse, or a play's period
-            has no markers.
-    """
-    placed = plays.with_row_index("_order").join(
-        periods.select(
-            "game_id",
-            "period",
-            "start_seconds",
-            "end_seconds",
-            "start_wall",
-            "end_wall",
-        ),
-        on=["game_id", "period"],
-        how="left",
-    )
-    unplaced = placed.filter(pl.col("start_wall").is_null())
-    if unplaced.height:
-        first = unplaced.row(0, named=True)
-        raise RecapError(
-            f"{first['game_id']}: period {first['period']} has no markers "
-            f"(action {first['action_id']})"
-        )
-    placed = placed.with_columns(
-        parse_clock_seconds(pl.col("clock")).alias("_remaining")
-    )
-    unparsed = placed.filter(pl.col("_remaining").is_null())
-    if unparsed.height:
-        first = unparsed.row(0, named=True)
-        raise RecapError(
-            f"{first['game_id']}: clock {first['clock']!r} does not parse "
-            f"(action {first['action_id']})"
-        )
-
-    game_seconds = (
-        (pl.col("end_seconds") - pl.col("_remaining")).round(0).cast(pl.Int64)
-    )
-    fraction = (pl.col("game_seconds") - pl.col("start_seconds")) / (
-        pl.col("end_seconds") - pl.col("start_seconds")
-    )
-    wall_clock = (
-        pl.col("start_wall")
-        + (fraction * (pl.col("end_wall") - pl.col("start_wall"))).round(0)
-    ).cast(pl.Int64)
-    return (
-        placed.with_columns(game_seconds.alias("game_seconds"))
-        .with_columns(wall_clock.alias("wall_clock"))
-        .sort("_order")
-        .drop(
-            "_order",
-            "_remaining",
-            "start_seconds",
-            "end_seconds",
-            "start_wall",
-            "end_wall",
-        )
-    )
-
-
 # --- Plays and stints -------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class Focus:
-    """The focus player as the archive names him: id, name forms, team."""
-
-    person_id: int
-    names: tuple[str, ...]  # every form a description may use, ASCII-folded
-    team_id: int
-
-    @property
-    def pattern(self) -> str:
-        """A regex alternation over his name forms."""
-        return "(?:" + "|".join(re.escape(name) for name in self.names) + ")"
-
-
-def _fold(name: str) -> str:
-    """The archive's descriptions write names without diacritics."""
-    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-
-
-def focus_identity(pbp: pl.DataFrame, person_id: int) -> Focus:
-    """
-    Read the focus player's archive names and team from his own rows.
-
-    A description names a player by surname ("Jokic", folded from the
-    row's "Jokić") or, when a surname is shared, by initial and surname
-    ("L. James"), so both forms are kept.
-
-    Args:
-        pbp: One game's play-by-play.
-        person_id: The player's stats.nba.com id (players.player_id).
-
-    Returns:
-        The Focus: the folded ``player_name`` and ``player_name_i`` the
-        descriptions use for him, and the ``team_id`` his rows carry.
-
-    Raises:
-        RecapError: If he has no row in the game.
-    """
-    own = pbp.filter(pl.col("person_id") == person_id)
-    if not own.height:
-        game_id = pbp["game_id"][0] if pbp.height else "?"
-        raise RecapError(f"{game_id}: player {person_id} has no action in the game")
-    names = []
-    for column in ("player_name", "player_name_i"):
-        folded = _fold(own[column].mode().sort()[0])
-        if folded and folded not in names:
-            names.append(folded)
-    team_id = own["team_id"].mode().sort()[0]
-    return Focus(person_id, tuple(names), team_id)
-
-
-def fill_scores(pbp: pl.DataFrame) -> pl.DataFrame:
-    """
-    Carry the running score onto every row.
-
-    The archive writes the score only on the rows that change it; every
-    other row holds an empty string. Rows are filled in action order,
-    and 0 stands before the first score.
-
-    Args:
-        pbp: One game's play-by-play, any row order.
-
-    Returns:
-        The rows sorted by ``action_id`` with ``score_home`` and
-        ``score_away`` as Int64 on every row.
-    """
-
-    def filled(column: str) -> pl.Expr:
-        return (
-            pl.when(pl.col(column) == "")
-            .then(None)
-            .otherwise(pl.col(column))
-            .cast(pl.Int64)
-            .forward_fill()
-            .fill_null(0)
-            .alias(column)
-        )
-
-    return pbp.sort("action_id").with_columns(
-        filled("score_home"), filled("score_away")
-    )
-
-
-def derive_kind(pbp: pl.DataFrame, focus: Focus) -> pl.DataFrame:
+def derive_kind(pbp: pl.DataFrame, player_id: int) -> pl.DataFrame:
     """
     Name each play's kind and flag the focus player's plays.
 
-    Blocks and steals are read from the description, since their
-    ``action_type`` is blank. A substitution names only the player going
-    out in ``person_id``; the focus player's check-ins are matched on
-    the description, guarded by his team so a shared surname on the
-    other bench never counts. His assists sit on a teammate's made shot
+    The kind is the feed's action type under the recap's vocabulary; a
+    substitution is ``sub_in`` or ``sub_out`` by its sub type, and each
+    row names its own player. His assists sit on a teammate's made shot
     and are his plays too.
 
     Args:
         pbp: One game's play-by-play.
-        focus: The focus player as the archive names him.
+        player_id: The focus player's id.
 
     Returns:
         The rows with ``kind`` and ``is_focus`` added.
     """
-    description = pl.col("description")
-    checks_in = description.str.contains(rf"^SUB: {focus.pattern} FOR ") & (
-        pl.col("team_id") == focus.team_id
-    )
-    assists = description.str.contains(rf"\({focus.pattern} \d+ AST\)")
-
-    kind = pl.when(pl.col("action_type") == PERIOD_ACTION_TYPE).then(
-        pl.when(pl.col("sub_type") == PERIOD_START)
-        .then(pl.lit(KIND_PERIOD_START))
-        .otherwise(pl.lit(KIND_PERIOD_END))
-    )
-    for token, name in _BLANK_TYPE_KINDS:
-        kind = kind.when(
-            (pl.col("action_type") == "")
-            & description.str.contains(token, literal=True)
-        ).then(pl.lit(name))
     kind = (
-        kind.when(
-            (pl.col("action_type") == SUBSTITUTION_ACTION_TYPE)
-            & (pl.col("person_id") == focus.person_id)
+        pl.when(pl.col("action_type") == PERIOD_ACTION_TYPE)
+        .then(
+            pl.when(pl.col("sub_type") == PERIOD_START)
+            .then(pl.lit(KIND_PERIOD_START))
+            .otherwise(pl.lit(KIND_PERIOD_END))
         )
-        .then(pl.lit(KIND_SUB_OUT))
-        .when((pl.col("action_type") == SUBSTITUTION_ACTION_TYPE) & checks_in)
-        .then(pl.lit(KIND_SUB_IN))
+        .when(pl.col("action_type") == SUBSTITUTION_ACTION_TYPE)
+        .then(
+            pl.when(pl.col("sub_type") == SUB_IN_SUB_TYPE)
+            .then(pl.lit(KIND_SUB_IN))
+            .otherwise(pl.lit(KIND_SUB_OUT))
+        )
         .otherwise(
             pl.col("action_type").replace_strict(
                 ACTION_TYPE_KINDS, default=KIND_OTHER, return_dtype=pl.String
             )
         )
     )
-    is_focus = (pl.col("person_id") == focus.person_id) | checks_in | assists
+    is_focus = (pl.col("person_id") == player_id) | (
+        pl.col("assist_person_id") == player_id
+    ).fill_null(False)
     return pbp.with_columns(kind.alias("kind"), is_focus.alias("is_focus"))
 
 
-def pair_blocks(pbp: pl.DataFrame) -> pl.DataFrame:
+def pair_plays(pbp: pl.DataFrame) -> pl.DataFrame:
     """
     Point each block and steal at the play it ended.
 
-    A block or steal reuses the ``action_number`` of the shot or turnover
-    it ends. A block borrows the shot's location, so it draws where the
-    shot was taken.
+    A block follows the shot it ended and a steal the turnover, each
+    on its own action number; the play before names the ender in its
+    own field. A block borrows the shot's location, so it draws where
+    the shot was taken.
 
     Args:
-        pbp: One game's play-by-play with ``kind`` (derive_kind).
+        pbp: One game's play-by-play with ``kind`` (derive_kind), in
+            feed order.
 
     Returns:
-        The rows with ``paired_action_id`` added (null off a block or
-        steal), blocks carrying their shot's coordinates.
+        The rows with ``paired_action_number`` added (null off a block
+        or steal), blocks carrying their shot's coordinates.
 
     Raises:
-        RecapError: If a block or steal shares its number with no play.
+        RecapError: If a block or steal does not follow the play it ended.
     """
-    # Only a block or steal reuses a number; every other row pairs with
-    # nothing, so only those rows are joined
-    partners = (
-        pbp.filter(pl.col("action_type") != "")
-        .sort("action_id")
-        .unique(subset=["game_id", "action_number"], keep="first", maintain_order=True)
-        .select(
-            "game_id",
+    previous = {
+        name: pl.col(name).shift(1).over("game_id").alias(f"_prev_{name}")
+        for name in (
             "action_number",
-            pl.col("action_id").alias("paired_action_id"),
-            pl.col("x_legacy").alias("_x"),
-            pl.col("y_legacy").alias("_y"),
-            pl.col("shot_distance").alias("_distance"),
-            pl.col("action_type").is_in(SHOT_ACTION_TYPES).alias("_is_shot"),
+            "x_legacy",
+            "y_legacy",
+            "shot_distance",
+            *_ENDER_FIELDS.values(),
         )
+    }
+    ender = pl.col("kind").is_in(list(_ENDER_FIELDS))
+    named_before = pl.when(False).then(False)
+    for kind, field_name in _ENDER_FIELDS.items():
+        named_before = named_before.when(pl.col("kind") == kind).then(
+            pl.col(f"_prev_{field_name}") == pl.col("person_id")
+        )
+    paired = pbp.with_columns(*previous.values()).with_columns(
+        (ender & named_before.fill_null(False)).alias("_paired")
     )
-    ended = pl.col("kind").is_in(["block", "steal"])
-    enders = pbp.filter(ended).join(
-        partners, on=["game_id", "action_number"], how="left"
-    )
-    unpaired = enders.filter(pl.col("paired_action_id").is_null())
+    unpaired = paired.filter(ender & ~pl.col("_paired"))
     if unpaired.height:
         first = unpaired.row(0, named=True)
         raise RecapError(
-            f"{first['game_id']}: {first['kind']} at action {first['action_id']} "
-            f"shares its number with no play"
+            f"{first['game_id']}: {first['kind']} at action "
+            f"{first['action_number']} does not follow the play it ended"
         )
-    borrows = pl.col("_is_shot").fill_null(False)
-    enders = enders.with_columns(
-        pl.when(borrows)
-        .then(pl.col("_x"))
-        .otherwise(pl.col("x_legacy"))
-        .alias("x_legacy"),
-        pl.when(borrows)
-        .then(pl.col("_y"))
-        .otherwise(pl.col("y_legacy"))
-        .alias("y_legacy"),
-        pl.when(borrows)
-        .then(pl.col("_distance"))
-        .otherwise(pl.col("shot_distance"))
-        .alias("shot_distance"),
-    ).drop("_x", "_y", "_distance", "_is_shot")
-    others = pbp.filter(~ended).with_columns(
-        pl.lit(None, dtype=pl.Int64).alias("paired_action_id")
-    )
-    return pl.concat([others, enders]).sort("action_id")
+    borrows = pl.col("kind") == KIND_BLOCK
+    return paired.with_columns(
+        pl.when(pl.col("_paired"))
+        .then(pl.col("_prev_action_number"))
+        .alias("paired_action_number"),
+        *(
+            pl.when(borrows)
+            .then(pl.col(f"_prev_{name}"))
+            .otherwise(pl.col(name))
+            .alias(name)
+            for name in ("x_legacy", "y_legacy", "shot_distance")
+        ),
+    ).drop("_paired", *(f"_prev_{name}" for name in previous))
 
 
-def parse_running_totals(plays: pl.DataFrame, focus: Focus) -> pl.DataFrame:
+def running_totals(plays: pl.DataFrame, player_id: int) -> pl.DataFrame:
     """
-    Read the focus player's running line off his own descriptions.
+    The focus player's running line, read off the feed's totals.
 
-    Points, rebounds, blocks, steals, fouls and turnovers sit in the
-    parentheses of his rows; assists sit on a teammate's made shot under
-    his name. Each total carries forward to his next play and is null on
-    every other row and before his first value.
+    Points, rebounds, turnovers and fouls sit on his own rows; assists
+    on the teammate's made shot that credits him; blocks and steals are
+    counted from his rows, since the feed carries no total for them.
+    Each total carries forward to his next play and is null on every
+    other row and before his first value.
 
     Args:
-        plays: The plays in action order, with ``is_focus`` and ``kind``.
-        focus: The focus player as the archive names him.
+        plays: The plays in feed order, with ``is_focus`` and ``kind``.
+        player_id: The focus player's id.
 
     Returns:
         The plays with TOTAL_COLUMNS added as nullable Int64.
     """
-    own = pl.col("person_id") == focus.person_id
-    description = pl.col("description")
-
-    def own_count(pattern: str) -> pl.Expr:
-        return pl.when(own).then(description.str.extract(pattern, 1).cast(pl.Int64))
-
-    totals = {name: own_count(pattern) for name, pattern in _TOTAL_PATTERNS.items()}
-    totals["reb"] = own_count(_OFFENSIVE_REBOUNDS) + own_count(_DEFENSIVE_REBOUNDS)
-    totals["ast"] = description.str.extract(rf"\({focus.pattern} (\d+) AST\)", 1).cast(
-        pl.Int64
+    own = pl.col("person_id") == player_id
+    totals = {
+        name: pl.when(own).then(pl.col(field_name))
+        for name, field_name in _TOTAL_FIELDS.items()
+    }
+    totals["ast"] = pl.when(pl.col("assist_person_id") == player_id).then(
+        pl.col("assist_total")
     )
-    totals["tov"] = pl.when(own & (pl.col("kind") == "turnover")).then(
-        description.str.extract(_PERSONAL_COUNT, 1).cast(pl.Int64)
-    )
-    totals["pf"] = pl.when(own & (pl.col("kind") == "foul")).then(
-        description.str.extract(_PERSONAL_COUNT, 1).cast(pl.Int64)
-    )
+    for name, kind in (("blk", KIND_BLOCK), ("stl", KIND_STEAL)):
+        counted = own & (pl.col("kind") == kind)
+        totals[name] = pl.when(counted).then(counted.cast(pl.Int64).cum_sum())
     return plays.with_columns(
         pl.when(pl.col("is_focus"))
         .then(totals[name].forward_fill())
         .otherwise(None)
+        .cast(pl.Int64)
         .alias(name)
         for name in TOTAL_COLUMNS
     )
 
 
-def slice_plays(pbp: pl.DataFrame, periods: pl.DataFrame, focus: Focus) -> pl.DataFrame:
+def slice_plays(
+    pbp: pl.DataFrame, periods: pl.DataFrame, player_id: int
+) -> pl.DataFrame:
     """
     The plays a recap ships, on both clocks, in RECAP_PLAYS_SCHEMA's shape.
 
     The focus player's plays (check-ins and assists included), both
-    teams' shots, the period markers and the timeouts, with the score
-    filled onto every row before the slice so nothing kept is missing
-    the points a dropped free throw scored.
+    teams' shots, the period markers and the timeouts. The feed's
+    closing row is not a play.
 
     Args:
-        pbp: One game's play-by-play.
+        pbp: One game's play-by-play after stamp_wall_clock.
         periods: The game's clock (build_periods), ``game_id`` included.
-        focus: The focus player as the archive names him.
+        player_id: The focus player's id.
 
     Returns:
-        The slice in action order, columns as RECAP_PLAYS_SCHEMA plus
+        The slice in feed order, columns as RECAP_PLAYS_SCHEMA plus
         ``game_id`` in front.
 
     Raises:
-        RecapError: From pair_blocks and place_plays.
+        RecapError: If the focus player has no action in the game, or
+            from pair_plays and place_plays.
     """
-    prepared = pair_blocks(derive_kind(fill_scores(pbp), focus))
+    prepared = pair_plays(
+        derive_kind(pbp.filter(pl.col("action_type") != GAME_ACTION_TYPE), player_id)
+    )
+    if not prepared["is_focus"].any():
+        game_id = pbp["game_id"][0] if pbp.height else "?"
+        raise RecapError(f"{game_id}: player {player_id} has no action")
     kept = prepared.filter(
         pl.col("is_focus")
         | pl.col("action_type").is_in(SHOT_ACTION_TYPES)
         | pl.col("kind").is_in(_SLICE_KINDS)
     )
-    placed = parse_running_totals(place_plays(kept, periods), focus)
+    placed = running_totals(place_plays(kept, periods), player_id)
     made = (
         pl.when(pl.col("shot_result") == "Made")
         .then(True)
         .when(pl.col("shot_result") == "Missed")
         .then(False)
+        .when(pl.col("kind") == KIND_HEAVE)
+        .then(False)
         .otherwise(None)
         .cast(pl.Boolean)
     )
-    return placed.with_columns(made.alias("made")).select(
-        "game_id", *RECAP_PLAYS_SCHEMA.names()
-    )
+    return placed.with_columns(
+        made.alias("made"),
+        pl.col("action_type")
+        .replace_strict(SHOT_VALUES, default=0, return_dtype=pl.Int64)
+        .alias("shot_value"),
+        pl.col("score_home").cast(pl.Int64),
+        pl.col("score_away").cast(pl.Int64),
+    ).select("game_id", *RECAP_PLAYS_SCHEMA.names())
 
 
 def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
     """
     The focus player's on-court intervals, in game seconds.
 
-    Lineups change at period breaks without a substitution row, so each
-    period's opening state is inferred: on the floor if his first
-    substitution in the period takes him off, off if it brings him on,
-    and with no substitution at all, on if he recorded any play. From
-    there the substitutions open and close intervals; an interval open
-    at the buzzer closes on it.
+    The feed never logs the opening five, so the first period's opening
+    state is inferred: on the floor if his first substitution in it
+    takes him off, off if it brings him on, and with no substitution at
+    all, on if he recorded any play. From there the substitutions open
+    and close intervals; the state carries across each break, where the
+    feed logs the lineup changes as substitutions at the period's first
+    second; an interval open at the buzzer closes on it.
 
     Args:
-        plays: The recap's plays (slice_plays) with ``is_focus``.
+        plays: The recap's plays (slice_plays) with ``is_focus``, in
+            feed order.
         periods: The game's clock (build_periods).
 
     Returns:
@@ -810,29 +755,29 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
     """
     events = (
         plays.filter(pl.col("is_focus") & (pl.col("kind") != KIND_PERIOD_START))
-        .sort("action_id")
         .select("period", "kind", "game_seconds")
         .rows()
     )
     stints: list[tuple[int, int, int]] = []
+    on_court: bool | None = None
     for period, start, end in (
         periods.sort("period").select("period", "start_seconds", "end_seconds").rows()
     ):
         own = [(kind, seconds) for p, kind, seconds in events if p == period]
         subs = [(kind, seconds) for kind, seconds in own if kind in SUB_KINDS]
-        if subs:
-            on_court = subs[0][0] == KIND_SUB_OUT
-        else:
-            on_court = bool(own)
+        if on_court is None:
+            on_court = subs[0][0] == KIND_SUB_OUT if subs else bool(own)
         opened = start if on_court else None
         for kind, seconds in subs:
             if kind == KIND_SUB_OUT and opened is not None:
-                stints.append((period, opened, seconds))
+                if seconds > opened:
+                    stints.append((period, opened, seconds))
                 opened = None
             elif kind == KIND_SUB_IN and opened is None:
                 opened = seconds
         if opened is not None:
             stints.append((period, opened, end))
+        on_court = opened is not None
     return pl.DataFrame(stints, schema=RECAP_STINTS_SCHEMA, orient="row")
 
 
@@ -942,30 +887,29 @@ def swing(by_period: dict[str, PeriodCounts]) -> float:
     return spoken[-1]["neg"] / total(spoken[-1]) - spoken[0]["neg"] / total(spoken[0])
 
 
-# --- The clock's error, season-wide ------------------------------------------
+# --- The room's reaction lag, season-wide ------------------------------------
 
 
 def read_game_clock(
-    game_id: str, game_dates: pl.DataFrame, pbp_dir: Path
+    game_id: str, pbp_dir: Path
 ) -> tuple[pl.DataFrame, pl.DataFrame] | None:
     """
-    One banked game's play-by-play and the clock its markers build.
+    One banked game's play-by-play, stamped, and the clock its markers build.
 
     Args:
         game_id: The game.
-        game_dates: ``game_id`` and ``game_date`` for the game.
         pbp_dir: The season's play-by-play directory.
 
     Returns:
-        ``(pbp, periods)``, or None when the archive is not banked or its
+        ``(pbp, periods)``, or None when the feed is not banked or its
         markers do not build a clock (logged).
     """
     path = play_by_play_path(pbp_dir, game_id)
     if not path.exists():
         return None
-    pbp = pl.read_parquet(path)
     try:
-        return pbp, build_periods(pbp, game_dates)
+        pbp = stamp_wall_clock(pl.read_parquet(path))
+        return pbp, build_periods(pbp)
     except RecapError as e:
         logger.warning(f"no clock for {game_id}, skipped: {e}")
         return None
@@ -978,7 +922,7 @@ def anchor_candidates(
     A game's anchor candidates: every tracked player's blocks, steals and made dunks.
 
     Args:
-        pbp: One game's play-by-play.
+        pbp: One game's play-by-play after stamp_wall_clock.
         periods: The game's clock (build_periods).
         players: The Player dimension (attributed_player, player_id).
 
@@ -986,16 +930,18 @@ def anchor_candidates(
         ANCHOR_CANDIDATE_SCHEMA rows: each play on both clocks, its player
         as the fact names him, and the third of its period it fell in.
     """
-    description = pl.col("description")
-    kind = pl.when(
-        (pl.col("action_type") == MADE_SHOT_ACTION_TYPE)
-        & pl.col("sub_type").str.contains(DUNK_SUB_TYPE, literal=True)
-    ).then(pl.lit(KIND_DUNK))
-    for token, name in _BLANK_TYPE_KINDS:
-        kind = kind.when(
-            (pl.col("action_type") == "")
-            & description.str.contains(token, literal=True)
-        ).then(pl.lit(name))
+    kind = (
+        pl.when(pl.col("action_type") == "block")
+        .then(pl.lit(KIND_BLOCK))
+        .when(pl.col("action_type") == "steal")
+        .then(pl.lit(KIND_STEAL))
+        .when(
+            (pl.col("action_type") == "2pt")
+            & (pl.col("sub_type") == DUNK_SUB_TYPE)
+            & (pl.col("shot_result") == "Made")
+        )
+        .then(pl.lit(KIND_DUNK))
+    )
     plays = (
         pbp.with_columns(kind.alias("kind"))
         .filter(pl.col("kind").is_not_null())
@@ -1065,7 +1011,7 @@ def match_anchors(candidates: pl.DataFrame, reactions: pl.DataFrame) -> pl.DataF
     its first comment; each play then keeps its largest burst, the
     earliest on a tie. A play is an anchor when that burst reaches the
     published floor, and its offset is the burst's first comment minus
-    the play's mapped wall clock.
+    the play's own wall clock.
 
     Args:
         candidates: anchor_candidates() rows, any number of games.
@@ -1094,15 +1040,15 @@ def match_anchors(candidates: pl.DataFrame, reactions: pl.DataFrame) -> pl.DataF
         .with_columns(
             (pl.col("first_reaction_utc") - pl.col("wall_clock")).abs().alias("_gap")
         )
-        .sort("_gap", "action_id")
+        .sort("_gap", "action_number")
         .unique(subset=burst_key, keep="first", maintain_order=True)
         .sort(["reaction_n", "minute"], descending=[True, False])
-        .unique(subset=["game_id", "action_id"], keep="first", maintain_order=True)
-        .select("game_id", "action_id", "reaction_n", "first_reaction_utc")
+        .unique(subset=["game_id", "action_number"], keep="first", maintain_order=True)
+        .select("game_id", "action_number", "reaction_n", "first_reaction_utc")
     )
     accepted = pl.col("reaction_n") >= RECAP_ANCHOR_MIN_REACTIONS
     return (
-        candidates.join(best, on=["game_id", "action_id"], how="left")
+        candidates.join(best, on=["game_id", "action_number"], how="left")
         .with_columns(pl.col("reaction_n").fill_null(0))
         .with_columns(
             accepted.alias("accepted"),
@@ -1110,13 +1056,13 @@ def match_anchors(candidates: pl.DataFrame, reactions: pl.DataFrame) -> pl.DataF
             .then(pl.col("first_reaction_utc") - pl.col("wall_clock"))
             .alias("offset_seconds"),
         )
-        .sort("game_id", "action_id")
+        .sort("game_id", "action_number")
     )
 
 
-def alignment_figures(anchors: pl.DataFrame) -> AlignmentFigures:
+def reaction_lag_figures(anchors: pl.DataFrame) -> ReactionLag:
     """
-    Summarize matched candidates as the published alignment figures.
+    Summarize matched candidates as the published reaction-lag figures.
 
     Quantiles are observed offsets (nearest rank), never interpolated.
 
@@ -1145,7 +1091,7 @@ def alignment_figures(anchors: pl.DataFrame) -> AlignmentFigures:
     }
 
 
-def unmeasured_alignment() -> AlignmentFigures:
+def unmeasured_reaction_lag() -> ReactionLag:
     """The figures of a season that curates no recap: nothing measured."""
     return {
         "candidates": 0,
@@ -1157,46 +1103,43 @@ def unmeasured_alignment() -> AlignmentFigures:
     }
 
 
-def measure_alignment(
+def measure_reaction_lag(
     fact: pl.DataFrame,
     posts: pl.DataFrame,
-    games: pl.DataFrame,
     players: pl.DataFrame,
     pbp_dir: Path,
-) -> tuple[pl.DataFrame, AlignmentFigures]:
+) -> tuple[pl.DataFrame, ReactionLag]:
     """
-    Measure the game clock against the room's reactions, over every threaded game.
+    Measure how long the room takes to react to a play, over every threaded game.
 
-    The clock is one method for every game, so its error is measured
-    once, season-wide: a single game rarely draws enough named reactions
-    to measure its own. The anchors measure the clock; nothing is moved.
+    The clock is the feed's own, so what the anchors measure is the
+    room's lag, once, season-wide: a single game rarely draws enough
+    named reactions to measure its own. Nothing is moved by it.
 
     Args:
         fact: The usable fact rows, at least those in game threads.
         posts: The Post bridge.
-        games: The Game dimension (game_id, game_date).
         players: The Player dimension (attributed_player, player_id).
         pbp_dir: The season's play-by-play directory.
 
     Returns:
         Every candidate matched (match_anchors) and the figures
-        (alignment_figures). The median offset per third of the period
-        is logged: the straight line's error is not even across it.
+        (reaction_lag_figures). The median offset per third of the
+        period is logged.
     """
     threads = posts.filter(
         (pl.col("post_type") == GAME_THREAD) & pl.col("game_id").is_not_null()
     ).select("post_id", "game_id")
-    game_dates = games.select("game_id", "game_date")
     frames = [ANCHOR_CANDIDATE_SCHEMA.to_frame()]
     skipped = 0
     for game_id in sorted(threads["game_id"].unique().to_list()):
-        banked = read_game_clock(game_id, game_dates, pbp_dir)
+        banked = read_game_clock(game_id, pbp_dir)
         if banked is None:
             skipped += 1
             continue
         frames.append(anchor_candidates(*banked, players))
     anchors = match_anchors(pl.concat(frames), named_reactions(fact, threads))
-    figures = alignment_figures(anchors)
+    figures = reaction_lag_figures(anchors)
 
     by_third = (
         anchors.filter(pl.col("accepted"))
@@ -1206,7 +1149,7 @@ def measure_alignment(
         .rows()
     )
     logger.info(
-        f"Alignment: {figures['anchors']:,} anchors of {figures['candidates']:,} "
+        f"Reaction lag: {figures['anchors']:,} anchors of {figures['candidates']:,} "
         f"candidates in {figures['games']:,} games ({skipped:,} without a clock); "
         f"median offset {figures['median_offset_seconds']} s "
         f"(p25 {figures['p25_offset_seconds']}, p75 {figures['p75_offset_seconds']}); "
@@ -1333,7 +1276,6 @@ def build_recap(
     *,
     fact: pl.DataFrame,
     posts: pl.DataFrame,
-    games: pl.DataFrame,
     player_games: pl.DataFrame,
     players: pl.DataFrame,
     pbp: pl.DataFrame,
@@ -1347,23 +1289,22 @@ def build_recap(
         fact: The usable fact rows (load_attributed_frame or a subset
             covering the game's live threads).
         posts: The Post bridge.
-        games: The Game dimension (game_id, game_date).
         player_games: The box-score lines (game_id, attributed_player,
             minutes).
         players: The Player dimension (attributed_player, player_id).
-        pbp: The game's play-by-play (load_play_by_play).
+        pbp: The game's play-by-play (load_live_play_by_play).
         stamps: The build's lineage for the header.
 
     Returns:
         The document, every frame validated against its schema.
 
     Raises:
-        RecapError: From the alignment and the plays, or if the focus
+        RecapError: From the clock and the plays, or if the focus
             player has no box-score line in the game.
     """
-    periods = build_periods(pbp, games.select("game_id", "game_date"))
-    focus = focus_identity(pbp, spec.player_id)
-    plays = slice_plays(pbp, periods, focus)
+    pbp = stamp_wall_clock(pbp)
+    periods = build_periods(pbp)
+    plays = slice_plays(pbp, periods, spec.player_id)
     stints = build_stints(plays, periods)
 
     aligned = align_comments(
@@ -1371,6 +1312,7 @@ def build_recap(
             pl.lit(spec.game_id).alias("game_id")
         ),
         periods,
+        game_clock(pbp, periods),
     )
     comments = select_comments(aligned, spec.attributed_player, players)
     threads = (
@@ -1394,8 +1336,9 @@ def build_recap(
     box_minutes = int(line["minutes"][0])
     minutes_diff = stint_minutes(stints) - box_minutes
     if minutes_diff:
-        # An inferred period start is where stints go wrong: a period
-        # played with no substitution and no play reads as bench
+        # The first period's inferred opening state is where stints go
+        # wrong: a period played with no substitution and no play reads
+        # as bench
         logger.warning(
             f"recap {spec.key}: {stint_minutes(stints)} stint minutes against "
             f"{box_minutes} in the box score ({minutes_diff:+d})"
@@ -1510,13 +1453,13 @@ def scan_candidates(
     Rank every (game, player) with a live thread by the swing in his negative share.
 
     The Player x Game x Period grain over every threaded game, sorted by
-    the size of the swing, as the input to curation. Alignment is the
+    the size of the swing, as the input to curation. The clock is the
     recaps' own, so the scan and a recap can never disagree.
 
     Args:
         fact: The usable fact rows, at least those in game threads.
         posts: The Post bridge.
-        games: The Game dimension (game_id, game_date, home_team, away_team).
+        games: The Game dimension (game_id, home_team, away_team).
         players: The Player dimension (attributed_player, slug).
         pbp_dir: The season's play-by-play directory.
         min_live_n: Fewest live-thread comments a pair needs to rank.
@@ -1531,15 +1474,16 @@ def scan_candidates(
     threads = posts.filter(
         (pl.col("post_type") == GAME_THREAD) & pl.col("game_id").is_not_null()
     ).select("post_id", "game_id")
-    game_dates = games.select("game_id", "game_date")
     periods: list[pl.DataFrame] = []
+    clocks: list[pl.DataFrame] = []
     skipped: list[str] = []
     for game_id in sorted(threads["game_id"].unique().to_list()):
-        banked = read_game_clock(game_id, game_dates, pbp_dir)
+        banked = read_game_clock(game_id, pbp_dir)
         if banked is None:
             skipped.append(game_id)
             continue
         periods.append(banked[1])
+        clocks.append(game_clock(*banked))
     if not periods:
         return pl.DataFrame(), skipped
     clock = pl.concat(periods)
@@ -1549,6 +1493,7 @@ def scan_candidates(
         .join(threads, left_on="link_id", right_on="post_id", how="inner")
         .filter(pl.col("game_id").is_in(clock["game_id"].unique().to_list())),
         clock,
+        pl.concat(clocks),
     ).filter(pl.col("period").is_not_null())
     per_period = (
         aligned.group_by("game_id", "attributed_player", "period")

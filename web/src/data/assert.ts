@@ -158,9 +158,9 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
   return warnings
 }
 
-// A recap registry entry is a rollup of a file the site never opens at
-// build, so what can be checked is its identity against the dimensions
-// and its own arithmetic.
+// A recap registry entry is a rollup: its identity against the dimensions
+// and its own arithmetic are checked here, the file itself where the site
+// re-serves it (data/recap.ts).
 export function assertRecaps(manifest: Manifest, tables: Tables): void {
   const games = new Set(tables.games.map((g) => g.game_id))
   const players = new Map(tables.players.map((p) => [p.attributed_player, p]))

@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import { GAME_KEYS, GRID_KEYS, RECEIPT_KEYS, parseViewState, serializeViewState, type ViewState } from './url'
+import { GAME_KEYS, GRID_KEYS, RECEIPT_KEYS, REPLAY_KEYS, parseViewState, serializeViewState, type ViewState } from './url'
 
 const defaults = { threshold: 4321 }
-const DEFAULT: ViewState = { lens: 'neg', tab: 'neg', n: 4321, all: false, games: 'talked', log: 'top', scale: 'delta', min: 0 }
+const DEFAULT: ViewState = { lens: 'neg', tab: 'neg', n: 4321, all: false, games: 'talked', log: 'top', scale: 'delta', min: 0, t: null }
 // The grid passes its cell floor; the other islands pass none.
 const gridDefaults = { threshold: 4321, min: 250 }
 
 describe('parseViewState', () => {
   it('falls back to defaults for missing or invalid values', () => {
     expect(parseViewState('', defaults)).toEqual(DEFAULT)
-    expect(parseViewState('?lens=bogus&tab=x&n=-3&games=some&log=5&scale=huge&min=abc', defaults)).toEqual(DEFAULT)
+    expect(parseViewState('?lens=bogus&tab=x&n=-3&games=some&log=5&scale=huge&min=abc&t=abc', defaults)).toEqual(DEFAULT)
   })
 
   it('reads every field', () => {
-    expect(parseViewState('?lens=pos&tab=neu&n=250&all=1&games=all&log=all&scale=raw&min=500', defaults)).toEqual({
+    expect(parseViewState('?lens=pos&tab=neu&n=250&all=1&games=all&log=all&scale=raw&min=500&t=600', defaults)).toEqual({
       lens: 'pos',
       tab: 'neu',
       n: 250,
@@ -23,7 +23,15 @@ describe('parseViewState', () => {
       log: 'all',
       scale: 'raw',
       min: 500,
+      t: 600,
     })
+  })
+
+  it('reads the replay moment as a whole non-negative second, or none', () => {
+    expect(parseViewState('?t=0', defaults)).toMatchObject({ t: 0 })
+    expect(parseViewState('?t=12.6', defaults)).toMatchObject({ t: 13 })
+    expect(parseViewState('?t=-5', defaults)).toMatchObject({ t: null })
+    expect(parseViewState('?t=', defaults)).toMatchObject({ t: null })
   })
 
   it('falls back to the caller\'s cell floor for min', () => {
@@ -41,9 +49,9 @@ describe('parseViewState', () => {
 describe('serializeViewState', () => {
   it('omits defaults and round-trips the rest', () => {
     expect(serializeViewState(DEFAULT, defaults)).toBe('')
-    const s: ViewState = { lens: 'polar', tab: 'pos', n: 99, all: true, games: 'all', log: 'all', scale: 'raw', min: 7 }
+    const s: ViewState = { lens: 'polar', tab: 'pos', n: 99, all: true, games: 'all', log: 'all', scale: 'raw', min: 7, t: 0 }
     const q = serializeViewState(s, defaults)
-    expect(q).toBe('?lens=polar&tab=pos&n=99&all=1&games=all&log=all&scale=raw&min=7')
+    expect(q).toBe('?lens=polar&tab=pos&n=99&all=1&games=all&log=all&scale=raw&min=7&t=0')
     expect(parseViewState(q, defaults)).toEqual(s)
   })
 
@@ -59,9 +67,9 @@ describe('serializeViewState', () => {
 
 describe('island key sets', () => {
   it('are disjoint and each key is one the serialiser can emit', () => {
-    const sets = [RECEIPT_KEYS, GAME_KEYS, GRID_KEYS]
+    const sets = [RECEIPT_KEYS, GAME_KEYS, GRID_KEYS, REPLAY_KEYS]
     for (const a of sets) for (const b of sets) if (a !== b) expect(a.filter((k) => b.includes(k))).toEqual([])
-    const everything: ViewState = { lens: 'polar', tab: 'pos', n: 1, all: true, games: 'all', log: 'all', scale: 'raw', min: 1 }
+    const everything: ViewState = { lens: 'polar', tab: 'pos', n: 1, all: true, games: 'all', log: 'all', scale: 'raw', min: 1, t: 1 }
     const emitted = new Set(new URLSearchParams(serializeViewState(everything, defaults)).keys())
     for (const k of sets.flat()) expect(emitted.has(k), k).toBe(true)
   })

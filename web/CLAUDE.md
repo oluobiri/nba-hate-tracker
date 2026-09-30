@@ -6,8 +6,10 @@ restated. A human-facing web/README.md comes with the stable site. -->
 # web/ — the site
 
 Astro (static output) + React islands + TypeScript, built from the published data contract:
-`https://courtsentiment.com/data/season=<season>/` — `manifest.json`, `schema.json` and the
-parquets the manifest registers. No parquet reaches the browser; every page is rendered at build.
+`https://courtsentiment.com/data/season=<season>/` — `manifest.json`, `schema.json`, the
+parquets the manifest registers and the recap documents it registers. No parquet reaches the
+browser; every page is rendered at build. The one runtime fetch is a recap's document, which
+the site re-serves from its own origin (see "The contract").
 The design brief is `docs/internal/ux-review.md` (local only, not committed).
 
 ## Map
@@ -15,11 +17,12 @@ The design brief is `docs/internal/ux-review.md` (local only, not committed).
 ```
 src/
 ├── pages/        → one .astro per route; see "A page composes in its frontmatter"; card.png.ts endpoints
-│                   beside the index, player, team and recap routes
+│                   beside the index, player, team and recap routes; data.json.ts beside each recap
+├── components/replay/ → the replay island's parts (.tsx); the island itself is components/RecapReplay.tsx
 ├── components/   → .tsx (in an island, or static HTML without a directive) / .astro (shell only)
 ├── cards/        → the share cards: model.ts (pure, the page's sentence) → frame.tsx (the satori tree) →
 │                   render.ts (resvg); palette.ts pinned to tokens.css; media read once per build
-├── lib/          → pure logic and sentences, each with a colocated .test.ts
+├── lib/          → pure logic and sentences, each with a colocated .test.ts; a *.fixture.ts is test-only
 ├── data/         → the contract boundary: env → load → rows → assert
 │                   schema.json + types.gen.ts are generated, never edited
 ├── styles/       → tokens.css + components.css (reviewed on /styleguide/); per-region sheets for islands
@@ -57,6 +60,15 @@ The build fails when the types are stale (`codegen --check`), when the published
 from the snapshot (contract drift, `load.ts`), or when a table breaks an assertion in
 `src/data/assert.ts`: columns and dtypes, row counts, rates against counts, weekly sums, Mondays,
 unique keys, every foreign key.
+
+The `documents` block types the recap file the same way (`Recap*Row`, `RecapDocument`). A recap
+page's island fetches `/recaps/<key>/data.json`, which `pages/recaps/[key]/data.json.ts` re-serves
+at build from the data base: read, asserted against `documents.recap` (`src/data/recap.ts`,
+browser-safe), pinned to its registry entry, and cross-checked (the file's per-period counts
+equal the registry's). The island asserts it again on arrival. Same origin, so the walk on
+localhost and the production host behave alike; the deploy uploads it with the pages. A suite
+that reads the ten live files runs when `../data/<season>/dashboard/recaps/` exists and skips
+in CI (`describe.skipIf`).
 
 ## Conventions
 
@@ -102,7 +114,9 @@ unique keys, every foreign key.
   stylesheet the island imports, since scoped styles never reach React-rendered markup.
 - **URL state through `useViewState`** (`useSyncExternalStore` over the query string): the
   first render is the default view on both server and client, and a deep link takes over
-  after hydration. Slider drags write with `replace`, everything else pushes.
+  after hydration. Slider drags write with `replace`, everything else pushes. The replay
+  writes `t` (wall seconds since tip) with `replace` on pause, seek, step and speed only,
+  never per frame: playback position lives in refs (`replay/usePlayback.ts`).
 - **Every page has a share card.** `Base.astro` takes `image`; a page without one shows the
   leaderboard's card. A card is built from the page's own inputs (`lib/standings`, shared by the
   page and its endpoint) and says the header's sentence; the official view, never a receipt.

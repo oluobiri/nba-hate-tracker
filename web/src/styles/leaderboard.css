@@ -8,67 +8,14 @@
 .has-view .lb {
   visibility: hidden;
 }
-.lb__hero {
-  display: grid;
-  grid-template-columns: 1fr minmax(240px, 400px);
-  gap: 24px;
-  align-items: end;
-  min-height: 460px;
-  border-bottom: 1px solid var(--line);
-}
-.lb__hero-text {
-  display: grid;
-  gap: 18px;
-  align-content: end;
-  min-width: 0;
-}
-.lb__kicker {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--mute);
-}
+/* The island's own hero rules; the form itself is .hero in components.css. */
 .lb__hero-body {
   display: grid;
   gap: 16px;
 }
 /* The sentence keeps one height in every lens, so the switch never jumps. */
-.lb__sentence {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
+.lb .hero__sentence {
   min-height: 2.3em;
-  font-size: clamp(48px, 9vw, 112px);
-  line-height: 0.88;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
-}
-.lb__lead {
-  font-weight: 500;
-  font-size: 0.42em;
-  letter-spacing: 0.04em;
-  color: var(--bone-2);
-  text-wrap: balance;
-}
-.lb__who {
-  font-weight: 800;
-  text-decoration: none;
-  color: var(--bone);
-  overflow-wrap: break-word;
-}
-.lb__who:hover {
-  text-decoration: underline;
-  text-decoration-thickness: 0.04em;
-}
-.lb__hero--neg .lb__who {
-  color: var(--heat);
-}
-.lb__hero--pos .lb__who {
-  color: var(--ice);
 }
 .lb__who-heat {
   color: var(--heat);
@@ -76,7 +23,7 @@
 .lb__who-ice {
   color: var(--ice);
 }
-.lb__sentence .stamp {
+.lb .hero__sentence .stamp {
   font-size: 12px;
   transform: rotate(-3deg) translateY(-0.4em);
 }
@@ -103,30 +50,6 @@
   text-transform: uppercase;
   color: var(--mute);
 }
-.lb__meta {
-  margin: 0;
-  font-size: 13px;
-  color: var(--bone-2);
-}
-.lb__hero-figure {
-  position: relative;
-  align-self: end;
-  height: 100%;
-  min-height: 380px;
-}
-.lb__hero-figure img {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 100%;
-  height: auto;
-  max-height: 100%;
-  object-fit: contain;
-  object-position: bottom;
-  filter: grayscale(1) contrast(1.15) brightness(0.92);
-  mask-image: linear-gradient(to top, transparent 0, #000 22%);
-  -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22%);
-}
 .lb__rank-ghost {
   position: absolute;
   top: 0;
@@ -140,37 +63,12 @@
   user-select: none;
 }
 @media (max-width: 760px) {
-  /* The headshot stays: a small card beside the sentence, as sports pages keep it. */
-  .lb__hero {
-    grid-template-columns: minmax(0, 1fr) 96px;
-    gap: 12px;
-    align-items: start;
-    min-height: 0;
-  }
-  .lb__hero-figure {
-    height: auto;
-    min-height: 0;
-    /* Beside the name, not the kicker: centred on the hero text. */
-    align-self: center;
-    /* The lens switch slides the mug sideways; at the viewport's edge that must clip, not scroll. */
+  /* The lens switch slides the mug sideways; at the viewport's edge that must clip, not scroll. */
+  .lb .hero__figure {
     overflow: hidden;
   }
   .lb__rank-ghost {
     display: none;
-  }
-  /* The desktop cutout at a small size: masked into the ink, no card. */
-  .lb__hero-figure img {
-    position: static;
-    width: 100%;
-    height: auto;
-    max-height: none;
-    object-fit: contain;
-    object-position: bottom;
-  }
-  /* The name column is the viewport less the gutters, the mug and the gap; the longest
-     tracked surname (Antetokounmpo) must fit it on one line, so the phone size steps down. */
-  .lb__sentence {
-    font-size: clamp(34px, 10vw, 64px);
   }
 }
 .lb__rows {

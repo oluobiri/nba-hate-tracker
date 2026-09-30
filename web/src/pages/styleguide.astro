@@ -10,6 +10,9 @@ import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
+import { PeriodStrip } from '../components/PeriodStrip'
+import { RecapLead } from '../components/RecapLead'
+import { RecapRows } from '../components/RecapRows'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
@@ -31,6 +34,7 @@ import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
+import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
@@ -221,6 +225,33 @@ const gridLimit = deltaLimit(pairs.domain)
 const PAIR_TOP = 3
 const longestPair = pairs.grudges.toSorted((a, b) => b.label.length - a.label.length)[0]!
 const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair).slice(0, PAIR_TOP - 1)].map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
+// Recaps: the lead as the hero; the strip's awkward cases by rule (most overtime,
+// the thinnest quarter, a silent quarter constructed since the drop has none);
+// the rows with the longest name and the longest hook.
+const recaps = buildRecaps(manifest, tables)
+const { lead: recapLead } = leadAndList(recaps)
+const thinnestPeriod = (r: (typeof recaps)[number]) => Math.min(...r.cells.filter((c) => c.counts.total).map((c) => c.counts.total))
+const mostPeriods = recaps.toSorted((a, b) => b.cells.length - a.cells.length)[0] ?? null
+const thinnestRecap = recaps.toSorted((a, b) => thinnestPeriod(a) - thinnestPeriod(b))[0] ?? null
+const silenced = recapLead ? recapLead.cells.map((c, i) => (i === 1 ? { ...c, counts: { neg: 0, neu: 0, pos: 0, total: 0 } } : c)) : []
+const longestRecapName = recaps.toSorted((a, b) => b.entry.attributed_player.length - a.entry.attributed_player.length)[0]
+const longestHook = recaps.toSorted((a, b) => b.hook.length - a.hook.length)[0]
+const recapRows = [...new Set([longestRecapName, longestHook])].filter((r) => r !== undefined)
+// The lead's player's log around his recap: the row with the chip among rows without.
+const recapLog = recapLead
+  ? buildGameLog(
+      tables.player_games.filter((r) => r.attributed_player === recapLead.entry.attributed_player),
+      tables.game_sentiment.filter((r) => r.attributed_player === recapLead.entry.attributed_player),
+      gamesById,
+      abbrOf,
+      recapLead.usual,
+      gameFloor,
+      recapHrefs(manifest.recaps, recapLead.entry.attributed_player),
+    ).toSorted((a, b) => b.date.localeCompare(a.date))
+  : []
+const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
+const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
+
 ---
 
 <Base title="Style guide" description="Every core component in every variant, on real data.">
@@ -412,6 +443,30 @@ const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair)
     </section>
 
     <section class="guide__section">
+      <h2>Hero</h2>
+      <p class="eyebrow">
+        The leaderboard's form for a page's lead: the kicker, the name in display type coloured by the lead's lean, the sentence, the figures, the masked headshot; a card beside the text on a phone. Here the lead recap{recapLead ? `: ${recapLead.entry.attributed_player}, tone ${recapLead.tone}` : ''}.
+      </p>
+      {recapLead ? <RecapLead recap={recapLead} /> : <p class="eyebrow">No recap is curated this season.</p>}
+    </section>
+
+    <section class="guide__section">
+      <h2>PeriodStrip</h2>
+      <p class="eyebrow">The game by quarter: one mini bar per quarter and overtime at equal widths, n under each; nothing grayed, no floor read. Hero size, then row size.</p>
+      <div class="guide__stack">
+        {mostPeriods && <figure class="guide__fig"><PeriodStrip cells={mostPeriods.cells} size="hero" subject={mostPeriods.entry.attributed_player} /><figcaption>most overtime · {mostPeriods.entry.attributed_player}, {mostPeriods.cells.length} quarters and overtimes, hero size</figcaption></figure>}
+        {thinnestRecap && <figure class="guide__fig"><PeriodStrip cells={thinnestRecap.cells} subject={thinnestRecap.entry.attributed_player} /><figcaption>thinnest quarter · {thinnestRecap.entry.attributed_player}, {fmtInt(thinnestPeriod(thinnestRecap))} comments in one quarter or overtime, row size</figcaption></figure>}
+        {recapLead && <figure class="guide__fig"><PeriodStrip cells={silenced} subject={recapLead.entry.attributed_player} /><figcaption>a silent quarter, constructed: {recapLead.entry.attributed_player} with Q2 zeroed</figcaption></figure>}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>RecapRows</h2>
+      <p class="eyebrow">One curated recap per row, the whole row the link: face, the game line with the winner bold, name, the hook, the strip, n. The longest name and the longest hook.</p>
+      {recapRows.length ? <RecapRows recaps={recapRows} /> : <p class="eyebrow">No recap is curated this season.</p>}
+    </section>
+
+    <section class="guide__section">
       <h2>TeamPicker</h2>
       <p class="eyebrow">
         The way into a fanbase: one group per conference, alphabetical inside, 44 px tiles. Logos in colour, the site's one exception: they stand alone as the control. Focus drawn on the longest name, {longestName.team}; {abbrNote} this drop.
@@ -451,6 +506,12 @@ const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair)
         {topLog.some((g) => g.home === null) ? 'Includes a neutral-site game. ' : 'He has no neutral-site game this season. '}
         {quiet ? 'Includes a game under the floor.' : ''}
       </p>
+      {chipRows.length > 0 && recapLead && (
+        <>
+          <p class="eyebrow">A game with a curated recap carries a Recap chip at the row's end: {recapLead.entry.attributed_player}'s log around his.</p>
+          <GamesTable rows={chipRows} caption={`${recapLead.entry.attributed_player}'s game log around his recap, a sample`} />
+        </>
+      )}
     </section>
 
     <section class="guide__section">

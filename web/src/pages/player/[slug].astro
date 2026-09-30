@@ -27,6 +27,7 @@ import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterP
 import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
+import { recapHrefs } from '../../lib/recaps'
 import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
 import { playerStandings, rankIn, type Standing } from '../../lib/standings'
 import type { Counts, Sentiment } from '../../lib/types'
@@ -137,7 +138,7 @@ const hisNeg = negRate(lists.average)
 const hisPos = posRate(lists.average)
 
 // Games (built before the timeline: the week readouts list them).
-const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n)
+const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n, recapHrefs(manifest.recaps, name))
 const dressed = log.length > 0
 const wl = winLossSplit(log, floors.game_min_n)
 const points = scatterPoints(log)

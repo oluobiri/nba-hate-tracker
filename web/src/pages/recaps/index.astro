@@ -1,0 +1,73 @@
+---
+// The recaps index: one lead recap in the hero form, the rest as rows in
+// config order, then the method. Static; the registry is joined once and
+// no recap file is opened here.
+import { MethodNote } from '../../components/MethodNote'
+import { RecapLead } from '../../components/RecapLead'
+import { RecapRows } from '../../components/RecapRows'
+import { getSeason } from '../../data'
+import Base from '../../layouts/Base.astro'
+import { buildRecaps, indexLede, lagPhrase, leadAndList } from '../../lib/recaps'
+
+const { manifest, tables } = await getSeason()
+const recaps = buildRecaps(manifest, tables)
+const { lead, list } = leadAndList(recaps)
+const lede = indexLede(lead)
+const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
+---
+
+<Base title="Recaps" description={lede}>
+  <main id="main" class="wrap page rx">
+    <header class="rx__head">
+      <p class="eyebrow">{manifest.season} · Recaps</p>
+      <h1>Recaps</h1>
+      <p class="rx__lede">Every comment, as it landed. One game, one player, the room on the game clock beside the play-by-play.</p>
+    </header>
+
+    {lead ? <RecapLead recap={lead} /> : <p class="rx__none">No recap is curated this season.</p>}
+
+    {
+      list.length > 0 && (
+        <section class="rx__section" aria-labelledby="more-h">
+          <h2 id="more-h">More nights</h2>
+          <RecapRows recaps={list} />
+        </section>
+      )
+    }
+
+    <MethodNote kind="method">
+      A recap replays one game's live thread on r/NBA against the game as it was scored that night. The population is his comments in the game's live thread, the primary thread and any
+      split; post-game threads are not in it, so the final verdict on a recap's page, which counts every thread about him that night, is a different population and is labeled as one.
+      Each comment sits on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play, so a reaction reads ${lag} after the play it answers` : ''}. Each quarter's
+      bar is his comments in that quarter, negative, neutral, positive, with their count under it.
+    </MethodNote>
+  </main>
+</Base>
+
+<style>
+  .rx {
+    gap: 40px;
+  }
+  .rx__head {
+    display: grid;
+    gap: 12px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  .rx__lede {
+    max-width: 60ch;
+    margin: 0;
+    font-size: 16px;
+    color: var(--bone-2);
+  }
+  .rx__none {
+    color: var(--bone-2);
+  }
+  .rx__section {
+    display: grid;
+    gap: 16px;
+  }
+  .rx__section h2 {
+    margin: 0;
+  }
+</style>

@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { parquetMetadata, parquetReadObjects } from 'hyparquet'
 import { compressors } from 'hyparquet-compressors'
 
-import { assertManifest, assertParquetSchema, assertTables } from './assert'
+import { assertManifest, assertParquetSchema, assertRecaps, assertTables } from './assert'
 import { CONTRACT, ContractError, type ContractSchema, columnsOf } from './contract'
 import { readBytes, readJson, resolveDataBase, type SeasonLocation, seasonLocation } from './env'
 import { normaliseRow, type RawRow, type SchemaElement } from './rows'
@@ -57,5 +57,6 @@ export async function loadSeason(season: string, base: string = resolveDataBase(
   const tables = Object.fromEntries(loaded) as unknown as Tables
 
   const warnings = assertTables(tables, manifest)
+  assertRecaps(manifest, tables)
   return { season, source: loc.root, manifest, tables, warnings }
 }

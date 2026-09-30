@@ -66,7 +66,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -516,9 +516,10 @@ PLAYER_GAMES_SCHEMA = pl.Schema(
 # --- Post bridge (built in pipeline/posts.py) --------------------------------
 # One row per r/NBA post. post_id is the t3_ fullname, the fact's link_id,
 # so the comment -> game path is one join. post_type derives from flair
-# (title as fallback); game_id from the title's team pair and the ET date
-# of created_utc, validated against games.parquet. Split, second-half and
-# repost threads share a game_id; is_primary marks the largest by
+# (title as fallback), source from the leading tag of a news post;
+# game_id from the title's team pair and the ET date of created_utc,
+# validated against games.parquet, on threads only. Split, second-half
+# and repost threads share a game_id; is_primary marks the largest by
 # num_comments per (game_id, post_type). The published subset keeps the
 # game and post-game threads plus every post a receipt points at.
 POSTS_SCHEMA = pl.Schema(
@@ -529,7 +530,10 @@ POSTS_SCHEMA = pl.Schema(
         "score": pl.Int64,
         "num_comments": pl.Int64,  # whole-room size; sum per game for a game's room
         "link_flair_text": pl.String,  # as the source
-        "post_type": pl.String,  # game_thread | post_game_thread | other
+        # game_thread | post_game_thread | highlight | lowlight | injury |
+        # news | discussion | other
+        "post_type": pl.String,
+        "source": pl.String,  # reporter, outlet or person quoted; news only
         "game_id": pl.String,  # FK -> games.parquet; null when unlinked
         "is_primary": pl.Boolean,  # false whenever game_id is null
     }
@@ -635,7 +639,7 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "teams": frozenset(),
     "games": frozenset({"playoff_round", "playoff_series", "playoff_game"}),
     "player_games": frozenset({"is_home"}),  # neutral site: nobody hosted
-    "posts": frozenset({"game_id", "link_flair_text"}),
+    "posts": frozenset({"game_id", "link_flair_text", "source"}),
     "comment_samples": frozenset({"fan_team"}),  # unflaired commenter
     "corpus_daily": frozenset({"attributed"}),
 }

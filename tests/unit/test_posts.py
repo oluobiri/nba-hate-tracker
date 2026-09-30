@@ -8,7 +8,12 @@ import polars as pl
 import pytest
 
 from pipeline.posts import (
+    DISCUSSION,
     GAME_THREAD,
+    HIGHLIGHT,
+    INJURY,
+    LOWLIGHT,
+    NEWS,
     OTHER,
     POST_GAME_THREAD,
     POSTS_BRIDGE_FILENAME,
@@ -18,11 +23,13 @@ from pipeline.posts import (
     build_title_name_map,
     classify_post,
     extract_team_pair,
+    leading_tag,
     load_posts_table,
     local_date,
     match_game,
     parse_score,
     parse_title_date,
+    post_source,
     read_raw_posts,
 )
 from pipeline.schemas import GAMES_SCHEMA, POSTS_SCHEMA
@@ -77,6 +84,52 @@ def _games(rows) -> pl.DataFrame:
     return pl.DataFrame(rows, schema=GAMES_SCHEMA)
 
 
+class TestLeadingTag:
+    """Tests for leading_tag (the bracketed tag a title opens with)."""
+
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("[Charania] The Bucks have traded ...", "charania"),
+            ("  [ The  Athletic ] Inside the deal", "the athletic"),
+            ("[O’Connor] Ja Morant isn't ...", "o'connor"),
+            ("[STAT REPORT] SGA has more ...", "stat report"),
+        ],
+    )
+    def test_normalizes_case_spacing_and_apostrophes(self, title, expected):
+        """Verify one source spelled two ways yields one tag."""
+        assert leading_tag(title) == expected
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "[[Scotto] Kawhi Leonard has been named ...",
+            "[[Scotto]] Kawhi Leonard has been named ...",
+        ],
+    )
+    def test_doubled_bracket_reads_the_tag_inside(self, title):
+        """Verify a mistyped double bracket never enters the tag."""
+        assert leading_tag(title) == "scotto"
+
+    def test_forty_characters_is_the_longest_tag(self):
+        """Verify the length bound: a tag of forty reads, forty-one does not."""
+        assert leading_tag(f"[{'a' * 40}] title") == "a" * 40
+        assert leading_tag(f"[{'a' * 41}] title") is None
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Charania says the Bucks have traded ...",
+            "The Bucks [per Charania] have traded ...",
+            "[] empty brackets",
+            "[" + "a very long bracketed sentence " * 3 + "] then a title",
+        ],
+    )
+    def test_no_tag_is_none(self, title):
+        """Verify only a short tag at the head of the title counts."""
+        assert leading_tag(title) is None
+
+
 class TestClassifyPost:
     """Tests for classify_post (flair first, anchored title fallback)."""
 
@@ -85,15 +138,73 @@ class TestClassifyPost:
         [
             ("Game Thread", GAME_THREAD),
             ("Post Game Thread", POST_GAME_THREAD),
-            ("Highlight", OTHER),
+            ("Highlight", HIGHLIGHT),
+            ("Discussion", DISCUSSION),
+            ("Original Content", DISCUSSION),
+            ("AMA", DISCUSSION),
+            ("All-Access", DISCUSSION),
             ("Index Thread", OTHER),
+            ("Misleading", OTHER),
         ],
     )
     def test_flair_decides(self, flair, expected):
-        """Verify the two thread flairs classify on flair alone; any other
-        flair is `other` whatever the title says."""
-        title = "GAME THREAD: Boston Celtics (1-0) @ New York Knicks (0-1)"
+        """Verify a flair classifies on flair alone, whatever the title
+        says, and an unmapped flair is `other`."""
+        title = "[Charania] GAME THREAD: Boston Celtics @ New York Knicks"
         assert classify_post(title, flair) == expected
+
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("[Highlight] Jaylen Brown dunks on two defenders", HIGHLIGHT),
+            ("[Highlights] Every Wembanyama block tonight", HIGHLIGHT),
+            ("[Lowlight] Airball to end the half", LOWLIGHT),
+            ("[Lowlights] Every turnover of the fourth", LOWLIGHT),
+            ("[Injury] Player X is helped off the floor", INJURY),
+            ("[Injury Update] Player X is questionable to return", INJURY),
+            ("[Higlight] A misspelled dunk", HIGHLIGHT),
+        ],
+    )
+    def test_unflaired_convention_tag_names_the_type(self, title, expected):
+        """Verify the tags that are types in themselves classify a post
+        the mods left unflaired."""
+        assert classify_post(title, None) == expected
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "[Charania] The Bucks have traded ...",
+            "[The Athletic] Inside the deal",
+            "[Stein/Fischer] The Wolves, sources say, ...",
+            "[Jaylen Brown] Analytics are ruining the game",
+            "[247Sports] A recruit commits",
+            "[Стейн] A source written outside the Latin alphabet",
+        ],
+    )
+    def test_unflaired_source_tag_is_news(self, title):
+        """Verify any other leading tag is a source: a reporter, an
+        outlet, or the person quoted."""
+        assert classify_post(title, None) == NEWS
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "[OC] Playoff risers and fallers by game score",
+            "[Serious] Do the Spurs have to move off of Fox?",
+            "[ Removed by moderator ]",
+            "[Highlight Request] The airball from last night",
+            "[[Highlight Request] The airball from last night",
+            "[Post Game] Wembanyama tonight: 26 points, 15 rebounds",
+            "[02/04/2025] Dennis Schröder on the trade deadline",
+            "[2022] Jrue Holiday forces two turnovers",
+            "[2026 NBA Draft] #12 Pick: selected by Oklahoma City",
+            "The Bucks [per Charania] have traded ...",
+        ],
+    )
+    def test_conventions_and_dates_stay_other(self, title):
+        """Verify a tag that names no source is not news: the
+        subreddit's conventions, a date, a tag opening with a year."""
+        assert classify_post(title, None) == OTHER
 
     @pytest.mark.parametrize(
         "title,expected",
@@ -117,6 +228,37 @@ class TestClassifyPost:
         """Verify a flair-stripped post classifies by an anchored title
         prefix only — "game thread" mid-title never matches."""
         assert classify_post(title, None) == expected
+
+
+class TestPostSource:
+    """Tests for post_source (the tag of a news post, null elsewhere)."""
+
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("[Charania] The Bucks have traded ...", "charania"),
+            ("[Marc Stein] League sources say ...", "marc stein"),
+            ("[Jaylen Brown] Analytics are ruining the game", "jaylen brown"),
+        ],
+    )
+    def test_news_post_carries_its_tag(self, title, expected):
+        """Verify the source is the normalized leading tag."""
+        assert post_source(title, None) == expected
+
+    @pytest.mark.parametrize(
+        "title,flair",
+        [
+            ("[Charania] The Bucks have traded ...", "Highlight"),
+            ("[Charania] The Bucks have traded ...", "Misleading"),
+            ("[Lowlight] Airball to end the half", None),
+            ("[ Removed by moderator ]", None),
+            ("[Game Thread] The Celtics VS the Knicks", None),
+            ("Inside the NBA was great", None),
+        ],
+    )
+    def test_every_other_type_has_no_source(self, title, flair):
+        """Verify a source is never read off a post that is not news."""
+        assert post_source(title, flair) is None
 
 
 class TestBuildTitleNameMap:
@@ -547,12 +689,52 @@ class TestBuildPostsBridge:
         assert by_id["t3_tnt"]["post_type"] == GAME_THREAD
         assert by_id["t3_tnt"]["game_id"] is None
         assert by_id["t3_tnt"]["is_primary"] is False
-        assert by_id["t3_hl"]["post_type"] == OTHER
+        assert by_id["t3_hl"]["post_type"] == HIGHLIGHT
         assert by_id["t3_hl"]["game_id"] is None
+        assert bridge["source"].null_count() == bridge.height
         assert "game_thread: 2/3 linked" in caplog.text
         assert "post_game_thread: 1/1 linked" in caplog.text
         assert "1/1 games" in caplog.text
         assert "Inside the NBA" in caplog.text
+
+    def test_only_threads_are_resolved_to_a_game(self, caplog):
+        """Verify a typed post that names both teams of a game played
+        that day keeps a null game_id, a news post carries its source,
+        and the build logs the types and the sources it found."""
+        rows = [
+            _post(
+                "t3_hl",
+                "[Highlight] Boston Celtics beat the New York Knicks at the buzzer",
+                _EVENING_ET,
+                None,
+            ),
+            _post(
+                "t3_news",
+                "[Charania] The Boston Celtics and New York Knicks agree to a trade",
+                _EVENING_ET,
+                None,
+            ),
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_hl"]["post_type"] == HIGHLIGHT
+        assert by_id["t3_hl"]["source"] is None
+        assert by_id["t3_news"]["post_type"] == NEWS
+        assert by_id["t3_news"]["source"] == "charania"
+        assert bridge["game_id"].null_count() == 2
+        assert not bridge["is_primary"].any()
+        assert "highlight 1, lowlight 0, injury 0, news 1, discussion 0" in caplog.text
+        assert "news sources: 1 distinct; largest: charania 1\n" in caplog.text
+
+    def test_no_news_logs_no_sources(self, caplog):
+        """Verify a bridge without a news post reports none, and names none."""
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            build_posts_bridge(_posts(self.ROWS), _games(self.GAMES), TEAM_CONFIG)
+
+        assert "news sources: 0 distinct\n" in caplog.text
 
     def test_sorted_by_creation_then_id(self):
         """Verify the bridge is ordered like the fact, by time then key."""
@@ -602,18 +784,28 @@ class TestLoadPostsTable:
         {
             **_post("t3_gt", "GAME THREAD: ...", _EVENING_ET, "Game Thread"),
             "post_type": GAME_THREAD,
+            "source": None,
             "game_id": "0022500001",
             "is_primary": True,
         },
         {
             **_post("t3_receipt", "Trade rumor", _EVENING_ET, None),
             "post_type": OTHER,
+            "source": None,
             "game_id": None,
             "is_primary": False,
         },
         {
             **_post("t3_noise", "Highlight", _EVENING_ET, "Highlight"),
-            "post_type": OTHER,
+            "post_type": HIGHLIGHT,
+            "source": None,
+            "game_id": None,
+            "is_primary": False,
+        },
+        {
+            **_post("t3_news", "[Charania] A trade", _EVENING_ET, None),
+            "post_type": NEWS,
+            "source": "charania",
             "game_id": None,
             "is_primary": False,
         },
@@ -653,7 +845,8 @@ class TestLoadPostsTable:
 
     def test_publishes_threads_and_receipt_posts(self, tmp_path):
         """Verify the subset is every thread plus each post a receipt
-        points at, and nothing else."""
+        points at, and nothing else: a typed post that is neither stays
+        in the bridge."""
         self._write_bridge(tmp_path)
 
         posts, metadata = load_posts_table(
@@ -669,6 +862,23 @@ class TestLoadPostsTable:
 
         with pytest.raises(ValueError, match="absent from games"):
             load_posts_table(tmp_path, _games([]), "2026-09-12", self.RECEIPTS)
+
+    def test_bridge_of_another_shape_names_the_remedy(self, tmp_path):
+        """Verify a bridge written before a column was added fails the
+        build with the command that rebuilds it."""
+        stale = pl.DataFrame(self.BRIDGE, schema=POSTS_SCHEMA).drop("source")
+        stale.write_parquet(
+            tmp_path / POSTS_BRIDGE_FILENAME,
+            metadata={
+                "season": get_active_season(),
+                "processed_at": "2026-09-13",
+                "games_fetched_at": "2026-09-12",
+                "teams_config_version": load_team_config_version(),
+            },
+        )
+
+        with pytest.raises(ValueError, match="missing columns.*process_posts --force"):
+            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
 
     def test_fetch_date_mismatch_warns(self, tmp_path, caplog):
         """Verify a bridge derived from another game-log fetch is flagged."""

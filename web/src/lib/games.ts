@@ -6,7 +6,7 @@ import type { GameSentimentRow, GamesRow, PlayerGamesRow } from '../data/types.g
 import { fmtInt, fmtPct } from './format'
 import { countsOf, gameScore, negRate, sumCounts } from './metrics'
 import type { Counts } from './types'
-import { weekOf } from './weeks'
+import { PHASE_LABELS, type Phase, weekLabel, weekOf } from './weeks'
 
 export interface GameLine {
   gameId: string
@@ -35,6 +35,61 @@ export interface GameLine {
   talked: boolean
   /** This game's negative share minus his season baseline; null unless talked. */
   delta: number | null
+  /** The recap of this game with him as its focus, when one is curated. */
+  recapHref: string | null
+}
+
+/** "SAS 111 @ OKC 103": away first, as a box score reads. */
+export function scoreLine(game: GamesRow, abbr: ReadonlyMap<string, string>): string {
+  const a = (t: string) => abbr.get(t) ?? t
+  return `${a(game.away_team)} ${game.away_score} @ ${a(game.home_team)} ${game.home_score}`
+}
+
+const ROUNDS: Record<number, string> = { 1: 'First round', 2: 'Conf. semifinals', 4: 'NBA Finals' }
+
+/** The round of a playoff game, the conference named at round 3; the season phase otherwise. */
+export function roundLabel(game: GamesRow, conferenceOf: ReadonlyMap<string, string>): string {
+  const round = game.playoff_round === null ? null : Math.trunc(game.playoff_round)
+  if (game.season_type !== 'playoffs' || round === null) return PHASE_LABELS[game.season_type as Phase] ?? game.season_type
+  if (round === 3) {
+    const conference = conferenceOf.get(game.home_team) ?? conferenceOf.get(game.away_team)
+    return conference ? `${conference} Finals` : 'Conference Finals'
+  }
+  return ROUNDS[round] ?? `Round ${round}`
+}
+
+export interface GameSide {
+  abbr: string
+  score: number
+  won: boolean
+}
+
+export interface GameLineParts {
+  round: string
+  /** "Game 7"; null outside the playoffs. */
+  game: string | null
+  away: GameSide
+  home: GameSide
+  /** "May 30". */
+  date: string
+  /** "West Finals · Game 7 · SAS 111 @ OKC 103 · May 30". */
+  text: string
+}
+
+/** One game as an eyebrow reads it, in parts so the winner can be set bold. */
+export function gameLine(game: GamesRow, abbr: ReadonlyMap<string, string>, conferenceOf: ReadonlyMap<string, string>): GameLineParts {
+  const a = (t: string) => abbr.get(t) ?? t
+  const round = roundLabel(game, conferenceOf)
+  const number = game.playoff_game === null ? null : `Game ${Math.trunc(game.playoff_game)}`
+  const date = weekLabel(game.game_date)
+  return {
+    round,
+    game: number,
+    away: { abbr: a(game.away_team), score: game.away_score, won: game.winner === game.away_team },
+    home: { abbr: a(game.home_team), score: game.home_score, won: game.winner === game.home_team },
+    date,
+    text: [round, number, scoreLine(game, abbr), date].filter(Boolean).join(' · '),
+  }
 }
 
 /** His dressed games in date order, joined to the room's counts and judged against `baseline`. */
@@ -45,6 +100,7 @@ export function buildGameLog(
   abbr: ReadonlyMap<string, string>,
   baseline: Counts,
   floor: number,
+  recapHrefs: ReadonlyMap<string, string> = new Map(),
 ): GameLine[] {
   const room = new Map(sentiment.map((r) => [r.game_id, countsOf(r)]))
   const base = negRate(baseline)
@@ -79,6 +135,7 @@ export function buildGameLog(
           counts,
           talked,
           delta: talked ? negRate(counts) - base : null,
+          recapHref: recapHrefs.get(l.game_id) ?? null,
         },
       ]
     })

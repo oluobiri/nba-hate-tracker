@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GameSentimentRow, GamesRow, PlayerGamesRow } from '../data/types.gen'
-import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
+import { buildGameLog, gameLine, gamesSummary, neverDressedSentence, roundLabel, scatterLead, scatterPoints, scoreLine, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
 import { negRate } from './metrics'
 import type { Counts } from './types'
 
@@ -113,6 +113,12 @@ describe('buildGameLog', () => {
     expect(log[3]!.counts).toEqual(c(3, 1, 1))
   })
 
+  it('carries a recap href only for the game a recap is curated on', () => {
+    const withRecap = buildGameLog(LINES, ROOM, GAMES, ABBR, BASELINE, FLOOR, new Map([['g2', '/recaps/g2-leader/']]))
+    expect(withRecap.map((g) => g.recapHref)).toEqual([null, '/recaps/g2-leader/', null, null])
+    expect(log.every((g) => g.recapHref === null)).toBe(true)
+  })
+
   it('marks a dressed game with no minutes as DNP, still in the log', () => {
     expect(log[2]).toMatchObject({ dnp: true, line: 'DNP', gameScore: 0, talked: true })
   })
@@ -200,5 +206,37 @@ describe('seasonAverages', () => {
     // g1, g2, g4 played (g3 DNP), all regular season: 30 pts, 10 reb, 7 ast each.
     expect(seasonAverages(log)).toEqual({ gp: 3, ppg: 30, rpg: 10, apg: 7 })
     expect(seasonAverages(log.map((g) => ({ ...g, seasonType: 'playoffs' })))).toBeNull()
+  })
+})
+
+describe('the game line', () => {
+  const CONF = new Map([
+    ['Boston Celtics', 'East'],
+    ['New York Knicks', 'East'],
+    ['Denver Nuggets', 'West'],
+  ])
+  const g7 = game('p7', '2026-05-30', 'Boston Celtics', 'New York Knicks', 103, 111, { season_type: 'playoffs', playoff_round: 3, playoff_series: 0, playoff_game: 7 })
+
+  it('reads away first, as a box score does', () => {
+    expect(scoreLine(GAMES.get('g1')!, ABBR)).toBe('NYK 98 @ Boston Celtics 112')
+  })
+
+  it('names the round, the conference at round 3, and the phase outside the playoffs', () => {
+    expect(roundLabel({ ...g7, playoff_round: 1 }, CONF)).toBe('First round')
+    expect(roundLabel({ ...g7, playoff_round: 2 }, CONF)).toBe('Conf. semifinals')
+    expect(roundLabel(g7, CONF)).toBe('East Finals')
+    expect(roundLabel({ ...g7, home_team: 'Denver Nuggets' }, CONF)).toBe('West Finals')
+    expect(roundLabel(g7, new Map())).toBe('Conference Finals')
+    expect(roundLabel({ ...g7, playoff_round: 4 }, CONF)).toBe('NBA Finals')
+    expect(roundLabel(GAMES.get('g1')!, CONF)).toBe('Regular season')
+    expect(roundLabel({ ...GAMES.get('g1')!, season_type: 'play_in' }, CONF)).toBe('Play-in')
+  })
+
+  it('joins the parts into the eyebrow and marks the winner', () => {
+    const parts = gameLine(g7, ABBR, CONF)
+    expect(parts.text).toBe('East Finals · Game 7 · NYK 111 @ Boston Celtics 103 · May 30')
+    expect(parts.away).toEqual({ abbr: 'NYK', score: 111, won: true })
+    expect(parts.home).toEqual({ abbr: 'Boston Celtics', score: 103, won: false })
+    expect(gameLine(GAMES.get('g1')!, ABBR, CONF)).toMatchObject({ round: 'Regular season', game: null, date: 'Oct 22', text: 'Regular season · NYK 98 @ Boston Celtics 112 · Oct 22' })
   })
 })

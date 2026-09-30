@@ -12,21 +12,28 @@ import pytest
 import requests
 
 from pipeline.nba_stats import (
+    LiveFeedRefused,
+    fetch_live_play_by_play,
     fetch_play_by_play,
     fetch_player_game_log,
     fetch_rosters,
     fetch_team_game_log,
+    has_valid_live_play_by_play,
     has_valid_play_by_play,
+    load_live_play_by_play,
     load_play_by_play,
+    sync_live_play_by_play,
     sync_play_by_play,
 )
 from pipeline.schemas import (
+    LIVE_PLAY_BY_PLAY_SCHEMA,
     PLAY_BY_PLAY_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
     TEAM_GAME_LOG_SCHEMA,
 )
+from utils.constants import NBA_CDN_USER_AGENT, NBA_LIVE_HEADERS
 
 FAKE_TEAMS = [
     {"id": 1, "full_name": "Atlanta Hawks", "abbreviation": "ATL"},
@@ -910,5 +917,422 @@ class TestLoadPlayByPlay:
 
         with caplog.at_level(logging.WARNING, logger="tests.nba_stats"):
             load_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
+
+        assert any("season stamp" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Live play-by-play (cdn.nba.com liveData)
+# ---------------------------------------------------------------------------
+
+GAME_C = "0022400500"
+
+ACCESS_DENIED = b"<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD></HTML>"
+
+
+def _period_start() -> dict:
+    """The feed's period marker: no player, no team, no shot fields."""
+    return {
+        "actionNumber": 2,
+        "clock": "PT12M00.00S",
+        "timeActual": "2026-05-31T00:16:14.6Z",
+        "period": 1,
+        "periodType": "REGULAR",
+        "actionType": "period",
+        "subType": "start",
+        "qualifiers": [],
+        "personId": 0,
+        "x": None,
+        "y": None,
+        "possession": 0,
+        "scoreHome": "0",
+        "scoreAway": "0",
+        "edited": "2026-05-31T00:16:14Z",
+        "orderNumber": 20000,
+        "isTargetScoreLastPeriod": False,
+        "xLegacy": None,
+        "yLegacy": None,
+        "isFieldGoal": 0,
+        "side": None,
+        "description": "Period Start",
+        "personIdsFilter": [],
+    }
+
+
+def _made_shot() -> dict:
+    """A made shot: coordinates, a running total and the assist as fields."""
+    return {
+        **_period_start(),
+        "actionNumber": 7,
+        "clock": "PT11M39.00S",
+        "timeActual": "2026-05-31T00:16:51.3Z",
+        "actionType": "2pt",
+        "subType": "Jump Shot",
+        "qualifiers": ["pointsinthepaint", "2ndchance"],
+        "personId": 1641705,
+        "x": 83.65,
+        "y": 42.1,
+        "possession": 1610612759,
+        "scoreAway": "2",
+        "orderNumber": 70000,
+        "xLegacy": 112,
+        "yLegacy": 36,
+        "isFieldGoal": 1,
+        "side": "right",
+        "description": "V. Wembanyama 12' step back bank Jump Shot (2 PTS)",
+        "personIdsFilter": [1641705, 1642264],
+        "teamId": 1610612759,
+        "teamTricode": "SAS",
+        "playerName": "Wembanyama",
+        "playerNameI": "V. Wembanyama",
+        "shotDistance": 12.41,
+        "shotResult": "Made",
+        "pointsTotal": 2,
+        "assistPersonId": 1642264,
+        "assistTotal": 1,
+    }
+
+
+def _live_payload(game_id: str, actions: list[dict] | None = None) -> dict:
+    """One feed-shaped response body."""
+    return {
+        "meta": {"version": 1, "code": 200},
+        "game": {
+            "gameId": game_id,
+            "actions": [_period_start(), _made_shot()] if actions is None else actions,
+        },
+    }
+
+
+def _live_response(item) -> Mock:
+    """A requests.Response stand-in for a payload dict or a (status, body) pair."""
+    status, body = item if isinstance(item, tuple) else (200, json.dumps(item).encode())
+    response = requests.Response()
+    response.status_code = status
+    response._content = body
+    return response
+
+
+def _live_feed(responses: dict[str, list]) -> Mock:
+    """Build an http_get stand-in serving queued responses per game id.
+
+    Each queued item is a payload dict, a (status, body) pair, or an
+    exception (raised by the call).
+    """
+    queues = {game_id: list(items) for game_id, items in responses.items()}
+
+    def _get(url: str, **kwargs) -> Mock:
+        game_id = url.rsplit("_", 1)[1].removesuffix(".json")
+        item = queues[game_id].pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return _live_response(item)
+
+    return Mock(side_effect=_get)
+
+
+def _sync_live_with_mocks(responses: dict[str, list], out_dir, game_ids=None, **kwargs):
+    """Run sync_live_play_by_play with the feed and sleep mocked."""
+    http_get = _live_feed(responses)
+    # One time.sleep serves both the polite delay and the retry backoff
+    with patch("pipeline.nba_stats.time.sleep") as mock_sleep:
+        report = sync_live_play_by_play(
+            game_ids if game_ids is not None else list(responses),
+            out_dir,
+            season="2025-26",
+            http_get=http_get,
+            **kwargs,
+        )
+    return report, http_get, mock_sleep
+
+
+class TestFetchLivePlayByPlay:
+    """Tests for the feed's normalization into the snapshot contract."""
+
+    def _fetch(self, item, game_id: str = GAME_A) -> pl.DataFrame:
+        return fetch_live_play_by_play(game_id, http_get=_live_feed({game_id: [item]}))
+
+    def test_conforms_to_schema(self):
+        """Every field lands snake_cased, in schema order and dtype."""
+        df = self._fetch(_live_payload(GAME_A))
+        assert df.schema == LIVE_PLAY_BY_PLAY_SCHEMA
+        assert df["game_id"].to_list() == [GAME_A, GAME_A]
+
+    def test_absent_field_is_null(self):
+        """A field an action does not carry is null, never a filler value."""
+        df = self._fetch(_live_payload(GAME_A))
+        marker, shot = df.rows(named=True)
+        assert marker["team_id"] is None
+        assert marker["assist_person_id"] is None
+        assert shot["assist_person_id"] == 1642264
+        assert df["block_person_id"].null_count() == 2  # in no action at all
+
+    def test_list_fields_stay_lists(self):
+        """qualifiers and personIdsFilter are kept as lists, empty ones included."""
+        df = self._fetch(_live_payload(GAME_A))
+        assert df["qualifiers"].to_list() == [[], ["pointsinthepaint", "2ndchance"]]
+        assert df["person_ids_filter"].to_list() == [[], [1641705, 1642264]]
+
+    def test_keeps_values_as_served(self):
+        """The timestamp, the edit time, the clock and the score stay strings."""
+        shot = self._fetch(_live_payload(GAME_A)).row(1, named=True)
+        assert shot["time_actual"] == "2026-05-31T00:16:51.3Z"
+        assert shot["edited"] == "2026-05-31T00:16:14Z"
+        assert shot["clock"] == "PT11M39.00S"
+        assert shot["score_away"] == "2"
+        assert shot["player_name_i"] == "V. Wembanyama"
+
+    def test_sends_the_header_set_the_cdn_requires(self):
+        """The request carries the project User-Agent and every required header."""
+        http_get = _live_feed({GAME_A: [_live_payload(GAME_A)]})
+
+        fetch_live_play_by_play(GAME_A, http_get=http_get)
+
+        url = http_get.call_args.args[0]
+        headers = http_get.call_args.kwargs["headers"]
+        assert url.endswith(f"/playbyplay/playbyplay_{GAME_A}.json")
+        assert headers == {"User-Agent": NBA_CDN_USER_AGENT, **NBA_LIVE_HEADERS}
+
+    def test_zero_actions_returns_empty_frame(self):
+        """A game with no actions comes back empty, conformed."""
+        df = self._fetch(_live_payload(GAME_A, actions=[]))
+        assert df.height == 0
+        assert df.schema == LIVE_PLAY_BY_PLAY_SCHEMA
+
+    def test_refusal_raises(self):
+        """The CDN's 403 is a refusal by name, not a parse failure."""
+        with pytest.raises(LiveFeedRefused, match=GAME_A):
+            self._fetch((403, ACCESS_DENIED))
+
+    def test_html_body_raises(self):
+        """A 200 that is not JSON is an unparseable body."""
+        with pytest.raises(ValueError, match="not JSON"):
+            self._fetch((200, ACCESS_DENIED))
+
+    def test_payload_without_actions_raises(self):
+        """A JSON body that is not the feed's shape fails by name."""
+        with pytest.raises(ValueError, match="game.actions"):
+            self._fetch({"meta": {"code": 200}})
+
+    def test_another_games_payload_raises(self):
+        """A body that names another game is never banked under this one."""
+        with pytest.raises(ValueError, match=GAME_B):
+            self._fetch(_live_payload(GAME_B), game_id=GAME_A)
+
+
+class TestSyncLivePlayByPlay:
+    """Tests for the resumable, miss-collecting per-game archive."""
+
+    def test_writes_one_stamped_file_per_game(self, tmp_path):
+        """Each game lands at <game_id>.parquet with the lineage stamps."""
+        report, _, _ = _sync_live_with_mocks(
+            {GAME_A: [_live_payload(GAME_A)], GAME_B: [_live_payload(GAME_B)]}, tmp_path
+        )
+
+        assert report.ok
+        assert report.fetched == [GAME_A, GAME_B]
+        for game_id in (GAME_A, GAME_B):
+            path = tmp_path / f"{game_id}.parquet"
+            frame = pl.read_parquet(path)
+            assert frame.schema == LIVE_PLAY_BY_PLAY_SCHEMA
+            assert frame["game_id"].unique().to_list() == [game_id]
+            stamps = pl.read_parquet_metadata(path)
+            assert stamps["season"] == "2025-26"
+            assert stamps["schema_version"] == str(SCHEMA_VERSION)
+            date.fromisoformat(stamps["fetched_at"])
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            f"{GAME_A}.parquet",
+            f"{GAME_B}.parquet",
+        ]  # no temp file left behind
+
+    def test_skips_valid_file_on_disk(self, tmp_path):
+        """A game with a valid file is not requested again."""
+        _sync_live_with_mocks({GAME_A: [_live_payload(GAME_A)]}, tmp_path)
+
+        report, http_get, mock_sleep = _sync_live_with_mocks({GAME_A: []}, tmp_path)
+
+        assert http_get.call_count == 0
+        assert mock_sleep.call_count == 0
+        assert report.skipped == [GAME_A]
+        assert report.fetched == []
+
+    @pytest.mark.parametrize(
+        "bad_bytes",
+        [b"not a parquet", b""],
+        ids=["corrupt", "empty"],
+    )
+    def test_refetches_invalid_file_on_disk(self, tmp_path, bad_bytes):
+        """A file that does not read as a valid snapshot is fetched again."""
+        (tmp_path / f"{GAME_A}.parquet").write_bytes(bad_bytes)
+
+        report, http_get, _ = _sync_live_with_mocks(
+            {GAME_A: [_live_payload(GAME_A)]}, tmp_path
+        )
+
+        assert http_get.call_count == 1
+        assert report.fetched == [GAME_A]
+        assert has_valid_live_play_by_play(tmp_path / f"{GAME_A}.parquet")
+
+    def test_refusal_is_a_miss(self, tmp_path):
+        """A 403 with an HTML body misses the game and leaves no file."""
+        report, http_get, _ = _sync_live_with_mocks(
+            {GAME_A: [(403, ACCESS_DENIED)], GAME_B: [_live_payload(GAME_B)]}, tmp_path
+        )
+
+        assert http_get.call_count == 2  # a refusal is an answer, not retried
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "403" in report.misses[0].reason
+        assert report.fetched == [GAME_B]
+        assert not (tmp_path / f"{GAME_A}.parquet").exists()
+
+    def test_zero_actions_is_a_miss(self, tmp_path):
+        """A game that serves no actions misses and leaves no file."""
+        report, _, _ = _sync_live_with_mocks(
+            {GAME_A: [_live_payload(GAME_A, actions=[])]}, tmp_path
+        )
+
+        assert not report.ok
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "zero actions" in report.misses[0].reason
+        assert not (tmp_path / f"{GAME_A}.parquet").exists()
+
+    def test_unparseable_body_is_a_miss(self, tmp_path):
+        """A 200 carrying HTML misses once and the run moves on."""
+        report, http_get, _ = _sync_live_with_mocks(
+            {GAME_A: [(200, ACCESS_DENIED)], GAME_B: [_live_payload(GAME_B)]}, tmp_path
+        )
+
+        assert http_get.call_count == 2
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert report.fetched == [GAME_B]
+
+    def test_transient_error_is_retried(self, tmp_path):
+        """A timeout then a success writes the file; the retry is not a miss."""
+        report, http_get, _ = _sync_live_with_mocks(
+            {GAME_A: [requests.Timeout("hang"), _live_payload(GAME_A)]}, tmp_path
+        )
+
+        assert http_get.call_count == 2
+        assert report.ok
+        assert report.fetched == [GAME_A]
+
+    def test_exhausted_retries_are_a_miss(self, tmp_path):
+        """A game whose retries run out misses; the run continues."""
+        down = [requests.ConnectionError("down")] * 2
+        report, _, _ = _sync_live_with_mocks(
+            {GAME_A: down, GAME_B: [_live_payload(GAME_B)]}, tmp_path, max_attempts=2
+        )
+
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "ConnectionError" in report.misses[0].reason
+        assert report.fetched == [GAME_B]
+
+    def test_feed_drift_is_a_miss(self, tmp_path):
+        """A field the schema does not pin fails validation as a miss, no file."""
+        drifted = _live_payload(GAME_A, actions=[{**_made_shot(), "newField": 1}])
+        report, _, _ = _sync_live_with_mocks(
+            {GAME_A: [drifted], GAME_B: [_live_payload(GAME_B)]}, tmp_path
+        )
+
+        assert [m.game_id for m in report.misses] == [GAME_A]
+        assert "new_field" in report.misses[0].reason
+        assert report.fetched == [GAME_B]
+        assert not (tmp_path / f"{GAME_A}.parquet").exists()
+
+    def test_waits_after_every_request(self, tmp_path):
+        """The polite delay follows every request, misses included."""
+        report, _, mock_sleep = _sync_live_with_mocks(
+            {
+                GAME_A: [_live_payload(GAME_A, actions=[])],
+                GAME_B: [_live_payload(GAME_B)],
+            },
+            tmp_path,
+            delay=1.0,
+        )
+
+        assert mock_sleep.call_args_list == [call(1.0), call(1.0)]
+        assert len(report.misses) == 1
+
+    def test_stops_when_the_cdn_keeps_refusing(self, tmp_path):
+        """Refusals in a row stop the run; the rest is left unrequested."""
+        refused = [(403, ACCESS_DENIED)]
+        report, http_get, _ = _sync_live_with_mocks(
+            {GAME_A: refused, GAME_B: list(refused), GAME_C: [_live_payload(GAME_C)]},
+            tmp_path,
+            max_consecutive_refusals=2,
+        )
+
+        assert http_get.call_count == 2
+        assert [m.game_id for m in report.misses] == [GAME_A, GAME_B]
+        assert report.unrequested == [GAME_C]
+        assert not report.ok
+
+    def test_a_success_resets_the_refusal_count(self, tmp_path):
+        """Refusals that are not in a row never stop the run."""
+        refused = [(403, ACCESS_DENIED)]
+        report, _, _ = _sync_live_with_mocks(
+            {GAME_A: refused, GAME_B: [_live_payload(GAME_B)], GAME_C: list(refused)},
+            tmp_path,
+            max_consecutive_refusals=2,
+        )
+
+        assert [m.game_id for m in report.misses] == [GAME_A, GAME_C]
+        assert report.fetched == [GAME_B]
+        assert report.unrequested == []
+
+
+class TestHasValidLivePlayByPlay:
+    """Tests for the on-disk validity check that makes the archive resumable."""
+
+    def test_missing_file_is_invalid(self, tmp_path):
+        """No file, nothing to skip."""
+        assert not has_valid_live_play_by_play(tmp_path / f"{GAME_A}.parquet")
+
+    def test_wrong_schema_is_invalid(self, tmp_path):
+        """A parquet that does not match the contract is refetched."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        pl.DataFrame({"game_id": [GAME_A]}).write_parquet(path)
+        assert not has_valid_live_play_by_play(path)
+
+    def test_zero_rows_is_invalid(self, tmp_path):
+        """A conforming but empty parquet never counts as banked."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        pl.DataFrame(schema=LIVE_PLAY_BY_PLAY_SCHEMA).write_parquet(path)
+        assert not has_valid_live_play_by_play(path)
+
+
+class TestLoadLivePlayByPlay:
+    """Tests for the consumer-side read of a banked snapshot."""
+
+    def _bank(self, path, season: str = "2025-26") -> None:
+        _sync_live_with_mocks({GAME_A: [_live_payload(GAME_A)]}, path.parent)
+        frame = pl.read_parquet(path)
+        frame.write_parquet(path, metadata={"season": season})
+
+    def test_reads_a_conforming_snapshot(self, tmp_path):
+        """A banked file comes back as served."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        self._bank(path)
+
+        frame = load_live_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
+
+        assert frame.schema == LIVE_PLAY_BY_PLAY_SCHEMA
+        assert frame["action_number"].to_list() == [2, 7]
+
+    def test_wrong_schema_raises(self, tmp_path):
+        """A parquet outside the contract is refused by name."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        pl.DataFrame({"game_id": [GAME_A]}).write_parquet(path)
+
+        with pytest.raises(ValueError, match=path.name):
+            load_live_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
+
+    def test_warns_on_a_stale_season_stamp(self, tmp_path, caplog):
+        """A snapshot from another season reads, but says so on the caller's logger."""
+        path = tmp_path / f"{GAME_A}.parquet"
+        self._bank(path, season="2024-25")
+
+        with caplog.at_level(logging.WARNING, logger="tests.nba_stats"):
+            load_live_play_by_play(path, log=logging.getLogger("tests.nba_stats"))
 
         assert any("season stamp" in r.message for r in caplog.records)

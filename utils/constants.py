@@ -152,6 +152,36 @@ NBA_CDN_RETRY_BACKOFF = 2.0
 
 
 # =============================================================================
+# NBA LIVE FEED CONFIGURATION (cdn.nba.com liveData play-by-play)
+# =============================================================================
+
+NBA_LIVE_PLAY_BY_PLAY_URL = (
+    "https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_{game_id}.json"
+)
+
+# The CDN answers 403 with an HTML body unless the request reads as the
+# game page's own: sent without the Accept pair, or without the Referer,
+# the Origin or the Sec-Fetch headers, it is refused.
+# NBA_CDN_USER_AGENT passes with them.
+NBA_LIVE_HEADERS = {
+    "Referer": "https://www.nba.com/",
+    "Origin": "https://www.nba.com",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+}
+
+# Delay between requests in seconds; ~1,390 requests per season
+NBA_LIVE_REQUEST_DELAY = 1.0
+
+# Refusals in a row that stop a run: the CDN is refusing the client, not
+# the game, so no further request is sent.
+NBA_LIVE_MAX_CONSECUTIVE_REFUSALS = 5
+
+
+# =============================================================================
 # MEDIA VARIANTS (the naming convention the site's srcset is built from)
 # =============================================================================
 
@@ -229,6 +259,7 @@ MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "schema.json"
 REFERENCE_DATA_SUBDIR = "reference"
 PLAY_BY_PLAY_SUBDIR = "play_by_play"
+LIVE_PLAY_BY_PLAY_SUBDIR = "play_by_play_live"
 RECAPS_SUBDIR = "recaps"  # under dashboard/: one JSON per curated recap
 RECAP_CANDIDATES_FILENAME = "recap_candidates.csv"  # under reference/, never published
 

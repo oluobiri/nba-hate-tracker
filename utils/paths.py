@@ -26,6 +26,7 @@ from utils.constants import (
     DASHBOARD_DATA_SUBDIR,
     REFERENCE_DATA_SUBDIR,
     PLAY_BY_PLAY_SUBDIR,
+    LIVE_PLAY_BY_PLAY_SUBDIR,
     MEDIA_DATA_SUBDIR,
 )
 from utils.season_config import get_active_season
@@ -138,6 +139,17 @@ def get_play_by_play_dir() -> Path:
         (e.g., data/2025-26/reference/play_by_play/).
     """
     return get_reference_dir() / PLAY_BY_PLAY_SUBDIR
+
+
+def get_live_play_by_play_dir() -> Path:
+    """
+    Get the per-game live-feed play-by-play snapshot directory.
+
+    Returns:
+        Path to the live play-by-play directory
+        (e.g., data/2025-26/reference/play_by_play_live/).
+    """
+    return get_reference_dir() / LIVE_PLAY_BY_PLAY_SUBDIR
 
 
 def get_media_dir() -> Path:

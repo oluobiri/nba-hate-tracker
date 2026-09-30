@@ -90,17 +90,17 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
   return (
     <MotionConfig reducedMotion="user">
       <section className="lb" aria-label="Leaderboard">
-        <header className={`lb__hero lb__hero--${lens}`}>
-          <div className="lb__hero-text">
-            <p className="lb__kicker mono">
+        <header className={`hero hero--${lens}`}>
+          <div className="hero__text">
+            <p className="hero__kicker mono">
               {fmtInt(headline.count)} comments about {headline.players} players · {season}
             </p>
             <AnimatePresence mode="wait" initial={false}>
               <motion.div key={`${lens}-${leader?.row.slug ?? 'none'}`} className="lb__hero-body" {...fade}>
-                <h2 className="lb__sentence">
-                  <span className="lb__lead">{hero.before}</span>
+                <h2 className="hero__sentence">
+                  <span className="hero__lead">{hero.before}</span>
                   {leader && (
-                    <a className="lb__who" href={`/player/${leader.row.slug}/`}>
+                    <a className="hero__who" href={`/player/${leader.row.slug}/`}>
                       {lens === 'polar' ? <SplitName name={leader.row.name} /> : leader.row.name}
                     </a>
                   )}
@@ -113,7 +113,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
                       <span className="lb__unit mono">{meta.unit}</span>
                     </p>
                     <SentimentBar counts={leader.row} size="hero" subject={leader.row.name} />
-                    <p className="lb__meta mono">
+                    <p className="hero__meta mono">
                       n={fmtInt(leader.row.total)} comments about {leader.row.name}
                     </p>
                   </>
@@ -121,7 +121,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
               </motion.div>
             </AnimatePresence>
           </div>
-          <div className="lb__hero-figure" aria-hidden="true">
+          <div className="hero__figure" aria-hidden="true">
             <span className="lb__rank-ghost">1</span>
             <AnimatePresence mode="popLayout" initial={false}>
               {leader && (

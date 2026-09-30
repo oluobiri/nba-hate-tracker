@@ -12,7 +12,7 @@ import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
-import { RecapReplay } from '../components/RecapReplay'
+import { crowdTint, RecapReplay } from '../components/RecapReplay'
 import { RecapRows } from '../components/RecapRows'
 import { Court } from '../components/replay/Court'
 import { Feed } from '../components/replay/Feed'
@@ -648,6 +648,18 @@ function bugAt(t: number): ScoreBugProps {
             <figcaption>{m.name} · t={fmtInt(m.t)} s since tip</figcaption>
           </figure>
         ))}
+        {replayRows && replayTl && replayRoom && recapLead && (
+          <figure class="guide__fig guide__court">
+            <Court
+              marks={courtMarks(replayRows.plays, playCursor(replayRows.plays, replayTl, midThird), hisSide)}
+              homeName={recapLead.homeTeam.name}
+              logo={recapLead.homeTeam.logo}
+              subject={recapLead.entry.attributed_player}
+              tint={crowdTint(rightNow(replayRoom, commentCursor(replayRoom.comments, midThird)))}
+            />
+            <figcaption>PROTOTYPE · the apron tinted by the right-now mix, mid-third quarter; off on the page until judged on a phone</figcaption>
+          </figure>
+        )}
       </div>
     </section>
 

@@ -35,6 +35,7 @@ import {
   soFar,
   ticker,
 } from '../lib/replay'
+import { negRate, posRate } from '../lib/metrics'
 import type { Counts } from '../lib/types'
 import { useViewState } from '../lib/url'
 import { Court } from './replay/Court'
@@ -63,6 +64,8 @@ export interface RecapReplayProps {
   flairAbbr: Record<string, string>
   /** rules.qualified_threshold, the view state's one default. */
   official: number
+  /** PROTOTYPE: the apron around the court tinted by the right-now mix. */
+  tint?: boolean
 }
 
 interface Loaded {
@@ -80,8 +83,18 @@ const FEED_PAGE = 40
 /** Wait before a seek reaches the URL, so a drag writes once: a page choice. */
 const URL_DEBOUNCE_MS = 150
 const WIDE = '(min-width: 900px)'
+/** PROTOTYPE: how far the apron goes toward heat or ice at a one-sided room: a page choice. */
+const TINT_MAX = 45
 
-export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lagSeconds, flairAbbr, official }: RecapReplayProps) {
+/** PROTOTYPE: the crowd's colour, heat or ice by the lean of the right-now window, as a CSS colour. */
+export function crowdTint(now: Counts): string | null {
+  if (!now.total) return null
+  const lean = negRate(now) - posRate(now)
+  const pct = Math.round(Math.min(1, Math.abs(lean)) * TINT_MAX)
+  return `color-mix(in oklab, var(${lean >= 0 ? '--heat' : '--ice'}) ${pct}%, var(--surface))`
+}
+
+export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lagSeconds, flairAbbr, official, tint = false }: RecapReplayProps) {
   const defaults = useMemo(() => ({ threshold: official }), [official])
   const [view, update, ready] = useViewState(defaults)
   const [status, setStatus] = useState<Status>('loading')
@@ -241,7 +254,7 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
           <details ref={floor} className="replay__more">
             <summary>The court</summary>
             <div className="replay__more-body">
-              <Court marks={at?.marks ?? []} homeName={home.name} logo={home.logo} subject={name} />
+              <Court marks={at?.marks ?? []} homeName={home.name} logo={home.logo} subject={name} tint={tint && at ? crowdTint(at.now) : null} />
             </div>
           </details>
         </aside>

@@ -36,6 +36,8 @@ const lag = lagPhrase(lagSeconds)
 const title = `${name} · ${recap.line.game ?? recap.line.date}`
 const verdict = nightSentence(name, recap.night, recap.usual, floor)
 const flairAbbr = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbreviation]))
+// PROTOTYPE: the apron around the court tinted by the right-now mix. Judge it on a phone before it ships.
+const CROWD_TINT = false
 // Where the night sits among his games: the player page's scatter, this game ringed.
 const abbr = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
 const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
@@ -91,6 +93,7 @@ const r = pearson(
         lagSeconds={lagSeconds}
         flairAbbr={flairAbbr}
         official={manifest.rules.qualified_threshold}
+        tint={CROWD_TINT}
       />
     </section>
 

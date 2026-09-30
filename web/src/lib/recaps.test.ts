@@ -62,6 +62,21 @@ describe('hook', () => {
     expect(hook(periodCells(periods(35, 19, 38, 41, 60, 51)), usual)).toBe('19% negative in the 2nd, 41% by the 4th.')
   })
 
+  it('measures a move in the points it prints, so an exact 20 reads as a turn', () => {
+    // 0.6 − 0.4 is 0.19999… in floating point; in printed points it is 20
+    expect(hook(periodCells(periods(40, 45, 50, 60)), usual)).toBe('40% negative in the 1st, 60% by the 4th.')
+    expect(hook(periodCells(periods(30, 60, 40, 32)), usual)).toBe('Spiked to 60% negative in the 2nd, from 30% either side.')
+  })
+
+  it('never says from the tip when the first period was silent, and names a lone period', () => {
+    const silentFirst = periods(0, 83, 80, 81)
+    silentFirst['1'] = { neg: 0, pos: 0, neu: 0 }
+    expect(hook(periodCells(silentFirst), 0.5)).toBe('Held between 80% and 83% negative all night.')
+    const silent = { neg: 0, pos: 0, neu: 0 }
+    expect(hook(periodCells({ '1': silent, '2': silent, '3': { neg: 55, pos: 5, neu: 40 }, '4': silent }), usual)).toBe('55% negative in the 3rd, the only period with comments.')
+    expect(hook(periodCells({ '1': silent, '2': silent, '3': silent, '4': silent }), usual)).toBe('The room had nothing to say about him.')
+  })
+
   it('skips a period nobody spoke in', () => {
     const by = periods(29, 34, 50, 60)
     by['2'] = { neg: 0, pos: 0, neu: 0 }
@@ -260,6 +275,7 @@ describe('the page sentences', () => {
     expect(nightSentence('One Player', c(60, 20, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 60% negative of 100 comments, 10 points harsher than his usual 50%.')
     expect(nightSentence('One Player', c(40, 40, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 40% negative of 100 comments, 10 points kinder than his usual 50%.')
     expect(nightSentence('One Player', c(50, 50, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 50% negative of 100 comments, at his usual.')
+    expect(nightSentence('One Player', c(51, 49, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 51% negative of 100 comments, 1 point harsher than his usual 50%.')
     expect(nightSentence('One Player', c(3, 1, 1), usual, 20)).toBe('Too few comments about One Player that night to judge: 5.')
     expect(nightSentence('One Player', null, usual, 20)).toBe("Nobody mentioned One Player in the game's threads that night.")
   })

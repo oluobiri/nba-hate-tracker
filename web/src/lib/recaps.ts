@@ -52,21 +52,25 @@ export function periodsText(cells: readonly PeriodCell[]): string {
 
 // --- The hook ----------------------------------------------------------------
 // One computed sentence per recap. The thresholds are page choices, not
-// rules: a move this size between periods reads as a turn.
+// rules: a move this size between periods reads as a turn. Every move is
+// measured in the rounded points the sentence prints, so a printed gap of
+// 20 always reads as one and a printed gap of 19 never does.
 
-const SWING = 0.2
+const SWING = 20
 const RETURN = SWING / 2
 
-const pct = (c: PeriodCell): string => fmtPct(negRate(c.counts), 0)
+const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many)
+const pts = (c: PeriodCell): number => Math.round(100 * negRate(c.counts))
+const pctOf = (points: number): string => `${fmtInt(points)}%`
+const pct = (c: PeriodCell): string => pctOf(pts(c))
 
 /** One period standing off both neighbours, which agree with each other. */
 function spike(cells: readonly PeriodCell[]): string | null {
   for (let i = 1; i < cells.length - 1; i++) {
     const [before, here, after] = [cells[i - 1]!, cells[i]!, cells[i + 1]!]
-    const up = negRate(here.counts) - negRate(before.counts)
-    const down = negRate(here.counts) - negRate(after.counts)
-    const neighboursAgree = Math.abs(negRate(before.counts) - negRate(after.counts)) <= RETURN
-    if (!neighboursAgree) continue
+    const up = pts(here) - pts(before)
+    const down = pts(here) - pts(after)
+    if (Math.abs(pts(before) - pts(after)) > RETURN) continue
     if (up >= SWING && down >= SWING) return `spiked to ${pct(here)} negative in the ${periodWord(here.key)}, from ${pct(before)} either side`
     if (up <= -SWING && down <= -SWING) return `dipped to ${pct(here)} negative in the ${periodWord(here.key)}, from ${pct(before)} either side`
   }
@@ -78,7 +82,7 @@ function turn(cells: readonly PeriodCell[]): string | null {
   let best: { from: PeriodCell; to: PeriodCell; move: number } | null = null
   for (let i = 0; i < cells.length; i++) {
     for (let j = i + 1; j < cells.length; j++) {
-      const move = negRate(cells[j]!.counts) - negRate(cells[i]!.counts)
+      const move = pts(cells[j]!) - pts(cells[i]!)
       if (!best || Math.abs(move) > Math.abs(best.move)) best = { from: cells[i]!, to: cells[j]!, move }
     }
   }
@@ -98,6 +102,9 @@ export function hook(cells: readonly PeriodCell[], usual: number): string {
 
 function hookClause(cells: readonly PeriodCell[], usual: number): string {
   const spoken = cells.filter((c) => c.counts.total > 0)
+  const first = spoken[0]
+  if (!first) return 'the room had nothing to say about him'
+  if (spoken.length === 1) return `${pct(first)} negative in the ${periodWord(first.key)}, the only period with comments`
   const regulation = spoken.filter((c) => c.key <= REGULATION)
   const scopes = spoken.length > regulation.length ? [regulation, spoken] : [regulation]
   for (const scope of scopes) {
@@ -108,12 +115,11 @@ function hookClause(cells: readonly PeriodCell[], usual: number): string {
     const t = turn(scope)
     if (t) return t
   }
-  const first = spoken[0]
-  if (!first) return 'the room had nothing to say about him'
-  const lift = negRate(first.counts) - usual
-  if (lift >= SWING) return `${pct(first)} negative from the tip, ${fmtInt(Math.round(100 * lift))} points above his usual ${fmtPct(usual, 0)}`
-  const rates = spoken.map((c) => negRate(c.counts))
-  return `held between ${fmtPct(Math.min(...rates), 0)} and ${fmtPct(Math.max(...rates), 0)} negative all night`
+  const lift = pts(first) - Math.round(100 * usual)
+  if (first.key === 1 && lift >= SWING)
+    return `${pct(first)} negative from the tip, ${fmtInt(lift)} ${plural(lift, 'point', 'points')} above his usual ${pctOf(Math.round(100 * usual))}`
+  const points = spoken.map(pts)
+  return `held between ${pctOf(Math.min(...points))} and ${pctOf(Math.max(...points))} negative all night`
 }
 
 // --- The verdict, the lines, the lag ----------------------------------------
@@ -221,7 +227,7 @@ export function nightSentence(name: string, night: Counts | null, usual: Counts,
   if (night.total < floor) return `Too few comments about ${name} that night to judge: ${fmtInt(night.total)}.`
   const delta = negRate(night) - negRate(usual)
   const points = Math.abs(Math.round(100 * delta))
-  const against = points === 0 ? 'at his usual' : `${fmtInt(points)} points ${delta > 0 ? 'harsher' : 'kinder'} than his usual ${fmtPct(negRate(usual), 0)}`
+  const against = points === 0 ? 'at his usual' : `${fmtInt(points)} ${plural(points, 'point', 'points')} ${delta > 0 ? 'harsher' : 'kinder'} than his usual ${fmtPct(negRate(usual), 0)}`
   return `Every thread about ${name} that night, post-game included: ${fmtPct(negRate(night), 0)} negative of ${fmtInt(night.total)} comments, ${against}.`
 }
 

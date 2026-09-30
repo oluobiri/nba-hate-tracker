@@ -30,7 +30,7 @@ export function RecapLead({ recap }: RecapLeadProps) {
         </p>
         <PeriodStrip cells={recap.cells} size="hero" subject={name} />
         <a className="btn hero__play" href={recapHref(recap.key)}>
-          Watch the replay
+          Open the recap
         </a>
       </div>
       <div className="hero__figure" aria-hidden="true">

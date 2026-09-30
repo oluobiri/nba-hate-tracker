@@ -24,7 +24,7 @@ export function VerdictDelta({ delta, n, span = DEFAULT_SPAN }: VerdictDeltaProp
       ? `Too few comments to judge: ${fmtInt(n)}.`
       : pts === 0
         ? `At his usual, from ${fmtInt(n)} comments.`
-        : `${pts} points ${delta > 0 ? 'harsher' : 'kinder'} than his usual, from ${fmtInt(n)} comments.`
+        : `${pts} ${pts === 1 ? 'point' : 'points'} ${delta > 0 ? 'harsher' : 'kinder'} than his usual, from ${fmtInt(n)} comments.`
   const half = Math.min(1, Math.abs(delta ?? 0) / span) * 50
   const fill = { '--vd-l': `${delta !== null && delta < 0 ? 50 - half : 50}%`, '--vd-w': `${half}%` } as CSSProperties
   return (

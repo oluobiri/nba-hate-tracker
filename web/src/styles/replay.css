@@ -85,6 +85,17 @@
   color: var(--mute);
 }
 
+/* A phone's sticky block stays compact: tighter padding, no pace line. */
+@media (max-width: 899px) {
+  .replay__bug .bug {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .replay__bug .bug__pace {
+    display: none;
+  }
+}
+
 @media (min-width: 900px) {
   .replay {
     grid-template-columns: minmax(0, 1fr) 340px;

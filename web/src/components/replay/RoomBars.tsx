@@ -16,13 +16,17 @@ export interface RoomBarsProps {
   subject: string
 }
 
+/** "his last 25 comments", or fewer while the window fills. */
+export function nowDetail(now: Counts, window: number): string {
+  return now.total === 0 ? 'no comments yet' : now.total < window ? `his first ${fmtInt(now.total)} comments` : `his last ${fmtInt(window)} comments`
+}
+
 export function RoomBars({ now, soFar, window, usual, subject }: RoomBarsProps) {
-  const nowDetail = now.total === 0 ? 'no comments yet' : now.total < window ? `his first ${fmtInt(now.total)} comments` : `his last ${fmtInt(window)} comments`
   return (
     <div className="rb">
       <div className="rb__bar">
         <p className="rb__label mono">
-          Right now <span className="rb__detail">{nowDetail}</span>
+          Right now <span className="rb__detail">{nowDetail(now, window)}</span>
         </p>
         {now.total > 0 ? <SentimentBar counts={now} size="row" subject={`${subject} right now`} /> : <div className="rb__empty" aria-hidden="true" />}
       </div>

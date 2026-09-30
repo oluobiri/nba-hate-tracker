@@ -160,6 +160,11 @@ export interface Recap {
   player: PlayersRow
   game: GamesRow
   line: GameLineParts
+  /** The teams as the replay names and draws them. */
+  homeTeam: { name: string; logo: string }
+  awayTeam: { name: string }
+  /** Which side is his, by his roster team. */
+  his: 'away' | 'home'
   box: PlayerGamesRow
   cells: PeriodCell[]
   /** The strip's population: his comments inside the period clocks. */
@@ -177,6 +182,7 @@ export interface Recap {
 export function buildRecaps(manifest: Manifest, tables: Tables): Recap[] {
   const abbr = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
   const conferenceOf = new Map(tables.teams.map((t) => [t.team, t.conference]))
+  const logos = new Map(tables.teams.map((t) => [t.team, t.logo_url]))
   const players = new Map(tables.players.map((p) => [p.attributed_player, p]))
   const games = new Map(tables.games.map((g) => [g.game_id, g]))
   const boxes = new Map(tables.player_games.map((r) => [`${r.game_id} ${r.attributed_player}`, r]))
@@ -190,6 +196,8 @@ export function buildRecaps(manifest: Manifest, tables: Tables): Recap[] {
     const box = boxes.get(at)
     const usual = usuals.get(entry.attributed_player)
     if (!player || !game || !box || !usual) throw new Error(`recap ${key}: the registry entry does not join to the dimensions`)
+    const logo = logos.get(game.home_team)
+    if (logo === undefined || !logos.has(game.away_team)) throw new Error(`recap ${key}: ${game.away_team} at ${game.home_team} does not join to teams`)
     const cells = periodCells(entry.by_period)
     const night = nights.get(at) ?? null
     const delta = recapDelta(night, usual, floor)
@@ -199,6 +207,9 @@ export function buildRecaps(manifest: Manifest, tables: Tables): Recap[] {
       player,
       game,
       line: gameLine(game, abbr, conferenceOf),
+      homeTeam: { name: game.home_team, logo },
+      awayTeam: { name: game.away_team },
+      his: box.is_home ? 'home' : 'away',
       box,
       cells,
       inPeriods: sumCounts(cells.map((c) => c.counts)),
@@ -233,3 +244,10 @@ export function nightSentence(name: string, night: Counts | null, usual: Counts,
 
 /** The first recap leads; the rest are the list. */
 export const leadAndList = (recaps: readonly Recap[]): { lead: Recap | null; list: Recap[] } => ({ lead: recaps[0] ?? null, list: recaps.slice(1) })
+
+/** The recap after this one in config order, wrapping; null when it is the only one. */
+export function nextRecap(recaps: readonly Recap[], key: string): Recap | null {
+  const i = recaps.findIndex((r) => r.key === key)
+  if (i < 0 || recaps.length < 2) return null
+  return recaps[(i + 1) % recaps.length] ?? null
+}

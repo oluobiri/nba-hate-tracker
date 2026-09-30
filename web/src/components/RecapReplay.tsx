@@ -38,7 +38,7 @@ import type { Counts } from '../lib/types'
 import { useViewState } from '../lib/url'
 import { Feed } from './replay/Feed'
 import { QuarterBox } from './replay/QuarterBox'
-import { RoomBars } from './replay/RoomBars'
+import { nowDetail, RoomBars } from './replay/RoomBars'
 import { ScoreBug } from './replay/ScoreBug'
 import { Scrubber } from './replay/Scrubber'
 import { Ticker } from './replay/Ticker'
@@ -213,7 +213,7 @@ export function RecapReplay({ recapKey, name, away, home, his, cells, usual, lag
           >
             <div className="replay__now-phone">
               <p className="rb__label mono">
-                Right now <span className="rb__detail">{at && at.now.total ? `his last ${Math.min(RIGHT_NOW, at.now.total)}` : 'no comments yet'}</span>
+                Right now <span className="rb__detail">{nowDetail(at?.now ?? empty, RIGHT_NOW)}</span>
               </p>
               {at && at.now.total > 0 ? <SentimentBar counts={at.now} size="mini" subject={`${name} right now`} /> : <div className="rb__empty" aria-hidden="true" />}
             </div>

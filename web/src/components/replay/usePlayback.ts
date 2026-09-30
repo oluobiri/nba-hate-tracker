@@ -35,10 +35,7 @@ export function usePlayback(tl: Timeline | null, onSettle: (t: number) => void):
   const raf = useRef(0)
   const speedRef = useRef(speed)
   const settle = useRef(onSettle)
-  useLayoutEffect(() => {
-    speedRef.current = speed
-    settle.current = onSettle
-  })
+  const pauseRef = useRef<() => void>(() => {})
 
   const stop = useCallback(() => {
     cancelAnimationFrame(raf.current)
@@ -121,16 +118,24 @@ export function usePlayback(tl: Timeline | null, onSettle: (t: number) => void):
     else play()
   }, [pause, play])
 
+  // The latest callbacks, for the loop and the listener below, which are
+  // bound once: a re-render must never cancel a running frame.
+  useLayoutEffect(() => {
+    speedRef.current = speed
+    settle.current = onSettle
+    pauseRef.current = pause
+  })
+
   useEffect(() => {
     const onHide = () => {
-      if (document.hidden) pause()
+      if (document.hidden) pauseRef.current()
     }
     document.addEventListener('visibilitychange', onHide)
     return () => {
       document.removeEventListener('visibilitychange', onHide)
       stop()
     }
-  }, [pause, stop])
+  }, [stop])
 
   return { t, playing, speed, toggle, play, pause, seek, step, setSpeed }
 }

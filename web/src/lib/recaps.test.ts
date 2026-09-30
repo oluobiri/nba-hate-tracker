@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
-import { boxLine, buildRecaps, countsLine, gamePhrase, hook, indexLede, lagPhrase, leadAndList, nightSentence, periodCells, periodsText, recapDelta, recapHrefs, recapTone } from './recaps'
+import { boxLine, buildRecaps, countsLine, gamePhrase, hook, indexLede, lagPhrase, leadAndList, nextRecap, nightSentence, periodCells, periodsText, recapDelta, recapHrefs, recapTone } from './recaps'
 import type { Counts } from './types'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
@@ -201,8 +201,8 @@ const rates = (neg: number, neu: number, pos: number) => {
 const TABLES = {
   players: [player('One Player', 1, 'one-player'), player('Two Player', 2, 'two-player')],
   teams: [
-    { team: 'Team One', abbreviation: 'ONE', conference: 'West', team_id: 10, logo_url: '' },
-    { team: 'Team Two', abbreviation: 'TWO', conference: 'West', team_id: 20, logo_url: '' },
+    { team: 'Team One', abbreviation: 'ONE', conference: 'West', team_id: 10, logo_url: '/media/logos/10.svg' },
+    { team: 'Team Two', abbreviation: 'TWO', conference: 'West', team_id: 20, logo_url: '/media/logos/20.svg' },
   ],
   games: [game('g7', '2026-05-30'), game('g1', '2025-10-21', { season_type: 'regular_season', playoff_round: null, playoff_series: null, playoff_game: null })],
   player_games: [box('g7', 'One Player', 1), box('g1', 'Two Player', 2)],
@@ -229,6 +229,16 @@ describe('buildRecaps', () => {
     expect(recaps[0]!.line.text).toBe('West Finals · Game 7 · TWO 111 @ ONE 103 · May 30')
     expect(recaps[1]!.line.text).toBe('Regular season · TWO 111 @ ONE 103 · Oct 21')
     expect(recaps[0]!.player.slug).toBe('one-player')
+    expect(recaps[0]!.homeTeam).toEqual({ name: 'Team One', logo: '/media/logos/10.svg' })
+    expect(recaps[0]!.awayTeam).toEqual({ name: 'Team Two' })
+    expect(recaps[0]!.his).toBe('home')
+  })
+
+  it('names the next recap in config order, wrapping, or none when alone', () => {
+    expect(nextRecap(recaps, 'g7-one-player')?.key).toBe('g1-two-player')
+    expect(nextRecap(recaps, 'g1-two-player')?.key).toBe('g7-one-player')
+    expect(nextRecap(recaps, 'nope')).toBeNull()
+    expect(nextRecap(recaps.slice(0, 1), 'g7-one-player')).toBeNull()
     expect(recaps[0]!.box.pts).toBe(4)
   })
 
@@ -254,6 +264,8 @@ describe('buildRecaps', () => {
   it('throws with the key when an entry does not join', () => {
     const broken = { ...MANIFEST, recaps: { 'g9-one-player': entry('g9', 'One Player', 1, 'one-player', periods(1)) } } as Manifest
     expect(() => buildRecaps(broken, TABLES)).toThrow('recap g9-one-player: the registry entry does not join')
+    const noTeam = { ...TABLES, teams: TABLES.teams.slice(0, 1) } as Tables
+    expect(() => buildRecaps(MANIFEST, noTeam)).toThrow('recap g7-one-player: Team Two at Team One does not join to teams')
   })
 })
 

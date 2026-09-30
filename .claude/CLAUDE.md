@@ -22,7 +22,7 @@ data/             → Not committed
   │   ├── filtered/   → Player-mention filtered JSONL
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
-  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs, play_by_play/<game_id>.parquet) + the cdn.nba.com live feed (play_by_play_live/<game_id>.parquet) + posts_bridge.parquet + corpus_daily.parquet
+  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + the cdn.nba.com live feed (play_by_play_live/<game_id>.parquet) + posts_bridge.parquet + corpus_daily.parquet
   │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json + recaps/<game_id>-<slug>.json
   ├── 2025-26/    → V2 season data (same structure)
   └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed
@@ -58,7 +58,7 @@ npm run walk                         # Playwright over dist/ at 1280 and 400
 
 # Recaps (curated in config/<season>/recaps.yaml; built by aggregate_sentiment)
 uv run python -m scripts.build_recaps --season 2025-26 --scan     # Candidate report to reference/, never published
-uv run python -m scripts.build_recaps --season 2025-26 --dry-run  # Build in memory, report error/stints/size, write nothing
+uv run python -m scripts.build_recaps --season 2025-26 --dry-run  # Build in memory, report stints/swing/size, write nothing
 
 # Media (headshots + logos from cdn.nba.com into data/media/, WebP variants derived; resumable)
 uv run python -m scripts.fetch_media --dry-run  # Plan only, no request

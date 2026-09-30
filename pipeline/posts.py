@@ -46,6 +46,8 @@ GAME_THREAD = "game_thread"
 POST_GAME_THREAD = "post_game_thread"
 OTHER = "other"
 POST_TYPES = (GAME_THREAD, POST_GAME_THREAD, OTHER)
+# The types resolved to a game and always published.
+THREAD_TYPES = (GAME_THREAD, POST_GAME_THREAD)
 FLAIR_POST_TYPES = {"Game Thread": GAME_THREAD, "Post Game Thread": POST_GAME_THREAD}
 
 # Threads follow the US schedule, so a post's calendar day is Eastern.
@@ -345,7 +347,7 @@ def build_posts_bridge(
         title = title or ""
         post_type = classify_post(title, flair)
         game_id = None
-        if post_type != OTHER:
+        if post_type in THREAD_TYPES:
             pair = extract_team_pair(title, name_map)
             if pair is None:
                 unparsed.append(title)
@@ -382,7 +384,7 @@ def build_posts_bridge(
         .sort(["created_utc", "post_id"])
     )
 
-    for post_type in (GAME_THREAD, POST_GAME_THREAD):
+    for post_type in THREAD_TYPES:
         threads = bridge.filter(pl.col("post_type") == post_type)
         linked = threads.filter(pl.col("game_id").is_not_null())
         logger.info(
@@ -473,7 +475,7 @@ def load_posts_table(
             "scripts.process_posts against the current snapshot"
         )
 
-    is_thread = pl.col("post_type") != OTHER
+    is_thread = pl.col("post_type").is_in(list(THREAD_TYPES))
     is_receipt_context = pl.col("post_id").is_in(
         comment_samples["link_id"].unique().to_list()
     )

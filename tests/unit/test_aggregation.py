@@ -2075,6 +2075,7 @@ def _post_row(post_id, post_type, game_id, is_primary):
         "num_comments": 10,
         "link_flair_text": None,
         "post_type": post_type,
+        "source": None,
         "game_id": game_id,
         "is_primary": is_primary,
     }

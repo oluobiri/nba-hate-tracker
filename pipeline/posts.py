@@ -1,10 +1,10 @@
 """
 The Post bridge: posts_bridge.parquet and posts.parquet.
 
-Derives post_type and game_id for every r/NBA post from its flair and
-title under the active config: title spellings resolve to canonical
-Team names through teams.yaml, and the title's team pair plus the
-Eastern-time day of created_utc resolve to a game through the Game
+Derives post_type, source and game_id for every r/NBA post from its
+flair and title under the active config: title spellings resolve to
+canonical Team names through teams.yaml, and the title's team pair plus
+the Eastern-time day of created_utc resolve to a game through the Game
 dimension. The raw posts file holds every post; this module decides
 what ships.
 """
@@ -41,14 +41,82 @@ RAW_POSTS_SCHEMA = pl.Schema(
     {col: POSTS_SCHEMA[col] for col in RAW_POST_FIELDS.values()}
 )
 UNLINKED_TITLES_LOGGED = 10
+SOURCES_LOGGED = 10
 
 GAME_THREAD = "game_thread"
 POST_GAME_THREAD = "post_game_thread"
+HIGHLIGHT = "highlight"
+LOWLIGHT = "lowlight"
+INJURY = "injury"
+NEWS = "news"
+DISCUSSION = "discussion"
 OTHER = "other"
-POST_TYPES = (GAME_THREAD, POST_GAME_THREAD, OTHER)
+POST_TYPES = (
+    GAME_THREAD,
+    POST_GAME_THREAD,
+    HIGHLIGHT,
+    LOWLIGHT,
+    INJURY,
+    NEWS,
+    DISCUSSION,
+    OTHER,
+)
 # The types resolved to a game and always published.
 THREAD_TYPES = (GAME_THREAD, POST_GAME_THREAD)
-FLAIR_POST_TYPES = {"Game Thread": GAME_THREAD, "Post Game Thread": POST_GAME_THREAD}
+FLAIR_POST_TYPES = {
+    "Game Thread": GAME_THREAD,
+    "Post Game Thread": POST_GAME_THREAD,
+    "Highlight": HIGHLIGHT,
+    "Discussion": DISCUSSION,
+    "Original Content": DISCUSSION,
+    "AMA": DISCUSSION,
+    "All-Access": DISCUSSION,
+}
+# Leading tags that are a type in themselves, misspellings included.
+TAG_POST_TYPES = {
+    "highlight": HIGHLIGHT,
+    "highlights": HIGHLIGHT,
+    "higlight": HIGHLIGHT,
+    "highligh": HIGHLIGHT,
+    "hightlight": HIGHLIGHT,
+    "lowlight": LOWLIGHT,
+    "lowlights": LOWLIGHT,
+    "injury": INJURY,
+}
+# Leading tags that name no source: the subreddit's own conventions and
+# the placeholders left on a removed post. Any other tag is a source.
+CONVENTION_TAGS = frozenset(
+    {
+        "altercation",
+        "analysis",
+        "breaking",
+        "breaking news",
+        "clip",
+        "clip request",
+        "discussion",
+        "foul",
+        "highlight request",
+        "image processing failed",
+        "meta",
+        "midlight",
+        "news",
+        "oc",
+        "official",
+        "question",
+        "reminder",
+        "removed by moderator",
+        "removed by reddit",
+        "repost",
+        "request",
+        "satire",
+        "serious",
+        "stat",
+        "stat report",
+        "stats",
+        "thread discussion",
+        "video",
+    }
+)
 
 # Threads follow the US schedule, so a post's calendar day is Eastern.
 # A game thread is posted on the game's day; a post-game thread on the
@@ -69,17 +137,43 @@ _TITLE_DATE_FORMATS = ("%B %d, %Y", "%b %d, %Y")
 # A (W-L) record looks like a score; strip records before reading one.
 _RECORD = re.compile(r"\(\d+-\d+\)")
 _SCORE = re.compile(r"(?<!\d)(\d{2,3})\s*[-–]\s*(\d{2,3})(?!\d)")
+# "[Charania] ..." at the head of a title; a longer bracket is a sentence.
+_LEADING_TAG = re.compile(r"^\s*\[([^\]]{1,40})\]")
+# A date, or a tag opening with a year ("2026 nba draft"), names no source.
+_DATE_TAG = re.compile(r"^(?:[^a-z]*|\d{4}\b.*)$")
+
+
+def leading_tag(title: str) -> str | None:
+    """
+    Read the bracketed tag a title opens with.
+
+    Lowercased, whitespace-collapsed and with the typographic apostrophe
+    folded, so one source spelled two ways is one tag.
+
+    Args:
+        title: Post title.
+
+    Returns:
+        The normalized tag, or None when the title opens with none.
+    """
+    match = _LEADING_TAG.match(title)
+    if match is None:
+        return None
+    tag = " ".join(match.group(1).lower().replace("’", "'").split())
+    return tag or None
 
 
 def classify_post(title: str, flair: str | None) -> str:
     """
     Derive post_type from the post's flair, falling back to its title.
 
-    The two thread flairs decide outright, and any other flair is
-    `other` whatever the title says (the daily index post carries
-    "Game Thread" mid-title). Only a post with no flair at all — the
-    mods strip it when they remove a duplicate — is classified by an
-    anchored title prefix.
+    A flair decides outright, and one that maps to no type is `other`
+    whatever the title says (the daily index post carries "Game Thread"
+    mid-title). Only a post with no flair at all is classified by its
+    title: an anchored thread prefix first (the mods strip the flair
+    when they remove a duplicate), then its leading tag. A tag is a type
+    in itself, a convention that names no source, or a source, which
+    makes the post news.
 
     Args:
         title: Post title.
@@ -93,7 +187,26 @@ def classify_post(title: str, flair: str | None) -> str:
     for pattern, post_type in _TITLE_POST_TYPES:
         if pattern.match(title):
             return post_type
-    return OTHER
+    tag = leading_tag(title)
+    if tag is None or tag in CONVENTION_TAGS or _DATE_TAG.match(tag):
+        return OTHER
+    return TAG_POST_TYPES.get(tag, NEWS)
+
+
+def post_source(title: str, flair: str | None) -> str | None:
+    """
+    Name the source of a news post: the reporter, outlet or person quoted.
+
+    Args:
+        title: Post title.
+        flair: link_flair_text, None when unflaired.
+
+    Returns:
+        The post's leading tag when it classifies as news, else None.
+    """
+    if classify_post(title, flair) != NEWS:
+        return None
+    return leading_tag(title)
 
 
 def build_title_name_map(team_config: dict[str, dict]) -> dict[str, str]:
@@ -309,13 +422,14 @@ def build_posts_bridge(
     posts: pl.DataFrame, games: pl.DataFrame, team_config: dict[str, dict]
 ) -> pl.DataFrame:
     """
-    Derive post_type, game_id and is_primary for every post.
+    Derive post_type, source, game_id and is_primary for every post.
 
     Only game and post-game threads are resolved to a game. Split,
     second-half and repost threads share a game_id; is_primary marks the
     largest by num_comments per (game_id, post_type), and is false on
     every unlinked row. Coverage is logged: threads linked, games with
-    a thread, and why the rest did not link.
+    a thread, why the rest did not link, posts per type, and the
+    largest sources, where a convention read as a source would show.
 
     Args:
         posts: Frame conforming to RAW_POSTS_SCHEMA.
@@ -338,6 +452,7 @@ def build_posts_bridge(
     name_map = build_title_name_map(team_config)
     index = build_game_index(games)
     post_types: list[str] = []
+    sources: list[str | None] = []
     game_ids: list[str | None] = []
     unparsed: list[str] = []
     unmatched: list[str] = []
@@ -362,6 +477,7 @@ def build_posts_bridge(
                 if game_id is None:
                     unmatched.append(title)
         post_types.append(post_type)
+        sources.append(leading_tag(title) if post_type == NEWS else None)
         game_ids.append(game_id)
 
     # Rank within (game, type) by size so the largest thread is primary;
@@ -370,6 +486,7 @@ def build_posts_bridge(
     bridge = (
         posts.with_columns(
             pl.Series("post_type", post_types, dtype=pl.String),
+            pl.Series("source", sources, dtype=pl.String),
             pl.Series("game_id", game_ids, dtype=pl.String),
         )
         .sort(["num_comments", "post_id"], descending=[True, False], nulls_last=True)
@@ -398,9 +515,23 @@ def build_posts_bridge(
     for label, titles in (("no team pair", unparsed), ("no game", unmatched)):
         if titles:
             logger.info(f"  {label} (head): {titles[:UNLINKED_TITLES_LOGGED]}")
+    type_counts = dict(bridge.group_by("post_type").len().iter_rows())
     logger.info(
-        f"posts bridge: {bridge.height} posts, "
-        f"{bridge.filter(pl.col('post_type') == OTHER).height} other"
+        f"posts bridge: {bridge.height} posts; "
+        + ", ".join(f"{t} {type_counts.get(t, 0)}" for t in POST_TYPES)
+    )
+    top_sources = (
+        bridge.filter(pl.col("source").is_not_null())
+        .group_by("source")
+        .len()
+        .sort(["len", "source"], descending=[True, False])
+    )
+    logger.info(
+        f"news sources: {top_sources.height} distinct; largest: "
+        + ", ".join(
+            f"{source} {n}"
+            for source, n in top_sources.head(SOURCES_LOGGED).iter_rows()
+        )
     )
     return bridge
 

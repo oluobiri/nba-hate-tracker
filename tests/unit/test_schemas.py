@@ -270,8 +270,12 @@ class TestPostsContract:
         assert POSTS_SCHEMA["post_id"] == SENTIMENT_SCHEMA["link_id"]
 
     def test_bridge_columns(self):
-        """Verify the derived trio: type, nullable game FK, primary flag."""
+        """Verify the derived columns: type, its source right beside it,
+        nullable game FK, primary flag."""
         assert POSTS_SCHEMA["post_type"] == pl.String
+        assert POSTS_SCHEMA["source"] == pl.String
+        names = POSTS_SCHEMA.names()
+        assert names.index("source") == names.index("post_type") + 1
         assert POSTS_SCHEMA["game_id"] == GAMES_SCHEMA["game_id"]
         assert POSTS_SCHEMA["is_primary"] == pl.Boolean
         assert "fan_team" not in POSTS_SCHEMA.names()
@@ -442,13 +446,16 @@ class TestNullableColumns:
 
     def test_structural_nulls_follow_their_condition_column(self):
         """Playoff fields null outside the playoffs, is_home on a neutral
-        site, game_id on an unlinked post; wl holds on every published line."""
+        site, game_id on an unlinked post, source on a post that is not
+        news; wl holds on every published line."""
         assert NULLABLE_COLUMNS["games"] == frozenset(
             {"playoff_round", "playoff_series", "playoff_game"}
         )
         assert NULLABLE_COLUMNS["player_games"] == frozenset({"is_home"})
         assert "wl" not in NULLABLE_COLUMNS["player_games"]
-        assert NULLABLE_COLUMNS["posts"] == frozenset({"game_id", "link_flair_text"})
+        assert NULLABLE_COLUMNS["posts"] == frozenset(
+            {"game_id", "link_flair_text", "source"}
+        )
 
     def test_fan_role_and_corpus_attribution_are_nullable(self):
         """An unflaired commenter has no fan team; a season without

@@ -18,6 +18,9 @@ pipeline produces. Data dictionary first, enforcement second:
   reference assets the game tables derive from.
 - PLAY_BY_PLAY_SCHEMA describes the per-game play-by-play snapshots
   (scripts/fetch_play_by_play.py), enforced at the fetch write boundary.
+- LIVE_PLAY_BY_PLAY_SCHEMA describes the per-game snapshots of the
+  liveData play-by-play (scripts/fetch_live_play_by_play.py), enforced
+  at the fetch write boundary.
 - GAMES_SCHEMA / PLAYER_GAMES_SCHEMA describe the game layer
   (games.parquet, player_games.parquet): the Game dimension and the
   per-player box-score lines, derived from the snapshots under the
@@ -258,6 +261,75 @@ PLAY_BY_PLAY_SCHEMA = pl.Schema(
         "video_available": pl.Int64,
         "shot_value": pl.Int64,
         "action_id": pl.Int64,  # unique within a game: the row key
+    }
+)
+
+# data/<season>/reference/play_by_play_live/<game_id>.parquet — one row per
+# action_number, the liveData feed as served: every field, snake_cased,
+# nothing filtered, in feed order (order_number). Fields vary by action
+# type and an absent field is null. time_actual is when the scorer logged
+# the action, UTC to a tenth of a second, and is not strictly ordered;
+# clock is an ISO duration and the running score is a string on every row.
+# A block or steal is its own row with its own action_number.
+LIVE_PLAY_BY_PLAY_SCHEMA = pl.Schema(
+    {
+        "game_id": pl.String,
+        "action_number": pl.Int64,  # unique within a game: the row key
+        "clock": pl.String,
+        "time_actual": pl.String,  # "2026-05-31T00:23:08.2Z"
+        "period": pl.Int64,
+        "period_type": pl.String,  # "REGULAR" / "OVERTIME"
+        "action_type": pl.String,
+        "sub_type": pl.String,
+        "qualifiers": pl.List(pl.String),  # "mandatory" on a timeout
+        "person_id": pl.Int64,  # 0 on actions without a player
+        "x": pl.Float64,  # percent of court; null off a shot
+        "y": pl.Float64,
+        "possession": pl.Int64,  # team id; 0 when nobody holds the ball
+        "score_home": pl.String,
+        "score_away": pl.String,
+        "edited": pl.String,  # last edit, UTC to the second
+        "order_number": pl.Int64,  # feed order
+        "is_target_score_last_period": pl.Boolean,
+        "x_legacy": pl.Int64,  # shot-chart coordinates; null off a shot
+        "y_legacy": pl.Int64,
+        "is_field_goal": pl.Int64,
+        "side": pl.String,
+        "description": pl.String,
+        "person_ids_filter": pl.List(pl.Int64),  # everyone the action names
+        "team_id": pl.Int64,
+        "team_tricode": pl.String,
+        "descriptor": pl.String,
+        "jump_ball_recovered_name": pl.String,
+        "jump_ball_recoverd_person_id": pl.Int64,  # the feed's spelling
+        "player_name": pl.String,
+        "player_name_i": pl.String,
+        "jump_ball_won_player_name": pl.String,
+        "jump_ball_won_person_id": pl.Int64,
+        "jump_ball_lost_player_name": pl.String,
+        "jump_ball_lost_person_id": pl.Int64,
+        "area": pl.String,
+        "area_detail": pl.String,
+        "shot_distance": pl.Float64,
+        "shot_result": pl.String,  # "Made" / "Missed"
+        "points_total": pl.Int64,  # running totals are the player's, in this game
+        "turnover_total": pl.Int64,
+        "steal_player_name": pl.String,
+        "steal_person_id": pl.Int64,  # on the turnover the steal ends
+        "official_id": pl.Int64,
+        "foul_personal_total": pl.Int64,
+        "foul_technical_total": pl.Int64,
+        "foul_drawn_player_name": pl.String,
+        "foul_drawn_person_id": pl.Int64,
+        "assist_player_name_initial": pl.String,
+        "assist_person_id": pl.Int64,
+        "assist_total": pl.Int64,
+        "shot_action_number": pl.Int64,  # the shot a rebound follows
+        "rebound_total": pl.Int64,
+        "rebound_defensive_total": pl.Int64,
+        "rebound_offensive_total": pl.Int64,
+        "block_player_name": pl.String,
+        "block_person_id": pl.Int64,  # on the shot the block ends
     }
 )
 

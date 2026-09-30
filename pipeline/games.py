@@ -264,6 +264,25 @@ def build_player_games(
     return player_games
 
 
+def load_game_ids(
+    team_path: Path, team_config: dict[str, dict], *, log: logging.Logger
+) -> list[str]:
+    """
+    List the season's game ids: every game the games table keeps.
+
+    Args:
+        team_path: The banked team game-log snapshot.
+        team_config: Team config dict from load_team_config().
+        log: The caller's logger, for the season warning.
+
+    Returns:
+        Game ids in date order.
+    """
+    check_snapshot_season(team_path, subject="the game list", log=log)
+    abbr_to_team = {info["abbreviation"]: team for team, info in team_config.items()}
+    return build_games(pl.read_parquet(team_path), abbr_to_team)["game_id"].to_list()
+
+
 def load_game_tables(
     reference_dir: Path,
     player_metadata: dict[str, dict],

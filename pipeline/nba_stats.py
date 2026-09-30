@@ -1,15 +1,17 @@
 """
-NBA Stats API (stats.nba.com) acquisition via the nba_api package.
+NBA data acquisition: stats.nba.com via the nba_api package, and the
+liveData play-by-play on cdn.nba.com.
 
-Source-named acquisition module: everything fetched from stats.nba.com
-lives here — the season roster snapshot, the season game logs and
-the per-game play-by-play archive.
+Source-named acquisition module: the season roster snapshot, the season
+game logs and the per-game play-by-play archive come from stats.nba.com;
+the per-game live play-by-play archive is a direct GET of the feed
+behind the league's live game pages.
 Function-shaped rather than a client class — nba_api manages its own
 HTTP per call, so there is no session state to hold.
 
-stats.nba.com adds no retry handling of its own and its characteristic
-failure mode is hanging; every endpoint call runs through a bounded
-retry loop with exponential backoff.
+Neither source adds retry handling of its own and the characteristic
+failure mode is hanging; every call runs through a bounded retry loop
+with exponential backoff.
 
 Usage:
     from pipeline.nba_stats import fetch_rosters, fetch_team_game_log
@@ -18,15 +20,17 @@ Usage:
     team_log = fetch_team_game_log("2025-26")
 """
 
+import json
 import logging
 import os
 import re
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import requests
@@ -34,6 +38,7 @@ from nba_api.stats.endpoints import commonteamroster, leaguegamelog, playbyplayv
 from nba_api.stats.static import teams as static_teams
 
 from pipeline.schemas import (
+    LIVE_PLAY_BY_PLAY_SCHEMA,
     PLAY_BY_PLAY_SCHEMA,
     PLAYER_GAME_LOG_SCHEMA,
     ROSTERS_SCHEMA,
@@ -42,6 +47,14 @@ from pipeline.schemas import (
     validate_schema,
 )
 from utils.constants import (
+    NBA_CDN_MAX_ATTEMPTS,
+    NBA_CDN_RETRY_BACKOFF,
+    NBA_CDN_TIMEOUT,
+    NBA_CDN_USER_AGENT,
+    NBA_LIVE_HEADERS,
+    NBA_LIVE_MAX_CONSECUTIVE_REFUSALS,
+    NBA_LIVE_PLAY_BY_PLAY_URL,
+    NBA_LIVE_REQUEST_DELAY,
     NBA_STATS_CUP_SEASON_TYPE,
     NBA_STATS_GAME_LOG_SEASON_TYPES,
     NBA_STATS_MAX_ATTEMPTS,
@@ -134,6 +147,12 @@ _PLAY_BY_PLAY_PROGRESS_EVERY = 50
 # payload nba_api cannot unpack.
 _PLAY_BY_PLAY_MISS_ERRORS = (requests.RequestException, ValueError, KeyError)
 
+# The live feed's refusal, and the failures that miss a game: ValueError
+# covers a body that is not the feed's JSON, a game with zero actions and
+# a frame that does not match LIVE_PLAY_BY_PLAY_SCHEMA.
+_LIVE_REFUSED_STATUS = 403
+_LIVE_MISS_ERRORS = (requests.RequestException, ValueError)
+
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
@@ -181,9 +200,9 @@ def _call_with_retries(
     """
     Run an endpoint call through a bounded retry loop.
 
-    Connection errors and timeouts are transient by nature on
-    stats.nba.com; anything else indicates a real problem with the
-    request and propagates immediately.
+    Connection errors and timeouts are transient by nature on both
+    sources; anything else indicates a real problem with the request
+    and propagates immediately.
 
     Args:
         make_request: Zero-arg callable performing one endpoint call.
@@ -208,7 +227,7 @@ def _call_with_retries(
             if attempt < max_attempts:
                 wait = retry_backoff * (2 ** (attempt - 1))
                 logger.warning(
-                    f"Transient stats.nba.com error on {label} "
+                    f"Transient error on {label} "
                     f"(attempt {attempt}/{max_attempts}), retrying in {wait:.0f}s: {e}"
                 )
                 time.sleep(wait)
@@ -603,22 +622,25 @@ class PlayByPlayMiss:
 
 @dataclass
 class PlayByPlayReport:
-    """What an archive run banked, skipped and missed.
+    """What an archive run banked, skipped, missed and left alone.
 
     Attributes:
         fetched: Game ids written this run.
         skipped: Game ids already banked on disk.
-        misses: Every game that could not be banked.
+        misses: Every game that was requested and could not be banked.
+        unrequested: Games never requested because the run stopped on
+            refusals in a row (the live feed only).
     """
 
     fetched: list[str]
     skipped: list[str]
     misses: list[PlayByPlayMiss]
+    unrequested: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when nothing missed."""
-        return not self.misses
+        """True when every game is banked."""
+        return not self.misses and not self.unrequested
 
 
 def play_by_play_path(out_dir: Path, game_id: str) -> Path:
@@ -752,6 +774,271 @@ def sync_play_by_play(
             logger.warning(f"Missed {game_id} - {reason}")
             report.misses.append(PlayByPlayMiss(game_id=game_id, reason=reason))
         time.sleep(delay)
+
+        requested = len(report.fetched) + len(report.misses)
+        if requested % _PLAY_BY_PLAY_PROGRESS_EVERY == 0:
+            logger.info(
+                f"{requested} requested ({len(report.fetched)} banked, "
+                f"{len(report.misses)} missed), {len(report.skipped)} already on disk, "
+                f"of {len(game_ids)}"
+            )
+
+    return report
+
+
+# -----------------------------------------------------------------------------
+# Live play-by-play (cdn.nba.com liveData)
+# -----------------------------------------------------------------------------
+
+
+class LiveFeedRefused(requests.HTTPError):
+    """The CDN refused the request (HTTP 403)."""
+
+
+def _live_actions_frame(game_id: str, actions: list[dict[str, Any]]) -> pl.DataFrame:
+    """
+    Build one game's frame from the feed's actions.
+
+    Every field is kept. A field the schema knows takes its dtype and is
+    null where an action does not carry it; a field it does not know
+    survives to fail validation at the write boundary, so feed drift is
+    loud.
+
+    Args:
+        game_id: Ten-digit NBA game id, stamped on every row.
+        actions: The feed's actions, in feed order.
+
+    Returns:
+        One row per action: game_id, the schema's fields, then any
+        field the schema does not know.
+
+    Raises:
+        ValueError: If a value does not fit its field's dtype.
+    """
+    rows = [{_snake_case(key): value for key, value in a.items()} for a in actions]
+    served = dict.fromkeys(key for row in rows for key in row)
+    schema: dict[str, pl.DataType | None] = {
+        col: dtype
+        for col, dtype in LIVE_PLAY_BY_PLAY_SCHEMA.items()
+        if col != "game_id"
+    }
+    schema.update({col: None for col in served if col not in schema})
+    try:
+        frame = pl.from_dicts(rows, schema=schema, infer_schema_length=None)
+    except (TypeError, pl.exceptions.PolarsError) as e:
+        raise ValueError(f"{game_id}: the feed does not fit the schema: {e}") from e
+    return frame.select(pl.lit(game_id).alias("game_id"), pl.all())
+
+
+def _fetch_live_frame(
+    game_id: str, http_get: Callable[..., Any], timeout: int
+) -> pl.DataFrame:
+    """
+    Request one game's feed once and build its frame.
+
+    Args:
+        game_id: Ten-digit NBA game id.
+        http_get: requests.get or a stand-in with the same contract.
+        timeout: Per-request timeout in seconds.
+
+    Returns:
+        One row per action; zero rows for a game with no actions.
+
+    Raises:
+        LiveFeedRefused: On HTTP 403.
+        requests.HTTPError: On any other non-2xx status.
+        ValueError: If the body is not the feed's JSON for this game.
+    """
+    response = http_get(
+        NBA_LIVE_PLAY_BY_PLAY_URL.format(game_id=game_id),
+        headers={"User-Agent": NBA_CDN_USER_AGENT, **NBA_LIVE_HEADERS},
+        timeout=timeout,
+    )
+    if response.status_code == _LIVE_REFUSED_STATUS:
+        raise LiveFeedRefused(
+            f"{game_id}: the CDN refused the request (HTTP {_LIVE_REFUSED_STATUS})",
+            response=response,
+        )
+    response.raise_for_status()
+
+    try:
+        payload = json.loads(response.content)
+    except ValueError as e:
+        raise ValueError(
+            f"{game_id}: body is not JSON (got {response.content[:40]!r})"
+        ) from e
+    try:
+        game = payload["game"]
+        served_id, actions = game["gameId"], game["actions"]
+    except (KeyError, TypeError) as e:
+        raise ValueError(f"{game_id}: payload carries no game.actions") from e
+    if served_id != game_id:
+        raise ValueError(f"{game_id}: payload is game {served_id}")
+    return _live_actions_frame(game_id, actions)
+
+
+def fetch_live_play_by_play(
+    game_id: str,
+    *,
+    http_get: Callable[..., Any] = requests.get,
+    timeout: int = NBA_CDN_TIMEOUT,
+    max_attempts: int = NBA_CDN_MAX_ATTEMPTS,
+    retry_backoff: float = NBA_CDN_RETRY_BACKOFF,
+) -> pl.DataFrame:
+    """
+    Fetch one game's live play-by-play, every action and field as served.
+
+    Connection errors and timeouts are retried with exponential backoff;
+    a refusal or any other status is a real answer and propagates at once.
+
+    Args:
+        game_id: Ten-digit NBA game id.
+        http_get: requests.get or a stand-in with the same contract.
+        timeout: Per-request timeout in seconds.
+        max_attempts: Total attempts (1 initial + retries).
+        retry_backoff: Base seconds for exponential backoff between retries.
+
+    Returns:
+        One row per action, snake_cased; zero rows for a game with no actions.
+
+    Raises:
+        requests.ConnectionError | requests.Timeout: After max_attempts.
+        LiveFeedRefused: On HTTP 403.
+        requests.HTTPError: On any other non-2xx status.
+        ValueError: If the body is not the feed's JSON for this game.
+    """
+    return _call_with_retries(
+        partial(_fetch_live_frame, game_id, http_get, timeout),
+        label=f"{game_id} live play-by-play",
+        max_attempts=max_attempts,
+        retry_backoff=retry_backoff,
+    )
+
+
+def has_valid_live_play_by_play(path: Path) -> bool:
+    """
+    Whether a banked snapshot is present, readable, conforming and non-empty.
+
+    Args:
+        path: The snapshot's path.
+
+    Returns:
+        True when the file can be skipped on a resumed run.
+    """
+    if not path.exists():
+        return False
+    try:
+        frame = pl.read_parquet(path)
+        validate_schema(frame, LIVE_PLAY_BY_PLAY_SCHEMA, path.name)
+    except (OSError, ValueError, pl.exceptions.PolarsError):
+        return False
+    return frame.height > 0
+
+
+def load_live_play_by_play(path: Path, *, log: logging.Logger) -> pl.DataFrame:
+    """
+    Read a banked live play-by-play snapshot for a consumer.
+
+    Args:
+        path: The snapshot's path.
+        log: The consumer's logger, for the season warning.
+
+    Returns:
+        The game's actions as served, in feed order.
+
+    Raises:
+        FileNotFoundError: If the snapshot is not on disk.
+        ValueError: If the frame does not match LIVE_PLAY_BY_PLAY_SCHEMA.
+    """
+    frame = pl.read_parquet(path)
+    validate_schema(frame, LIVE_PLAY_BY_PLAY_SCHEMA, path.name)
+    check_snapshot_season(path, subject="live play-by-play", log=log)
+    return frame
+
+
+def sync_live_play_by_play(
+    game_ids: Iterable[str],
+    out_dir: Path,
+    *,
+    season: str,
+    http_get: Callable[..., Any] = requests.get,
+    delay: float = NBA_LIVE_REQUEST_DELAY,
+    timeout: int = NBA_CDN_TIMEOUT,
+    max_attempts: int = NBA_CDN_MAX_ATTEMPTS,
+    retry_backoff: float = NBA_CDN_RETRY_BACKOFF,
+    max_consecutive_refusals: int = NBA_LIVE_MAX_CONSECUTIVE_REFUSALS,
+) -> PlayByPlayReport:
+    """
+    Bank one live play-by-play snapshot per game, resuming from what is on disk.
+
+    A game with a valid file is skipped, so a killed run restarts where it
+    stopped. A refusal, an unparseable body, zero actions or a frame off
+    the schema is a miss: logged, collected, and the run moves on. Refusals
+    in a row mean the CDN is refusing the client, so the run stops and the
+    games it never requested are reported apart from the misses.
+
+    Args:
+        game_ids: Games to bank, in fetch order.
+        out_dir: The season's live play-by-play directory.
+        season: Season stamped into every file's metadata.
+        http_get: requests.get or a stand-in with the same contract.
+        delay: Seconds to wait after each request, misses included.
+        timeout: Per-request timeout in seconds.
+        max_attempts: Total attempts per game (1 initial + retries).
+        retry_backoff: Base seconds for exponential backoff between retries.
+        max_consecutive_refusals: Refusals in a row that stop the run.
+
+    Returns:
+        The report: what was fetched, skipped, missed and never requested.
+    """
+    game_ids = list(game_ids)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamps = {
+        "season": season,
+        "fetched_at": datetime.now(timezone.utc).date().isoformat(),
+        "schema_version": str(SCHEMA_VERSION),
+    }
+    report = PlayByPlayReport(fetched=[], skipped=[], misses=[])
+    refusals = 0
+
+    for position, game_id in enumerate(game_ids):
+        path = play_by_play_path(out_dir, game_id)
+        if has_valid_live_play_by_play(path):
+            report.skipped.append(game_id)
+            continue
+
+        try:
+            frame = fetch_live_play_by_play(
+                game_id,
+                http_get=http_get,
+                timeout=timeout,
+                max_attempts=max_attempts,
+                retry_backoff=retry_backoff,
+            )
+            if frame.height == 0:
+                raise ValueError("the feed served zero actions")
+            validate_schema(frame, LIVE_PLAY_BY_PLAY_SCHEMA, path.name)
+            _write_parquet_atomic(frame, path, stamps)
+            report.fetched.append(game_id)
+            refusals = 0
+        except _LIVE_MISS_ERRORS as e:
+            reason = f"{type(e).__name__}: {e}"
+            logger.warning(f"Missed {game_id} - {reason}")
+            report.misses.append(PlayByPlayMiss(game_id=game_id, reason=reason))
+            refusals = refusals + 1 if isinstance(e, LiveFeedRefused) else 0
+        time.sleep(delay)
+
+        if refusals >= max_consecutive_refusals:
+            report.unrequested = [
+                g
+                for g in game_ids[position + 1 :]
+                if not has_valid_live_play_by_play(play_by_play_path(out_dir, g))
+            ]
+            logger.error(
+                f"{refusals} refusals in a row - the CDN is refusing this client; "
+                f"stopped with {len(report.unrequested)} games not requested"
+            )
+            break
 
         requested = len(report.fetched) + len(report.misses)
         if requested % _PLAY_BY_PLAY_PROGRESS_EVERY == 0:

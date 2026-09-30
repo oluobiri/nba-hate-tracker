@@ -103,6 +103,22 @@ class TestLeadingTag:
     @pytest.mark.parametrize(
         "title",
         [
+            "[[Scotto] Kawhi Leonard has been named ...",
+            "[[Scotto]] Kawhi Leonard has been named ...",
+        ],
+    )
+    def test_doubled_bracket_reads_the_tag_inside(self, title):
+        """Verify a mistyped double bracket never enters the tag."""
+        assert leading_tag(title) == "scotto"
+
+    def test_forty_characters_is_the_longest_tag(self):
+        """Verify the length bound: a tag of forty reads, forty-one does not."""
+        assert leading_tag(f"[{'a' * 40}] title") == "a" * 40
+        assert leading_tag(f"[{'a' * 41}] title") is None
+
+    @pytest.mark.parametrize(
+        "title",
+        [
             "Charania says the Bucks have traded ...",
             "The Bucks [per Charania] have traded ...",
             "[] empty brackets",
@@ -145,6 +161,8 @@ class TestClassifyPost:
             ("[Lowlight] Airball to end the half", LOWLIGHT),
             ("[Lowlights] Every turnover of the fourth", LOWLIGHT),
             ("[Injury] Player X is helped off the floor", INJURY),
+            ("[Injury Update] Player X is questionable to return", INJURY),
+            ("[Higlight] A misspelled dunk", HIGHLIGHT),
         ],
     )
     def test_unflaired_convention_tag_names_the_type(self, title, expected):
@@ -159,6 +177,8 @@ class TestClassifyPost:
             "[The Athletic] Inside the deal",
             "[Stein/Fischer] The Wolves, sources say, ...",
             "[Jaylen Brown] Analytics are ruining the game",
+            "[247Sports] A recruit commits",
+            "[Стейн] A source written outside the Latin alphabet",
         ],
     )
     def test_unflaired_source_tag_is_news(self, title):
@@ -173,6 +193,8 @@ class TestClassifyPost:
             "[Serious] Do the Spurs have to move off of Fox?",
             "[ Removed by moderator ]",
             "[Highlight Request] The airball from last night",
+            "[[Highlight Request] The airball from last night",
+            "[Post Game] Wembanyama tonight: 26 points, 15 rebounds",
             "[02/04/2025] Dennis Schröder on the trade deadline",
             "[2022] Jrue Holiday forces two turnovers",
             "[2026 NBA Draft] #12 Pick: selected by Oklahoma City",
@@ -704,9 +726,15 @@ class TestBuildPostsBridge:
         assert by_id["t3_news"]["source"] == "charania"
         assert bridge["game_id"].null_count() == 2
         assert not bridge["is_primary"].any()
-        assert "highlight 1" in caplog.text
-        assert "news 1" in caplog.text
-        assert "charania 1" in caplog.text
+        assert "highlight 1, lowlight 0, injury 0, news 1, discussion 0" in caplog.text
+        assert "news sources: 1 distinct; largest: charania 1\n" in caplog.text
+
+    def test_no_news_logs_no_sources(self, caplog):
+        """Verify a bridge without a news post reports none, and names none."""
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            build_posts_bridge(_posts(self.ROWS), _games(self.GAMES), TEAM_CONFIG)
+
+        assert "news sources: 0 distinct\n" in caplog.text
 
     def test_sorted_by_creation_then_id(self):
         """Verify the bridge is ordered like the fact, by time then key."""
@@ -834,6 +862,23 @@ class TestLoadPostsTable:
 
         with pytest.raises(ValueError, match="absent from games"):
             load_posts_table(tmp_path, _games([]), "2026-09-12", self.RECEIPTS)
+
+    def test_bridge_of_another_shape_names_the_remedy(self, tmp_path):
+        """Verify a bridge written before a column was added fails the
+        build with the command that rebuilds it."""
+        stale = pl.DataFrame(self.BRIDGE, schema=POSTS_SCHEMA).drop("source")
+        stale.write_parquet(
+            tmp_path / POSTS_BRIDGE_FILENAME,
+            metadata={
+                "season": get_active_season(),
+                "processed_at": "2026-09-13",
+                "games_fetched_at": "2026-09-12",
+                "teams_config_version": load_team_config_version(),
+            },
+        )
+
+        with pytest.raises(ValueError, match="missing columns.*process_posts --force"):
+            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
 
     def test_fetch_date_mismatch_warns(self, tmp_path, caplog):
         """Verify a bridge derived from another game-log fetch is flagged."""

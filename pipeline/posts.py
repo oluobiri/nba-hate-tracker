@@ -82,6 +82,7 @@ TAG_POST_TYPES = {
     "lowlight": LOWLIGHT,
     "lowlights": LOWLIGHT,
     "injury": INJURY,
+    "injury update": INJURY,
 }
 # Leading tags that name no source: the subreddit's own conventions and
 # the placeholders left on a removed post. Any other tag is a source.
@@ -102,6 +103,9 @@ CONVENTION_TAGS = frozenset(
         "news",
         "oc",
         "official",
+        "post game",
+        "post game interview",
+        "postgame",
         "question",
         "reminder",
         "removed by moderator",
@@ -137,10 +141,11 @@ _TITLE_DATE_FORMATS = ("%B %d, %Y", "%b %d, %Y")
 # A (W-L) record looks like a score; strip records before reading one.
 _RECORD = re.compile(r"\(\d+-\d+\)")
 _SCORE = re.compile(r"(?<!\d)(\d{2,3})\s*[-–]\s*(\d{2,3})(?!\d)")
-# "[Charania] ..." at the head of a title; a longer bracket is a sentence.
-_LEADING_TAG = re.compile(r"^\s*\[([^\]]{1,40})\]")
-# A date, or a tag opening with a year ("2026 nba draft"), names no source.
-_DATE_TAG = re.compile(r"^(?:[^a-z]*|\d{4}\b.*)$")
+# "[Charania] ..." at the head of a title; a longer bracket is a sentence,
+# and a mistyped "[[" opens the same tag.
+_LEADING_TAG = re.compile(r"^\s*\[+([^\[\]]{1,40})\]")
+# A tag opening with a year ("2026 nba draft") names no source.
+_YEAR_TAG = re.compile(r"^\d{4}\b")
 
 
 def leading_tag(title: str) -> str | None:
@@ -173,7 +178,8 @@ def classify_post(title: str, flair: str | None) -> str:
     title: an anchored thread prefix first (the mods strip the flair
     when they remove a duplicate), then its leading tag. A tag is a type
     in itself, a convention that names no source, or a source, which
-    makes the post news.
+    makes the post news. A tag without a letter is a date, and one
+    opening with a year is a convention.
 
     Args:
         title: Post title.
@@ -188,7 +194,9 @@ def classify_post(title: str, flair: str | None) -> str:
         if pattern.match(title):
             return post_type
     tag = leading_tag(title)
-    if tag is None or tag in CONVENTION_TAGS or _DATE_TAG.match(tag):
+    if tag is None or tag in CONVENTION_TAGS:
+        return OTHER
+    if _YEAR_TAG.match(tag) or not any(char.isalpha() for char in tag):
         return OTHER
     return TAG_POST_TYPES.get(tag, NEWS)
 
@@ -477,7 +485,7 @@ def build_posts_bridge(
                 if game_id is None:
                     unmatched.append(title)
         post_types.append(post_type)
-        sources.append(leading_tag(title) if post_type == NEWS else None)
+        sources.append(post_source(title, flair))
         game_ids.append(game_id)
 
     # Rank within (game, type) by size so the largest thread is primary;
@@ -526,12 +534,12 @@ def build_posts_bridge(
         .len()
         .sort(["len", "source"], descending=[True, False])
     )
+    largest = ", ".join(
+        f"{source} {n}" for source, n in top_sources.head(SOURCES_LOGGED).iter_rows()
+    )
     logger.info(
-        f"news sources: {top_sources.height} distinct; largest: "
-        + ", ".join(
-            f"{source} {n}"
-            for source, n in top_sources.head(SOURCES_LOGGED).iter_rows()
-        )
+        f"news sources: {top_sources.height} distinct"
+        + (f"; largest: {largest}" if largest else "")
     )
     return bridge
 
@@ -594,7 +602,13 @@ def load_posts_table(
             f"{games_fetched_at!r}; re-run scripts.process_posts"
         )
     bridge = pl.read_parquet(path)
-    validate_schema(bridge, POSTS_SCHEMA, str(path))
+    try:
+        validate_schema(bridge, POSTS_SCHEMA, str(path))
+    except ValueError as e:
+        raise ValueError(
+            f"{e}; the bridge was built under another contract, rebuild it "
+            "with scripts.process_posts --force"
+        ) from e
     unknown = bridge.filter(
         pl.col("game_id").is_not_null()
         & ~pl.col("game_id").is_in(games["game_id"].to_list())

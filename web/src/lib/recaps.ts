@@ -43,7 +43,7 @@ export function periodCells(byPeriod: Record<string, PeriodCounts>): PeriodCell[
     .toSorted((a, b) => a.key - b.key)
 }
 
-/** The strip's text alternative: each period's negative share and n. */
+/** The strip's text alternative: each quarter's negative share and n. */
 export function periodsText(cells: readonly PeriodCell[]): string {
   return cells
     .map((c) => (c.counts.total ? `${c.label} ${fmtPct(negRate(c.counts), 0)} negative of ${fmtInt(c.counts.total)}` : `${c.label} no comments`))
@@ -104,7 +104,7 @@ function hookClause(cells: readonly PeriodCell[], usual: number): string {
   const spoken = cells.filter((c) => c.counts.total > 0)
   const first = spoken[0]
   if (!first) return 'the room had nothing to say about him'
-  if (spoken.length === 1) return `${pct(first)} negative in the ${periodWord(first.key)}, the only period with comments`
+  if (spoken.length === 1) return `${pct(first)} negative in the ${periodWord(first.key)}, the only ${first.key <= REGULATION ? 'quarter' : 'overtime'} with comments`
   const regulation = spoken.filter((c) => c.key <= REGULATION)
   const scopes = spoken.length > regulation.length ? [regulation, spoken] : [regulation]
   for (const scope of scopes) {

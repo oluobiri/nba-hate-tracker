@@ -73,7 +73,7 @@ describe('hook', () => {
     silentFirst['1'] = { neg: 0, pos: 0, neu: 0 }
     expect(hook(periodCells(silentFirst), 0.5)).toBe('Held between 80% and 83% negative all night.')
     const silent = { neg: 0, pos: 0, neu: 0 }
-    expect(hook(periodCells({ '1': silent, '2': silent, '3': { neg: 55, pos: 5, neu: 40 }, '4': silent }), usual)).toBe('55% negative in the 3rd, the only period with comments.')
+    expect(hook(periodCells({ '1': silent, '2': silent, '3': { neg: 55, pos: 5, neu: 40 }, '4': silent }), usual)).toBe('55% negative in the 3rd, the only quarter with comments.')
     expect(hook(periodCells({ '1': silent, '2': silent, '3': silent, '4': silent }), usual)).toBe('The room had nothing to say about him.')
   })
 

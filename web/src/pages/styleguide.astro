@@ -225,8 +225,8 @@ const gridLimit = deltaLimit(pairs.domain)
 const PAIR_TOP = 3
 const longestPair = pairs.grudges.toSorted((a, b) => b.label.length - a.label.length)[0]!
 const pairRows = [longestPair, ...pairs.grudges.filter((r) => r !== longestPair).slice(0, PAIR_TOP - 1)].map((r) => ({ key: r.key, label: r.label, href: r.href, value: r.delta, n: r.n, logo: r.logo, detail: fmtPct(r.rate, 0) }))
-// Recaps: the lead as the hero; the strip's awkward cases by rule (most periods,
-// the thinnest period, a silent period constructed since the drop has none);
+// Recaps: the lead as the hero; the strip's awkward cases by rule (most overtime,
+// the thinnest quarter, a silent quarter constructed since the drop has none);
 // the rows with the longest name and the longest hook.
 const recaps = buildRecaps(manifest, tables)
 const { lead: recapLead } = leadAndList(recaps)
@@ -452,11 +452,11 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
 
     <section class="guide__section">
       <h2>PeriodStrip</h2>
-      <p class="eyebrow">The game by period: one mini bar per period at equal widths, n under each; nothing grayed, no floor read. Hero size, then row size.</p>
+      <p class="eyebrow">The game by quarter: one mini bar per quarter and overtime at equal widths, n under each; nothing grayed, no floor read. Hero size, then row size.</p>
       <div class="guide__stack">
-        {mostPeriods && <figure class="guide__fig"><PeriodStrip cells={mostPeriods.cells} size="hero" subject={mostPeriods.entry.attributed_player} /><figcaption>most periods · {mostPeriods.entry.attributed_player}, {mostPeriods.cells.length} periods, hero size</figcaption></figure>}
-        {thinnestRecap && <figure class="guide__fig"><PeriodStrip cells={thinnestRecap.cells} subject={thinnestRecap.entry.attributed_player} /><figcaption>thinnest period · {thinnestRecap.entry.attributed_player}, {fmtInt(thinnestPeriod(thinnestRecap))} comments in one period, row size</figcaption></figure>}
-        {recapLead && <figure class="guide__fig"><PeriodStrip cells={silenced} subject={recapLead.entry.attributed_player} /><figcaption>a silent period, constructed: {recapLead.entry.attributed_player} with Q2 zeroed</figcaption></figure>}
+        {mostPeriods && <figure class="guide__fig"><PeriodStrip cells={mostPeriods.cells} size="hero" subject={mostPeriods.entry.attributed_player} /><figcaption>most overtime · {mostPeriods.entry.attributed_player}, {mostPeriods.cells.length} quarters and overtimes, hero size</figcaption></figure>}
+        {thinnestRecap && <figure class="guide__fig"><PeriodStrip cells={thinnestRecap.cells} subject={thinnestRecap.entry.attributed_player} /><figcaption>thinnest quarter · {thinnestRecap.entry.attributed_player}, {fmtInt(thinnestPeriod(thinnestRecap))} comments in one quarter or overtime, row size</figcaption></figure>}
+        {recapLead && <figure class="guide__fig"><PeriodStrip cells={silenced} subject={recapLead.entry.attributed_player} /><figcaption>a silent quarter, constructed: {recapLead.entry.attributed_player} with Q2 zeroed</figcaption></figure>}
       </div>
     </section>
 

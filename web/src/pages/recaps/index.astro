@@ -38,8 +38,8 @@ const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
     <MethodNote kind="method">
       A recap replays one game's live thread on r/NBA against the game as it was scored that night. The population is his comments in the game's live thread, the primary thread and any
       split; post-game threads are not in it, so the final verdict on a recap's page, which counts every thread about him that night, is a different population and is labeled as one.
-      Each comment sits on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play, so a reaction reads ${lag} after the play it answers` : ''}. Each period's
-      bar is his comments in that period, negative, neutral, positive, with their count under it.
+      Each comment sits on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play, so a reaction reads ${lag} after the play it answers` : ''}. Each quarter's
+      bar is his comments in that quarter, negative, neutral, positive, with their count under it.
     </MethodNote>
   </main>
 </Base>

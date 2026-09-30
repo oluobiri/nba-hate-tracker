@@ -43,9 +43,9 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
     </header>
 
     <section class="rp__section" aria-labelledby="periods-h">
-      <h2 id="periods-h">The room, by period</h2>
+      <h2 id="periods-h">The room, by quarter</h2>
       <PeriodStrip cells={recap.cells} size="hero" subject={name} />
-      <p class="rp__soon">The replay, every comment on the game clock beside the play-by-play, is on its way. Until it lands, the periods tell the arc.</p>
+      <p class="rp__soon">The replay, every comment on the game clock beside the play-by-play, is on its way. Until it lands, the quarters tell the arc.</p>
     </section>
 
     <section class="rp__section" aria-labelledby="night-h">
@@ -57,7 +57,7 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
     </section>
 
     <MethodNote kind="method">
-      The periods count his comments in the game's live thread, the primary and any split; the verdict counts every thread about him that night, post-game included, against his
+      The quarters count his comments in the game's live thread, the primary and any split; the verdict counts every thread about him that night, post-game included, against his
       season, so the two are different populations. Each comment sits on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play` : ''}.
     </MethodNote>
 

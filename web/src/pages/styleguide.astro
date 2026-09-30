@@ -13,6 +13,8 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { QuarterBox } from '../components/replay/QuarterBox'
+import { RoomBars } from '../components/replay/RoomBars'
 import { ScoreBug, type ScoreBugProps } from '../components/replay/ScoreBug'
 import { Ticker } from '../components/replay/Ticker'
 import { RankNumeral } from '../components/RankNumeral'
@@ -40,7 +42,7 @@ import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pi
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, periodLabel, recapHrefs } from '../lib/recaps'
 import { buildTimeline, defaultSpeed, phaseAt, playCursor, speedPhrase, stoppageAt, stoppageLabel, wallStamp } from '../lib/clock'
-import { clockAt, lineAt, recapRows as rowsOf, scoreAt, ticker } from '../lib/replay'
+import { buildRoom, clockAt, commentCursor, lineAt, prepareComments, quarterBox, recapRows as rowsOf, RIGHT_NOW, rightNow, roomByPeriod, scoreAt, soFar, ticker } from '../lib/replay'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
@@ -273,6 +275,10 @@ const replayMoments: { name: string; t: number }[] =
         { name: 'the final', t: replayTl.total },
       ]
     : []
+const flairAbbr = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbreviation]))
+const replayRoom = replayRows && replayTl ? buildRoom(prepareComments(replayRows.comments, replayTl, flairAbbr), replayTl) : null
+const midThird = replayTl ? Math.floor((replayTl.periods[2]!.startWall + replayTl.periods[2]!.endWall) / 2) - replayTl.tip : 0
+const hisSide = recapLead && recapLead.game.home_team === recapLead.player.roster_team ? 'home' : 'away'
 function bugAt(t: number): ScoreBugProps {
   const rows = replayRows!
   const tl = replayTl!
@@ -534,6 +540,38 @@ function bugAt(t: number): ScoreBugProps {
       <div class="guide__stack">
         {replayRows && replayTl && replayMoments.slice(1, 3).map((m) => <figure class="guide__fig"><Ticker lines={ticker(replayRows.plays, playCursor(replayRows.plays, replayTl, m.t))} /><figcaption>{m.name}</figcaption></figure>)}
         <figure class="guide__fig"><Ticker lines={[]} /><figcaption>before the tip</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>QuarterBox</h2>
+      <p class="eyebrow">Both teams' points per quarter from the running score, the period in play marked, and the room on him as the third row: the index's mini bar and n again.</p>
+      <div class="guide__stack">
+        {replayRows && replayTl && replayRoom && recapLead && [{ name: 'mid-third quarter', t: midThird }, { name: 'the final', t: replayTl.total }].map((m) => {
+          const cursor = playCursor(replayRows.plays, replayTl, m.t)
+          return (
+            <figure class="guide__fig">
+              <QuarterBox rows={quarterBox(replayRows.plays, replayTl, cursor)} room={roomByPeriod(replayRoom, commentCursor(replayRoom.comments, m.t))} away={recapLead.line.away.abbr} home={recapLead.line.home.abbr} his={hisSide} subject={recapLead.entry.attributed_player} />
+              <figcaption>{m.name} · t={fmtInt(m.t)} s since tip</figcaption>
+            </figure>
+          )
+        })}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>RoomBars</h2>
+      <p class="eyebrow">Right now over his last {RIGHT_NOW} comments, so far cumulative, both row-size bars against his usual; a thin window early in the game names how many it holds.</p>
+      <div class="guide__stack">
+        {replayRoom && replayTl && recapLead && [{ name: 'mid-third quarter', t: midThird }, { name: 'two minutes in, a thin window', t: 120 }, { name: 'the tip', t: 0 }].map((m) => {
+          const cursor = commentCursor(replayRoom.comments, m.t)
+          return (
+            <figure class="guide__fig">
+              <RoomBars now={rightNow(replayRoom, cursor)} soFar={soFar(replayRoom, cursor)} window={RIGHT_NOW} usual={recapLead.usual} subject={recapLead.entry.attributed_player} />
+              <figcaption>{m.name} · t={fmtInt(m.t)} s since tip</figcaption>
+            </figure>
+          )
+        })}
       </div>
     </section>
 

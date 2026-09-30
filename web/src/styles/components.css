@@ -2487,3 +2487,94 @@ a.hero__who:hover {
 .tk__text {
   overflow-wrap: anywhere;
 }
+
+/* QuarterBox: the box score by period, the room on him as its third row.
+   The period in play is marked; a period not yet reached reads "—". */
+.qb {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.qb th,
+.qb td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  vertical-align: middle;
+  font-weight: 400;
+}
+.qb thead th {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.qb th[scope='row'] {
+  width: 5.5em;
+  padding-left: 0;
+  text-align: left;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.qb__team--his th[scope='row'] {
+  color: var(--bone);
+}
+.qb__team td {
+  color: var(--bone-2);
+}
+.qb__team--his td {
+  color: var(--bone);
+}
+.qb__total {
+  border-left: 1px solid var(--line);
+  color: var(--bone);
+}
+.qb__cell--live {
+  background: var(--surface-2);
+}
+.qb__room th[scope='row'] {
+  width: auto;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.qb__room td {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.qb__room .sb {
+  margin-bottom: 4px;
+}
+.qb__n {
+  display: block;
+  font-size: 11px;
+  color: var(--bone-2);
+}
+
+/* RoomBars: right now and so far. */
+.rb {
+  display: grid;
+  gap: 14px;
+}
+.rb__bar {
+  display: grid;
+  gap: 6px;
+}
+.rb__label {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.rb__detail {
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--mute);
+}
+.rb__empty {
+  height: 10px;
+  border: 1px dashed var(--line-2);
+}

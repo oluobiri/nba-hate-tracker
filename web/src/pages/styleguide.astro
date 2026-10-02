@@ -14,6 +14,7 @@ import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
 import { Caption } from '../components/replay/Caption'
+import { Court } from '../components/replay/Court'
 import { FlowStrip } from '../components/replay/FlowStrip'
 import { NetGauge } from '../components/replay/NetGauge'
 import { ScoreBug } from '../components/replay/ScoreBug'
@@ -283,6 +284,16 @@ const captionCases = replay
     ]
   : []
 const MOMENT_HOLD = 4.5
+// The court at halftime and the final, and at his first dunk or block with the mark pulsed.
+const hotMoment = replay ? ([...replay.moments.values()].find((x) => (x.label === 'DUNK' || x.label === 'BLOCK') && x.mark !== null) ?? null) : null
+const courtCases = replay
+  ? [
+      { name: 'mid-halftime, the ends labeled, a card', m: replayMoments[2]!, hot: null },
+      ...(hotMoment ? [{ name: `his moment held · ${hotMoment.label}`, m: { name: 'moment', u: replay.tl.playU[hotMoment.i]! + 1, scene: sceneAt(replay, replay.tl.playU[hotMoment.i]! + 1) }, hot: hotMoment }] : []),
+      { name: 'the final', m: replayMoments[3]!, hot: null },
+    ]
+  : []
+const focusTeam = replay ? (replay.stints.find((st) => st.person_id === replay.focusId)?.team_tricode ?? '') : ''
 
 ---
 
@@ -558,6 +569,28 @@ const MOMENT_HOLD = 4.5
     </section>
 
     <section class="guide__section">
+      <h2>Court</h2>
+      <p class="eyebrow">
+        A full court in hairlines, the home logo gray at centre, no court art. Both teams' shots at the feed's positions, theirs gray and his team's bone, a miss hollow; his larger and ringed; his blocks dashed on the shot they ended; the five on the floor as chips, his in bone or a dashed bench chip. Behind each basket the team that scores there, read from the positions and swapping at half. The cards sit over the court.
+      </p>
+      <div class="guide__stack guide__replay guide__replay--court">
+        {replay && bugTeams && courtCases.map((c) => (
+          <figure class="guide__fig">
+            <Court plays={replay.plays} playU={replay.tl.playU} cursor={c.m.scene.cursor} u={c.m.u} focusId={replay.focusId} focusTeam={focusTeam} away={bugTeams.away.abbr} home={bugTeams.home} ends={replay.ends.get(c.m.scene.clock.period) ?? null} onFloor={c.m.scene.onFloor} order={replay.order} names={replay.names} blocked={replay.blocked} hot={c.hot}>
+              {c.m.scene.card && (
+                <div class="card">
+                  <div class="card__big">{c.m.scene.card.label}</div>
+                  <div class="card__sm">{bugTeams.away.abbr} {c.m.scene.score.away} – {c.m.scene.score.home} {bugTeams.home.abbr} · {c.m.scene.card.kind === 'halftime' ? 'teams switch ends · ' : ''}the room keeps talking</div>
+                </div>
+              )}
+            </Court>
+            <figcaption>{c.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>RecapRows</h2>
       <p class="eyebrow">One curated recap per row, the whole row the link: face, the game line with the winner bold, name, the hook, the strip, n. The longest name and the longest hook.</p>
       {recapRows.length ? <RecapRows recaps={recapRows} /> : <p class="eyebrow">No recap is curated this season.</p>}
@@ -792,6 +825,9 @@ const MOMENT_HOLD = 4.5
     display: flex;
     width: 200px;
     height: 420px;
+  }
+  .guide__replay--court :global(.courtbox) {
+    max-width: 720px;
   }
   .guide__replay--meter :global(.meter) {
     display: block;

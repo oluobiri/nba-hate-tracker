@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "tables": {
     "player_overall": {
       "columns": [
@@ -1210,6 +1210,16 @@
         "stints": {
           "columns": [
             {
+              "name": "person_id",
+              "dtype": "int64",
+              "nullable": false
+            },
+            {
+              "name": "team_tricode",
+              "dtype": "string",
+              "nullable": false
+            },
+            {
               "name": "period",
               "dtype": "int64",
               "nullable": false
@@ -1294,6 +1304,11 @@
               "nullable": true
             },
             {
+              "name": "assist_person_id",
+              "dtype": "int64",
+              "nullable": true
+            },
+            {
               "name": "is_focus",
               "dtype": "bool",
               "nullable": false
@@ -1309,13 +1324,13 @@
               "nullable": false
             },
             {
-              "name": "x_legacy",
-              "dtype": "int64",
+              "name": "x",
+              "dtype": "float64",
               "nullable": true
             },
             {
-              "name": "y_legacy",
-              "dtype": "int64",
+              "name": "y",
+              "dtype": "float64",
               "nullable": true
             },
             {
@@ -1332,41 +1347,6 @@
               "name": "score_away",
               "dtype": "int64",
               "nullable": false
-            },
-            {
-              "name": "pts",
-              "dtype": "int64",
-              "nullable": true
-            },
-            {
-              "name": "reb",
-              "dtype": "int64",
-              "nullable": true
-            },
-            {
-              "name": "ast",
-              "dtype": "int64",
-              "nullable": true
-            },
-            {
-              "name": "blk",
-              "dtype": "int64",
-              "nullable": true
-            },
-            {
-              "name": "stl",
-              "dtype": "int64",
-              "nullable": true
-            },
-            {
-              "name": "tov",
-              "dtype": "int64",
-              "nullable": true
-            },
-            {
-              "name": "pf",
-              "dtype": "int64",
-              "nullable": true
             }
           ]
         },

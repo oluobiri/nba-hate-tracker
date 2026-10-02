@@ -811,7 +811,7 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
     """
     called_on_bench = (
         (pl.col("action_type") == FOUL_ACTION_TYPE)
-        & (pl.col("sub_type") == TECHNICAL_SUB_TYPE)
+        & pl.col("sub_type").eq_missing(TECHNICAL_SUB_TYPE)
     ) | (pl.col("kind") == KIND_EJECTION)
     feed = plays.with_row_index("_order")
     columns = ["_order", "team_tricode", "period", "kind", "game_seconds"]
@@ -884,20 +884,26 @@ def minutes_off(seconds: pl.Expr, box_minutes: pl.Expr) -> pl.Expr:
     return (apart.sign() * beyond).cast(pl.Int64)
 
 
-def floor_gaps(stints: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+def floor_gaps(
+    stints: pl.DataFrame, periods: pl.DataFrame, teams: Sequence[str]
+) -> pl.DataFrame:
     """
     The spans where the stints do not put five players per team on the floor.
 
     Args:
         stints: The stints frame (build_stints).
         periods: The game's clock (build_periods).
+        teams: The game's teams, as the feed abbreviates them: a team
+            with no stint at all reads none on the floor all game.
 
     Returns:
         FLOOR_GAP_SCHEMA rows: the team, the span in game seconds and how
         many read as on the floor through it. Empty when every team has
         five from tip-off to the last buzzer.
     """
-    teams = stints.select("team_tricode").unique()
+    named = pl.DataFrame(
+        {"team_tricode": list(teams)}, schema={"team_tricode": pl.String}
+    )
     total = periods["end_seconds"].max()
 
     def steps(frame: pl.DataFrame, at: pl.Expr, step: int) -> pl.DataFrame:
@@ -912,8 +918,8 @@ def floor_gaps(stints: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
             [
                 steps(stints, pl.col("start_seconds"), 1),
                 steps(stints, pl.col("end_seconds"), -1),
-                steps(teams, pl.lit(0), 0),
-                steps(teams, pl.lit(total), 0),
+                steps(named, pl.lit(0), 0),
+                steps(named, pl.lit(total), 0),
             ]
         )
         .group_by("team_tricode", "at")
@@ -1065,12 +1071,12 @@ def check_box(
             *(pl.col(stat).fill_null(0) for stat in BOX_LINE_STATS),
             *(pl.col(f"_box_{stat}").fill_null(0) for stat in stats),
         )
-        # Reported to the minute; the box score's own where they agree
+        # Stint minutes read as the box score's plus what they are off by
         .with_columns(
-            pl.when(minutes_off(pl.col("seconds"), pl.col(f"_box_{BOX_MINUTES}")) == 0)
-            .then(pl.col(f"_box_{BOX_MINUTES}"))
-            .otherwise((pl.col("seconds") + 30) // 60)
-            .alias(BOX_MINUTES)
+            (
+                pl.col(f"_box_{BOX_MINUTES}")
+                + minutes_off(pl.col("seconds"), pl.col(f"_box_{BOX_MINUTES}"))
+            ).alias(BOX_MINUTES)
         )
         .sort("team_tricode", "person_id")
     )
@@ -1638,7 +1644,8 @@ def build_recap(
     periods = build_periods(pbp)
     plays = build_plays(pbp, periods, spec.player_id)
     stints = build_stints(plays, periods)
-    gaps = floor_gaps(stints, periods)
+    teams = plays["team_tricode"].drop_nulls().unique().to_list()
+    gaps = floor_gaps(stints, periods, teams)
     for team, start, end, on_floor in gaps.rows():
         logger.warning(
             f"recap {spec.key}: {team} reads {on_floor} on the floor "

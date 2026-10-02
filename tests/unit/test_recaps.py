@@ -1381,6 +1381,23 @@ class TestBuildStints:
 
         assert set(stints["person_id"].to_list()) == {CHET}
 
+    def test_a_foul_the_feed_does_not_type_is_a_play_on_the_floor(self, g7_periods):
+        """Only a technical or an ejection is discounted; a foul with no
+        sub type still puts him on the floor."""
+        rows = [
+            *G7_MARKERS,
+            _chet(
+                3,
+                clock="PT06M00.00S",
+                time_actual=_stamp(0, 30),
+                action_type="foul",
+                sub_type=None,
+            ),
+        ]
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+
+        assert _stints_of(build_stints(plays, g7_periods), CHET)[0] == (1, 0, 720)
+
     def test_bench_player_opens_off_the_floor(self, g7_periods):
         """His first substitution brings him on at 6:00: on from there,
         carried across the break, off at Q2 8:00."""
@@ -1442,6 +1459,8 @@ class TestMinutesOff:
             (1829, 30, 0),
             (1831, 30, 1),
             (1769, 30, -1),
+            (1890, 30, 1),  # a minute and a half over is one whole minute off
+            (1710, 30, -1),
             (2880, 34, 14),
             (0, 5, -5),
         ],
@@ -1473,7 +1492,7 @@ class TestFloorGaps:
             ]
         )
 
-        assert floor_gaps(stints, g7_periods).height == 0
+        assert floor_gaps(stints, g7_periods, ["OKC"]).height == 0
 
     def test_a_swap_on_one_second_is_no_gap(self, g7_periods):
         """One out and one in at 5:00 of Q1 leaves five throughout."""
@@ -1485,7 +1504,7 @@ class TestFloorGaps:
             ]
         )
 
-        assert floor_gaps(stints, g7_periods).height == 0
+        assert floor_gaps(stints, g7_periods, ["OKC"]).height == 0
 
     def test_a_sixth_player_is_reported_with_its_span(self, g7_periods):
         """A sixth on the floor from 1:40 to 3:20 of Q1."""
@@ -1496,7 +1515,7 @@ class TestFloorGaps:
             ]
         )
 
-        assert floor_gaps(stints, g7_periods).rows() == [("OKC", 100, 200, 6)]
+        assert floor_gaps(stints, g7_periods, ["OKC"]).rows() == [("OKC", 100, 200, 6)]
 
     def test_a_missing_player_is_reported_from_tip_off(self, g7_periods):
         """Four until the fifth's first interval opens; the other team's
@@ -1509,7 +1528,18 @@ class TestFloorGaps:
             ]
         )
 
-        assert floor_gaps(stints, g7_periods).rows() == [("OKC", 0, 50, 4)]
+        assert floor_gaps(stints, g7_periods, ["OKC", "SAS"]).rows() == [
+            ("OKC", 0, 50, 4)
+        ]
+
+    def test_a_team_with_no_stint_reads_none_all_game(self, g7_periods):
+        """A team the feed names and the stints never do is one gap, tip-off
+        to the last buzzer."""
+        stints = _stint_frame([(player, "OKC", 1, 0, 2880) for player in FIVE])
+
+        assert floor_gaps(stints, g7_periods, ["OKC", "SAS"]).rows() == [
+            ("SAS", 0, 2880, 0)
+        ]
 
     def test_one_gap_across_other_teams_edges(self, g7_periods):
         """A sixth all game is one span, however many substitutions the
@@ -1523,7 +1553,7 @@ class TestFloorGaps:
             ]
         )
 
-        assert floor_gaps(stints, g7_periods).rows() == [("OKC", 0, 2880, 6)]
+        assert floor_gaps(stints, g7_periods, ["OKC"]).rows() == [("OKC", 0, 2880, 6)]
 
 
 # --- Comments, anchors, the document ---------------------------------------
@@ -1937,6 +1967,17 @@ class TestCheckBox:
         mismatches = check_box(*game, box, _team_log(OKC=0, SAS=3))
 
         assert mismatches.rows() == [("OKC", CHET, CHET_NAME, "minutes", 48, 40)]
+
+    def test_reported_minutes_are_the_box_scores_plus_what_they_are_off(self, game):
+        """31:30 on the floor against 30 is one minute off, so it reads 31:
+        the warning and the registry's minutes_diff cannot disagree."""
+        plays, _ = game
+        stints = _stint_frame([(CHET, "OKC", 1, 0, 1890), (WEMBY, "SAS", 1, 0, 2880)])
+        box = self._log({**self.CHET_BOX, "minutes": 30})
+
+        mismatches = check_box(plays, stints, box, _team_log(OKC=0, SAS=3))
+
+        assert mismatches.rows() == [("OKC", CHET, CHET_NAME, "minutes", 31, 30)]
 
     @pytest.mark.parametrize("box_minutes", [38, 39])
     def test_minutes_within_half_a_minute_agree(self, game, box_minutes):

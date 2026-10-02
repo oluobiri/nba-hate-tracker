@@ -176,7 +176,7 @@ The distinction matters because the two layers age differently: frozen fields st
 | `period`, `clock`, `game_seconds` | the clock as served, and seconds elapsed since tip-off (720 per period, 300 per overtime) |
 | `wall_clock` | epoch seconds, the play's own timestamp: when the scorer logged it, made monotone in feed order |
 | `kind` | the feed's action type under the recap's vocabulary; a heave is a kind of its own, a shot the feed credits to the team only |
-| `person_id` → `player_id` | → **Player**, 0-or-1: tracked players only; 0 on a team action. A substitution is two rows, `in` and `out`, each naming its own player, and the lineup changes at a period break are logged at the period's first second; only the first period's opening five is inferred, and every player's on-court state is written as **stints** |
+| `person_id` → `player_id` | → **Player**, 0-or-1: the row names any player in the game and the dimension holds the tracked ones; 0 on a team action. A substitution is two rows, `in` and `out`, each naming its own player, and the lineup changes at a period break are logged at the period's first second; only the first period's opening five is inferred, and every player's on-court state is written as **stints** |
 | `assist_person_id` | the passer, on the made shot he assisted |
 | `team_tricode` | the feed's abbreviation under its own name; not a Team FK |
 | `x`, `y` | the feed's full-court position, 0–100 along and across the court, on a located play; `x` says which basket a team attacks |

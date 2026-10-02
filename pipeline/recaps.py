@@ -102,6 +102,7 @@ SUB_IN_SUB_TYPE, SUB_OUT_SUB_TYPE = "in", "out"
 KIND_PERIOD_START, KIND_PERIOD_END = "period_start", "period_end"
 KIND_SUB_IN, KIND_SUB_OUT, KIND_OTHER = "sub_in", "sub_out", "other"
 KIND_BLOCK, KIND_STEAL, KIND_HEAVE = "block", "steal", "heave"
+KIND_EJECTION = "ejection"
 ACTION_TYPE_KINDS = {
     "2pt": "shot",
     "3pt": "shot",
@@ -113,7 +114,7 @@ ACTION_TYPE_KINDS = {
     "timeout": "timeout",
     "jumpball": "jump_ball",
     "violation": "violation",
-    "ejection": "ejection",
+    "ejection": KIND_EJECTION,
     "block": KIND_BLOCK,
     "steal": KIND_STEAL,
 }
@@ -123,6 +124,23 @@ SUB_KINDS = (KIND_SUB_IN, KIND_SUB_OUT)
 _ENDER_FIELDS = {KIND_BLOCK: "block_person_id", KIND_STEAL: "steal_person_id"}
 # What a block borrows from the shot it ended
 _SHOT_LOCATION = ("x", "y", "shot_distance")
+
+# --- The stints -------------------------------------------------------------
+
+FOUL_ACTION_TYPE = "foul"
+TECHNICAL_SUB_TYPE = "technical"
+FLOOR_SIZE = 5  # players a team has on the floor
+STINT_MINUTES_SCHEMA = pl.Schema(
+    {"person_id": pl.Int64, "team_tricode": pl.String, "minutes": pl.Int64}
+)
+FLOOR_GAP_SCHEMA = pl.Schema(
+    {
+        "team_tricode": pl.String,
+        "start_seconds": pl.Int64,
+        "end_seconds": pl.Int64,
+        "on_floor": pl.Int64,
+    }
+)
 
 
 # --- Comments, anchors, the document ---------------------------------------
@@ -685,41 +703,32 @@ def build_plays(
     )
 
 
-def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+def _player_stints(
+    events: Sequence[tuple[int, str, int, bool]],
+    bounds: Sequence[tuple[int, int, int]],
+) -> list[tuple[int, int, int]]:
     """
-    The focus player's on-court intervals, in game seconds.
-
-    The feed never logs the opening five, so the first period's opening
-    state is inferred: on the floor if his first substitution in it
-    takes him off, off if it brings him on, and with no substitution at
-    all, on if he recorded any play. From there the substitutions open
-    and close intervals; the state carries across each break, where the
-    feed logs the lineup changes as substitutions at the period's first
-    second; an interval open at the buzzer closes on it. A check-out
-    while he reads as off proves he was on since the period started.
+    One player's on-court intervals from his rows.
 
     Args:
-        plays: The recap's plays (build_plays) with ``is_focus``, in
-            feed order.
-        periods: The game's clock (build_periods).
+        events: His rows in feed order: period, kind, game seconds, and
+            whether the row is a play made on the floor.
+        bounds: Each period with its start and end in game seconds.
 
     Returns:
-        RECAP_STINTS_SCHEMA rows in game order.
+        (period, start_seconds, end_seconds) in game order.
     """
-    events = (
-        plays.filter(pl.col("is_focus") & (pl.col("kind") != KIND_PERIOD_START))
-        .select("period", "kind", "game_seconds")
-        .rows()
-    )
     stints: list[tuple[int, int, int]] = []
     on_court: bool | None = None
-    for period, start, end in (
-        periods.sort("period").select("period", "start_seconds", "end_seconds").rows()
-    ):
-        own = [(kind, seconds) for p, kind, seconds in events if p == period]
-        subs = [(kind, seconds) for kind, seconds in own if kind in SUB_KINDS]
+    for period, start, end in bounds:
+        own = [event for event in events if event[0] == period]
+        subs = [(kind, seconds) for _, kind, seconds, _ in own if kind in SUB_KINDS]
         if on_court is None:
-            on_court = subs[0][0] == KIND_SUB_OUT if subs else bool(own)
+            on_court = (
+                subs[0][0] == KIND_SUB_OUT
+                if subs
+                else any(on_floor for *_, on_floor in own)
+            )
         opened = start if on_court else None
         for kind, seconds in subs:
             if kind == KIND_SUB_OUT:
@@ -727,12 +736,153 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
                 if seconds > since:
                     stints.append((period, since, seconds))
                 opened = None
-            elif kind == KIND_SUB_IN and opened is None:
+            elif opened is None:
                 opened = seconds
         if opened is not None:
             stints.append((period, opened, end))
         on_court = opened is not None
-    return pl.DataFrame(stints, schema=RECAP_STINTS_SCHEMA, orient="row")
+    return stints
+
+
+def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+    """
+    Every player's on-court intervals, in game seconds.
+
+    The feed never logs the opening five, so the first period's opening
+    state is inferred per player: on the floor if his first substitution
+    in it takes him off, off if it brings him on, and with no
+    substitution at all, on if he made any play, an assist included. A
+    technical foul or an ejection is not one: either can be called on
+    the bench. From there the substitutions open and close intervals;
+    the state carries across each break, where the feed logs the lineup
+    changes as substitutions at the period's first second; an interval
+    open at the buzzer closes on it. A check-out while he reads as off
+    proves he was on since the period started.
+
+    Args:
+        plays: The recap's plays (build_plays), in feed order.
+        periods: The game's clock (build_periods).
+
+    Returns:
+        RECAP_STINTS_SCHEMA rows in game order: by when the interval
+        opens, then by player. A player with no interval has no row.
+    """
+    called_on_bench = (
+        (pl.col("action_type") == FOUL_ACTION_TYPE)
+        & (pl.col("sub_type") == TECHNICAL_SUB_TYPE)
+    ) | (pl.col("kind") == KIND_EJECTION)
+    feed = plays.with_row_index("_order")
+    columns = ["_order", "team_tricode", "period", "kind", "game_seconds"]
+    events = pl.concat(
+        [
+            feed.filter(pl.col("person_id") > 0).select(
+                "person_id", *columns, (~called_on_bench).alias("on_floor")
+            ),
+            feed.filter(pl.col("assist_person_id").is_not_null()).select(
+                pl.col("assist_person_id").alias("person_id"),
+                *columns,
+                pl.lit(True).alias("on_floor"),
+            ),
+        ]
+    ).sort("_order")
+    by_player: dict[int, list[tuple[int, str, int, bool]]] = {}
+    teams: dict[int, str] = {}
+    for person_id, _, tricode, period, kind, seconds, on_floor in events.rows():
+        by_player.setdefault(person_id, []).append((period, kind, seconds, on_floor))
+        teams.setdefault(person_id, tricode)
+    bounds = (
+        periods.sort("period").select("period", "start_seconds", "end_seconds").rows()
+    )
+    rows = [
+        (person_id, teams[person_id], *stint)
+        for person_id, own in by_player.items()
+        for stint in _player_stints(own, bounds)
+    ]
+    return pl.DataFrame(rows, schema=RECAP_STINTS_SCHEMA, orient="row").sort(
+        "start_seconds", "person_id"
+    )
+
+
+def stint_minutes(stints: pl.DataFrame) -> pl.DataFrame:
+    """
+    Each player's minutes on the floor, rounded half up as the box score rounds.
+
+    Args:
+        stints: The stints frame (build_stints).
+
+    Returns:
+        STINT_MINUTES_SCHEMA rows, one per player, in the frame's order.
+    """
+    seconds = (pl.col("end_seconds") - pl.col("start_seconds")).sum()
+    return (
+        stints.group_by("person_id", "team_tricode", maintain_order=True)
+        .agg(((seconds + 30) // 60).alias("minutes"))
+        .select(STINT_MINUTES_SCHEMA.names())
+    )
+
+
+def floor_gaps(stints: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
+    """
+    The spans where the stints do not put five players per team on the floor.
+
+    Args:
+        stints: The stints frame (build_stints).
+        periods: The game's clock (build_periods).
+
+    Returns:
+        FLOOR_GAP_SCHEMA rows: the team, the span in game seconds and how
+        many read as on the floor through it. Empty when every team has
+        five from tip-off to the last buzzer.
+    """
+    teams = stints.select("team_tricode").unique()
+    total = periods["end_seconds"].max()
+
+    def steps(frame: pl.DataFrame, at: pl.Expr, step: int) -> pl.DataFrame:
+        return frame.select(
+            "team_tricode",
+            at.cast(pl.Int64).alias("at"),
+            pl.lit(step, dtype=pl.Int64).alias("step"),
+        )
+
+    spans = (
+        pl.concat(
+            [
+                steps(stints, pl.col("start_seconds"), 1),
+                steps(stints, pl.col("end_seconds"), -1),
+                steps(teams, pl.lit(0), 0),
+                steps(teams, pl.lit(total), 0),
+            ]
+        )
+        .group_by("team_tricode", "at")
+        .agg(pl.col("step").sum())
+        .sort("team_tricode", "at")
+        .with_columns(
+            pl.col("step").cum_sum().over("team_tricode").alias("on_floor"),
+            pl.col("at").shift(-1).over("team_tricode").alias("until"),
+        )
+        .filter(pl.col("until").is_not_null())
+    )
+    # Neighbouring spans with one count are one gap, however many
+    # substitutions happen under it
+    changed = pl.col("on_floor") != pl.col("on_floor").shift(1).over("team_tricode")
+    return (
+        spans.with_columns(
+            changed.fill_null(True)
+            .cast(pl.Int64)
+            .cum_sum()
+            .over("team_tricode")
+            .alias("_run")
+        )
+        .group_by("team_tricode", "_run", maintain_order=True)
+        .agg(
+            pl.col("at").first().alias("start_seconds"),
+            pl.col("until").last().alias("end_seconds"),
+            pl.col("on_floor").first(),
+        )
+        .filter(pl.col("on_floor") != FLOOR_SIZE)
+        .select(FLOOR_GAP_SCHEMA.names())
+        .sort("start_seconds", "team_tricode")
+    )
 
 
 # --- Comments ---------------------------------------------------------------
@@ -1218,13 +1368,6 @@ def resolve_recap_specs(
     return resolved
 
 
-def stint_minutes(stints: pl.DataFrame) -> int:
-    """Minutes on the floor, rounded, from the stints frame."""
-    if not stints.height:
-        return 0
-    return int(round((stints["end_seconds"] - stints["start_seconds"]).sum() / 60))
-
-
 def build_recap(
     spec: ResolvedSpec,
     *,
@@ -1260,6 +1403,11 @@ def build_recap(
     periods = build_periods(pbp)
     plays = build_plays(pbp, periods, spec.player_id)
     stints = build_stints(plays, periods)
+    for team, start, end, on_floor in floor_gaps(stints, periods).rows():
+        logger.warning(
+            f"recap {spec.key}: {team} reads {on_floor} on the floor "
+            f"from {start} to {end} s"
+        )
 
     aligned = align_comments(
         fact.filter(pl.col("link_id").is_in(list(spec.thread_ids))).with_columns(
@@ -1288,13 +1436,15 @@ def build_recap(
     if not line.height:
         raise RecapError(f"recap {spec.key}: no box-score line for the focus player")
     box_minutes = int(line["minutes"][0])
-    minutes_diff = stint_minutes(stints) - box_minutes
+    minutes = stint_minutes(stints).filter(pl.col("person_id") == spec.player_id)
+    focus_minutes = int(minutes["minutes"][0]) if minutes.height else 0
+    minutes_diff = focus_minutes - box_minutes
     if minutes_diff:
         # The first period's inferred opening state is where stints go
         # wrong: a period played with no substitution and no play reads
         # as bench
         logger.warning(
-            f"recap {spec.key}: {stint_minutes(stints)} stint minutes against "
+            f"recap {spec.key}: {focus_minutes} stint minutes against "
             f"{box_minutes} in the box score ({minutes_diff:+d})"
         )
 

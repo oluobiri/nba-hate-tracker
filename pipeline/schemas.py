@@ -647,9 +647,15 @@ RECAP_THREADS_SCHEMA = pl.Schema(
     }
 )
 
-# The focus player's on-court intervals in game seconds.
+# Every player's on-court intervals in game seconds, in game order. The
+# feed logs substitutions and never the opening five, so each player's
+# first-period opening state is inferred from his own rows; the build
+# checks the result against the box score's minutes and against five on
+# the floor per team.
 RECAP_STINTS_SCHEMA = pl.Schema(
     {
+        "person_id": pl.Int64,
+        "team_tricode": pl.String,
         "period": pl.Int64,
         "start_seconds": pl.Int64,
         "end_seconds": pl.Int64,

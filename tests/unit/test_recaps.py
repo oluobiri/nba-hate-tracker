@@ -28,6 +28,7 @@ from pipeline.recaps import (
     build_recap,
     build_stints,
     derive_kind,
+    floor_gaps,
     game_clock,
     measure_reaction_lag,
     pair_plays,
@@ -1231,6 +1232,19 @@ class TestBuildPlays:
         assert _by_action(g7_plays, 1)["team_tricode"] is None
 
 
+def _stints_of(stints: pl.DataFrame, person_id: int) -> list[tuple]:
+    """One player's intervals as (period, start_seconds, end_seconds)."""
+    return (
+        stints.filter(pl.col("person_id") == person_id)
+        .select("period", "start_seconds", "end_seconds")
+        .rows()
+    )
+
+
+def _stint_frame(rows: list[tuple]) -> pl.DataFrame:
+    return pl.DataFrame(rows, schema=RECAP_STINTS_SCHEMA, orient="row")
+
+
 class TestBuildStints:
     """On-court intervals from the substitutions and the period openings."""
 
@@ -1241,12 +1255,48 @@ class TestBuildStints:
         stints = build_stints(g7_plays, g7_periods)
 
         assert stints.schema == RECAP_STINTS_SCHEMA
-        assert stints.rows() == [
+        assert _stints_of(stints, CHET) == [
             (1, 0, 327),
             (1, 456, 648),
             (2, 720, 1440),
             (3, 1440, 2160),
         ]
+
+    def test_a_starter_and_a_check_in_on_opposite_teams(self, g7_plays, g7_periods):
+        """Holmgren starts for Oklahoma City; Castle checks in for San
+        Antonio at 4:24, carries across the break and leaves at Q2 2:00."""
+        stints = build_stints(g7_plays, g7_periods)
+
+        assert _stints_of(stints, CASTLE) == [(1, 456, 720), (2, 720, 1320)]
+        teams = dict(stints.select("person_id", "team_tricode").unique().rows())
+        assert (teams[CHET], teams[CASTLE]) == ("OKC", "SAS")
+
+    def test_every_player_with_a_stint_and_no_one_else(self, g7_plays, g7_periods):
+        """Harper and Wembanyama act only in Q2 with no substitution, so
+        they read as bench and have no row."""
+        stints = build_stints(g7_plays, g7_periods)
+
+        assert set(stints["person_id"].to_list()) == {
+            CHET,
+            MCCAIN,
+            WALLACE,
+            HARTENSTEIN,
+            VASSELL,
+            CASTLE,
+        }
+
+    def test_in_game_order(self, g7_plays, g7_periods):
+        """By when the interval opens, then by player."""
+        stints = build_stints(g7_plays, g7_periods)
+
+        assert stints.rows() == sorted(stints.rows(), key=lambda row: (row[3], row[0]))
+
+    def test_a_check_in_at_the_break_closes_nothing(self, g7_plays, g7_periods):
+        """Hartenstein comes on at 1:12, goes off at the Q2 break on the
+        period's first second, and returns for Q4."""
+        stints = build_stints(g7_plays, g7_periods)
+
+        assert _stints_of(stints, HARTENSTEIN) == [(1, 648, 720), (4, 2160, 2880)]
 
     def test_without_substitutions_the_state_carries_from_the_first_period(
         self, g7_periods
@@ -1268,12 +1318,65 @@ class TestBuildStints:
         stints = build_stints(plays, g7_periods)
 
         assert stints.rows() == [
-            (1, 0, 720),
-            (2, 720, 1440),
-            (3, 1440, 2160),
-            (4, 2160, 2880),
+            (CHET, "OKC", 1, 0, 720),
+            (CHET, "OKC", 2, 720, 1440),
+            (CHET, "OKC", 3, 1440, 2160),
+            (CHET, "OKC", 4, 2160, 2880),
         ]
-        assert stint_minutes(stints) == 48
+
+    def test_an_assist_is_a_play_on_the_floor(self, g7_periods):
+        """Wallace has no row of his own: the assist on Holmgren's make puts
+        him on the floor."""
+        rows = [
+            *G7_MARKERS,
+            _chet(
+                3,
+                clock="PT06M00.00S",
+                time_actual=_stamp(0, 30),
+                action_type="2pt",
+                shot_result="Made",
+                assist_person_id=WALLACE,
+            ),
+        ]
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+
+        stints = build_stints(plays, g7_periods)
+
+        assert _stints_of(stints, WALLACE)[0] == (1, 0, 720)
+        assert stints.filter(pl.col("person_id") == WALLACE)["team_tricode"][0] == "OKC"
+
+    @pytest.mark.parametrize(
+        "action_type,sub_type", [("foul", "technical"), ("ejection", "")]
+    )
+    def test_a_call_on_the_bench_is_not_a_play_on_the_floor(
+        self, g7_periods, action_type, sub_type
+    ):
+        """A technical or an ejection can be called on a player who is
+        sitting: McCain's alone gives him no stint."""
+        rows = [
+            *G7_MARKERS,
+            _chet(
+                3,
+                clock="PT06M00.00S",
+                time_actual=_stamp(0, 30),
+                action_type="rebound",
+                sub_type="defensive",
+            ),
+            _okc(
+                4,
+                clock="PT05M00.00S",
+                time_actual=_stamp(0, 31),
+                action_type=action_type,
+                sub_type=sub_type,
+                person_id=MCCAIN,
+                player_name_i="J. McCain",
+            ),
+        ]
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+
+        stints = build_stints(plays, g7_periods)
+
+        assert set(stints["person_id"].to_list()) == {CHET}
 
     def test_bench_player_opens_off_the_floor(self, g7_periods):
         """His first substitution brings him on at 6:00: on from there,
@@ -1285,7 +1388,9 @@ class TestBuildStints:
         ]
         plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
 
-        assert build_stints(plays, g7_periods).rows() == [(1, 360, 720), (2, 720, 960)]
+        stints = build_stints(plays, g7_periods)
+
+        assert _stints_of(stints, CHET) == [(1, 360, 720), (2, 720, 960)]
 
     def test_a_check_out_while_read_as_off_opens_from_the_period_start(
         self, g7_periods
@@ -1298,7 +1403,107 @@ class TestBuildStints:
         ]
         plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
 
-        assert build_stints(plays, g7_periods).rows() == [(2, 720, 960)]
+        assert _stints_of(build_stints(plays, g7_periods), CHET) == [(2, 720, 960)]
+
+
+class TestStintMinutes:
+    """Minutes on the floor per player, as the box score rounds them."""
+
+    def test_minutes_per_player(self):
+        """48 minutes for one, 12 for the other, each with his team."""
+        stints = _stint_frame(
+            [
+                (CHET, "OKC", 1, 0, 720),
+                (CASTLE, "SAS", 1, 0, 720),
+                (CHET, "OKC", 2, 720, 2880),
+            ]
+        )
+
+        assert stint_minutes(stints).rows() == [
+            (CHET, "OKC", 48),
+            (CASTLE, "SAS", 12),
+        ]
+
+    @pytest.mark.parametrize(
+        "seconds,minutes", [(1830, 31), (2190, 37), (1829, 30), (9, 0)]
+    )
+    def test_a_half_minute_rounds_up(self, seconds, minutes):
+        """30:30 on the floor is 31 in the box score, not 30."""
+        stints = _stint_frame([(CHET, "OKC", 1, 0, seconds)])
+
+        assert stint_minutes(stints)["minutes"].to_list() == [minutes]
+
+    def test_no_stints_is_no_rows(self):
+        assert stint_minutes(RECAP_STINTS_SCHEMA.to_frame()).height == 0
+
+
+FIVE = (CHET, WALLACE, HARTENSTEIN, MCCAIN, 99)
+
+
+class TestFloorGaps:
+    """Where the stints do not put five players per team on the floor."""
+
+    def test_five_all_game_is_no_gap(self, g7_periods):
+        """Each interval closes on the buzzer and reopens on the same second."""
+        stints = _stint_frame(
+            [
+                (player, "OKC", period, start, start + 720)
+                for player in FIVE
+                for period, start in ((1, 0), (2, 720), (3, 1440), (4, 2160))
+            ]
+        )
+
+        assert floor_gaps(stints, g7_periods).height == 0
+
+    def test_a_swap_on_one_second_is_no_gap(self, g7_periods):
+        """One out and one in at 5:00 of Q1 leaves five throughout."""
+        stints = _stint_frame(
+            [
+                *((player, "OKC", 1, 0, 2880) for player in FIVE[:4]),
+                (99, "OKC", 1, 0, 300),
+                (98, "OKC", 1, 300, 2880),
+            ]
+        )
+
+        assert floor_gaps(stints, g7_periods).height == 0
+
+    def test_a_sixth_player_is_reported_with_its_span(self, g7_periods):
+        """A sixth on the floor from 1:40 to 3:20 of Q1."""
+        stints = _stint_frame(
+            [
+                *((player, "OKC", 1, 0, 2880) for player in FIVE),
+                (98, "OKC", 1, 100, 200),
+            ]
+        )
+
+        assert floor_gaps(stints, g7_periods).rows() == [("OKC", 100, 200, 6)]
+
+    def test_a_missing_player_is_reported_from_tip_off(self, g7_periods):
+        """Four until the fifth's first interval opens; the other team's
+        five are untouched."""
+        stints = _stint_frame(
+            [
+                *((player, "OKC", 1, 0, 2880) for player in FIVE[:4]),
+                (99, "OKC", 1, 50, 2880),
+                *((player, "SAS", 1, 0, 2880) for player in (1, 2, 3, 4, 5)),
+            ]
+        )
+
+        assert floor_gaps(stints, g7_periods).rows() == [("OKC", 0, 50, 4)]
+
+    def test_one_gap_across_other_teams_edges(self, g7_periods):
+        """A sixth all game is one span, however many substitutions the
+        five make under him."""
+        stints = _stint_frame(
+            [
+                *((player, "OKC", 1, 0, 2880) for player in FIVE[:4]),
+                (99, "OKC", 1, 0, 300),
+                (98, "OKC", 1, 300, 2880),
+                (97, "OKC", 1, 0, 2880),
+            ]
+        )
+
+        assert floor_gaps(stints, g7_periods).rows() == [("OKC", 0, 2880, 6)]
 
 
 # --- Comments, anchors, the document ---------------------------------------
@@ -1977,7 +2182,8 @@ class TestBuildRecap:
 
     def test_minutes_reconcile_against_the_box_score(self, g7_doc):
         """1,959 stint seconds round to 33 minutes, the box score's line."""
-        assert stint_minutes(g7_doc.frames["stints"]) == 33
+        minutes = stint_minutes(g7_doc.frames["stints"])
+        assert minutes.filter(pl.col("person_id") == CHET)["minutes"].item() == 33
         assert g7_doc.entry["minutes_diff"] == 0
 
     @pytest.mark.parametrize("minutes,warned", [(34, True), (33, False)])

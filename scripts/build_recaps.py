@@ -5,9 +5,10 @@ The recaps themselves are built and written by scripts.aggregate_sentiment,
 the one writer of the manifest. This script serves curation: --scan ranks
 every (game, player) with a live thread by the swing in his negative share
 and writes the report under reference/ (never published); --dry-run builds
-every recap in recaps.yaml in memory and reports its stint
-reconciliation, swing, sizes and counts, writing nothing. Both read the
-dashboard tables an aggregate run produced.
+every recap in recaps.yaml in memory and reports its check against the
+box score, swing, sizes and counts, writing nothing. Both read the
+dashboard tables an aggregate run produced; the dry run also reads the
+game-log snapshots.
 
 Usage:
     uv run python -m scripts.build_recaps --season 2025-26 --scan
@@ -27,6 +28,7 @@ from pipeline.aggregation import (
     load_fact_subset,
     read_classifier_stamps,
 )
+from pipeline.games import load_box_scores
 from pipeline.lineage import OUTPUT_CONFIGS, config_versions
 from pipeline.posts import GAME_THREAD
 from pipeline.recaps import (
@@ -59,7 +61,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 FACT_FILENAME = "sentiment.parquet"
-TABLES = ("players", "games", "player_games", "posts")
+TABLES = ("players", "games", "posts")
 
 
 # -----------------------------------------------------------------------------
@@ -172,6 +174,13 @@ def _dry_run(
         tables["posts"],
         pbp_dir,
     )
+    try:
+        player_log, team_log = load_box_scores(
+            get_reference_dir(), [spec.game_id for spec in resolved]
+        )
+    except FileNotFoundError as e:
+        logger.error(e)
+        sys.exit(1)
     link_ids = [post_id for spec in resolved for post_id in spec.thread_ids]
     fact = load_fact_subset(fact_path, link_ids)
     versions = config_versions()
@@ -187,7 +196,8 @@ def _dry_run(
             spec,
             fact=fact,
             posts=tables["posts"],
-            player_games=tables["player_games"],
+            player_log=player_log,
+            team_log=team_log,
             players=tables["players"],
             pbp=load_live_play_by_play(spec.pbp_path, log=logger),
             stamps=stamps,

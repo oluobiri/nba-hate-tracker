@@ -11,6 +11,7 @@ from pipeline.games import (
     TEAM_GAME_LOG_FILENAME,
     build_games,
     build_player_games,
+    load_box_scores,
     load_game_ids,
     load_game_tables,
 )
@@ -544,3 +545,33 @@ class TestLoadGameIds:
             load_game_ids(path, TEAM_CONFIG, log=logging.getLogger("tests.games"))
 
         assert any("season stamp" in r.message for r in caplog.records)
+
+
+class TestLoadBoxScores:
+    """Tests for load_box_scores (the snapshots' lines for chosen games)."""
+
+    def test_returns_the_chosen_games_lines_from_both_logs(
+        self, tmp_path, two_games, player_log
+    ):
+        """Every player line and both team lines of the one game asked for,
+        as the snapshots hold them: an untracked player is still there."""
+        two_games.write_parquet(tmp_path / TEAM_GAME_LOG_FILENAME)
+        player_log.write_parquet(tmp_path / PLAYER_GAME_LOG_FILENAME)
+
+        player_lines, team_lines = load_box_scores(tmp_path, ["0022500010"])
+
+        assert player_lines.schema == PLAYER_GAME_LOG_SCHEMA
+        assert team_lines.schema == TEAM_GAME_LOG_SCHEMA
+        assert set(player_lines["game_id"].to_list()) == {"0022500010"}
+        assert (
+            player_lines.height
+            == player_log.filter(pl.col("game_id") == "0022500010").height
+        )
+        assert sorted(team_lines["team_abbr"].to_list()) == ["BOS", "NYK"]
+
+    def test_missing_snapshot_raises(self, tmp_path, two_games):
+        """A recap cannot be checked without both logs."""
+        two_games.write_parquet(tmp_path / TEAM_GAME_LOG_FILENAME)
+
+        with pytest.raises(FileNotFoundError, match=PLAYER_GAME_LOG_FILENAME):
+            load_box_scores(tmp_path, ["0022500010"])

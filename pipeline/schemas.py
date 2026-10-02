@@ -64,7 +64,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -647,22 +647,33 @@ RECAP_THREADS_SCHEMA = pl.Schema(
     }
 )
 
-# The focus player's on-court intervals in game seconds.
+# Every player's on-court intervals in game seconds, in game order. The
+# feed logs substitutions and never the opening five, so each player's
+# first-period opening state is inferred from his own rows; the build
+# checks the result against the box score's minutes and against five on
+# the floor per team.
 RECAP_STINTS_SCHEMA = pl.Schema(
     {
+        "person_id": pl.Int64,
+        "team_tricode": pl.String,
         "period": pl.Int64,
         "start_seconds": pl.Int64,
         "end_seconds": pl.Int64,
     }
 )
 
-# The plays the page draws: the focus player's actions, both teams' shots
-# (heaves included, which the feed credits to the team only), the period
-# markers, the timeouts, and the turnover a steal of his ended, so every
-# pairing resolves within the frame. kind is the feed's action type under the
-# recap's vocabulary; a substitution is a sub_in or sub_out row naming
-# its own player; a block borrows its shot's location; the running
-# totals are the feed's, on the focus player's rows.
+# The game's plays: every row of the feed but its closing one, in feed
+# order. kind is the feed's action type under the recap's vocabulary; a
+# substitution is a sub_in or sub_out row naming its own player; a block
+# or steal follows the play it ended and points at it, and a block
+# borrows its shot's location. x and y are the feed's full-court
+# position, 0-100 along and across the court, so x says which basket a
+# team attacks. A player's line is counted from the rows: field goals
+# are 2pt and 3pt rows and free throws freethrow rows, by made;
+# rebounds are rebound rows naming a player, offensive or defensive by
+# sub_type; assists a made shot's assist_person_id; steals, blocks and
+# turnovers their own rows naming a player; personal fouls foul rows
+# except sub_type technical.
 RECAP_PLAYS_SCHEMA = pl.Schema(
     {
         "action_number": pl.Int64,  # unique within the game: the row key
@@ -678,21 +689,15 @@ RECAP_PLAYS_SCHEMA = pl.Schema(
         "team_tricode": pl.String,  # nullable: a period marker
         "person_id": pl.Int64,  # 0 on team actions
         "player_name_i": pl.String,  # nullable: a team action
+        "assist_person_id": pl.Int64,  # nullable: off an assisted make
         "is_focus": pl.Boolean,
         "made": pl.Boolean,  # nullable: not a shot
         "shot_value": pl.Int64,  # 3, 2, 1, or 0 off a shot
-        "x_legacy": pl.Int64,  # nullable: off a shot
-        "y_legacy": pl.Int64,
+        "x": pl.Float64,  # nullable: off a located play
+        "y": pl.Float64,
         "shot_distance": pl.Float64,
         "score_home": pl.Int64,  # on every row
         "score_away": pl.Int64,
-        "pts": pl.Int64,  # nullable running totals on focus rows
-        "reb": pl.Int64,
-        "ast": pl.Int64,
-        "blk": pl.Int64,
-        "stl": pl.Int64,
-        "tov": pl.Int64,
-        "pf": pl.Int64,
     }
 )
 
@@ -733,11 +738,11 @@ RECAP_NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
             "paired_action_number",
             "team_tricode",
             "player_name_i",
+            "assist_person_id",
             "made",
-            "x_legacy",
-            "y_legacy",
+            "x",
+            "y",
             "shot_distance",
-            *("pts", "reb", "ast", "blk", "stl", "tov", "pf"),
         }
     ),
     "comments": frozenset({"fan_team", "player_id", "body"}),
@@ -930,7 +935,7 @@ class RecapEntry(TypedDict):
     room_n: int  # the whole room: posts.num_comments over the live threads
     by_period: dict[str, PeriodCounts]  # keyed by period; live and break comments
     swing: float  # negative share, last period minus first
-    minutes_diff: int  # stint minutes minus the box score's
+    minutes_diff: int  # whole minutes the stints sit from the box score's
     population: str  # RECAP_POPULATION
 
 

@@ -81,6 +81,11 @@ class TestMain:
         with (
             patch.object(build_recaps, "load_tables", return_value=TABLES),
             patch.object(build_recaps, "resolve_recap_specs", return_value=[]),
+            patch.object(
+                build_recaps,
+                "load_box_scores",
+                return_value=(pl.DataFrame(), pl.DataFrame()),
+            ),
             patch.object(build_recaps, "load_fact_subset", return_value=pl.DataFrame()),
             patch.object(build_recaps, "read_classifier_stamps", return_value={}),
             patch.object(build_recaps, "build_recap") as build,
@@ -89,3 +94,14 @@ class TestMain:
 
         build.assert_not_called()
         assert not (data_root / "2025-26" / "dashboard").exists()
+
+    def test_dry_run_without_game_logs_exits_one(self, data_root):
+        """The box score a recap is checked against has to be on disk."""
+        with (
+            patch.object(build_recaps, "load_tables", return_value=TABLES),
+            patch.object(build_recaps, "resolve_recap_specs", return_value=[]),
+            pytest.raises(SystemExit) as exit_info,
+        ):
+            _run("--dry-run")
+
+        assert exit_info.value.code == 1

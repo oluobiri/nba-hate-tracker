@@ -2421,10 +2421,10 @@ class TestAggregateRecaps:
         # On the floor in Q1 with no substitution logged, and the state
         # carries across every break
         assert doc.frames["stints"].rows() == [
-            (1, 0, 720),
-            (2, 720, 1440),
-            (3, 1440, 2160),
-            (4, 2160, 2880),
+            (2544, "LAL", 1, 0, 720),
+            (2544, "LAL", 2, 720, 1440),
+            (2544, "LAL", 3, 1440, 2160),
+            (2544, "LAL", 4, 2160, 2880),
         ]
         entry = result["manifest"]["recaps"][doc.key]
         assert entry is doc.entry

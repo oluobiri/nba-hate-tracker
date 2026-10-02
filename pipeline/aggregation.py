@@ -15,7 +15,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.corpus import load_corpus_daily
-from pipeline.games import load_game_tables
+from pipeline.games import load_box_scores, load_game_tables
 from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
 from pipeline.nba_stats import check_snapshot_season, load_live_play_by_play
 from pipeline.posts import load_posts_table
@@ -469,7 +469,6 @@ def aggregate_sentiment(
         posts=posts,
         games=games,
         players=players,
-        player_games=player_games,
         stamps=RecapStamps(
             season=metadata["season"],
             generated_at=metadata["generated_at"],
@@ -533,7 +532,6 @@ def _build_recaps(
     posts: pl.DataFrame,
     games: pl.DataFrame,
     players: pl.DataFrame,
-    player_games: pl.DataFrame,
     stamps: RecapStamps,
 ) -> list[RecapDocument]:
     """Resolve the curation against the built tables and build each recap."""
@@ -543,13 +541,18 @@ def _build_recaps(
     resolved = resolve_recap_specs(
         specs, games, players, posts, get_live_play_by_play_dir()
     )
+    # The whole game's box score, tracked players or not, to check against
+    player_log, team_log = load_box_scores(
+        get_reference_dir(), [spec.game_id for spec in resolved]
+    )
     documents = []
     for spec in resolved:
         doc = build_recap(
             spec,
             fact=fact,
             posts=posts,
-            player_games=player_games,
+            player_log=player_log,
+            team_log=team_log,
             players=players,
             pbp=load_live_play_by_play(spec.pbp_path, log=logger),
             stamps=stamps,

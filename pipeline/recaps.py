@@ -94,9 +94,6 @@ PERIOD_COLUMNS = [
 
 # --- The plays --------------------------------------------------------------
 
-# Field goals, heaves included: a heave is a shot the feed credits to
-# the team only
-SHOT_ACTION_TYPES = ("2pt", "3pt", "heave")
 SUBSTITUTION_ACTION_TYPE = "substitution"
 SUB_IN_SUB_TYPE, SUB_OUT_SUB_TYPE = "in", "out"
 KIND_PERIOD_START, KIND_PERIOD_END = "period_start", "period_end"
@@ -130,15 +127,60 @@ _SHOT_LOCATION = ("x", "y", "shot_distance")
 FOUL_ACTION_TYPE = "foul"
 TECHNICAL_SUB_TYPE = "technical"
 FLOOR_SIZE = 5  # players a team has on the floor
-STINT_MINUTES_SCHEMA = pl.Schema(
-    {"person_id": pl.Int64, "team_tricode": pl.String, "minutes": pl.Int64}
+STINT_SECONDS_SCHEMA = pl.Schema(
+    {"person_id": pl.Int64, "team_tricode": pl.String, "seconds": pl.Int64}
 )
+# The box score rounds a clock kept in tenths to the minute; the stints
+# hold whole seconds, so this far from its minutes still agrees
+MINUTES_TOLERANCE_SECONDS = 30
 FLOOR_GAP_SCHEMA = pl.Schema(
     {
         "team_tricode": pl.String,
         "start_seconds": pl.Int64,
         "end_seconds": pl.Int64,
         "on_floor": pl.Int64,
+    }
+)
+
+# --- The box check ----------------------------------------------------------
+
+# A heave is a shot the feed credits to the team only: no one's attempt
+FIELD_GOAL_ACTION_TYPES = ("2pt", "3pt")
+# A line as the box score holds it, counted from the rows
+BOX_LINE_STATS = (
+    "fgm",
+    "fga",
+    "fg3m",
+    "fg3a",
+    "ftm",
+    "fta",
+    "oreb",
+    "dreb",
+    "reb",
+    "ast",
+    "stl",
+    "blk",
+    "tov",
+    "pf",
+    "pts",
+)
+BOX_LINE_SCHEMA = pl.Schema(
+    {
+        "person_id": pl.Int64,
+        "team_tricode": pl.String,
+        "player_name_i": pl.String,
+        **dict.fromkeys(BOX_LINE_STATS, pl.Int64),
+    }
+)
+BOX_MINUTES = "minutes"
+BOX_MISMATCH_SCHEMA = pl.Schema(
+    {
+        "team_tricode": pl.String,
+        "person_id": pl.Int64,  # 0 on a team's line
+        "player": pl.String,  # null on a team's line
+        "stat": pl.String,
+        "from_feed": pl.Int64,
+        "in_box": pl.Int64,
     }
 )
 
@@ -803,22 +845,43 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def stint_minutes(stints: pl.DataFrame) -> pl.DataFrame:
+def stint_seconds(stints: pl.DataFrame) -> pl.DataFrame:
     """
-    Each player's minutes on the floor, rounded half up as the box score rounds.
+    Each player's seconds on the floor.
 
     Args:
         stints: The stints frame (build_stints).
 
     Returns:
-        STINT_MINUTES_SCHEMA rows, one per player, in the frame's order.
+        STINT_SECONDS_SCHEMA rows, one per player, in the frame's order.
     """
     seconds = (pl.col("end_seconds") - pl.col("start_seconds")).sum()
     return (
         stints.group_by("person_id", "team_tricode", maintain_order=True)
-        .agg(((seconds + 30) // 60).alias("minutes"))
-        .select(STINT_MINUTES_SCHEMA.names())
+        .agg(seconds.cast(pl.Int64).alias("seconds"))
+        .select(STINT_SECONDS_SCHEMA.names())
     )
+
+
+def minutes_off(seconds: pl.Expr, box_minutes: pl.Expr) -> pl.Expr:
+    """
+    Whole minutes between stint seconds and the box score's minutes.
+
+    The box score rounds a clock kept in tenths, up or down on what
+    reads here as an exact half minute, so seconds within
+    MINUTES_TOLERANCE_SECONDS of its minutes agree.
+
+    Args:
+        seconds: Stint seconds on the floor.
+        box_minutes: The box score's minutes.
+
+    Returns:
+        An Int64 expression: 0 in agreement, otherwise the difference
+        to the minute, positive when the stints run long.
+    """
+    apart = seconds - box_minutes * 60
+    beyond = (apart.abs() + (60 - MINUTES_TOLERANCE_SECONDS - 1)) // 60
+    return (apart.sign() * beyond).cast(pl.Int64)
 
 
 def floor_gaps(stints: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
@@ -883,6 +946,171 @@ def floor_gaps(stints: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
         .select(FLOOR_GAP_SCHEMA.names())
         .sort("start_seconds", "team_tricode")
     )
+
+
+def box_lines(plays: pl.DataFrame) -> pl.DataFrame:
+    """
+    Every player's line, counted from the plays as the page counts it.
+
+    Field goals are 2pt and 3pt rows and free throws freethrow rows, by
+    made; rebounds are rebound rows, offensive or defensive by sub type;
+    assists a made shot's assist_person_id; steals, blocks and turnovers
+    their own rows; personal fouls foul rows except a technical. A row
+    naming no player (a team rebound, a heave) is no one's.
+
+    Args:
+        plays: The recap's plays (build_plays).
+
+    Returns:
+        BOX_LINE_SCHEMA rows, one per player a row names, by team then id.
+    """
+    made = pl.col("made").fill_null(False)
+    action, sub_type = pl.col("action_type"), pl.col("sub_type")
+    field_goal = action.is_in(FIELD_GOAL_ACTION_TYPES)
+    three, free_throw, rebound = (
+        action == "3pt",
+        action == "freethrow",
+        action == "rebound",
+    )
+    counted = {
+        "fgm": field_goal & made,
+        "fga": field_goal,
+        "fg3m": three & made,
+        "fg3a": three,
+        "ftm": free_throw & made,
+        "fta": free_throw,
+        "oreb": rebound & (sub_type == "offensive"),
+        "dreb": rebound & (sub_type == "defensive"),
+        "stl": pl.col("kind") == KIND_STEAL,
+        "blk": pl.col("kind") == KIND_BLOCK,
+        "tov": action == "turnover",
+        "pf": (action == FOUL_ACTION_TYPE) & sub_type.ne_missing(TECHNICAL_SUB_TYPE),
+    }
+    own = (
+        plays.filter(pl.col("person_id") > 0)
+        .group_by("person_id")
+        .agg(
+            pl.col("team_tricode").first(),
+            pl.col("player_name_i").drop_nulls().first(),
+            *(expr.sum().cast(pl.Int64).alias(name) for name, expr in counted.items()),
+            pl.when(made).then(pl.col("shot_value")).otherwise(0).sum().alias("pts"),
+        )
+    )
+    assists = (
+        plays.filter(pl.col("assist_person_id").is_not_null() & made)
+        .group_by(pl.col("assist_person_id").alias("person_id"))
+        .agg(
+            pl.col("team_tricode").first().alias("_team"),
+            pl.len().cast(pl.Int64).alias("ast"),
+        )
+    )
+    return (
+        own.join(assists, on="person_id", how="full", coalesce=True)
+        .with_columns(
+            pl.coalesce("team_tricode", "_team").alias("team_tricode"),
+            *(pl.col(name).fill_null(0) for name in BOX_LINE_STATS if name != "reb"),
+        )
+        .with_columns((pl.col("oreb") + pl.col("dreb")).alias("reb"))
+        .select(BOX_LINE_SCHEMA.names())
+        .sort("team_tricode", "person_id")
+    )
+
+
+def check_box(
+    plays: pl.DataFrame,
+    stints: pl.DataFrame,
+    player_lines: pl.DataFrame,
+    team_lines: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    Where the plays and the stints disagree with the game's box score.
+
+    Each player's line counted from the rows against his box-score
+    line, his stint seconds against its minutes (minutes_off), and each
+    team's points against its final score. A side with no line reads as
+    zeros, so a player who dressed and never played agrees with no row
+    in the feed. The first period's inferred opening state is where
+    minutes go wrong: a period played with no substitution and no play
+    reads as bench.
+
+    Args:
+        plays: The recap's plays (build_plays).
+        stints: The stints frame (build_stints).
+        player_lines: The game's player lines (PLAYER_GAME_LOG_SCHEMA's
+            player_id, player_name, team_abbr and box-score columns).
+        team_lines: The game's two team lines (team_abbr, pts).
+
+    Returns:
+        BOX_MISMATCH_SCHEMA rows, one per (player, stat) that differs,
+        then one per team whose points differ; empty when all agree.
+    """
+    stats = (BOX_MINUTES, *BOX_LINE_STATS)
+    computed = box_lines(plays).join(
+        stint_seconds(stints).select("person_id", "seconds"),
+        on="person_id",
+        how="left",
+    )
+    box = player_lines.select(
+        pl.col("player_id").alias("person_id"),
+        pl.col("team_abbr").alias("_team"),
+        pl.col("player_name").alias("_name"),
+        *(pl.col(stat).alias(f"_box_{stat}") for stat in stats),
+    )
+    players = (
+        computed.join(box, on="person_id", how="full", coalesce=True)
+        .with_columns(
+            pl.coalesce("team_tricode", "_team").alias("team_tricode"),
+            pl.coalesce("_name", "player_name_i").alias("player"),
+            pl.col("seconds").fill_null(0),
+            *(pl.col(stat).fill_null(0) for stat in BOX_LINE_STATS),
+            *(pl.col(f"_box_{stat}").fill_null(0) for stat in stats),
+        )
+        # Reported to the minute; the box score's own where they agree
+        .with_columns(
+            pl.when(minutes_off(pl.col("seconds"), pl.col(f"_box_{BOX_MINUTES}")) == 0)
+            .then(pl.col(f"_box_{BOX_MINUTES}"))
+            .otherwise((pl.col("seconds") + 30) // 60)
+            .alias(BOX_MINUTES)
+        )
+        .sort("team_tricode", "person_id")
+    )
+    made = pl.col("made").fill_null(False)
+    teams = (
+        plays.filter(pl.col("team_tricode").is_not_null())
+        .group_by("team_tricode")
+        .agg(pl.when(made).then(pl.col("shot_value")).otherwise(0).sum().alias("pts"))
+        .join(
+            team_lines.select(
+                pl.col("team_abbr").alias("team_tricode"),
+                pl.col("pts").alias("_box_pts"),
+            ),
+            on="team_tricode",
+            how="full",
+            coalesce=True,
+        )
+        .with_columns(
+            pl.lit(0, dtype=pl.Int64).alias("person_id"),
+            pl.lit(None, dtype=pl.String).alias("player"),
+            pl.col("pts").fill_null(0),
+            pl.col("_box_pts").fill_null(0),
+        )
+        .sort("team_tricode")
+    )
+
+    def differing(frame: pl.DataFrame, stat: str) -> pl.DataFrame:
+        return frame.filter(pl.col(stat) != pl.col(f"_box_{stat}")).select(
+            "team_tricode",
+            "person_id",
+            "player",
+            pl.lit(stat).alias("stat"),
+            pl.col(stat).alias("from_feed"),
+            pl.col(f"_box_{stat}").alias("in_box"),
+        )
+
+    by_stat = pl.concat([differing(players, stat) for stat in stats]).sort(
+        "team_tricode", "person_id", maintain_order=True
+    )
+    return pl.concat([by_stat, differing(teams, "pts")]).cast(BOX_MISMATCH_SCHEMA)
 
 
 # --- Comments ---------------------------------------------------------------
@@ -1373,7 +1601,8 @@ def build_recap(
     *,
     fact: pl.DataFrame,
     posts: pl.DataFrame,
-    player_games: pl.DataFrame,
+    player_log: pl.DataFrame,
+    team_log: pl.DataFrame,
     players: pl.DataFrame,
     pbp: pl.DataFrame,
     stamps: RecapStamps,
@@ -1381,13 +1610,19 @@ def build_recap(
     """
     Build one recap: the clock, the plays, the comments, the measurements.
 
+    The plays and the stints are checked against the game's box score
+    and against five on the floor per team; each disagreement is logged
+    as a warning and nothing is corrected.
+
     Args:
         spec: The resolved curation entry.
         fact: The usable fact rows (load_attributed_frame or a subset
             covering the game's live threads).
         posts: The Post bridge.
-        player_games: The box-score lines (game_id, attributed_player,
-            minutes).
+        player_log: The player game log (PLAYER_GAME_LOG_SCHEMA), at
+            least this game's lines: every player who dressed.
+        team_log: The team game log (TEAM_GAME_LOG_SCHEMA), at least
+            this game's two lines.
         players: The Player dimension (attributed_player, player_id).
         pbp: The game's play-by-play (load_live_play_by_play).
         stamps: The build's lineage for the header.
@@ -1403,7 +1638,8 @@ def build_recap(
     periods = build_periods(pbp)
     plays = build_plays(pbp, periods, spec.player_id)
     stints = build_stints(plays, periods)
-    for team, start, end, on_floor in floor_gaps(stints, periods).rows():
+    gaps = floor_gaps(stints, periods)
+    for team, start, end, on_floor in gaps.rows():
         logger.warning(
             f"recap {spec.key}: {team} reads {on_floor} on the floor "
             f"from {start} to {end} s"
@@ -1429,24 +1665,28 @@ def build_recap(
         .select(RECAP_THREADS_SCHEMA.names())
     )
 
-    line = player_games.filter(
-        (pl.col("game_id") == spec.game_id)
-        & (pl.col("attributed_player") == spec.attributed_player)
-    )
+    in_game = pl.col("game_id") == spec.game_id
+    player_lines = player_log.filter(in_game)
+    line = player_lines.filter(pl.col("player_id") == spec.player_id)
     if not line.height:
         raise RecapError(f"recap {spec.key}: no box-score line for the focus player")
-    box_minutes = int(line["minutes"][0])
-    minutes = stint_minutes(stints).filter(pl.col("person_id") == spec.player_id)
-    focus_minutes = int(minutes["minutes"][0]) if minutes.height else 0
-    minutes_diff = focus_minutes - box_minutes
-    if minutes_diff:
-        # The first period's inferred opening state is where stints go
-        # wrong: a period played with no substitution and no play reads
-        # as bench
-        logger.warning(
-            f"recap {spec.key}: {focus_minutes} stint minutes against "
-            f"{box_minutes} in the box score ({minutes_diff:+d})"
+    mismatches = check_box(plays, stints, player_lines, team_log.filter(in_game))
+    for row in mismatches.rows(named=True):
+        who = (
+            f"{row['player']} ({row['team_tricode']})"
+            if row["person_id"]
+            else row["team_tricode"]
         )
+        logger.warning(
+            f"recap {spec.key}: {who} {row['stat']} {row['from_feed']} from the "
+            f"feed against {row['in_box']} in the box score"
+        )
+    on_floor = stint_seconds(stints).filter(pl.col("person_id") == spec.player_id)
+    minutes_diff = int(
+        line.select(
+            minutes_off(pl.lit(on_floor["seconds"].sum()), pl.col(BOX_MINUTES))
+        ).item()
+    )
 
     n_periods = int(periods["period"].max())
     by_period = period_counts(aligned, spec.attributed_player, n_periods)
@@ -1462,6 +1702,11 @@ def build_recap(
         validate_nullability(
             frames[name], RECAP_NULLABLE_COLUMNS[name], f"{spec.key}.{name}"
         )
+    rows = ", ".join(f"{name} {frame.height:,}" for name, frame in frames.items())
+    logger.info(
+        f"recap {spec.key}: {rows} rows; {mismatches.height} box-score "
+        f"mismatches, {gaps.height} floor gaps"
+    )
 
     header: RecapHeader = {
         "schema_version": SCHEMA_VERSION,
@@ -1678,8 +1923,11 @@ def write_recaps(documents: Sequence[RecapDocument], dashboard_dir: Path) -> lis
     """
     written = []
     for doc in documents:
+        target = dashboard_dir / recap_file(doc.key)
+        before = target.stat().st_size if target.exists() else None
         path, size = write_recap(doc, dashboard_dir)
-        logger.info(f"Wrote {path} ({size:,} bytes)")
+        was = "" if before is None else f", was {before:,}"
+        logger.info(f"Wrote {path} ({size:,} bytes{was})")
         written.append(path)
     recaps_dir = dashboard_dir / RECAPS_SUBDIR
     if recaps_dir.exists():

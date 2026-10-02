@@ -23,14 +23,17 @@ from pipeline.recaps import (
     RecapStamps,
     ResolvedSpec,
     align_comments,
+    box_lines,
     build_periods,
     build_plays,
     build_recap,
     build_stints,
+    check_box,
     derive_kind,
     floor_gaps,
     game_clock,
     measure_reaction_lag,
+    minutes_off,
     pair_plays,
     parse_clock_seconds,
     period_counts,
@@ -41,7 +44,7 @@ from pipeline.recaps import (
     select_comments,
     serialize_recap,
     stamp_wall_clock,
-    stint_minutes,
+    stint_seconds,
     swing,
     write_recap,
     write_recaps,
@@ -1406,11 +1409,11 @@ class TestBuildStints:
         assert _stints_of(build_stints(plays, g7_periods), CHET) == [(2, 720, 960)]
 
 
-class TestStintMinutes:
-    """Minutes on the floor per player, as the box score rounds them."""
+class TestStintSeconds:
+    """Seconds on the floor per player."""
 
-    def test_minutes_per_player(self):
-        """48 minutes for one, 12 for the other, each with his team."""
+    def test_seconds_per_player(self):
+        """All 48 minutes for one, a quarter for the other, each with his team."""
         stints = _stint_frame(
             [
                 (CHET, "OKC", 1, 0, 720),
@@ -1419,22 +1422,39 @@ class TestStintMinutes:
             ]
         )
 
-        assert stint_minutes(stints).rows() == [
-            (CHET, "OKC", 48),
-            (CASTLE, "SAS", 12),
+        assert stint_seconds(stints).rows() == [
+            (CHET, "OKC", 2880),
+            (CASTLE, "SAS", 720),
         ]
 
-    @pytest.mark.parametrize(
-        "seconds,minutes", [(1830, 31), (2190, 37), (1829, 30), (9, 0)]
-    )
-    def test_a_half_minute_rounds_up(self, seconds, minutes):
-        """30:30 on the floor is 31 in the box score, not 30."""
-        stints = _stint_frame([(CHET, "OKC", 1, 0, seconds)])
-
-        assert stint_minutes(stints)["minutes"].to_list() == [minutes]
-
     def test_no_stints_is_no_rows(self):
-        assert stint_minutes(RECAP_STINTS_SCHEMA.to_frame()).height == 0
+        assert stint_seconds(RECAP_STINTS_SCHEMA.to_frame()).height == 0
+
+
+class TestMinutesOff:
+    """Stint seconds against the box score's whole minutes."""
+
+    @pytest.mark.parametrize(
+        "seconds,box_minutes,off",
+        [
+            (1830, 31, 0),  # 30:30 that the box score rounded up
+            (2310, 38, 0),  # 38:30 that it rounded down
+            (1829, 30, 0),
+            (1831, 30, 1),
+            (1769, 30, -1),
+            (2880, 34, 14),
+            (0, 5, -5),
+        ],
+    )
+    def test_half_a_minute_or_less_is_agreement(self, seconds, box_minutes, off):
+        """The box score rounds a clock kept in tenths, so whole seconds
+        within half a minute of it agree; past that, whole minutes off."""
+        frame = pl.DataFrame({"seconds": [seconds], "minutes": [box_minutes]})
+
+        assert (
+            frame.select(minutes_off(pl.col("seconds"), pl.col("minutes"))).item()
+            == off
+        )
 
 
 FIVE = (CHET, WALLACE, HARTENSTEIN, MCCAIN, 99)
@@ -1636,15 +1656,85 @@ def _players() -> pl.DataFrame:
     )
 
 
-def _player_games(minutes: int = 33) -> pl.DataFrame:
+BOX_STATS = (
+    "minutes",
+    "fgm",
+    "fga",
+    "fg3m",
+    "fg3a",
+    "ftm",
+    "fta",
+    "oreb",
+    "dreb",
+    "reb",
+    "ast",
+    "stl",
+    "blk",
+    "tov",
+    "pf",
+    "pts",
+)
+# Holmgren's line in the G7 fixture, counted by hand from G7_PLAYS
+CHET_LINE = {
+    "minutes": 33,
+    "fgm": 1,
+    "fga": 2,
+    "ftm": 1,
+    "fta": 2,
+    "dreb": 2,
+    "reb": 2,
+    "ast": 1,
+    "stl": 1,
+    "blk": 1,
+    "tov": 1,
+    "pf": 1,
+    "pts": 3,
+}
+
+
+def _box_line(player_id: int, name: str, team: str, **stats: int) -> dict:
+    """One player's box-score line; a stat not given is 0."""
+    return {
+        "game_id": GAME,
+        "player_id": player_id,
+        "player_name": name,
+        "team_abbr": team,
+        **{stat: stats.get(stat, 0) for stat in BOX_STATS},
+    }
+
+
+def _player_log(*lines: dict) -> pl.DataFrame:
     return pl.DataFrame(
-        {"game_id": [GAME], "attributed_player": [CHET_NAME], "minutes": [minutes]},
+        list(lines),
         schema={
             "game_id": pl.String,
-            "attributed_player": pl.String,
-            "minutes": pl.Int64,
+            "player_id": pl.Int64,
+            "player_name": pl.String,
+            "team_abbr": pl.String,
+            **{stat: pl.Int64 for stat in BOX_STATS},
         },
     )
+
+
+def _team_log(**points: int) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "game_id": [GAME] * len(points),
+            "team_abbr": list(points),
+            "pts": list(points.values()),
+        },
+        schema={"game_id": pl.String, "team_abbr": pl.String, "pts": pl.Int64},
+    )
+
+
+def _g7_player_log(minutes: int = 33) -> pl.DataFrame:
+    """The G7 box score as far as the focus player: his line alone."""
+    return _player_log(
+        _box_line(CHET, CHET_NAME, "OKC", **{**CHET_LINE, "minutes": minutes})
+    )
+
+
+G7_TEAM_LOG = _team_log(OKC=5, SAS=1)
 
 
 STAMPS = RecapStamps(
@@ -1714,11 +1804,173 @@ def g7_doc(g7_fact, pbp_dir):
         _spec(pbp_dir),
         fact=g7_fact,
         posts=_posts(),
-        player_games=_player_games(),
+        player_log=_g7_player_log(),
+        team_log=G7_TEAM_LOG,
         players=_players(),
         pbp=_pbp(G7_PLAYS),
         stamps=STAMPS,
     )
+
+
+def _line_of(lines: pl.DataFrame, person_id: int) -> dict:
+    return lines.filter(pl.col("person_id") == person_id).row(0, named=True)
+
+
+class TestBoxLines:
+    """Every player's line, counted from the rows as the page counts it."""
+
+    def test_counts_each_stat(self, g7_plays):
+        """Holmgren: 1 of 2 from the field, 1 of 2 at the line, two
+        defensive rebounds, an assist, a steal, a block, a turnover, a foul."""
+        line = _line_of(box_lines(g7_plays), CHET)
+
+        assert (line["team_tricode"], line["player_name_i"]) == ("OKC", "C. Holmgren")
+        assert {stat: line[stat] for stat in BOX_STATS[1:]} == {
+            **dict.fromkeys(BOX_STATS[1:], 0),
+            **{k: v for k, v in CHET_LINE.items() if k != "minutes"},
+        }
+
+    def test_a_three_counts_as_a_field_goal_too(self, g7_plays):
+        """Vassell's missed three is an attempt on both lines."""
+        line = _line_of(box_lines(g7_plays), VASSELL)
+
+        assert (line["fga"], line["fg3a"], line["fgm"], line["pts"]) == (1, 1, 0, 0)
+
+    def test_an_assist_counts_for_the_passer(self, g7_plays):
+        """Wallace on Holmgren's jumper; his own layup is two points."""
+        line = _line_of(box_lines(g7_plays), WALLACE)
+
+        assert (line["ast"], line["fgm"], line["pts"]) == (1, 1, 2)
+
+    def test_team_rows_are_no_ones(self, g7_plays):
+        """The heave and the timeout name a team only: no line, no attempt."""
+        lines = box_lines(g7_plays)
+
+        assert 0 not in lines["person_id"].to_list()
+        assert lines.filter(pl.col("team_tricode") == "SAS")["fga"].sum() == 2
+
+    def test_a_technical_is_not_a_personal(self, g7_game, g7_periods):
+        """His technical leaves him on one personal foul."""
+        technical = _chet(
+            171,
+            period=2,
+            clock="PT07M00.00S",
+            time_actual=_stamp(1, 0, 20),
+            action_type="foul",
+            sub_type="technical",
+        )
+        plays = build_plays(
+            stamp_wall_clock(_pbp([*G7_PLAYS, technical])), g7_periods, CHET
+        )
+
+        assert _line_of(box_lines(plays), CHET)["pf"] == 1
+
+
+class TestCheckBox:
+    """The rows and the stints against the box score."""
+
+    @pytest.fixture
+    def game(self, g7_periods) -> tuple[pl.DataFrame, pl.DataFrame]:
+        """Holmgren's rebound and Wembanyama's three in Q1, nobody
+        substituted: both play all 48 minutes."""
+        rows = [
+            *G7_MARKERS,
+            _chet(
+                3,
+                clock="PT06M00.00S",
+                time_actual=_stamp(0, 30),
+                action_type="rebound",
+                sub_type="defensive",
+            ),
+            _sas(
+                4,
+                clock="PT05M00.00S",
+                time_actual=_stamp(0, 31),
+                action_type="3pt",
+                shot_result="Made",
+                person_id=WEMBY,
+                player_name_i="V. Wembanyama",
+                score_away="3",
+            ),
+        ]
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+        return plays, build_stints(plays, g7_periods)
+
+    CHET_BOX = {"minutes": 48, "dreb": 1, "reb": 1}
+    WEMBY_BOX = {"minutes": 48, "fgm": 1, "fga": 1, "fg3m": 1, "fg3a": 1, "pts": 3}
+
+    def _log(self, chet: dict | None = None, *extra: dict) -> pl.DataFrame:
+        return _player_log(
+            _box_line(CHET, CHET_NAME, "OKC", **(chet or self.CHET_BOX)),
+            _box_line(WEMBY, "Victor Wembanyama", "SAS", **self.WEMBY_BOX),
+            *extra,
+        )
+
+    def test_an_agreeing_box_score_is_no_mismatch(self, game):
+        mismatches = check_box(*game, self._log(), _team_log(OKC=0, SAS=3))
+
+        assert mismatches.height == 0
+        assert mismatches.columns == [
+            "team_tricode",
+            "person_id",
+            "player",
+            "stat",
+            "from_feed",
+            "in_box",
+        ]
+
+    def test_a_line_mismatch_names_the_player_and_the_stat(self, game):
+        """The box score credits Holmgren a second defensive rebound."""
+        box = self._log({"minutes": 48, "dreb": 2, "reb": 2})
+
+        mismatches = check_box(*game, box, _team_log(OKC=0, SAS=3))
+
+        assert mismatches.rows() == [
+            ("OKC", CHET, CHET_NAME, "dreb", 1, 2),
+            ("OKC", CHET, CHET_NAME, "reb", 1, 2),
+        ]
+
+    def test_minutes_are_checked_with_the_line(self, game):
+        """48 stint minutes against 40 in the box score."""
+        box = self._log({**self.CHET_BOX, "minutes": 40})
+
+        mismatches = check_box(*game, box, _team_log(OKC=0, SAS=3))
+
+        assert mismatches.rows() == [("OKC", CHET, CHET_NAME, "minutes", 48, 40)]
+
+    @pytest.mark.parametrize("box_minutes", [38, 39])
+    def test_minutes_within_half_a_minute_agree(self, game, box_minutes):
+        """38:30 on the floor agrees with 38 and with 39: the box score
+        rounds a finer clock than the stints hold."""
+        plays, _ = game
+        stints = _stint_frame([(CHET, "OKC", 1, 0, 2310), (WEMBY, "SAS", 1, 0, 2880)])
+        box = self._log({**self.CHET_BOX, "minutes": box_minutes})
+
+        mismatches = check_box(plays, stints, box, _team_log(OKC=0, SAS=3))
+
+        assert mismatches.height == 0
+
+    def test_a_box_line_with_no_row_in_the_feed_is_checked_against_nothing(self, game):
+        """Wallace played five minutes by the box score and never appears."""
+        wallace = _box_line(WALLACE, "Cason Wallace", "OKC", minutes=5)
+
+        mismatches = check_box(*game, self._log(None, wallace), _team_log(OKC=0, SAS=3))
+
+        assert mismatches.rows() == [("OKC", WALLACE, "Cason Wallace", "minutes", 0, 5)]
+
+    def test_a_player_who_did_not_play_agrees_with_no_line(self, game):
+        """A dressed player with zeros, and nothing in the feed: no mismatch."""
+        mccain = _box_line(MCCAIN, "Jared McCain", "OKC")
+
+        mismatches = check_box(*game, self._log(None, mccain), _team_log(OKC=0, SAS=3))
+
+        assert mismatches.height == 0
+
+    def test_team_points_are_checked_against_the_final_score(self, game):
+        """Three points from the rows against five on the scoreboard."""
+        mismatches = check_box(*game, self._log(), _team_log(OKC=0, SAS=5))
+
+        assert mismatches.rows() == [("SAS", 0, None, "pts", 3, 5)]
 
 
 class TestSelectComments:
@@ -2129,7 +2381,8 @@ class TestBuildRecap:
             _spec(pbp_dir),
             fact=g7_fact,
             posts=_posts(),
-            player_games=_player_games(),
+            player_log=_g7_player_log(),
+            team_log=G7_TEAM_LOG,
             players=_players(),
             pbp=_pbp(G7_PLAYS),
             stamps=stamps,
@@ -2182,30 +2435,68 @@ class TestBuildRecap:
 
     def test_minutes_reconcile_against_the_box_score(self, g7_doc):
         """1,959 stint seconds round to 33 minutes, the box score's line."""
-        minutes = stint_minutes(g7_doc.frames["stints"])
-        assert minutes.filter(pl.col("person_id") == CHET)["minutes"].item() == 33
+        seconds = stint_seconds(g7_doc.frames["stints"])
+        assert seconds.filter(pl.col("person_id") == CHET)["seconds"].item() == 1959
         assert g7_doc.entry["minutes_diff"] == 0
 
     @pytest.mark.parametrize("minutes,warned", [(34, True), (33, False)])
     def test_stints_off_the_box_score_warn(
         self, g7_fact, pbp_dir, caplog, minutes, warned
     ):
-        """33 stint minutes against a 34-minute line is logged as a warning,
-        since the first period's inferred opening is the one place stints
-        can go wrong; an exact match is silent."""
+        """33 stint minutes against a 34-minute line is logged as a warning
+        naming him and the stat; an exact match is silent."""
         with caplog.at_level(logging.WARNING, logger="pipeline.recaps"):
-            build_recap(
+            doc = build_recap(
                 _spec(pbp_dir),
                 fact=g7_fact,
                 posts=_posts(),
-                player_games=_player_games(minutes),
+                player_log=_g7_player_log(minutes),
+                team_log=G7_TEAM_LOG,
                 players=_players(),
                 pbp=_pbp(G7_PLAYS),
                 stamps=STAMPS,
             )
 
-        messages = [r.message for r in caplog.records]
-        assert any("33 stint minutes" in m and "34" in m for m in messages) is warned
+        named = [r.message for r in caplog.records if CHET_NAME in r.message]
+        assert any("minutes 33" in m and "34" in m for m in named) is warned
+        assert doc.entry["minutes_diff"] == 33 - minutes
+
+    def test_a_line_off_the_box_score_warns(self, g7_fact, pbp_dir, caplog):
+        """A box score crediting him a second block is named, stat and all;
+        his other stats agree and stay silent."""
+        line = _box_line(CHET, CHET_NAME, "OKC", **{**CHET_LINE, "blk": 2})
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.recaps"):
+            build_recap(
+                _spec(pbp_dir),
+                fact=g7_fact,
+                posts=_posts(),
+                player_log=_player_log(line),
+                team_log=G7_TEAM_LOG,
+                players=_players(),
+                pbp=_pbp(G7_PLAYS),
+                stamps=STAMPS,
+            )
+
+        named = [r.message for r in caplog.records if CHET_NAME in r.message]
+        assert len(named) == 1
+        assert "blk 1" in named[0] and "2 in the box score" in named[0]
+
+    def test_a_team_short_of_five_warns(self, g7_fact, pbp_dir, caplog):
+        """The fixture logs a handful of players, so neither team reads five."""
+        with caplog.at_level(logging.WARNING, logger="pipeline.recaps"):
+            build_recap(
+                _spec(pbp_dir),
+                fact=g7_fact,
+                posts=_posts(),
+                player_log=_g7_player_log(),
+                team_log=G7_TEAM_LOG,
+                players=_players(),
+                pbp=_pbp(G7_PLAYS),
+                stamps=STAMPS,
+            )
+
+        assert any("on the floor" in r.message for r in caplog.records)
 
     def test_silent_focus_player_still_builds(self, g7_fact, pbp_dir):
         """A room that never mentions him: zero focus comments, no swing,
@@ -2218,7 +2509,8 @@ class TestBuildRecap:
             _spec(pbp_dir),
             fact=fact,
             posts=_posts(),
-            player_games=_player_games(),
+            player_log=_g7_player_log(),
+            team_log=G7_TEAM_LOG,
             players=_players(),
             pbp=_pbp(G7_PLAYS),
             stamps=STAMPS,
@@ -2240,7 +2532,8 @@ class TestBuildRecap:
                 _spec(pbp_dir),
                 fact=g7_fact,
                 posts=_posts(),
-                player_games=_player_games().clear(),
+                player_log=_g7_player_log().clear(),
+                team_log=G7_TEAM_LOG,
                 players=_players(),
                 pbp=_pbp(G7_PLAYS),
                 stamps=STAMPS,

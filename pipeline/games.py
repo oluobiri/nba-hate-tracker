@@ -10,6 +10,7 @@ decides what ships.
 """
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import polars as pl
@@ -351,3 +352,33 @@ def load_game_tables(
         "games_fetched_at": fetched_at,
     }
     return games, player_games, metadata
+
+
+def load_box_scores(
+    reference_dir: Path, game_ids: Sequence[str]
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """
+    The box-score lines of the given games, as the snapshots hold them.
+
+    Every player who dressed and both teams: player_games keeps the
+    tracked players only, and a check of a whole game needs them all.
+
+    Args:
+        reference_dir: Season reference directory holding the snapshots.
+        game_ids: The games to read.
+
+    Returns:
+        (player lines, team lines), conforming to PLAYER_GAME_LOG_SCHEMA
+        and TEAM_GAME_LOG_SCHEMA.
+
+    Raises:
+        FileNotFoundError: If either snapshot is not on disk.
+    """
+    wanted = pl.col("game_id").is_in(list(game_ids))
+    frames = []
+    for filename in (PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME):
+        path = reference_dir / filename
+        if not path.exists():
+            raise FileNotFoundError(f"{path} not found (run scripts.fetch_games)")
+        frames.append(pl.read_parquet(path).filter(wanted))
+    return frames[0], frames[1]

@@ -935,7 +935,7 @@ class RecapEntry(TypedDict):
     room_n: int  # the whole room: posts.num_comments over the live threads
     by_period: dict[str, PeriodCounts]  # keyed by period; live and break comments
     swing: float  # negative share, last period minus first
-    minutes_diff: int  # stint minutes minus the box score's
+    minutes_diff: int  # whole minutes the stints sit from the box score's
     population: str  # RECAP_POPULATION
 
 

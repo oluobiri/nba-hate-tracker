@@ -228,3 +228,7 @@ export function etTime(epoch: number): string {
 
 /** "about 5 min at 1×": the replay's length in words. */
 export const lengthPhrase = (tl: Timeline): string => `about ${Math.max(1, Math.round(tl.totalU / 60))} min at 1×`
+
+/** The speed presets, as multiples of 1×. */
+export const SPEEDS = [1, 2, 4] as const
+export type Speed = (typeof SPEEDS)[number]

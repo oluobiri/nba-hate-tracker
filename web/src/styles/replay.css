@@ -1,0 +1,352 @@
+/* The replay island: the stage's layout and its parts' looks. Component
+   classes shared with the rest of the site (.sb, .btn, .exhibit) come from
+   components.css; everything here belongs to the recap page alone. */
+
+/* --- The stage ------------------------------------------------------------- */
+.replay {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr) 316px;
+  grid-template-areas:
+    'bug bug bug'
+    'flow flow flow'
+    'gauge center room'
+    'box box box';
+  gap: 12px 16px;
+  align-items: start;
+}
+/* A deep link with a moment: hidden until the island has read the URL. */
+.has-replay-view .replay {
+  visibility: hidden;
+}
+.replay__panel {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.replay__ph {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.replay__ph b {
+  color: var(--bone);
+  font-weight: 600;
+}
+
+/* --- The score bug ---------------------------------------------------------- */
+.bug {
+  grid-area: bug;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.bug__score {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.bug__team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--bone-2);
+}
+.bug__logo {
+  width: 30px;
+  height: 30px;
+  filter: grayscale(1) brightness(1.6);
+  opacity: 0.8;
+}
+.bug__pts {
+  min-width: 2ch;
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+.bug__pts--lead {
+  font-weight: 700;
+  color: var(--bone);
+}
+.bug__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 92px;
+  padding: 0 6px;
+  border-left: 1px solid var(--line-2);
+  border-right: 1px solid var(--line-2);
+}
+.bug__period {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--mute);
+}
+.bug__time {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.bug__line {
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.bug__line th {
+  padding: 0 7px 3px;
+  font-weight: 500;
+  text-align: right;
+  color: var(--mute);
+}
+.bug__line td {
+  padding: 2px 7px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bug__line th[scope='row'] {
+  padding: 2px 7px 2px 0;
+  text-align: left;
+}
+.bug__line th:first-child {
+  padding-left: 0;
+}
+.bug__line .bug__cur {
+  background: var(--surface-2);
+  color: var(--bone);
+}
+.bug__line .bug__tot {
+  border-left: 1px solid var(--line-2);
+  font-weight: 600;
+  color: var(--bone);
+}
+.bug__his {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 18px;
+  border-left: 1px solid var(--line-2);
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.bug__name {
+  font-weight: 600;
+  color: var(--bone);
+}
+.bug__name--short {
+  display: none;
+}
+.bug__floor {
+  color: var(--mute);
+}
+.bug__floor--on {
+  color: var(--bone);
+}
+.bug__ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bug__play {
+  width: 44px;
+  padding: 0;
+  font-size: 15px;
+}
+.bug__speed {
+  display: flex;
+}
+.bug__sp {
+  padding: 0 10px;
+  margin-left: -1px;
+}
+
+/* --- The room over the game: the scrubber ----------------------------------- */
+.flow {
+  grid-area: flow;
+  padding: 8px 10px 6px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.flow__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.flow__key i {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  margin: 0 4px 0 10px;
+  vertical-align: middle;
+}
+.flow__key-neg {
+  background: var(--heat);
+}
+.flow__key-pos {
+  background: var(--ice);
+}
+.flow__key-usual {
+  height: 0 !important;
+  border-top: 1px dashed var(--mute);
+}
+.flow__svg {
+  display: block;
+  width: 100%;
+  height: 48px;
+  cursor: pointer;
+  touch-action: none;
+}
+.flow__svg:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.flow__bin {
+  fill: var(--surface-2);
+}
+.flow__period {
+  stroke: var(--line-2);
+}
+.flow__usual {
+  stroke: var(--mute);
+  stroke-dasharray: 4 4;
+}
+.flow__neg,
+.flow__pos {
+  fill: none;
+  stroke-width: 2;
+}
+.flow__neg {
+  stroke: var(--heat);
+}
+.flow__pos {
+  stroke: var(--ice);
+}
+.flow__done {
+  fill: rgba(237, 232, 220, 0.04);
+}
+.flow__head-line {
+  stroke: var(--bone);
+  stroke-width: 2;
+}
+.flow__labels {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  color: var(--mute);
+}
+.flow__labels span {
+  position: absolute;
+  transform: translateX(2px);
+}
+.flow__labels .flow__final {
+  transform: translateX(-100%);
+}
+
+/* --- Phone: the bug sticks, the line score hides, his line is a second row --- */
+@media (max-width: 999px) {
+  .replay {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'bug'
+      'center'
+      'flow'
+      'tabs'
+      'panel';
+    gap: 0;
+  }
+  .bug {
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    padding: 8px 10px;
+    margin: 0 calc(-1 * var(--gutter));
+    border-left: 0;
+    border-right: 0;
+  }
+  .bug__line {
+    display: none;
+  }
+  .bug__pts {
+    font-size: 32px;
+  }
+  .bug__logo {
+    width: 22px;
+    height: 22px;
+  }
+  .bug__team {
+    font-size: 13px;
+  }
+  .bug__score {
+    gap: 8px;
+  }
+  .bug__clock {
+    min-width: 70px;
+  }
+  .bug__time {
+    font-size: 20px;
+  }
+  .bug__speed {
+    display: none;
+  }
+  .bug__his {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-direction: row;
+    gap: 8px;
+    padding: 5px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .bug__name {
+    display: none;
+  }
+  .bug__name--short {
+    display: inline;
+  }
+  .bug__fg {
+    display: none;
+  }
+  .bug__floor {
+    margin-left: auto;
+  }
+  .flow {
+    position: sticky;
+    top: var(--replay-flow-top, 0);
+    z-index: 4;
+    padding: 4px 8px 2px;
+    margin: 0 calc(-1 * var(--gutter));
+    border-left: 0;
+    border-right: 0;
+  }
+  .flow__svg {
+    height: 34px;
+  }
+  .flow__head {
+    display: none;
+  }
+}

@@ -13,6 +13,8 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { FlowStrip } from '../components/replay/FlowStrip'
+import { ScoreBug } from '../components/replay/ScoreBug'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
@@ -26,6 +28,8 @@ import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
+import { readJson, seasonLocation } from '../data/env'
+import { assertRecapDocument } from '../data/recap'
 import Base from '../layouts/Base.astro'
 import { deltaLists, fanRosterMatrix, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
@@ -37,6 +41,8 @@ import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
+import { PRE, periodStartsU } from '../lib/clock'
+import { lastName, prepareReplay, recapRows as recapFrames, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
@@ -251,6 +257,21 @@ const recapLog = recapLead
   : []
 const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
 const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
+// The replay's parts, from the lead recap's file, at moments chosen by rule:
+// the tip, a second into the first timeout, mid-halftime, the final.
+const replay = recapLead ? prepareReplay(recapFrames(assertRecapDocument(await readJson(seasonLocation(manifest.season), recapLead.entry.file), recapLead.entry.file)), recapLead.player.player_id) : null
+const teamsByAbbr = new Map(tables.teams.map((t) => [t.abbreviation, t]))
+const bugTeam = (abbr: string) => ({ abbr, logo: teamsByAbbr.get(abbr)?.logo_url ?? '' })
+const bugTeams = recapLead ? { away: bugTeam(recapLead.line.away.abbr), home: bugTeam(recapLead.line.home.abbr) } : null
+const replayMoments = replay
+  ? [
+      { name: 'the tip', u: PRE },
+      { name: 'a second into the first timeout', u: (replay.tl.cards.find((c) => c.kind === 'timeout')?.u0 ?? PRE) + 1 },
+      { name: 'mid-halftime', u: (() => { const h = replay.tl.cards.find((c) => c.kind === 'halftime'); return h ? (h.u0 + h.u1) / 2 : PRE })() },
+      { name: 'the final', u: replay.tl.endU },
+    ].map((m) => ({ ...m, scene: sceneAt(replay, m.u) }))
+  : []
+const noop = () => {}
 
 ---
 
@@ -457,6 +478,35 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
         {mostPeriods && <figure class="guide__fig"><PeriodStrip cells={mostPeriods.cells} size="hero" subject={mostPeriods.entry.attributed_player} /><figcaption>most overtime · {mostPeriods.entry.attributed_player}, {mostPeriods.cells.length} quarters and overtimes, hero size</figcaption></figure>}
         {thinnestRecap && <figure class="guide__fig"><PeriodStrip cells={thinnestRecap.cells} subject={thinnestRecap.entry.attributed_player} /><figcaption>thinnest quarter · {thinnestRecap.entry.attributed_player}, {fmtInt(thinnestPeriod(thinnestRecap))} comments in one quarter or overtime, row size</figcaption></figure>}
         {recapLead && <figure class="guide__fig"><PeriodStrip cells={silenced} subject={recapLead.entry.attributed_player} /><figcaption>a silent quarter, constructed: {recapLead.entry.attributed_player} with Q2 zeroed</figcaption></figure>}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>ScoreBug</h2>
+      <p class="eyebrow">
+        The stage's anchor, sticky at every width: away and home with the leader in bone and the trailer in gray (never a hue), the clock holding through a card, the line score with the current period lit, his live line and floor state, play and the speed presets. {recapLead ? `${recapLead.entry.attributed_player}, at ` : ''}
+        {replayMoments.map((m) => m.name).join(', ')}.
+      </p>
+      <div class="guide__stack guide__replay">
+        {replay && bugTeams && replayMoments.map((m) => (
+          <figure class="guide__fig">
+            <ScoreBug away={bugTeams.away} home={bugTeams.home} score={m.scene.score} clock={m.scene.clock} line={m.scene.line} his={{ name: recapLead!.entry.attributed_player, short: lastName(replay.focusName), line: m.scene.his.line, onFloor: m.scene.his.onFloor }} playing={m.name === 'the tip'} speed={1} onToggle={noop} onSpeed={noop} />
+            <figcaption>{m.name} · {m.scene.clock.label} {m.scene.clock.time}{m.scene.card ? ` · card: ${m.scene.card.label}` : ''}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>FlowStrip</h2>
+      <p class="eyebrow">The room over the game, and the scrubber: his negative and positive shares over a rolling window of his comments, drawn as far as the replay has played; his season dashed; the room's volume faint behind; the periods at their replay widths. Pointer and arrow keys seek.</p>
+      <div class="guide__stack guide__replay">
+        {replay && recapLead && [replayMoments[1]!, replayMoments[3]!].map((m) => (
+          <figure class="guide__fig">
+            <FlowStrip series={replay.flow} periodStarts={periodStartsU(replay.tl)} endU={replay.tl.endU} totalU={replay.tl.totalU} usual={negRate(recapLead.usual)} u={m.u} onSeek={noop} subject={lastName(replay.focusName)} />
+            <figcaption>{m.name}</figcaption>
+          </figure>
+        ))}
       </div>
     </section>
 
@@ -682,9 +732,13 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
     height: auto;
     border: 1px solid var(--line);
   }
-  /* The rail demo sits in flow; the real one sticks. */
-  .guide__rail .rail {
+  /* The rail and the replay's parts sit in flow; the real ones stick. */
+  .guide__rail .rail,
+  .guide__replay :global(.bug),
+  .guide__replay :global(.flow) {
     position: static;
+    grid-area: auto;
+    margin: 0;
   }
   .guide__rows {
     margin: 0;

@@ -3,7 +3,7 @@
 // lines from the plays, his moments, the court's ends and the feed's
 // selection. Every function is pure and reads the rows the frames give.
 import type { Columnar, RecapCommentsRow, RecapDocument, RecapPeriodsRow, RecapPlaysRow, RecapRows, RecapStintsRow } from '../data/types.gen'
-import { idxAt, type Timeline, uOfWall } from './clock'
+import { buildTimeline, type Card, cardAt, clockAt, type ClockReading, idxAt, playCursor, type Timeline, uOfWall } from './clock'
 import { periodLabel, type PeriodCell } from './recaps'
 import { type Counts, type Sentiment, SENTIMENTS } from './types'
 
@@ -501,4 +501,84 @@ export function feedSelection(room: Room, view: FeedView, density: FeedDensity, 
     idx = [...best.values()].toSorted((a, b) => a - b)
   }
   return { idx, u: idx.map((i) => room.comments[i]!.u) }
+}
+
+// --- The scene ---------------------------------------------------------------------
+
+/** Everything the stage reads, built once when the file arrives. */
+export interface ReplayData {
+  plays: RecapPlaysRow[]
+  periods: RecapPeriodsRow[]
+  stints: RecapStintsRow[]
+  tl: Timeline
+  room: Room
+  focusId: number
+  /** "V. Wembanyama", as the feed names him. */
+  focusName: string
+  moments: Map<number, Moment>
+  ends: Map<number, Ends>
+  blocked: Map<number, number>
+  names: Map<number, string>
+  order: Map<string, number[]>
+  flow: FlowSeries
+}
+
+export function prepareReplay(rows: RecapRows, focusId: number): ReplayData {
+  const tl = buildTimeline(rows.plays, rows.periods)
+  const names = playerNames(rows.plays)
+  const focusName = names.get(focusId) ?? ''
+  const room = buildRoom(rows.comments, tl)
+  return {
+    plays: rows.plays,
+    periods: rows.periods,
+    stints: rows.stints,
+    tl,
+    room,
+    flow: flowSeries(room, tl),
+    focusId,
+    focusName,
+    moments: moments(rows.plays, focusId, focusName),
+    ends: courtEnds(rows.plays, rows.periods),
+    blocked: blockedBy(rows.plays),
+    names,
+    order: rosterOrder(rows.stints),
+  }
+}
+
+/** The stage at one replay second. */
+export interface Scene {
+  u: number
+  cursor: number
+  clock: ClockReading
+  card: Card | null
+  score: { away: number; home: number }
+  line: PeriodPoints[]
+  lines: Map<number, PlayerLine>
+  onFloor: Set<number>
+  his: { line: PlayerLine; onFloor: boolean }
+  now: Counts
+  soFar: Counts
+}
+
+export function sceneAt(d: ReplayData, u: number): Scene {
+  const cursor = playCursor(d.tl, u)
+  const clock = clockAt(d.tl, u)
+  const at = d.plays[cursor]
+  const period = at?.period ?? d.periods[0]!.period
+  const end = d.periods.find((p) => p.period === period)?.end_seconds ?? 0
+  const onFloorNow = onFloor(d.stints, period, at?.game_seconds ?? 0, end)
+  const lines = boxLines(d.plays, cursor)
+  return {
+    u,
+    cursor,
+    clock,
+    card: cardAt(d.tl, u),
+    score: scoreAt(d.plays, cursor),
+    line: lineScore(d.plays, cursor, d.periods),
+    lines,
+    onFloor: onFloorNow,
+    his: { line: lines.get(d.focusId) ?? emptyLine(), onFloor: onFloorNow.has(d.focusId) },
+    now: rightNow(d.room, u),
+    soFar: soFar(d.room, u),
+  }
 }

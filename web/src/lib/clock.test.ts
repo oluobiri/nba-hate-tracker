@@ -65,13 +65,13 @@ describe('buildTimeline on the small game', () => {
   })
 
   it('holds a timeout card open through the substitutions stamped on its second', () => {
-    const { periods, plays } = smallGame()
-    const subs = plays.flatMap((p) =>
+    const game = smallGame()
+    const subs = game.plays.flatMap((p) =>
       p.kind === 'timeout'
         ? [p, { ...p, action_number: 7, kind: 'sub_out', action_type: 'substitution', sub_type: 'out', description: 'SUB out: A. Guard', person_id: 3 }]
         : [p],
     )
-    const withSubs = buildTimeline(subs, periods)
+    const withSubs = buildTimeline(subs, game.periods)
     const card = withSubs.cards.find((c) => c.kind === 'timeout')!
     near(card.u0, withSubs.playU[2]!)
     near(withSubs.playU[3]!, card.u0)

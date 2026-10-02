@@ -736,6 +736,192 @@
   outline-offset: 2px;
 }
 
+/* --- The room: the feed ------------------------------------------------------------- */
+.room {
+  grid-area: room;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.room__toggles {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.room__seg {
+  display: flex;
+}
+.room__btn {
+  min-height: 32px;
+  padding: 0 9px;
+  margin-left: -1px;
+  font-size: 11px;
+}
+.feed {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+.feed__empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--mute);
+}
+.room__fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 60px;
+  background: linear-gradient(transparent, var(--ink-2));
+  pointer-events: none;
+}
+.fc {
+  padding: 8px 12px 9px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--neu);
+}
+.fc--neg {
+  border-left-color: var(--heat);
+}
+.fc--pos {
+  border-left-color: var(--ice);
+}
+.fc--new {
+  animation: caption-in 0.35s ease-out;
+}
+.fc__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--mute);
+}
+.fc__about {
+  color: var(--bone-2);
+}
+.fc__score {
+  margin-left: auto;
+}
+.fc__source {
+  color: var(--mute);
+}
+.fc__body {
+  margin: 3px 0 0;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* --- The box score ---------------------------------------------------------------------- */
+.box {
+  grid-area: box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.bx {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.bx caption {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.bx caption b {
+  color: var(--bone);
+}
+.bx th {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
+  text-align: right;
+  color: var(--mute);
+}
+.bx td {
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+  color: var(--bone-2);
+  font-variant-numeric: tabular-nums;
+}
+.bx th:first-child,
+.bx td:first-child {
+  padding-left: 10px;
+  text-align: left;
+}
+.bx th:last-child,
+.bx td:last-child {
+  padding-right: 10px;
+}
+.bx__name {
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--bone-2);
+}
+.bx__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--bone);
+  vertical-align: middle;
+  visibility: hidden;
+}
+.bx__on .bx__dot {
+  visibility: visible;
+}
+.bx__him th,
+.bx__him td {
+  font-weight: 600;
+  color: var(--bone);
+  background: var(--surface);
+}
+.bx__him th:first-child {
+  box-shadow: inset 3px 0 0 var(--bone);
+}
+.bx__tot th,
+.bx__tot td {
+  border-top: 1px solid var(--line-2);
+  color: var(--bone);
+}
+.bx__rm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.bx__rm .sb {
+  flex: none;
+  width: 46px;
+}
+.bx__rm .sb__track {
+  min-width: 0;
+}
+.box .replay__panel {
+  overflow-x: auto;
+}
+.bx__room,
+.bx__n {
+  color: var(--mute);
+}
+
 /* --- Phone: the bug sticks, the line score hides, his line is a second row --- */
 @media (max-width: 999px) {
   .replay {
@@ -848,6 +1034,35 @@
   }
   .card__big {
     font-size: 24px;
+  }
+  .replay__ph {
+    display: none;
+  }
+  .room,
+  .box {
+    grid-area: panel;
+    display: none;
+    border: 0;
+    background: none;
+  }
+  .box {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .replay--room .room {
+    display: flex;
+    min-height: 60vh;
+  }
+  .replay--box .box {
+    display: grid;
+  }
+  .room__fade {
+    display: none;
+  }
+  .feed .fc:nth-child(n + 9) {
+    display: none;
+  }
+  .bx__wide {
+    display: none;
   }
   .caption {
     min-height: 36px;

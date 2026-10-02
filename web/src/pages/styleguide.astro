@@ -13,7 +13,9 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { BoxScore } from '../components/replay/BoxScore'
 import { Caption } from '../components/replay/Caption'
+import { Feed, FeedCard } from '../components/replay/Feed'
 import { Court } from '../components/replay/Court'
 import { FlowStrip } from '../components/replay/FlowStrip'
 import { NetGauge } from '../components/replay/NetGauge'
@@ -45,7 +47,8 @@ import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { PRE, periodStartsU, playStamp } from '../lib/clock'
-import { captionPlay, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, sceneAt } from '../lib/replay'
+import { etTime } from '../lib/clock'
+import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
@@ -294,6 +297,24 @@ const courtCases = replay
     ]
   : []
 const focusTeam = replay ? (replay.stints.find((st) => st.person_id === replay.focusId)?.team_tricode ?? '') : ''
+// Feed cards by rule: his top-voted negative, the room's top-voted positive about someone else, an unflaired one, a post-game one.
+const playerNameOf = new Map(tables.players.map((p) => [p.player_id, p.attributed_player]))
+const feedCases = replay
+  ? (() => {
+      const cs = replay.room.comments.filter((c) => c.body !== null)
+      const top = (pick: (c: (typeof cs)[number]) => boolean) => cs.filter(pick).toSorted((a, b) => b.score - a.score)[0]
+      return [
+        { name: 'his, top-voted negative', c: top((c) => c.isFocus && c.sentiment === 'neg' && c.body!.length < 240), about: null },
+        { name: 'the room’s, top-voted positive about someone else', c: top((c) => !c.isFocus && c.sentiment === 'pos' && c.playerId !== null && c.body!.length < 240), about: 'other' },
+        { name: 'unflaired, neutral', c: top((c) => c.isFocus && c.sentiment === 'neu' && c.fanTeam === null && c.body!.length < 240), about: null },
+        { name: 'post-game', c: top((c) => c.isFocus && c.phase === 'post' && c.body!.length < 240), about: null },
+      ].filter((x) => x.c !== undefined)
+    })()
+  : []
+const feedAbout = (c: { playerId: number | null }, about: string | null) => (about === null ? null : c.playerId === replay!.focusId ? 'on him' : `on ${lastName(playerNameOf.get(c.playerId!) ?? '')}`)
+const feedTip = replay ? `Tip-off at ${etTime(replay.tl.tip)}.` : ''
+const feedHalf = replay ? feedSelection(replay.room, 'him', 'top', 1) : null
+const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: replayMoments[2]!.scene.score.away, ids: replay.order.get(bugTeams.away.abbr) ?? [] }, { abbr: bugTeams.home.abbr, score: replayMoments[2]!.scene.score.home, ids: replay.order.get(bugTeams.home.abbr) ?? [] }] as const) : null
 
 ---
 
@@ -591,6 +612,30 @@ const focusTeam = replay ? (replay.stints.find((st) => st.person_id === replay.f
     </section>
 
     <section class="guide__section">
+      <h2>FeedCard and Feed</h2>
+      <p class="eyebrow">A comment as it landed: the sentiment on the left edge, flair as a team abbreviation or "no flair", a phase tag outside live play, the score, the source; in the Everyone view, whom it is about. Never a username. Then the feed at halftime, about him, top-voted per beat.</p>
+      <ol class="feed guide__replay guide__replay--cards">
+        {replay && feedCases.map((f) => (
+          <li class="guide__case">
+            <ol class="feed"><FeedCard comment={f.c!} about={feedAbout(f.c!, f.about)} flair={f.c!.fanTeam ? (abbrOf.get(f.c!.fanTeam) ?? null) : null} fresh={false} /></ol>
+            <span class="guide__cap">{f.name}</span>
+          </li>
+        ))}
+      </ol>
+      <div class="guide__replay guide__replay--room">
+        {replay && feedHalf && <Feed room={replay.room} selection={feedHalf} u={replayMoments[2]!.u} view="him" density="top" onView={noop} onDensity={noop} focusId={replay.focusId} names={playerNameOf} abbrOf={abbrOf} tipLine={feedTip} />}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>BoxScore</h2>
+      <p class="eyebrow">Both teams at halftime: the line each player has from the plays so far, a dot on whoever is on the floor, his row lit, team totals, and ROOM, net and the mix of the comments about each player so far, with n. The narrow columns hide on a phone.</p>
+      <div class="guide__replay">
+      {replay && boxTeams && <BoxScore teams={boxTeams} lines={replayMoments[2]!.scene.lines} names={replay.names} onFloor={replayMoments[2]!.scene.onFloor} focusId={replay.focusId} room={roomByPlayer(replay.room, replayMoments[2]!.scene.cursor >= 0 ? replay.room.commentU.findLastIndex((cu) => cu <= replayMoments[2]!.u) : -1)} />}
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>RecapRows</h2>
       <p class="eyebrow">One curated recap per row, the whole row the link: face, the game line with the winner bold, name, the hook, the strip, n. The longest name and the longest hook.</p>
       {recapRows.length ? <RecapRows recaps={recapRows} /> : <p class="eyebrow">No recap is curated this season.</p>}
@@ -816,7 +861,8 @@ const focusTeam = replay ? (replay.stints.find((st) => st.person_id === replay.f
   .guide__rail .rail,
   .guide__replay :global(.bug),
   .guide__replay :global(.flow),
-  .guide__replay :global(.gauge) {
+  .guide__replay :global(.gauge),
+  .guide__replay :global(.box) {
     position: static;
     grid-area: auto;
     margin: 0;
@@ -825,6 +871,31 @@ const focusTeam = replay ? (replay.stints.find((st) => st.person_id === replay.f
     display: flex;
     width: 200px;
     height: 420px;
+  }
+  .guide__replay--cards {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+    max-width: 420px;
+  }
+  .guide__case .feed {
+    border: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+  .guide__cap {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--mute);
+  }
+  .guide__replay--room :global(.room) {
+    display: flex;
+    width: 316px;
+    height: 480px;
+  }
+  .guide__replay :global(.box) {
+    display: grid;
   }
   .guide__replay--court :global(.courtbox) {
     max-width: 720px;

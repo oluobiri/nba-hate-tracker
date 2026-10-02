@@ -13,7 +13,9 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { Caption } from '../components/replay/Caption'
 import { FlowStrip } from '../components/replay/FlowStrip'
+import { NetGauge } from '../components/replay/NetGauge'
 import { ScoreBug } from '../components/replay/ScoreBug'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
@@ -41,8 +43,8 @@ import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
-import { PRE, periodStartsU } from '../lib/clock'
-import { lastName, prepareReplay, recapRows as recapFrames, sceneAt } from '../lib/replay'
+import { PRE, periodStartsU, playStamp } from '../lib/clock'
+import { captionPlay, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
@@ -272,6 +274,15 @@ const replayMoments = replay
     ].map((m) => ({ ...m, scene: sceneAt(replay, m.u) }))
   : []
 const noop = () => {}
+// Captions: the first play that is not his, his first play, and his first dunk or block.
+const captionCases = replay
+  ? [
+      { name: 'the room’s play', play: replay.plays.find((p) => p.kind === 'shot' && p.person_id !== replay.focusId)!, hot: null },
+      { name: 'his play', play: replay.plays.find((p) => p.kind === 'rebound' && p.person_id === replay.focusId) ?? replay.plays.find((p) => p.is_focus)!, hot: null },
+      { name: 'his moment, holding', ...(() => { const m = [...replay.moments.values()].find((x) => x.label === 'DUNK' || x.label === 'BLOCK') ?? [...replay.moments.values()][0]!; return { play: replay.plays[m.i]!, hot: m } })() },
+    ]
+  : []
+const MOMENT_HOLD = 4.5
 
 ---
 
@@ -511,6 +522,42 @@ const noop = () => {}
     </section>
 
     <section class="guide__section">
+      <h2>NetGauge</h2>
+      <p class="eyebrow">
+        The room on him right now: net over his last {RIGHT_NOW} comments on a vertical gauge, +100 to −100, his season's net dashed; the figure coloured by its strength, bone at nothing, full heat at −100, full ice at +100, linear. Under it, so far and his season as a net figure over a mix bar. The phone's form is a horizontal meter.
+      </p>
+      <div class="guide__row guide__replay">
+        {replay && recapLead && replayMoments.map((m) => (
+          <figure class="guide__fig">
+            <NetGauge now={m.scene.now} window={RIGHT_NOW} soFar={m.scene.soFar} season={recapLead.usual} />
+            <figcaption>{m.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div class="guide__stack guide__replay guide__replay--meter">
+        {replay && recapLead && [replayMoments[1]!, replayMoments[3]!].map((m) => (
+          <figure class="guide__fig">
+            <NetGauge now={m.scene.now} window={RIGHT_NOW} soFar={m.scene.soFar} season={recapLead.usual} orientation="horizontal" />
+            <figcaption>the phone's meter · {m.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Caption</h2>
+      <p class="eyebrow">What just happened, in the feed's own words with its clock. His plays take the bone edge and display type; his moments take the line, with the label, the words and a bar that drains over {MOMENT_HOLD} seconds while they hold.</p>
+      <div class="guide__stack guide__replay">
+        {replay && captionCases.map((c) => (
+          <figure class="guide__fig">
+            <Caption stamp={playStamp(c.play)} text={c.play.description} his={c.play.is_focus} hot={c.hot} who={lastName(replay.focusName).toUpperCase()} hold={MOMENT_HOLD} />
+            <figcaption>{c.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
       <h2>RecapRows</h2>
       <p class="eyebrow">One curated recap per row, the whole row the link: face, the game line with the winner bold, name, the hook, the strip, n. The longest name and the longest hook.</p>
       {recapRows.length ? <RecapRows recaps={recapRows} /> : <p class="eyebrow">No recap is curated this season.</p>}
@@ -735,10 +782,20 @@ const noop = () => {}
   /* The rail and the replay's parts sit in flow; the real ones stick. */
   .guide__rail .rail,
   .guide__replay :global(.bug),
-  .guide__replay :global(.flow) {
+  .guide__replay :global(.flow),
+  .guide__replay :global(.gauge) {
     position: static;
     grid-area: auto;
     margin: 0;
+  }
+  .guide__replay :global(.gauge) {
+    display: flex;
+    width: 200px;
+    height: 420px;
+  }
+  .guide__replay--meter :global(.meter) {
+    display: block;
+    max-width: 360px;
   }
   .guide__rows {
     margin: 0;

@@ -266,6 +266,259 @@
   transform: translateX(-100%);
 }
 
+/* --- The net gauge ------------------------------------------------------------ */
+.gauge {
+  grid-area: gauge;
+  display: flex;
+  flex-direction: column;
+}
+.gauge__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 12px;
+  padding: 20px 12px;
+}
+.gauge__track {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+}
+.gauge__zero {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 50%;
+  border-top: 1px solid var(--bone-2);
+}
+.gauge__usual {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  border-top: 1px dashed var(--mute);
+}
+.gauge__fill {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: var(--gauge-t);
+  height: var(--gauge-h);
+  background: var(--net-color);
+  transition:
+    top 0.35s ease,
+    height 0.35s ease,
+    background 0.35s ease;
+}
+.gauge__lab {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--mute);
+}
+.gauge__lab--top {
+  top: -15px;
+}
+.gauge__lab--bot {
+  bottom: -15px;
+}
+.gauge__read {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gauge__num {
+  font-family: var(--display);
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 0.92;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.35s ease;
+}
+.gauge__sub {
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gauge__counts {
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bone-2);
+}
+.gauge__so {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.gauge__so-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gauge__so-net {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.gauge__so .sb {
+  margin: 5px 0 3px;
+}
+.gauge__so small {
+  font-size: 11px;
+  color: var(--mute);
+}
+/* The phone's meter: horizontal, inside the court panel. */
+.meter {
+  display: none;
+  padding: 0;
+}
+.meter__row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.meter__row b {
+  color: var(--bone);
+  font-weight: 600;
+}
+.meter__track {
+  position: relative;
+  height: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+}
+.meter__zero {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  border-left: 1px solid var(--bone-2);
+}
+.meter__usual {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  border-left: 1px dashed var(--mute);
+}
+.meter__fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--gauge-l);
+  width: var(--gauge-w);
+  background: var(--net-color);
+  transition:
+    left 0.35s ease,
+    width 0.35s ease,
+    background 0.35s ease;
+}
+
+/* --- The caption ----------------------------------------------------------------- */
+.caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-left: 3px solid var(--line-2);
+  font-size: 15px;
+}
+.caption__clock {
+  flex: none;
+  font-size: 12px;
+  color: var(--mute);
+}
+.caption--his {
+  border-left-color: var(--bone);
+}
+.caption--his .caption__text {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.caption__label {
+  flex: none;
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.caption--hot {
+  align-items: center;
+  min-height: 56px;
+  background: var(--surface-2);
+  border-left-width: 6px;
+  animation: caption-in 0.3s ease-out;
+}
+.caption--hot .caption__text {
+  font-family: var(--body);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--bone-2);
+}
+.caption__who {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+.caption__hold {
+  position: relative;
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  margin-left: auto;
+  background: var(--line-2);
+}
+.caption__hold i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bone);
+  animation: caption-hold var(--hold) linear forwards;
+}
+@keyframes caption-hold {
+  from {
+    height: 100%;
+  }
+  to {
+    height: 0;
+  }
+}
+@keyframes caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* --- Phone: the bug sticks, the line score hides, his line is a second row --- */
 @media (max-width: 999px) {
   .replay {
@@ -347,6 +600,32 @@
     height: 34px;
   }
   .flow__head {
+    display: none;
+  }
+  .gauge {
+    display: none;
+  }
+  .meter {
+    display: block;
+  }
+  .caption {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .caption--his .caption__text {
+    font-size: 16px;
+  }
+  .caption__label {
+    font-size: 22px;
+  }
+  .caption--hot {
+    min-height: 44px;
+  }
+  .caption--hot .caption__text {
+    font-size: 13px;
+  }
+  .caption__who {
     display: none;
   }
 }

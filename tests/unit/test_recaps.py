@@ -24,6 +24,7 @@ from pipeline.recaps import (
     ResolvedSpec,
     align_comments,
     build_periods,
+    build_plays,
     build_recap,
     build_stints,
     derive_kind,
@@ -35,11 +36,9 @@ from pipeline.recaps import (
     place_plays,
     reaction_lag_figures,
     resolve_recap_specs,
-    running_totals,
     scan_candidates,
     select_comments,
     serialize_recap,
-    slice_plays,
     stamp_wall_clock,
     stint_minutes,
     swing,
@@ -390,6 +389,8 @@ G7_PLAYS = [
         sub_type="Jump Shot",
         shot_result="Made",
         is_field_goal=1,
+        x=18.4,
+        y=62.1,
         x_legacy=118,
         y_legacy=0,
         shot_distance=12.3,
@@ -409,6 +410,8 @@ G7_PLAYS = [
         sub_type="Layup",
         shot_result="Missed",
         is_field_goal=1,
+        x=12.1,
+        y=38.0,
         x_legacy=-61,
         y_legacy=57,
         shot_distance=8.1,
@@ -523,6 +526,8 @@ G7_PLAYS = [
         sub_type="DUNK",
         shot_result="Missed",
         is_field_goal=1,
+        x=92.5,
+        y=51.2,
         x_legacy=-5,
         y_legacy=10,
         shot_distance=2.0,
@@ -621,6 +626,8 @@ G7_PLAYS = [
         sub_type="Layup",
         shot_result="Made",
         is_field_goal=1,
+        x=7.2,
+        y=48.0,
         x_legacy=10,
         y_legacy=15,
         shot_distance=3.2,
@@ -709,6 +716,8 @@ G7_PLAYS = [
         sub_type="Jump Shot",
         shot_result="Missed",
         is_field_goal=1,
+        x=70.3,
+        y=90.1,
         x_legacy=100,
         y_legacy=200,
         shot_distance=25.4,
@@ -794,7 +803,7 @@ def g7_clock(g7_game, g7_periods) -> pl.DataFrame:
 
 @pytest.fixture
 def g7_plays(g7_game, g7_periods) -> pl.DataFrame:
-    return slice_plays(g7_game, g7_periods, CHET)
+    return build_plays(g7_game, g7_periods, CHET)
 
 
 def _by_action(frame: pl.DataFrame, action_number: int) -> dict:
@@ -1062,23 +1071,19 @@ class TestPairPlays:
         """The block draws where Harper's dunk was attempted."""
         block = _by_action(paired, 158)
         assert block["paired_action_number"] == 157
-        assert (block["x_legacy"], block["y_legacy"], block["shot_distance"]) == (
-            -5,
-            10,
-            2.0,
-        )
+        assert (block["x"], block["y"], block["shot_distance"]) == (92.5, 51.2, 2.0)
 
     def test_steal_takes_the_turnovers_number_only(self, paired):
         """A turnover has no location to borrow."""
         steal = _by_action(paired, 210)
         assert steal["paired_action_number"] == 209
-        assert (steal["x_legacy"], steal["y_legacy"]) == (None, None)
+        assert (steal["x"], steal["y"]) == (None, None)
 
     def test_other_rows_are_unpaired_and_untouched(self, paired):
         """A shot keeps its own coordinates and pairs with nothing."""
         shot = _by_action(paired, 8)
         assert shot["paired_action_number"] is None
-        assert shot["x_legacy"] == 118
+        assert (shot["x"], shot["y"]) == (18.4, 62.1)
         assert paired.height == len(G7_PLAYS)
 
     def test_block_not_after_its_shot_raises(self, g7_game):
@@ -1103,93 +1108,8 @@ class TestPairPlays:
             pair_plays(derive_kind(misnamed, CHET))
 
 
-class TestRunningTotals:
-    """The focus player's line, read off the feed's totals."""
-
-    @pytest.mark.parametrize(
-        "action_number,column,value",
-        [
-            (8, "pts", 2),
-            (188, "pts", 3),
-            (178, "reb", 2),
-            (312, "reb", 3),
-            (158, "blk", 1),
-            (210, "stl", 1),
-            (170, "pf", 1),
-            (200, "tov", 1),
-            (195, "ast", 1),
-        ],
-    )
-    def test_reads_each_total(self, g7_plays, action_number, column, value):
-        """Each field lands in its column on the row that carries it."""
-        assert _by_action(g7_plays, action_number)[column] == value
-
-    def test_carries_forward_over_his_rows_only(self, g7_plays):
-        """His steal still shows 3 points and the assist; the timeout after it
-        shows nothing, and so does the jump ball before any total."""
-        steal = _by_action(g7_plays, 210)
-        assert (steal["pts"], steal["ast"], steal["blk"]) == (3, 1, 1)
-        timeout = _by_action(g7_plays, 230)
-        assert all(
-            timeout[c] is None for c in ("pts", "reb", "ast", "blk", "stl", "tov", "pf")
-        )
-        assert _by_action(g7_plays, 2)["pts"] is None
-
-    def test_a_missed_free_throw_keeps_his_points(self, g7_plays):
-        """The feed carries points only on a make; the miss reads the last make."""
-        assert _by_action(g7_plays, 187)["pts"] == 2
-
-    def test_a_teammates_points_are_not_his(self, g7_plays):
-        """Wallace's 4 points on the assist row do not become Holmgren's."""
-        assert _by_action(g7_plays, 195)["pts"] == 3
-
-    def test_ast_only_where_the_assist_is_his(self, g7_plays):
-        """Wallace's assist on his own shot is Wallace's, not his."""
-        assert _by_action(g7_plays, 8)["ast"] is None
-
-    def test_blocks_and_steals_are_counted(self, g7_game, g7_periods):
-        """A second block reads 2: the feed carries no block total."""
-        second = [
-            _sas(
-                300,
-                period=2,
-                clock="PT02M30.00S",
-                time_actual=_stamp(1, 9, 0),
-                action_type="2pt",
-                sub_type="Layup",
-                shot_result="Missed",
-                person_id=CASTLE,
-                block_person_id=CHET,
-                x_legacy=1,
-                y_legacy=2,
-                shot_distance=1.0,
-            ),
-            _chet(
-                301,
-                period=2,
-                clock="PT02M30.00S",
-                time_actual=_stamp(1, 9, 0),
-                action_type="block",
-            ),
-        ]
-        plays = slice_plays(
-            stamp_wall_clock(_pbp([*G7_PLAYS, *second])), g7_periods, CHET
-        )
-
-        assert _by_action(plays, 301)["blk"] == 2
-        assert _by_action(plays, 301)["stl"] == 1
-
-    def test_running_totals_on_a_prepared_frame(self, g7_game, g7_periods):
-        """The transform alone, off a frame with kind and is_focus."""
-        plays = running_totals(
-            place_plays(derive_kind(g7_game, CHET), g7_periods), CHET
-        )
-        assert _by_action(plays, 178)["reb"] == 2
-        assert _by_action(plays, 190)["pts"] is None
-
-
-class TestSlicePlays:
-    """What a recap ships, in the contract's shape."""
+class TestBuildPlays:
+    """What a recap ships: the game's feed, in the contract's shape."""
 
     def test_conforms_to_the_plays_frame(self, g7_plays):
         """Column names, dtypes, order and nullability are the contract's."""
@@ -1202,32 +1122,71 @@ class TestSlicePlays:
         """The rows keep the feed's order, whatever order they arrived in."""
         assert g7_plays["action_number"].is_sorted()
 
-    def test_keeps_his_plays_both_teams_shots_markers_and_timeouts(self, g7_plays):
-        """Check-ins and the assist row count as his; Harper's miss and the
-        heave are shots."""
-        kept = set(g7_plays["action_number"].to_list())
-        assert {2, 8, 12, 41, 63, 100, 124, 158, 170, 178, 187, 188} <= kept
-        assert {195, 200, 210, 312, 394, 157, 240, 245, 230} <= kept
-        assert {1, 121, 122, 250, 251, 392, 393, 507} <= kept
+    def test_every_row_but_the_closing_one(self, g7_plays):
+        """The feed whole: nothing is dropped but the game-end row."""
+        kept = g7_plays["action_number"].to_list()
+        assert kept == [row["action_number"] for row in G7_PLAYS[:-1]]
+        assert 508 not in kept
 
-    def test_drops_other_players_free_throws_subs_and_the_closing_row(self, g7_plays):
-        """Wembanyama's free throw, the other substitutions and the feed's
-        game-end row are not drawn."""
-        kept = set(g7_plays["action_number"].to_list())
-        assert not {190, 42, 62, 65, 66, 101, 123, 232, 395, 508} & kept
+    def test_other_players_rows_reach_the_frame(self, g7_plays):
+        """Wembanyama's free throw, Castle's turnover and a teammate's
+        check-in are in the frame and are not the focus player's."""
+        free_throw = _by_action(g7_plays, 190)
+        assert (free_throw["kind"], free_throw["person_id"]) == ("free_throw", WEMBY)
+        assert (free_throw["made"], free_throw["shot_value"]) == (True, 1)
+        check_in = _by_action(g7_plays, 42)
+        assert (check_in["kind"], check_in["person_id"]) == ("sub_in", MCCAIN)
+        assert _by_action(g7_plays, 209)["kind"] == "turnover"
+        assert not any(_by_action(g7_plays, n)["is_focus"] for n in (190, 42, 209, 232))
 
-    def test_the_turnover_his_steal_ended_rides_along(self, g7_plays):
-        """Castle's turnover is kept so the steal's pairing resolves in the
-        frame; it is not his and carries no running line."""
-        turnover = _by_action(g7_plays, 209)
-        assert turnover["is_focus"] is False
-        assert turnover["pts"] is None
+    def test_a_rebound_by_another_player_reaches_the_frame(self, g7_game, g7_periods):
+        """A rebound names its player and his team, whoever he is."""
+        rebound = _sas(
+            241,
+            period=2,
+            clock="PT01M48.00S",
+            time_actual=_stamp(1, 13, 2),
+            action_type="rebound",
+            sub_type="offensive",
+            person_id=WEMBY,
+            player_name_i="V. Wembanyama",
+        )
+        plays = build_plays(
+            stamp_wall_clock(_pbp([*G7_PLAYS, rebound])), g7_periods, CHET
+        )
+
+        row = _by_action(plays, 241)
+        assert (row["kind"], row["sub_type"]) == ("rebound", "offensive")
+        assert (row["person_id"], row["team_tricode"]) == (WEMBY, "SAS")
+        assert row["is_focus"] is False
+
+    def test_full_court_positions_pass_through(self, g7_plays):
+        """A shot keeps the feed's position; a row the feed does not locate
+        has none."""
+        assert (_by_action(g7_plays, 8)["x"], _by_action(g7_plays, 8)["y"]) == (
+            18.4,
+            62.1,
+        )
+        assert _by_action(g7_plays, 240)["x"] == 70.3
+        assert _by_action(g7_plays, 178)["x"] is None
+        assert _by_action(g7_plays, 245)["x"] is None
+
+    def test_an_assist_id_lands_on_its_made_shot(self, g7_plays):
+        """Wallace on Holmgren's jumper, Holmgren on Wallace's layup; null
+        on a miss and off a shot."""
+        assert _by_action(g7_plays, 8)["assist_person_id"] == WALLACE
+        assert _by_action(g7_plays, 195)["assist_person_id"] == CHET
+        assert _by_action(g7_plays, 12)["assist_person_id"] is None
+        assert _by_action(g7_plays, 178)["assist_person_id"] is None
+
+    def test_a_steal_pairs_with_its_turnover(self, g7_plays):
+        """Castle's turnover is in the frame, so the pairing resolves."""
         assert _by_action(g7_plays, 210)["paired_action_number"] == 209
 
     def test_focus_player_without_an_action_raises(self, g7_game, g7_periods):
         """A player with no row in the game cannot anchor a recap."""
         with pytest.raises(RecapError, match=f"{GAME}: player 999 has no action"):
-            slice_plays(g7_game, g7_periods, 999)
+            build_plays(g7_game, g7_periods, 999)
 
     def test_score_on_every_row(self, g7_plays):
         """The feed writes the score on every row; a rebound reads 25-34."""
@@ -1304,7 +1263,7 @@ class TestBuildStints:
                 rebound_total=1,
             ),
         ]
-        plays = slice_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
 
         stints = build_stints(plays, g7_periods)
 
@@ -1324,7 +1283,7 @@ class TestBuildStints:
             _sub(_chet, 3, "in", "PT06M00.00S", _stamp(0, 30)),
             _sub(_chet, 130, "out", "PT08M00.00S", _stamp(0, 57), period=2),
         ]
-        plays = slice_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
 
         assert build_stints(plays, g7_periods).rows() == [(1, 360, 720), (2, 720, 960)]
 
@@ -1337,7 +1296,7 @@ class TestBuildStints:
             *G7_MARKERS,
             _sub(_chet, 130, "out", "PT08M00.00S", _stamp(0, 57), period=2),
         ]
-        plays = slice_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
+        plays = build_plays(stamp_wall_clock(_pbp(rows)), g7_periods, CHET)
 
         assert build_stints(plays, g7_periods).rows() == [(2, 720, 960)]
 

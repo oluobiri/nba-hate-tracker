@@ -8,10 +8,10 @@ by interpolation between the two rows either side of it on wall clock,
 so a stoppage is flat wherever the feed logs a row on its frozen second
 (the substitutions at a timeout's end) and otherwise spread over the few
 seconds of play to the next row. Comments posted during a break pin to
-the break; comments before tip-off and after the buzzer keep their phase. The plays, the stints and the focus
-player's running line are read from the feed's fields. What the room's
-reactions measure, once per season, is how long the room takes to
-react; nothing is moved by it.
+the break; comments before tip-off and after the buzzer keep their
+phase. The plays are the feed's rows whole and the stints are read from
+its substitutions. What the room's reactions measure, once per season,
+is how long the room takes to react; nothing is moved by it.
 
 The feed is the game as scored on the night. Corrections made
 afterwards reach the box score and never the feed; a recap keeps the
@@ -119,19 +119,10 @@ ACTION_TYPE_KINDS = {
 }
 SHOT_VALUES = {"3pt": 3, "2pt": 2, "freethrow": 1}
 SUB_KINDS = (KIND_SUB_IN, KIND_SUB_OUT)
-# Every kind the slice keeps regardless of who acted
-_SLICE_KINDS = (KIND_PERIOD_START, KIND_PERIOD_END, "timeout")
 # A block or steal follows the play it ended, which names the ender here
 _ENDER_FIELDS = {KIND_BLOCK: "block_person_id", KIND_STEAL: "steal_person_id"}
-TOTAL_COLUMNS = ["pts", "reb", "ast", "blk", "stl", "tov", "pf"]
-# The running totals the feed carries on the player's own rows; assists
-# sit on the teammate's made shot, blocks and steals are counted
-_TOTAL_FIELDS = {
-    "pts": "points_total",
-    "reb": "rebound_total",
-    "tov": "turnover_total",
-    "pf": "foul_personal_total",
-}
+# What a block borrows from the shot it ended
+_SHOT_LOCATION = ("x", "y", "shot_distance")
 
 
 # --- Comments, anchors, the document ---------------------------------------
@@ -601,20 +592,14 @@ def pair_plays(pbp: pl.DataFrame) -> pl.DataFrame:
 
     Returns:
         The rows with ``paired_action_number`` added (null off a block
-        or steal), blocks carrying their shot's coordinates.
+        or steal), blocks carrying their shot's position.
 
     Raises:
         RecapError: If a block or steal does not follow the play it ended.
     """
     previous = {
         name: pl.col(name).shift(1).over("game_id").alias(f"_prev_{name}")
-        for name in (
-            "action_number",
-            "x_legacy",
-            "y_legacy",
-            "shot_distance",
-            *_ENDER_FIELDS.values(),
-        )
+        for name in ("action_number", *_SHOT_LOCATION, *_ENDER_FIELDS.values())
     }
     ender = pl.col("kind").is_in(list(_ENDER_FIELDS))
     named_before = pl.when(False).then(False)
@@ -642,59 +627,20 @@ def pair_plays(pbp: pl.DataFrame) -> pl.DataFrame:
             .then(pl.col(f"_prev_{name}"))
             .otherwise(pl.col(name))
             .alias(name)
-            for name in ("x_legacy", "y_legacy", "shot_distance")
+            for name in _SHOT_LOCATION
         ),
     ).drop("_paired", *(f"_prev_{name}" for name in previous))
 
 
-def running_totals(plays: pl.DataFrame, player_id: int) -> pl.DataFrame:
-    """
-    The focus player's running line, read off the feed's totals.
-
-    Points, rebounds, turnovers and fouls sit on his own rows; assists
-    on the teammate's made shot that credits him; blocks and steals are
-    counted from his rows, since the feed carries no total for them.
-    Each total carries forward to his next play and is null on every
-    other row and before his first value.
-
-    Args:
-        plays: The plays in feed order, with ``is_focus`` and ``kind``.
-        player_id: The focus player's id.
-
-    Returns:
-        The plays with TOTAL_COLUMNS added as nullable Int64.
-    """
-    own = pl.col("person_id") == player_id
-    totals = {
-        name: pl.when(own).then(pl.col(field_name))
-        for name, field_name in _TOTAL_FIELDS.items()
-    }
-    totals["ast"] = pl.when(pl.col("assist_person_id") == player_id).then(
-        pl.col("assist_total")
-    )
-    for name, kind in (("blk", KIND_BLOCK), ("stl", KIND_STEAL)):
-        counted = own & (pl.col("kind") == kind)
-        totals[name] = pl.when(counted).then(counted.cast(pl.Int64).cum_sum())
-    return plays.with_columns(
-        pl.when(pl.col("is_focus"))
-        .then(totals[name].forward_fill())
-        .otherwise(None)
-        .cast(pl.Int64)
-        .alias(name)
-        for name in TOTAL_COLUMNS
-    )
-
-
-def slice_plays(
+def build_plays(
     pbp: pl.DataFrame, periods: pl.DataFrame, player_id: int
 ) -> pl.DataFrame:
     """
     The plays a recap ships, on both clocks, in RECAP_PLAYS_SCHEMA's shape.
 
-    The focus player's plays (check-ins and assists included), both
-    teams' shots, the period markers, the timeouts, and the turnover a
-    steal of his ended, so every pairing in the frame resolves. The
-    feed's closing row is not a play.
+    Every row of the feed but its closing one, which is not a play:
+    both teams' actions, the substitutions, the period markers and the
+    timeouts. The page counts every player's line from these rows.
 
     Args:
         pbp: One game's play-by-play after stamp_wall_clock.
@@ -702,7 +648,7 @@ def slice_plays(
         player_id: The focus player's id.
 
     Returns:
-        The slice in feed order, columns as RECAP_PLAYS_SCHEMA plus
+        The plays in feed order, columns as RECAP_PLAYS_SCHEMA plus
         ``game_id`` in front.
 
     Raises:
@@ -715,14 +661,6 @@ def slice_plays(
     if not prepared["is_focus"].any():
         game_id = pbp["game_id"][0] if pbp.height else "?"
         raise RecapError(f"{game_id}: player {player_id} has no action")
-    drawn = (
-        pl.col("is_focus")
-        | pl.col("action_type").is_in(SHOT_ACTION_TYPES)
-        | pl.col("kind").is_in(_SLICE_KINDS)
-    )
-    partners = prepared.filter(drawn)["paired_action_number"].drop_nulls().to_list()
-    kept = prepared.filter(drawn | pl.col("action_number").is_in(partners))
-    placed = running_totals(place_plays(kept, periods), player_id)
     made = (
         pl.when(pl.col("shot_result") == "Made")
         .then(True)
@@ -733,14 +671,18 @@ def slice_plays(
         .otherwise(None)
         .cast(pl.Boolean)
     )
-    return placed.with_columns(
-        made.alias("made"),
-        pl.col("action_type")
-        .replace_strict(SHOT_VALUES, default=0, return_dtype=pl.Int64)
-        .alias("shot_value"),
-        pl.col("score_home").cast(pl.Int64),
-        pl.col("score_away").cast(pl.Int64),
-    ).select("game_id", *RECAP_PLAYS_SCHEMA.names())
+    return (
+        place_plays(prepared, periods)
+        .with_columns(
+            made.alias("made"),
+            pl.col("action_type")
+            .replace_strict(SHOT_VALUES, default=0, return_dtype=pl.Int64)
+            .alias("shot_value"),
+            pl.col("score_home").cast(pl.Int64),
+            pl.col("score_away").cast(pl.Int64),
+        )
+        .select("game_id", *RECAP_PLAYS_SCHEMA.names())
+    )
 
 
 def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
@@ -757,7 +699,7 @@ def build_stints(plays: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
     while he reads as off proves he was on since the period started.
 
     Args:
-        plays: The recap's plays (slice_plays) with ``is_focus``, in
+        plays: The recap's plays (build_plays) with ``is_focus``, in
             feed order.
         periods: The game's clock (build_periods).
 
@@ -1316,7 +1258,7 @@ def build_recap(
     """
     pbp = stamp_wall_clock(pbp)
     periods = build_periods(pbp)
-    plays = slice_plays(pbp, periods, spec.player_id)
+    plays = build_plays(pbp, periods, spec.player_id)
     stints = build_stints(plays, periods)
 
     aligned = align_comments(

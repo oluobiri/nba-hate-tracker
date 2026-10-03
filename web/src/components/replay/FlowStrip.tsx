@@ -20,6 +20,8 @@ export interface FlowStripProps {
   onSeek: (u: number) => void
   /** "Wembanyama", for the heading. */
   subject: string
+  /** The game clock at `u`, "Q3 4:12", spoken for the slider's value. */
+  valueText: string
 }
 
 const W = 1000
@@ -47,7 +49,7 @@ function path(values: readonly (number | null)[], upTo: number): string {
   return d
 }
 
-export function FlowStrip({ series, periodStarts, endU, totalU, usual, u, onSeek, subject }: FlowStripProps) {
+export function FlowStrip({ series, periodStarts, endU, totalU, usual, u, onSeek, subject, valueText }: FlowStripProps) {
   const svg = useRef<SVGSVGElement>(null)
   const fx = (t: number): number => (t / totalU) * W
   const k = Math.min(FLOW_SAMPLES, Math.floor((u / totalU) * FLOW_SAMPLES))
@@ -86,7 +88,7 @@ export function FlowStrip({ series, periodStarts, endU, totalU, usual, u, onSeek
         aria-valuemin={0}
         aria-valuemax={Math.round(totalU)}
         aria-valuenow={Math.round(u)}
-        aria-valuetext={`${Math.round(u)} of ${Math.round(totalU)} seconds`}
+        aria-valuetext={valueText}
         onPointerDown={(e) => {
           svg.current!.setPointerCapture(e.pointerId)
           seekAt(e)

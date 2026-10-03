@@ -254,8 +254,8 @@ export function quarterTurnSentence(cells: readonly PeriodCell[]): string {
   const first = spoken[0]
   const last = spoken[spoken.length - 1]
   if (!first || !last || first === last) return 'His comments in the live thread, quarter by quarter.'
-  const turn = Math.round(100 * (netSentiment(last.counts) - netSentiment(first.counts)))
-  const arc = turn <= -SWING ? 'The room turned on him as the night went on' : turn >= SWING ? 'The room came around as the night went on' : 'The room held its line all night'
+  const move = Math.round(100 * (netSentiment(last.counts) - netSentiment(first.counts)))
+  const arc = move <= -SWING ? 'The room turned on him as the night went on' : move >= SWING ? 'The room came around as the night went on' : 'The room held its line all night'
   return `${arc}: net ${fmtNet(netSentiment(first.counts))} in the ${periodWord(first.key)}, ${fmtNet(netSentiment(last.counts))} by the ${periodWord(last.key)}. His comments in the live thread, quarter by quarter.`
 }
 

@@ -118,7 +118,7 @@ function Team({ team, lines, names, onFloor, focusId, room }: { team: BoxTeam } 
 
 export function BoxScore({ teams, ...rest }: BoxScoreProps) {
   return (
-    <section className="box" aria-label="Box score">
+    <section className="box" id="replay-box" role="tabpanel" aria-labelledby="replay-tab-box" aria-label="Box score">
       {teams.map((t) => (
         <Team key={t.abbr} team={t} {...rest} />
       ))}

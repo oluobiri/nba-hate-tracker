@@ -73,7 +73,7 @@ export function Feed({ room, selection, u, view, density, onView, onDensity, foc
     return name ? `on ${lastName(name)}` : null
   }
   return (
-    <aside className="room replay__panel" aria-label="The room">
+    <aside className="room replay__panel" id="replay-room" role="tabpanel" aria-labelledby="replay-tab-room" aria-label="The room">
       <div className="replay__ph">
         <b>The room</b>
         <span>{density === 'top' ? 'top-voted, one at a time' : 'every comment'}</span>

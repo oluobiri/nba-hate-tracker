@@ -9,6 +9,7 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEf
 import { fetchRecap } from '../../data/recap'
 import { etTime, lengthPhrase, periodStartsU, playCursor, playStamp, tOfU, uOfT } from '../../lib/clock'
 import { fmtInt } from '../../lib/format'
+import { negRate } from '../../lib/metrics'
 import { captionPlay, commentCursor, emptyLine, type FeedDensity, feedSelection, type FeedView, lastName, type Moment, prepareReplay, recapRows, type ReplayData, RIGHT_NOW, roomByPlayer, sceneAt } from '../../lib/replay'
 import type { Counts } from '../../lib/types'
 import { useViewState } from '../../lib/url'
@@ -95,6 +96,7 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
   }, [recapKey, focusId])
 
   const tl = data?.tl ?? null
+  useEffect(() => () => clearTimeout(urlTimer.current), [])
   const onSettle = useCallback(
     (u: number) => {
       if (!tl) return
@@ -190,14 +192,25 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
     // The stage to the top of the window, under the sticky site header.
     const header = parseFloat(getComputedStyle(el).getPropertyValue('--replay-top')) || 0
     window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - header, behavior: reducedMotion() ? 'auto' : 'smooth' })
+    // The Watch button unmounts with its card; the keys stay on the stage.
+    el.focus({ preventScroll: true })
+  }
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    const next: Tab = tab === 'room' ? 'box' : 'room'
+    setTab(next)
+    ;(e.currentTarget.querySelector<HTMLElement>(`#replay-tab-${next}`) ?? null)?.focus()
+    e.preventDefault()
+    e.stopPropagation()
   }
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey || !data) return
     const target = e.target as HTMLElement
-    const onControl = target.tagName === 'BUTTON' || target.tagName === 'A' || target.tagName === 'INPUT'
+    // A focused control keeps its own keys: a tab's arrows, a button's space, a link's enter.
+    if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.tagName === 'INPUT') return
     const step = e.shiftKey ? BIG_STEP : STEP
     if (e.code === 'Space') {
-      if (onControl || e.repeat) return
+      if (e.repeat) return
       setStarted(true)
       playback.toggle()
     } else if (e.key === 'ArrowRight') seek(u + step)
@@ -220,7 +233,12 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
 
   const overlay = (() => {
     if (status === 'failed') return <Card big="The replay could not load" small="The quarters and the verdict below tell the night." />
-    if (!data || !scene) return <Card big="The room, replayed" small="Loading the thread…" />
+    if (!data || !scene)
+      return (
+        <Card big="The room, replayed" small="Loading the thread…">
+          <noscript className="card__sm">The replay needs JavaScript; the quarters and the verdict below tell the night.</noscript>
+        </Card>
+      )
     if (!started)
       return (
         <Card big="The room, replayed" small={`${name} · every shot, every play, the comments as they landed · ${lengthPhrase(data.tl)}`}>
@@ -235,7 +253,7 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
   })()
 
   const caption = (() => {
-    if (!data || !scene) return { stamp: '—', text: 'The replay needs JavaScript.', his: false }
+    if (!data || !scene) return { stamp: '—', text: 'Loading the thread…', his: false }
     const p = captionPlay(data.plays, scene.cursor)
     if (!p) return { stamp: `${scene.clock.label} ${scene.clock.time}`, text: `Tip-off at ${etTime(data.tl.tip)}.`, his: false }
     return { stamp: playStamp(p), text: p.description, his: p.is_focus }
@@ -262,7 +280,17 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
           onSpeed={playback.setSpeed}
         />
         {data && (
-          <FlowStrip series={data.flow} periodStarts={periodStartsU(data.tl)} endU={data.tl.endU} totalU={data.tl.totalU} usual={usual.total ? usual.neg / usual.total : 0} u={u} onSeek={seek} subject={short} />
+          <FlowStrip
+            series={data.flow}
+            periodStarts={periodStartsU(data.tl)}
+            endU={data.tl.endU}
+            totalU={data.tl.totalU}
+            usual={negRate(usual)}
+            u={u}
+            onSeek={seek}
+            subject={short}
+            valueText={scene ? `${scene.clock.label} ${scene.clock.time}` : ''}
+          />
         )}
         <NetGauge now={scene?.now ?? empty} window={RIGHT_NOW} soFar={scene?.soFar ?? empty} season={usual} />
         <div className="center">
@@ -287,11 +315,11 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
           <Caption stamp={hotStamp} text={caption.text} his={caption.his} hot={hotShown} who={short.toUpperCase()} hold={HOLD} />
           <NetGauge now={scene?.now ?? empty} window={RIGHT_NOW} soFar={scene?.soFar ?? empty} season={usual} orientation="horizontal" />
         </div>
-        <div className="replay__tabs" role="tablist" aria-label="The room or the box score">
-          <button type="button" role="tab" className="replay__tab" aria-selected={tab === 'room'} onClick={() => setTab('room')}>
+        <div className="replay__tabs" role="tablist" aria-label="The room or the box score" onKeyDown={onTabKey}>
+          <button type="button" role="tab" id="replay-tab-room" className="replay__tab" aria-selected={tab === 'room'} aria-controls="replay-room" tabIndex={tab === 'room' ? 0 : -1} onClick={() => setTab('room')}>
             The room
           </button>
-          <button type="button" role="tab" className="replay__tab" aria-selected={tab === 'box'} onClick={() => setTab('box')}>
+          <button type="button" role="tab" id="replay-tab-box" className="replay__tab" aria-selected={tab === 'box'} aria-controls="replay-box" tabIndex={tab === 'box' ? 0 : -1} onClick={() => setTab('box')}>
             Box
           </button>
         </div>

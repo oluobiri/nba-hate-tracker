@@ -68,7 +68,7 @@ export function usePlayback(tl: Timeline | null, opts: PlaybackOptions): Playbac
   const tick = useCallback(
     (now: number) => {
       if (!playingRef.current) return
-      const dt = Math.min(MAX_DT, (now - last.current) / 1000)
+      const dt = Math.max(0, Math.min(MAX_DT, (now - last.current) / 1000))
       last.current = now
       const from = pos.current
       pos.current = Math.min(total, from + dt * speedRef.current * optsRef.current.slowFactor())

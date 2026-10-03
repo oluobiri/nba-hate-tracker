@@ -4,12 +4,13 @@
 // selection. Every function is pure and reads the rows the frames give.
 import type { Columnar, RecapCommentsRow, RecapDocument, RecapPeriodsRow, RecapPlaysRow, RecapRows, RecapStintsRow } from '../data/types.gen'
 import { buildTimeline, type Card, cardAt, clockAt, type ClockReading, idxAt, playCursor, type Timeline, uOfWall } from './clock'
+import { negRate, posRate } from './metrics'
 import { periodLabel, type PeriodCell } from './recaps'
 import { type Counts, type Sentiment, SENTIMENTS } from './types'
 
 /** The right-now window: his last comments, by count, since density varies twentyfold. */
 export const RIGHT_NOW = 25
-/** The strip's rolling window over his comments, and the fewest it draws a point from. */
+/** The strip's rolling window over his comments, and the fewest it draws a point from: a drawing choice, not a floor. */
 const FLOW_WINDOW = 60
 const FLOW_MIN = 20
 export const FLOW_SAMPLES = 300
@@ -29,6 +30,7 @@ const KIND_FOUL = 'foul'
 const KIND_SUB_IN = 'sub_in'
 const KIND_SUB_OUT = 'sub_out'
 const OFFENSIVE_REBOUND = 'offensive'
+const DEFENSIVE_REBOUND = 'defensive'
 const TECHNICAL = 'technical'
 const THREE = '3pt'
 
@@ -201,8 +203,8 @@ export function flowSeries(room: Room, tl: Timeline, samples: number = FLOW_SAMP
       continue
     }
     const c = countsBetween(room, a, j)
-    neg.push(c.neg / n)
-    pos.push(c.pos / n)
+    neg.push(negRate(c))
+    pos.push(posRate(c))
   }
   const volume: number[] = Array.from({ length: bins }, () => 0)
   for (const u of room.commentU) volume[Math.min(bins - 1, Math.floor((u / tl.totalU) * bins))]!++
@@ -304,9 +306,9 @@ export function boxLines(plays: readonly RecapPlaysRow[], cursor: number): Map<n
         break
       }
       case KIND_REBOUND: {
-        s.reb++
         if (r.sub_type === OFFENSIVE_REBOUND) s.oreb++
-        else s.dreb++
+        else if (r.sub_type === DEFENSIVE_REBOUND) s.dreb++
+        s.reb = s.oreb + s.dreb
         break
       }
       case KIND_STEAL:
@@ -382,6 +384,7 @@ const LAYUP = /layup/i
 const FLAGRANT = /flagrant/i
 
 const stripName = (text: string, name: string): string => text.replace(`${name} `, '')
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const stripMiss = (text: string): string => text.replace(/^MISS /, '')
 
 /** His shots, blocks, steals, turnovers, fouls and assists, by play index. */
@@ -408,7 +411,7 @@ export function moments(plays: readonly RecapPlaysRow[], focusId: number, focusN
     } else if (r.assist_person_id === focusId && r.made) {
       label = 'ASSIST'
       mark = i
-      text = `to ${r.description.replace(new RegExp(`\\s*\\(${focusName.replace('.', '\\.')} \\d+ AST\\)`), '')}`
+      text = `to ${r.description.replace(new RegExp(`\\s*\\(${escapeRegExp(focusName)} \\d+ AST\\)`), '')}`
     }
     if (label) out.set(i, { i, label, text: stripName(text, focusName), mark })
   })

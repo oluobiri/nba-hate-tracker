@@ -164,6 +164,7 @@ describe('the box', () => {
       play({ person_id: 2, kind: 'foul', sub_type: 'technical' }),
       play({ person_id: 0, kind: 'rebound', sub_type: 'defensive' }),
       play({ person_id: 0, kind: 'heave', made: false }),
+      play({ person_id: 2, kind: 'rebound', sub_type: '' }),
     ]
     const lines = boxLines(rows, rows.length - 1)
     expect(lines.get(1)).toEqual({ pts: 4, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 1, tov: 0, pf: 0, fgm: 1, fga: 2, fg3m: 1, fg3a: 1, ftm: 1, fta: 2 })
@@ -201,6 +202,7 @@ describe('his moments', () => {
     play({ action_number: 9, person_id: me, kind: 'shot', action_type: '2pt', made: true, description: "V. Wembanyama 2' Layup (6 PTS)" }),
     play({ action_number: 10, person_id: me, kind: 'rebound', description: 'V. Wembanyama REBOUND' }),
     play({ action_number: 11, person_id: me, kind: 'sub_out', description: 'SUB out: V. Wembanyama' }),
+    play({ action_number: 12, person_id: 5, kind: 'shot', action_type: '2pt', made: true, assist_person_id: 8, description: 'S. Castle Layup (6 PTS) (J. Smith Jr. 1 AST)' }),
   ]
   const m = moments(rows, me, 'V. Wembanyama')
 
@@ -215,6 +217,8 @@ describe('his moments', () => {
     expect(m.get(7)!.label).toBe('STEAL')
     expect(m.get(8)!.label).toBe('LAYUP')
     expect([...blockedBy(rows).entries()]).toEqual([[2, 3]])
+    // a name with regex metacharacters escapes cleanly
+    expect(moments(rows, 8, 'J. Smith Jr.').get(11)).toEqual({ i: 11, label: 'ASSIST', text: 'to S. Castle Layup (6 PTS)', mark: 11 })
   })
 
   it('captions the last play that is not a substitution', () => {

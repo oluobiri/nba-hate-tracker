@@ -557,7 +557,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <div class="guide__stack guide__replay">
         {replay && recapLead && [replayMoments[1]!, replayMoments[3]!].map((m) => (
           <figure class="guide__fig">
-            <FlowStrip series={replay.flow} periodStarts={periodStartsU(replay.tl)} endU={replay.tl.endU} totalU={replay.tl.totalU} usual={negRate(recapLead.usual)} u={m.u} onSeek={noop} subject={lastName(replay.focusName)} />
+            <FlowStrip series={replay.flow} periodStarts={periodStartsU(replay.tl)} endU={replay.tl.endU} totalU={replay.tl.totalU} usual={negRate(recapLead.usual)} u={m.u} onSeek={noop} subject={lastName(replay.focusName)} valueText={`${m.scene.clock.label} ${m.scene.clock.time}`} />
             <figcaption>{m.name}</figcaption>
           </figure>
         ))}

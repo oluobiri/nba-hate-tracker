@@ -8,7 +8,9 @@ restated. A human-facing web/README.md comes with the stable site. -->
 Astro (static output) + React islands + TypeScript, built from the published data contract:
 `https://courtsentiment.com/data/season=<season>/` — `manifest.json`, `schema.json` and the
 parquets the manifest registers. No parquet reaches the browser; every page is rendered at build.
-The design brief is `docs/internal/ux-review.md` (local only, not committed).
+The one runtime fetch is a recap's document, re-served from the site's own origin (below).
+The design brief is `docs/internal/ux-review.md` (local only, not committed); the recap page's
+reference is the mockup in `docs/internal/recap-mockup/` (local).
 
 ## Map
 
@@ -17,12 +19,16 @@ src/
 ├── pages/        → one .astro per route; see "A page composes in its frontmatter"; card.png.ts endpoints
 │                   beside the index, player, team and recap routes
 ├── components/   → .tsx (in an island, or static HTML without a directive) / .astro (shell only)
+│   └── replay/   → the recap stage's parts and its island (RecapReplay), usePlayback
 ├── cards/        → the share cards: model.ts (pure, the page's sentence) → frame.tsx (the satori tree) →
 │                   render.ts (resvg); palette.ts pinned to tokens.css; media read once per build
-├── lib/          → pure logic and sentences, each with a colocated .test.ts
-├── data/         → the contract boundary: env → load → rows → assert
+├── lib/          → pure logic and sentences, each with a colocated .test.ts; *.fixture.ts holds
+│                   test-only row builders (replay.fixture.ts: one recap frame row each, defaulted)
+├── data/         → the contract boundary: env → load → rows → assert; recap.ts asserts a recap
+│                   document against documents.recap and fetches it in the browser
 │                   schema.json + types.gen.ts are generated, never edited
 ├── styles/       → tokens.css + components.css (reviewed on /styleguide/); per-region sheets for islands
+│                   (replay.css holds the stage's layout and its parts' looks)
 ├── layouts/      → Base.astro (head, nav, footer, noindex)
 └── *.test.ts     → repo-wide guards: islands, no-literal-rules, mark, site
 scripts/          → codegen.ts (schema.json → types.gen.ts), precommit.sh, shot.mjs
@@ -52,11 +58,18 @@ Env is shell-only (`astro build` does not read `.env`):
 ## The contract
 
 `src/data/schema.json` is the committed snapshot of the published `schema.json`;
-`src/data/types.gen.ts` is generated from it. `npm run codegen` refreshes both from `DATA_BASE`.
+`src/data/types.gen.ts` is generated from it, the `documents` block included (`RecapDocument`,
+`Columnar<Row>`, one row type per frame). `npm run codegen` refreshes both from `DATA_BASE`.
 The build fails when the types are stale (`codegen --check`), when the published schema differs
 from the snapshot (contract drift, `load.ts`), or when a table breaks an assertion in
 `src/data/assert.ts`: columns and dtypes, row counts, rates against counts, weekly sums, Mondays,
 unique keys, every foreign key.
+
+**The recap document** is the one file the browser fetches. The data host sends no CORS and the
+walk runs on localhost, so `pages/recaps/[key]/data.json.ts` reads each file at build, asserts it
+(`data/recap.ts`: the header field by field, every frame's columns, the clocks never running
+backwards, the registry's identity) and re-serves it from the site's origin; the island asserts it
+again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
 
 ## Conventions
 
@@ -102,7 +115,18 @@ unique keys, every foreign key.
   stylesheet the island imports, since scoped styles never reach React-rendered markup.
 - **URL state through `useViewState`** (`useSyncExternalStore` over the query string): the
   first render is the default view on both server and client, and a deep link takes over
-  after hydration. Slider drags write with `replace`, everything else pushes.
+  after hydration. Slider drags write with `replace`, everything else pushes. The replay's `t`
+  (wall seconds since the tip) is written with `replace`, debounced, when playback settles
+  (pause, seek, step, the end), never per frame; a page holds a deep-linked island out of
+  sight with a `has-*-view` class until the island has read the URL.
+- **The replay runs on the game clock** (`lib/clock.ts`): real seconds at 1× built once from
+  the plays, stoppages squeezed, timeouts and breaks as cards that hold the clock. The pacing
+  constants are page choices named at the top of that file. `lib/replay.ts` reads the file
+  (the room with prefix counts, the floor from the stints, box lines by the pipeline's rules,
+  his moments); `sceneAt` is the stage at one second, for the island and the style guide alike.
+- **Net lives on the recap page only** (`lib/net.ts`): the numbers are net, the bars show the
+  mix, and the figure's colour is one linear curve from bone to heat or ice. The player page
+  ranks by the negative share and never prints net.
 - **Every page has a share card.** `Base.astro` takes `image`; a page without one shows the
   leaderboard's card. A card is built from the page's own inputs (`lib/standings`, shared by the
   page and its endpoint) and says the header's sentence; the official view, never a receipt.

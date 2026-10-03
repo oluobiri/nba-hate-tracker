@@ -1,36 +1,76 @@
 ---
-// One recap's page: the static shell. The header, the periods, the night
-// against his usual and the method are HTML at build; the replay island
-// lands in the placeholder in its own ticket.
+// One recap's page. The header, the sections after the buzzer and the
+// method are HTML at build; the stage is the replay island, which fetches
+// the recap file on hydration and receives its joins as props.
 import type { InferGetStaticPropsType } from 'astro'
 
 import { cardHref } from '../../cards/model'
 import { GameLine } from '../../components/GameLine'
+import { GameNetTimeline } from '../../components/GameNetTimeline'
 import { MethodNote } from '../../components/MethodNote'
 import { PeriodStrip } from '../../components/PeriodStrip'
+import { RecapReplay } from '../../components/replay/RecapReplay'
+import { SentimentBar } from '../../components/SentimentBar'
 import { VerdictDelta } from '../../components/VerdictDelta'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
+import { fmtInt } from '../../lib/format'
+import { buildGameLog } from '../../lib/games'
 import { headshotSrcSet } from '../../lib/media'
-import { boxLine, buildRecaps, countsLine, lagPhrase, nightSentence } from '../../lib/recaps'
+import { netSentiment } from '../../lib/metrics'
+import { fmtNet, netOf, netStyle } from '../../lib/net'
+import { boxLine, buildRecaps, countsLine, gamePhrase, lagPhrase, nextRecap, nightNetSentence, nightPoints, nightRankSentence, quarterTurnSentence, recapHref, recapHrefs, recapNetDelta } from '../../lib/recaps'
+import { REPLAY_KEYS } from '../../lib/url'
 
 export async function getStaticPaths() {
   const { manifest, tables } = await getSeason()
-  return buildRecaps(manifest, tables).map((recap) => ({ params: { key: recap.key }, props: { recap } }))
+  const recaps = buildRecaps(manifest, tables)
+  return recaps.map((recap) => ({ params: { key: recap.key }, props: { recap, next: nextRecap(recaps, recap.key) } }))
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
-const { recap } = Astro.props
-const { manifest } = await getSeason()
+const { recap, next } = Astro.props
+const { manifest, tables } = await getSeason()
 const name = recap.entry.attributed_player
+const teamByAbbr = new Map(tables.teams.map((t) => [t.abbreviation, t]))
+const side = (abbr: string) => {
+  const t = teamByAbbr.get(abbr)
+  return { abbr, name: t?.team ?? abbr, logo: t?.logo_url ?? '' }
+}
+const names = Object.fromEntries(tables.players.map((p) => [String(p.player_id), p.attributed_player]))
+const abbrOf = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbreviation]))
 const headshot = recap.player.headshot_url
 const floor = manifest.rules.floors.game_min_n
 const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
 const title = `${name} · ${recap.line.game ?? recap.line.date}`
-const verdict = nightSentence(name, recap.night, recap.usual, floor)
+// After the buzzer, in net: the night against his season, the room by quarter, the season his night sits in.
+const verdict = nightNetSentence(name, recap.night, recap.usual, floor)
+const netDelta = recapNetDelta(recap.night, recap.usual, floor)
+const quarters = quarterTurnSentence(recap.cells)
+const abbrMap = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
+const log = buildGameLog(
+  tables.player_games.filter((r) => r.attributed_player === name),
+  tables.game_sentiment.filter((r) => r.attributed_player === name),
+  gamesById,
+  abbrMap,
+  recap.usual,
+  floor,
+  recapHrefs(manifest.recaps, name),
+)
+const nights = nightPoints(log)
+const nightsLead = nightRankSentence(nights, recap.entry.game_id, recap.usual)
+const nightLabel = recap.line.game ? `${recap.line.round.replace('NBA Finals', 'Finals').replace('Conf. semifinals', 'Semis')} ${recap.line.game.replace('Game ', 'G')}` : recap.line.date
+const seasonNet = netSentiment(recap.usual)
 ---
 
 <Base title={title} description={recap.hook} image={cardHref.recap(recap.key)}>
+  <script is:inline define:vars={{ replay: REPLAY_KEYS }}>
+    // A deep link names a moment: hold the stage's prerendered default out
+    // of sight until the island has read the URL (it removes the class).
+    const q = new URLSearchParams(location.search)
+    if (replay.some((k) => q.has(k))) document.documentElement.classList.add('has-replay-view')
+  </script>
   <main id="main" class="wrap page rp">
     <header class="rp__head">
       <div class="rp__head-text">
@@ -42,27 +82,53 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
       <img class="rp__mug" src={headshot} srcset={headshotSrcSet(headshot, [180, 420])} sizes="96px" alt="" width="96" height="96" decoding="async" />
     </header>
 
-    <section class="rp__section" aria-labelledby="periods-h">
-      <h2 id="periods-h">The room, by quarter</h2>
-      <PeriodStrip cells={recap.cells} size="hero" subject={name} />
-      <p class="rp__soon">The replay, every comment on the game clock beside the play-by-play, is on its way. Until it lands, the quarters tell the arc.</p>
+    <section class="rp__stage" aria-label="The replay">
+      <RecapReplay client:load recapKey={recap.key} name={name} focusId={recap.player.player_id} away={side(recap.line.away.abbr)} home={side(recap.line.home.abbr)} usual={recap.usual} names={names} abbrOf={abbrOf} official={manifest.rules.qualified_threshold} />
     </section>
 
     <section class="rp__section" aria-labelledby="night-h">
-      <h2 id="night-h">The night against his usual</h2>
+      <h2 id="night-h">The night against his season</h2>
+      <p class="rp__lede">{verdict}</p>
       <div class="rp__verdict">
-        <VerdictDelta delta={recap.delta} n={recap.night?.total ?? 0} />
-        <p class="rp__verdict-text">{verdict}</p>
+        <VerdictDelta delta={netDelta} n={recap.night?.total ?? 0} metric="net" span={0.6} />
       </div>
+      <dl class="rp__mix mono">
+        <dt>This night</dt>
+        <dd>
+          <b style={netStyle(recap.night ? netOf(recap.night) : null)}>{fmtNet(recap.night ? netOf(recap.night) : null)}</b>
+          {recap.night && <SentimentBar counts={recap.night} size="mini" subject="This night" />}
+          <span>{recap.night ? `${fmtInt(recap.night.total)} comments` : 'no comments'}</span>
+        </dd>
+        <dt>His season</dt>
+        <dd>
+          <b style={netStyle(seasonNet)}>{fmtNet(seasonNet)}</b>
+          <SentimentBar counts={recap.usual} size="mini" subject="His season" />
+          <span>{fmtInt(recap.usual.total)} comments</span>
+        </dd>
+      </dl>
+    </section>
+
+    <section class="rp__section" aria-labelledby="quarters-h">
+      <h2 id="quarters-h">The room by quarter</h2>
+      <p class="rp__lede">{quarters}</p>
+      <PeriodStrip cells={recap.cells} size="hero" subject={name} figure="net" />
+    </section>
+
+    <section class="rp__section" aria-labelledby="nights-h">
+      <h2 id="nights-h">Where the night sits among his games</h2>
+      <GameNetTimeline points={nights} baseline={seasonNet} highlight={recap.entry.game_id} highlightLabel={nightLabel} lead={nightsLead} />
+      <p class="rp__floor mono">games with at least {fmtInt(floor)} comments about him</p>
     </section>
 
     <MethodNote kind="method">
-      The quarters count his comments in the game's live thread, the primary and any split; the verdict counts every thread about him that night, post-game included, against his
-      season, so the two are different populations. Each comment sits on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play` : ''}.
+      Net sentiment is the positive share minus the negative share, in points: +100 is every comment positive, −100 every comment negative. The replay, the gauge and the quarters count
+      his comments in the game's live thread, the primary and any split, each on the game clock by its own timestamp{lag ? `; the room takes ${lag} to react to a play` : ''}. The
+      night counts every thread about him that night, post-game included, against his season: a different population.
     </MethodNote>
 
     <p class="rp__links mono">
       <a href={`/player/${recap.player.slug}/`}>{name}'s season page →</a>
+      {next && <a href={recapHref(next.key)}>Next recap: {next.entry.attributed_player}, {gamePhrase(next.line)} →</a>}
       <a href="/recaps/">All recaps</a>
     </p>
   </main>
@@ -126,9 +192,14 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
   .rp__section h2 {
     margin: 0;
   }
-  .rp__soon {
-    max-width: 60ch;
+  .rp__stage {
+    padding-bottom: 8px;
+  }
+  .rp__lede {
+    max-width: 62ch;
     margin: 0;
+    font-size: 17px;
+    line-height: 1.45;
     color: var(--bone-2);
   }
   .rp__verdict {
@@ -136,10 +207,37 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
     gap: 12px;
     justify-items: start;
   }
-  .rp__verdict-text {
-    max-width: 60ch;
+  .rp__mix {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 16px;
+    align-items: center;
+    max-width: 560px;
     margin: 0;
+    font-size: 12px;
     color: var(--bone-2);
+  }
+  .rp__mix dd {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) max-content;
+    gap: 12px;
+    align-items: center;
+    margin: 0;
+  }
+  .rp__mix b {
+    font-family: var(--display);
+    font-size: 24px;
+    line-height: 1;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .rp__mix span {
+    color: var(--mute);
+  }
+  .rp__floor {
+    margin: 0;
+    font-size: 12px;
+    color: var(--mute);
   }
   .rp__links {
     display: flex;

@@ -2213,6 +2213,7 @@ a.hero__who:hover {
 }
 .ps__cell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   min-width: 0;
 }
@@ -2242,6 +2243,103 @@ a.hero__who:hover {
 }
 .ps--hero .ps__n {
   font-size: 13px;
+}
+/* A net figure over each bar, on a page that speaks net. */
+.ps__figure {
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ps--hero .ps__figure {
+  font-size: clamp(24px, 9vw, 44px);
+  margin: 2px 0 4px;
+}
+
+/* GameNetTimeline: his graded games by date, the room's net on each; this night ringed. */
+.nt {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  max-width: 760px;
+}
+.nt__lead {
+  margin: 0;
+  font-size: 16px;
+  color: var(--bone);
+}
+.nt__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.nt__band {
+  fill: var(--surface);
+}
+.nt__grid {
+  stroke: var(--line);
+}
+.nt__axis {
+  stroke: var(--line-2);
+}
+.nt__base {
+  stroke: var(--mute);
+  stroke-dasharray: 4 4;
+}
+.nt__tick {
+  font-family: var(--mono);
+  font-size: 11px;
+  fill: var(--mute);
+}
+.nt__label {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--bone);
+}
+.nt__pt--w {
+  fill: var(--bone);
+}
+.nt__pt--l {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 1.5;
+}
+.nt__ring {
+  fill: none;
+  stroke: var(--bone);
+  stroke-dasharray: 3 3;
+}
+.nt__key {
+  font-size: 12px;
+  color: var(--mute);
+}
+.nt__key-w,
+.nt__key-l,
+.nt__key-ring {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 2px 0 6px;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.nt__key-w {
+  background: var(--bone);
+}
+.nt__key-l {
+  border: 1.5px solid var(--bone);
+}
+.nt__key-ring {
+  border: 1px dashed var(--bone);
+}
+.nt__key-base {
+  display: inline-block;
+  width: 14px;
+  margin: 0 2px 0 6px;
+  border-top: 1px dashed var(--mute);
+  vertical-align: 3px;
 }
 
 /* RecapRows: one curated recap per row, the whole row the link; the strip

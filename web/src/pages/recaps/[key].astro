@@ -1,18 +1,19 @@
 ---
-// One recap's page: the static shell. The header, the periods, the night
-// against his usual and the method are HTML at build; the replay island
-// lands in the placeholder in its own ticket.
+// One recap's page. The header, the sections after the buzzer and the
+// method are HTML at build; the stage is the replay island, which fetches
+// the recap file on hydration and receives its joins as props.
 import type { InferGetStaticPropsType } from 'astro'
 
 import { cardHref } from '../../cards/model'
 import { GameLine } from '../../components/GameLine'
 import { MethodNote } from '../../components/MethodNote'
-import { PeriodStrip } from '../../components/PeriodStrip'
+import { RecapReplay } from '../../components/replay/RecapReplay'
 import { VerdictDelta } from '../../components/VerdictDelta'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
 import { headshotSrcSet } from '../../lib/media'
 import { boxLine, buildRecaps, countsLine, lagPhrase, nightSentence } from '../../lib/recaps'
+import { REPLAY_KEYS } from '../../lib/url'
 
 export async function getStaticPaths() {
   const { manifest, tables } = await getSeason()
@@ -21,8 +22,15 @@ export async function getStaticPaths() {
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
 const { recap } = Astro.props
-const { manifest } = await getSeason()
+const { manifest, tables } = await getSeason()
 const name = recap.entry.attributed_player
+const teamByAbbr = new Map(tables.teams.map((t) => [t.abbreviation, t]))
+const side = (abbr: string) => {
+  const t = teamByAbbr.get(abbr)
+  return { abbr, name: t?.team ?? abbr, logo: t?.logo_url ?? '' }
+}
+const names = Object.fromEntries(tables.players.map((p) => [String(p.player_id), p.attributed_player]))
+const abbrOf = Object.fromEntries(tables.teams.map((t) => [t.team, t.abbreviation]))
 const headshot = recap.player.headshot_url
 const floor = manifest.rules.floors.game_min_n
 const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
@@ -31,6 +39,12 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
 ---
 
 <Base title={title} description={recap.hook} image={cardHref.recap(recap.key)}>
+  <script is:inline define:vars={{ replay: REPLAY_KEYS }}>
+    // A deep link names a moment: hold the stage's prerendered default out
+    // of sight until the island has read the URL (it removes the class).
+    const q = new URLSearchParams(location.search)
+    if (replay.some((k) => q.has(k))) document.documentElement.classList.add('has-replay-view')
+  </script>
   <main id="main" class="wrap page rp">
     <header class="rp__head">
       <div class="rp__head-text">
@@ -42,10 +56,8 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
       <img class="rp__mug" src={headshot} srcset={headshotSrcSet(headshot, [180, 420])} sizes="96px" alt="" width="96" height="96" decoding="async" />
     </header>
 
-    <section class="rp__section" aria-labelledby="periods-h">
-      <h2 id="periods-h">The room, by quarter</h2>
-      <PeriodStrip cells={recap.cells} size="hero" subject={name} />
-      <p class="rp__soon">The replay, every comment on the game clock beside the play-by-play, is on its way. Until it lands, the quarters tell the arc.</p>
+    <section class="rp__stage" aria-label="The replay">
+      <RecapReplay client:load recapKey={recap.key} name={name} focusId={recap.player.player_id} away={side(recap.line.away.abbr)} home={side(recap.line.home.abbr)} usual={recap.usual} names={names} abbrOf={abbrOf} official={manifest.rules.qualified_threshold} />
     </section>
 
     <section class="rp__section" aria-labelledby="night-h">
@@ -126,10 +138,8 @@ const verdict = nightSentence(name, recap.night, recap.usual, floor)
   .rp__section h2 {
     margin: 0;
   }
-  .rp__soon {
-    max-width: 60ch;
-    margin: 0;
-    color: var(--bone-2);
+  .rp__stage {
+    padding-bottom: 8px;
   }
   .rp__verdict {
     display: grid;

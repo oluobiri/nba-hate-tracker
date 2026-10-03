@@ -14,9 +14,26 @@
   gap: 12px 16px;
   align-items: start;
 }
+/* Sticky parts sit under the site header, as the rail does. */
+.replay {
+  --replay-top: 57px;
+}
 /* A deep link with a moment: hidden until the island has read the URL. */
 .has-replay-view .replay {
   visibility: hidden;
+}
+.replay:focus {
+  outline: none;
+}
+/* The phone's tabs; on a desk every panel shows. */
+.replay__tabs {
+  display: none;
+}
+@media (min-width: 1000px) {
+  .gauge,
+  .room {
+    height: var(--replay-stage-h, 560px);
+  }
 }
 .replay__panel {
   background: var(--ink-2);
@@ -50,7 +67,7 @@
   background: var(--surface);
   border: 1px solid var(--line-2);
   position: sticky;
-  top: 0;
+  top: var(--replay-top, 57px);
   z-index: 5;
 }
 .bug__score {
@@ -992,7 +1009,7 @@
   }
   .flow {
     position: sticky;
-    top: var(--replay-flow-top, 0);
+    top: calc(var(--replay-top) + var(--replay-flow-top, 0px));
     z-index: 4;
     padding: 4px 8px 2px;
     margin: 0 calc(-1 * var(--gutter));
@@ -1013,7 +1030,7 @@
   }
   .center {
     position: sticky;
-    top: var(--replay-bug-h, 96px);
+    top: calc(var(--replay-top) + var(--replay-bug-h, 96px));
     z-index: 4;
     gap: 6px;
     padding: 8px var(--gutter) 6px;
@@ -1037,6 +1054,38 @@
   }
   .replay__ph {
     display: none;
+  }
+  .replay__tabs {
+    grid-area: tabs;
+    display: flex;
+    position: sticky;
+    top: calc(var(--replay-top) + var(--replay-tabs-top, 0px));
+    z-index: 3;
+    margin: 0 calc(-1 * var(--gutter));
+    padding: 0 var(--gutter);
+    background: var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+  .replay__tab {
+    flex: 1;
+    height: 44px;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+    cursor: pointer;
+  }
+  .replay__tab[aria-selected='true'] {
+    color: var(--bone);
+    border-bottom-color: var(--bone);
+  }
+  .replay__tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
   }
   .room,
   .box {

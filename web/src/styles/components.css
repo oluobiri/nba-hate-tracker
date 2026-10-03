@@ -2213,6 +2213,7 @@ a.hero__who:hover {
 }
 .ps__cell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   min-width: 0;
 }
@@ -2252,7 +2253,7 @@ a.hero__who:hover {
   font-variant-numeric: tabular-nums;
 }
 .ps--hero .ps__figure {
-  font-size: 44px;
+  font-size: clamp(24px, 9vw, 44px);
   margin: 2px 0 4px;
 }
 

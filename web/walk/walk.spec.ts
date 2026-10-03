@@ -442,13 +442,117 @@ test("the Recap chip on a player page's game rows leads to a live recap page", a
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
-test('a recap page carries its name, its periods and its verdict', async ({ page }) => {
+test('a recap page carries its name, its quarters, its verdict and its season chart', async ({ page }) => {
   const route = ROUTES.find((r) => r.startsWith('/recaps/') && r !== '/recaps/')!
   await page.goto(route, { waitUntil: 'networkidle' })
   await expect(page.getByRole('heading', { level: 1 })).not.toBeEmpty()
   await expect(page.locator('.ps')).toHaveCount(1)
   await expect(page.locator('.vd')).toHaveCount(1)
+  await expect(page.locator('.nt__svg')).toHaveCount(1)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+// The replay: the site's first runtime fetch and its first playback island.
+const RECAP = ROUTES.find((r) => r.startsWith('/recaps/') && r !== '/recaps/')!
+const ready = (page: Page) => page.waitForSelector('.replay[data-status="ready"]', { timeout: 15_000 })
+const clock = (page: Page) => page.getByTestId('bug-time').textContent()
+
+test('the replay fetches its file same-origin, hydrates, and Watch runs the clock', async ({ page }) => {
+  const errors = watchErrors(page)
+  const fetched = page.waitForResponse((r) => r.url().endsWith('/data.json'))
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  const res = await fetched
+  expect(res.status()).toBe(200)
+  expect(res.headers()['content-type']).toContain('json')
+  console.log(`${RECAP}data.json: ${(await res.body()).length} bytes, content-encoding ${res.headers()['content-encoding'] ?? 'none'}`)
+  await ready(page)
+  await expect(page.getByTestId('bug-play')).toHaveAttribute('aria-label', 'Play')
+  const before = await clock(page)
+  await page.getByTestId('watch').click()
+  await expect(page.getByTestId('bug-play')).toHaveAttribute('aria-label', 'Pause')
+  // The first seconds are the pre-game beat; the clock moves once the tip lands.
+  await page.waitForTimeout(3600)
+  expect(await clock(page)).not.toBe(before)
+  // Watch scrolled the stage to the top of the window, under the header.
+  const top = await page.locator('.replay').evaluate((el) => el.getBoundingClientRect().top)
+  expect(top).toBeLessThan(80)
+  expect(await page.locator('.fc').count()).toBeGreaterThan(0)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a replay deep link opens paused at its moment with no jump, and keeps its t', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto(`${RECAP}?t=600`, { waitUntil: 'networkidle' })
+  await ready(page)
+  await expect(page.getByTestId('watch')).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.classList.contains('has-replay-view'))).toBe(false)
+  await expect(page.getByTestId('bug-play')).toHaveAttribute('aria-label', 'Play')
+  const at = await clock(page)
+  expect(at).not.toBe('12:00')
+  await page.waitForTimeout(500)
+  expect(await clock(page)).toBe(at)
+  expect(page.url()).toContain('t=600')
+  expect(await page.getByTestId('flow').getAttribute('aria-valuenow')).not.toBe('0')
+  expect(errors).toEqual([])
+})
+
+test('space and the arrows drive the replay and write t', async ({ page }) => {
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await ready(page)
+  await page.locator('.replay').focus()
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('bug-play')).toHaveAttribute('aria-label', 'Pause')
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('bug-play')).toHaveAttribute('aria-label', 'Play')
+  await page.waitForTimeout(300)
+  expect(page.url()).toMatch(/[?&]t=\d+/)
+  const before = Number(await page.getByTestId('flow').getAttribute('aria-valuenow'))
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(100)
+  expect(Number(await page.getByTestId('flow').getAttribute('aria-valuenow'))).toBeGreaterThan(before)
+  await page.keyboard.press('Home')
+  await page.waitForTimeout(300)
+  expect(await page.getByTestId('flow').getAttribute('aria-valuenow')).toBe('0')
+  expect(page.url()).toMatch(/[?&]t=0\b/)
+})
+
+test('the replay never autoplays, under reduced motion included', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 900 } })
+  const page = await ctx.newPage()
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await ready(page)
+  await page.waitForTimeout(800)
+  await expect(page.getByTestId('watch')).toBeVisible()
+  await expect(page.getByTestId('bug-play')).toHaveAttribute('aria-label', 'Play')
+  expect(await clock(page)).toBe('12:00')
+  await ctx.close()
+})
+
+test('a phone gets the two tabs, the room capped, and the box in one column', async ({ page }, info) => {
+  test.skip(info.project.name !== 'phone', 'the tabs exist only on a phone')
+  await page.goto(`${RECAP}?t=1200`, { waitUntil: 'networkidle' })
+  await ready(page)
+  const tabs = page.getByRole('tab')
+  await expect(tabs).toHaveCount(2)
+  for (const t of await tabs.all()) expect((await t.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  await expect(page.locator('.room')).toBeVisible()
+  expect(await page.locator('.fc:visible').count()).toBeLessThanOrEqual(8)
+  await tabs.nth(1).click()
+  await expect(page.locator('.box')).toBeVisible()
+  await expect(page.locator('.room')).toBeHidden()
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('every recap page links a live next recap', async ({ page }) => {
+  for (const route of ROUTES.filter((r) => r.startsWith('/recaps/') && r !== '/recaps/')) {
+    const html = readFileSync(path.join(DIST, route, 'index.html'), 'utf8')
+    const next = html.match(/href="(\/recaps\/[^"]+\/)"[^>]*>Next recap:/)?.[1]
+    expect(next, `next recap on ${route}`).toBeDefined()
+    expect(ROUTES).toContain(next)
+    expect(next).not.toBe(route)
+  }
+  await page.goto(RECAP)
 })
 
 // Share cards: every route names one, its own or the leaderboard's, and

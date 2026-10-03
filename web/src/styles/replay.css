@@ -1,0 +1,1136 @@
+/* The replay island: the stage's layout and its parts' looks. Component
+   classes shared with the rest of the site (.sb, .btn, .exhibit) come from
+   components.css; everything here belongs to the recap page alone. */
+
+/* --- The stage ------------------------------------------------------------- */
+.replay {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr) 316px;
+  grid-template-areas:
+    'bug bug bug'
+    'flow flow flow'
+    'gauge center room'
+    'box box box';
+  gap: 12px 16px;
+  align-items: start;
+}
+/* Sticky parts sit under the site header, as the rail does. */
+.replay {
+  --replay-top: 57px;
+}
+/* A deep link with a moment: hidden until the island has read the URL. */
+.has-replay-view .replay {
+  visibility: hidden;
+}
+.replay:focus {
+  outline: none;
+}
+/* The phone's tabs; on a desk every panel shows. */
+.replay__tabs {
+  display: none;
+}
+@media (min-width: 1000px) {
+  .gauge,
+  .room {
+    height: var(--replay-stage-h, 560px);
+  }
+}
+.replay__panel {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.replay__ph {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.replay__ph b {
+  color: var(--bone);
+  font-weight: 600;
+}
+
+/* --- The score bug ---------------------------------------------------------- */
+.bug {
+  grid-area: bug;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  position: sticky;
+  top: var(--replay-top, 57px);
+  z-index: 5;
+}
+.bug__score {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.bug__team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--bone-2);
+}
+.bug__logo {
+  width: 30px;
+  height: 30px;
+  filter: grayscale(1) brightness(1.6);
+  opacity: 0.8;
+}
+.bug__pts {
+  min-width: 2ch;
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+.bug__pts--lead {
+  font-weight: 700;
+  color: var(--bone);
+}
+.bug__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 92px;
+  padding: 0 6px;
+  border-left: 1px solid var(--line-2);
+  border-right: 1px solid var(--line-2);
+}
+.bug__period {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--mute);
+}
+.bug__time {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.bug__line {
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.bug__line th {
+  padding: 0 7px 3px;
+  font-weight: 500;
+  text-align: right;
+  color: var(--mute);
+}
+.bug__line td {
+  padding: 2px 7px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bug__line th[scope='row'] {
+  padding: 2px 7px 2px 0;
+  text-align: left;
+}
+.bug__line th:first-child {
+  padding-left: 0;
+}
+.bug__line .bug__cur {
+  background: var(--surface-2);
+  color: var(--bone);
+}
+.bug__line .bug__tot {
+  border-left: 1px solid var(--line-2);
+  font-weight: 600;
+  color: var(--bone);
+}
+.bug__his {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 18px;
+  border-left: 1px solid var(--line-2);
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.bug__name {
+  font-weight: 600;
+  color: var(--bone);
+}
+.bug__name--short {
+  display: none;
+}
+.bug__floor {
+  color: var(--mute);
+}
+.bug__floor--on {
+  color: var(--bone);
+}
+.bug__ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bug__play {
+  width: 44px;
+  padding: 0;
+  font-size: 15px;
+}
+.bug__speed {
+  display: flex;
+}
+.bug__sp {
+  padding: 0 10px;
+  margin-left: -1px;
+}
+
+/* --- The room over the game: the scrubber ----------------------------------- */
+.flow {
+  grid-area: flow;
+  padding: 8px 10px 6px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.flow__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.flow__key i {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  margin: 0 4px 0 10px;
+  vertical-align: middle;
+}
+.flow__key-neg {
+  background: var(--heat);
+}
+.flow__key-pos {
+  background: var(--ice);
+}
+.flow__key-usual {
+  height: 0 !important;
+  border-top: 1px dashed var(--mute);
+}
+.flow__svg {
+  display: block;
+  width: 100%;
+  height: 48px;
+  cursor: pointer;
+  touch-action: none;
+}
+.flow__svg:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.flow__bin {
+  fill: var(--surface-2);
+}
+.flow__period {
+  stroke: var(--line-2);
+}
+.flow__usual {
+  stroke: var(--mute);
+  stroke-dasharray: 4 4;
+}
+.flow__neg,
+.flow__pos {
+  fill: none;
+  stroke-width: 2;
+}
+.flow__neg {
+  stroke: var(--heat);
+}
+.flow__pos {
+  stroke: var(--ice);
+}
+.flow__done {
+  fill: rgba(237, 232, 220, 0.04);
+}
+.flow__head-line {
+  stroke: var(--bone);
+  stroke-width: 2;
+}
+.flow__labels {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  color: var(--mute);
+}
+.flow__labels span {
+  position: absolute;
+  transform: translateX(2px);
+}
+.flow__labels .flow__final {
+  transform: translateX(-100%);
+}
+
+/* --- The net gauge ------------------------------------------------------------ */
+.gauge {
+  grid-area: gauge;
+  display: flex;
+  flex-direction: column;
+}
+.gauge__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 12px;
+  padding: 20px 12px;
+}
+.gauge__track {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+}
+.gauge__zero {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 50%;
+  border-top: 1px solid var(--bone-2);
+}
+.gauge__usual {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  border-top: 1px dashed var(--mute);
+}
+.gauge__fill {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: var(--gauge-t);
+  height: var(--gauge-h);
+  background: var(--net-color);
+  transition:
+    top 0.35s ease,
+    height 0.35s ease,
+    background 0.35s ease;
+}
+.gauge__lab {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--mute);
+}
+.gauge__lab--top {
+  top: -15px;
+}
+.gauge__lab--bot {
+  bottom: -15px;
+}
+.gauge__read {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gauge__num {
+  font-family: var(--display);
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 0.92;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.35s ease;
+}
+.gauge__sub {
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gauge__counts {
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bone-2);
+}
+.gauge__so {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.gauge__so-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.gauge__so-net {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.gauge__so .sb {
+  margin: 5px 0 3px;
+}
+.gauge__so small {
+  font-size: 11px;
+  color: var(--mute);
+}
+/* The phone's meter: horizontal, inside the court panel. */
+.meter {
+  display: none;
+  padding: 0;
+}
+.meter__row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.meter__row b {
+  color: var(--bone);
+  font-weight: 600;
+}
+.meter__track {
+  position: relative;
+  height: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+}
+.meter__zero {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  border-left: 1px solid var(--bone-2);
+}
+.meter__usual {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  border-left: 1px dashed var(--mute);
+}
+.meter__fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--gauge-l);
+  width: var(--gauge-w);
+  background: var(--net-color);
+  transition:
+    left 0.35s ease,
+    width 0.35s ease,
+    background 0.35s ease;
+}
+
+/* --- The caption ----------------------------------------------------------------- */
+.caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-left: 3px solid var(--line-2);
+  font-size: 15px;
+}
+.caption__clock {
+  flex: none;
+  font-size: 12px;
+  color: var(--mute);
+}
+.caption--his {
+  border-left-color: var(--bone);
+}
+.caption--his .caption__text {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.caption__label {
+  flex: none;
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.caption--hot {
+  align-items: center;
+  min-height: 56px;
+  background: var(--surface-2);
+  border-left-width: 6px;
+  animation: caption-in 0.3s ease-out;
+}
+.caption--hot .caption__text {
+  font-family: var(--body);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--bone-2);
+}
+.caption__who {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+.caption__hold {
+  position: relative;
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  margin-left: auto;
+  background: var(--line-2);
+}
+.caption__hold i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bone);
+  animation: caption-hold var(--hold) linear forwards;
+}
+@keyframes caption-hold {
+  from {
+    height: 100%;
+  }
+  to {
+    height: 0;
+  }
+}
+@keyframes caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- The court --------------------------------------------------------------------- */
+.center {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.courtbox {
+  position: relative;
+  padding: 6px 10px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 0;
+  overflow: hidden;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.chips__tm {
+  flex: none;
+  width: 34px;
+  color: var(--mute);
+}
+.chip {
+  padding: 3px 7px;
+  border: 1px solid var(--line-2);
+  color: var(--bone-2);
+}
+.chip--him {
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--bone);
+  border-color: var(--bone);
+}
+.chip--bench {
+  margin-left: auto;
+  border-style: dashed;
+  color: var(--mute);
+}
+.court {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.court__floor {
+  fill: #131316;
+}
+.court__ln {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 2;
+}
+.court__board {
+  stroke: var(--bone-2);
+  stroke-width: 2;
+}
+.court__rim {
+  fill: none;
+  stroke: var(--bone-2);
+  stroke-width: 2;
+}
+.court__logo {
+  opacity: 0.18;
+  filter: grayscale(1);
+}
+.court__end {
+  font-family: var(--display);
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  fill: var(--mute);
+}
+.court__end--him {
+  fill: var(--bone);
+}
+.court__end-sub {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 2px;
+}
+/* Shots: theirs in gray, ours in bone; a miss is hollow; his is larger and ringed. */
+.court__shot {
+  opacity: 0.32;
+  transition: opacity 0.6s;
+}
+.court__shot--him {
+  opacity: 0.85;
+}
+.court__shot--fresh,
+.court__shot--hot {
+  opacity: 1;
+}
+.court__mark {
+  fill: none;
+  stroke: var(--mute);
+  stroke-width: 2;
+}
+.court__shot--made .court__mark {
+  fill: var(--mute);
+  stroke: none;
+}
+.court__shot--ours .court__mark {
+  stroke: var(--bone);
+}
+.court__shot--ours.court__shot--made .court__mark {
+  fill: var(--bone);
+}
+.court__shot--him .court__mark {
+  stroke-width: 3;
+}
+.court__ring {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 1;
+}
+.court__blocked {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+.court__shot--fresh .court__mark {
+  animation: court-pop 0.5s ease-out;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.court__pulse {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 2;
+  animation: court-pulse 1.1s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.court__moment {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  fill: var(--bone);
+}
+@keyframes court-pop {
+  from {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes court-pulse {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+/* The cards over the court: Watch, a timeout, a break, the final. */
+.court__overlay {
+  position: absolute;
+  inset: 34px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.card {
+  padding: 14px 22px;
+  background: rgba(11, 11, 13, 0.92);
+  border: 1px solid var(--bone-2);
+  text-align: center;
+  pointer-events: auto;
+}
+.card__big {
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.card__sm {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.card__start {
+  margin-top: 10px;
+  height: 48px;
+  padding: 0 20px;
+  background: var(--bone);
+  color: var(--ink);
+  border: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.card__start:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --- The room: the feed ------------------------------------------------------------- */
+.room {
+  grid-area: room;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.room__toggles {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.room__seg {
+  display: flex;
+}
+.room__btn {
+  min-height: 32px;
+  padding: 0 9px;
+  margin-left: -1px;
+  font-size: 11px;
+}
+.feed {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+.feed__empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--mute);
+}
+.room__fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 60px;
+  background: linear-gradient(transparent, var(--ink-2));
+  pointer-events: none;
+}
+.fc {
+  padding: 8px 12px 9px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--neu);
+}
+.fc--neg {
+  border-left-color: var(--heat);
+}
+.fc--pos {
+  border-left-color: var(--ice);
+}
+.fc--new {
+  animation: caption-in 0.35s ease-out;
+}
+.fc__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--mute);
+}
+.fc__about {
+  color: var(--bone-2);
+}
+.fc__score {
+  margin-left: auto;
+}
+.fc__source {
+  color: var(--mute);
+}
+.fc__body {
+  margin: 3px 0 0;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* --- The box score ---------------------------------------------------------------------- */
+.box {
+  grid-area: box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.bx {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.bx caption {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.bx caption b {
+  color: var(--bone);
+}
+.bx th {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
+  text-align: right;
+  color: var(--mute);
+}
+.bx td {
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+  color: var(--bone-2);
+  font-variant-numeric: tabular-nums;
+}
+.bx th:first-child,
+.bx td:first-child {
+  padding-left: 10px;
+  text-align: left;
+}
+.bx th:last-child,
+.bx td:last-child {
+  padding-right: 10px;
+}
+.bx__name {
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--bone-2);
+}
+.bx__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--bone);
+  vertical-align: middle;
+  visibility: hidden;
+}
+.bx__on .bx__dot {
+  visibility: visible;
+}
+.bx__him th,
+.bx__him td {
+  font-weight: 600;
+  color: var(--bone);
+  background: var(--surface);
+}
+.bx__him th:first-child {
+  box-shadow: inset 3px 0 0 var(--bone);
+}
+.bx__tot th,
+.bx__tot td {
+  border-top: 1px solid var(--line-2);
+  color: var(--bone);
+}
+.bx__rm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.bx__rm .sb {
+  flex: none;
+  width: 46px;
+}
+.bx__rm .sb__track {
+  min-width: 0;
+}
+.box .replay__panel {
+  overflow-x: auto;
+}
+.bx__room,
+.bx__n {
+  color: var(--mute);
+}
+
+/* --- Phone: the bug sticks, the line score hides, his line is a second row --- */
+@media (max-width: 999px) {
+  .replay {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'bug'
+      'center'
+      'flow'
+      'tabs'
+      'panel';
+    gap: 0;
+  }
+  .bug {
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    padding: 8px 10px;
+    margin: 0 calc(-1 * var(--gutter));
+    border-left: 0;
+    border-right: 0;
+  }
+  .bug__line {
+    display: none;
+  }
+  .bug__pts {
+    font-size: 32px;
+  }
+  .bug__logo {
+    width: 22px;
+    height: 22px;
+  }
+  .bug__team {
+    font-size: 13px;
+  }
+  .bug__score {
+    gap: 8px;
+  }
+  .bug__clock {
+    min-width: 70px;
+  }
+  .bug__time {
+    font-size: 20px;
+  }
+  .bug__speed {
+    display: none;
+  }
+  .bug__his {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-direction: row;
+    gap: 8px;
+    padding: 5px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .bug__name {
+    display: none;
+  }
+  .bug__name--short {
+    display: inline;
+  }
+  .bug__fg {
+    display: none;
+  }
+  .bug__floor {
+    margin-left: auto;
+  }
+  .flow {
+    position: sticky;
+    top: calc(var(--replay-top) + var(--replay-flow-top, 0px));
+    z-index: 4;
+    padding: 4px 8px 2px;
+    margin: 0 calc(-1 * var(--gutter));
+    border-left: 0;
+    border-right: 0;
+  }
+  .flow__svg {
+    height: 34px;
+  }
+  .flow__head {
+    display: none;
+  }
+  .gauge {
+    display: none;
+  }
+  .meter {
+    display: block;
+  }
+  .center {
+    position: sticky;
+    top: calc(var(--replay-top) + var(--replay-bug-h, 96px));
+    z-index: 4;
+    gap: 6px;
+    padding: 8px var(--gutter) 6px;
+    margin: 0 calc(-1 * var(--gutter));
+    background: var(--ink);
+  }
+  .courtbox {
+    padding: 2px 6px;
+  }
+  .chips {
+    display: none;
+  }
+  .court__overlay {
+    inset: 24px 6px;
+  }
+  .card {
+    padding: 10px 14px;
+  }
+  .card__big {
+    font-size: 24px;
+  }
+  .replay__ph {
+    display: none;
+  }
+  .replay__tabs {
+    grid-area: tabs;
+    display: flex;
+    position: sticky;
+    top: calc(var(--replay-top) + var(--replay-tabs-top, 0px));
+    z-index: 3;
+    margin: 0 calc(-1 * var(--gutter));
+    padding: 0 var(--gutter);
+    background: var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+  .replay__tab {
+    flex: 1;
+    height: 44px;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+    cursor: pointer;
+  }
+  .replay__tab[aria-selected='true'] {
+    color: var(--bone);
+    border-bottom-color: var(--bone);
+  }
+  .replay__tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .room,
+  .box {
+    grid-area: panel;
+    display: none;
+    border: 0;
+    background: none;
+  }
+  .box {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .replay--room .room {
+    display: flex;
+    min-height: 60vh;
+  }
+  .replay--box .box {
+    display: grid;
+  }
+  .room__fade {
+    display: none;
+  }
+  .feed .fc:nth-child(n + 9) {
+    display: none;
+  }
+  .bx__wide {
+    display: none;
+  }
+  .caption {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .caption--his .caption__text {
+    font-size: 16px;
+  }
+  .caption__label {
+    font-size: 22px;
+  }
+  .caption--hot {
+    min-height: 44px;
+  }
+  .caption--hot .caption__text {
+    font-size: 13px;
+  }
+  .caption__who {
+    display: none;
+  }
+}

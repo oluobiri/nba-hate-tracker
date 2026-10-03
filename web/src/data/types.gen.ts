@@ -306,3 +306,111 @@ export interface PeriodCounts {
   pos: number
   neu: number
 }
+
+/** A frame as a document carries it: one array per column. */
+export type Columnar<T> = { [K in keyof T]: T[K][] }
+
+export interface RecapHeader {
+  schema_version: number
+  season: string
+  generated_at: string
+  game_id: string
+  attributed_player: string
+  player_id: number
+  slug: string
+  config_versions: Record<string, string>
+  classifiers: Record<string, ClassifierIdentity>
+}
+
+/** One row of the recap document's periods frame. */
+export interface RecapPeriodsRow {
+  period: number
+  start_seconds: number
+  end_seconds: number
+  start_wall: number
+  end_wall: number
+  start_action_number: number
+  end_action_number: number
+}
+
+/** One row of the recap document's threads frame. */
+export interface RecapThreadsRow {
+  post_id: string
+  is_primary: boolean
+  created_utc: number
+  num_comments: number
+  comment_n: number
+}
+
+/** One row of the recap document's stints frame. */
+export interface RecapStintsRow {
+  person_id: number
+  team_tricode: string
+  period: number
+  start_seconds: number
+  end_seconds: number
+}
+
+/** One row of the recap document's plays frame. */
+export interface RecapPlaysRow {
+  action_number: number
+  paired_action_number: number | null
+  period: number
+  clock: string
+  game_seconds: number
+  wall_clock: number
+  kind: string
+  action_type: string
+  sub_type: string
+  description: string
+  team_tricode: string | null
+  person_id: number
+  player_name_i: string | null
+  assist_person_id: number | null
+  is_focus: boolean
+  made: boolean | null
+  shot_value: number
+  x: number | null
+  y: number | null
+  shot_distance: number | null
+  score_home: number
+  score_away: number
+}
+
+/** One row of the recap document's comments frame. */
+export interface RecapCommentsRow {
+  comment_id: string
+  post_id: string
+  created_utc: number
+  game_seconds: number
+  phase: string
+  sentiment: string
+  score: number
+  fan_team: string | null
+  player_id: number | null
+  is_focus: boolean
+  body: string | null
+}
+
+export type RecapFrameName = "periods" | "threads" | "stints" | "plays" | "comments"
+
+/** The recap document as published: its header and its frames as column arrays. */
+export interface RecapDocument {
+  header: RecapHeader
+  frames: {
+    periods: Columnar<RecapPeriodsRow>
+    threads: Columnar<RecapThreadsRow>
+    stints: Columnar<RecapStintsRow>
+    plays: Columnar<RecapPlaysRow>
+    comments: Columnar<RecapCommentsRow>
+  }
+}
+
+/** The recap document's frames as rows. */
+export interface RecapRows {
+  periods: RecapPeriodsRow[]
+  threads: RecapThreadsRow[]
+  stints: RecapStintsRow[]
+  plays: RecapPlaysRow[]
+  comments: RecapCommentsRow[]
+}

@@ -5,6 +5,7 @@ import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
 import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
+import { GameNetTimeline } from '../components/GameNetTimeline'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
@@ -13,6 +14,13 @@ import { MethodNote } from '../components/MethodNote'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
+import { BoxScore } from '../components/replay/BoxScore'
+import { Caption } from '../components/replay/Caption'
+import { Feed, FeedCard } from '../components/replay/Feed'
+import { Court } from '../components/replay/Court'
+import { FlowStrip } from '../components/replay/FlowStrip'
+import { NetGauge } from '../components/replay/NetGauge'
+import { ScoreBug } from '../components/replay/ScoreBug'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
@@ -26,6 +34,8 @@ import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
+import { readJson, seasonLocation } from '../data/env'
+import { assertRecapDocument } from '../data/recap'
 import Base from '../layouts/Base.astro'
 import { deltaLists, fanRosterMatrix, gapRows, playerCells, playerUsual, talkRows } from '../lib/fanbase'
 import { nickname, possessive } from '../lib/fans'
@@ -34,9 +44,14 @@ import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
+import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
+import { netSentiment } from '../lib/metrics'
+import { fmtNet } from '../lib/net'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
+import { PRE, periodStartsU, playStamp } from '../lib/clock'
+import { etTime } from '../lib/clock'
+import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
@@ -249,8 +264,62 @@ const recapLog = recapLead
       recapHrefs(manifest.recaps, recapLead.entry.attributed_player),
     ).toSorted((a, b) => b.date.localeCompare(a.date))
   : []
+const recapNights = recapLead ? nightPoints(recapLog) : []
+const recapNet = recapLead ? recapNetDelta(recapLead.night, recapLead.usual, gameFloor) : null
 const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
 const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
+// The replay's parts, from the lead recap's file, at moments chosen by rule:
+// the tip, a second into the first timeout, mid-halftime, the final.
+const replay = recapLead ? prepareReplay(recapFrames(assertRecapDocument(await readJson(seasonLocation(manifest.season), recapLead.entry.file), recapLead.entry.file)), recapLead.player.player_id) : null
+const teamsByAbbr = new Map(tables.teams.map((t) => [t.abbreviation, t]))
+const bugTeam = (abbr: string) => ({ abbr, logo: teamsByAbbr.get(abbr)?.logo_url ?? '' })
+const bugTeams = recapLead ? { away: bugTeam(recapLead.line.away.abbr), home: bugTeam(recapLead.line.home.abbr) } : null
+const replayMoments = replay
+  ? [
+      { name: 'the tip', u: PRE },
+      { name: 'a second into the first timeout', u: (replay.tl.cards.find((c) => c.kind === 'timeout')?.u0 ?? PRE) + 1 },
+      { name: 'mid-halftime', u: (() => { const h = replay.tl.cards.find((c) => c.kind === 'halftime'); return h ? (h.u0 + h.u1) / 2 : PRE })() },
+      { name: 'the final', u: replay.tl.endU },
+    ].map((m) => ({ ...m, scene: sceneAt(replay, m.u) }))
+  : []
+const noop = () => {}
+// Captions: the first play that is not his, his first play, and his first dunk or block.
+const captionCases = replay
+  ? [
+      { name: 'the room’s play', play: replay.plays.find((p) => p.kind === 'shot' && p.person_id !== replay.focusId)!, hot: null },
+      { name: 'his play', play: replay.plays.find((p) => p.kind === 'rebound' && p.person_id === replay.focusId) ?? replay.plays.find((p) => p.is_focus)!, hot: null },
+      { name: 'his moment, holding', ...(() => { const m = [...replay.moments.values()].find((x) => x.label === 'DUNK' || x.label === 'BLOCK') ?? [...replay.moments.values()][0]!; return { play: replay.plays[m.i]!, hot: m } })() },
+    ]
+  : []
+const MOMENT_HOLD = 4.5
+// The court at halftime and the final, and at his first dunk or block with the mark pulsed.
+const hotMoment = replay ? ([...replay.moments.values()].find((x) => (x.label === 'DUNK' || x.label === 'BLOCK') && x.mark !== null) ?? null) : null
+const courtCases = replay
+  ? [
+      { name: 'mid-halftime, the ends labeled, a card', m: replayMoments[2]!, hot: null },
+      ...(hotMoment ? [{ name: `his moment held · ${hotMoment.label}`, m: { name: 'moment', u: replay.tl.playU[hotMoment.i]! + 1, scene: sceneAt(replay, replay.tl.playU[hotMoment.i]! + 1) }, hot: hotMoment }] : []),
+      { name: 'the final', m: replayMoments[3]!, hot: null },
+    ]
+  : []
+const focusTeam = replay ? (replay.stints.find((st) => st.person_id === replay.focusId)?.team_tricode ?? '') : ''
+// Feed cards by rule: his top-voted negative, the room's top-voted positive about someone else, an unflaired one, a post-game one.
+const playerNameOf = new Map(tables.players.map((p) => [p.player_id, p.attributed_player]))
+const feedCases = replay
+  ? (() => {
+      const cs = replay.room.comments.filter((c) => c.body !== null)
+      const top = (pick: (c: (typeof cs)[number]) => boolean) => cs.filter(pick).toSorted((a, b) => b.score - a.score)[0]
+      return [
+        { name: 'his, top-voted negative', c: top((c) => c.isFocus && c.sentiment === 'neg' && c.body!.length < 240), about: null },
+        { name: 'the room’s, top-voted positive about someone else', c: top((c) => !c.isFocus && c.sentiment === 'pos' && c.playerId !== null && c.body!.length < 240), about: 'other' },
+        { name: 'unflaired, neutral', c: top((c) => c.isFocus && c.sentiment === 'neu' && c.fanTeam === null && c.body!.length < 240), about: null },
+        { name: 'post-game', c: top((c) => c.isFocus && c.phase === 'post' && c.body!.length < 240), about: null },
+      ].filter((x) => x.c !== undefined)
+    })()
+  : []
+const feedAbout = (c: { playerId: number | null }, about: string | null) => (about === null ? null : c.playerId === replay!.focusId ? 'on him' : `on ${lastName(playerNameOf.get(c.playerId!) ?? '')}`)
+const feedTip = replay ? `Tip-off at ${etTime(replay.tl.tip)}.` : ''
+const feedHalf = replay ? feedSelection(replay.room, 'him', 'top', 1) : null
+const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: replayMoments[2]!.scene.score.away, ids: replay.order.get(bugTeams.away.abbr) ?? [] }, { abbr: bugTeams.home.abbr, score: replayMoments[2]!.scene.score.home, ids: replay.order.get(bugTeams.home.abbr) ?? [] }] as const) : null
 
 ---
 
@@ -457,6 +526,124 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
         {mostPeriods && <figure class="guide__fig"><PeriodStrip cells={mostPeriods.cells} size="hero" subject={mostPeriods.entry.attributed_player} /><figcaption>most overtime · {mostPeriods.entry.attributed_player}, {mostPeriods.cells.length} quarters and overtimes, hero size</figcaption></figure>}
         {thinnestRecap && <figure class="guide__fig"><PeriodStrip cells={thinnestRecap.cells} subject={thinnestRecap.entry.attributed_player} /><figcaption>thinnest quarter · {thinnestRecap.entry.attributed_player}, {fmtInt(thinnestPeriod(thinnestRecap))} comments in one quarter or overtime, row size</figcaption></figure>}
         {recapLead && <figure class="guide__fig"><PeriodStrip cells={silenced} subject={recapLead.entry.attributed_player} /><figcaption>a silent quarter, constructed: {recapLead.entry.attributed_player} with Q2 zeroed</figcaption></figure>}
+        {recapLead && <figure class="guide__fig"><PeriodStrip cells={recapLead.cells} size="hero" subject={recapLead.entry.attributed_player} figure="net" /><figcaption>with a net figure over each bar, the recap page's form</figcaption></figure>}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>GameNetTimeline</h2>
+      <p class="eyebrow">His graded games by date, the room's net on each: wins filled, losses hollow, the playoffs as a band, his season dashed, this night ringed and named. The lede carries the rank. {recapLead ? recapLead.entry.attributed_player : ''}.</p>
+      {recapLead && <GameNetTimeline points={recapNights} baseline={netSentiment(recapLead.usual)} highlight={recapLead.entry.game_id} highlightLabel={recapLead.line.game ?? recapLead.line.date} lead={nightRankSentence(recapNights, recapLead.entry.game_id, recapLead.usual)} />}
+    </section>
+
+    <section class="guide__section">
+      <h2>ScoreBug</h2>
+      <p class="eyebrow">
+        The stage's anchor, sticky at every width: away and home with the leader in bone and the trailer in gray (never a hue), the clock holding through a card, the line score with the current period lit, his live line and floor state, play and the speed presets. {recapLead ? `${recapLead.entry.attributed_player}, at ` : ''}
+        {replayMoments.map((m) => m.name).join(', ')}.
+      </p>
+      <div class="guide__stack guide__replay">
+        {replay && bugTeams && replayMoments.map((m) => (
+          <figure class="guide__fig">
+            <ScoreBug away={bugTeams.away} home={bugTeams.home} score={m.scene.score} clock={m.scene.clock} line={m.scene.line} his={{ name: recapLead!.entry.attributed_player, short: lastName(replay.focusName), line: m.scene.his.line, onFloor: m.scene.his.onFloor }} playing={m.name === 'the tip'} speed={1} onToggle={noop} onSpeed={noop} />
+            <figcaption>{m.name} · {m.scene.clock.label} {m.scene.clock.time}{m.scene.card ? ` · card: ${m.scene.card.label}` : ''}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>FlowStrip</h2>
+      <p class="eyebrow">The room over the game, and the scrubber: his negative and positive shares over a rolling window of his comments, drawn as far as the replay has played; his season dashed; the room's volume faint behind; the periods at their replay widths. Pointer and arrow keys seek.</p>
+      <div class="guide__stack guide__replay">
+        {replay && recapLead && [replayMoments[1]!, replayMoments[3]!].map((m) => (
+          <figure class="guide__fig">
+            <FlowStrip series={replay.flow} periodStarts={periodStartsU(replay.tl)} endU={replay.tl.endU} totalU={replay.tl.totalU} usual={negRate(recapLead.usual)} u={m.u} onSeek={noop} subject={lastName(replay.focusName)} valueText={`${m.scene.clock.label} ${m.scene.clock.time}`} />
+            <figcaption>{m.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>NetGauge</h2>
+      <p class="eyebrow">
+        The room on him right now: net over his last {RIGHT_NOW} comments on a vertical gauge, +100 to −100, his season's net dashed; the figure coloured by its strength, bone at nothing, full heat at −100, full ice at +100, linear. Under it, so far and his season as a net figure over a mix bar. The phone's form is a horizontal meter.
+      </p>
+      <div class="guide__row guide__replay">
+        {replay && recapLead && replayMoments.map((m) => (
+          <figure class="guide__fig">
+            <NetGauge now={m.scene.now} window={RIGHT_NOW} soFar={m.scene.soFar} season={recapLead.usual} />
+            <figcaption>{m.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div class="guide__stack guide__replay guide__replay--meter">
+        {replay && recapLead && [replayMoments[1]!, replayMoments[3]!].map((m) => (
+          <figure class="guide__fig">
+            <NetGauge now={m.scene.now} window={RIGHT_NOW} soFar={m.scene.soFar} season={recapLead.usual} orientation="horizontal" />
+            <figcaption>the phone's meter · {m.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Caption</h2>
+      <p class="eyebrow">What just happened, in the feed's own words with its clock. His plays take the bone edge and display type; his moments take the line, with the label, the words and a bar that drains over {MOMENT_HOLD} seconds while they hold.</p>
+      <div class="guide__stack guide__replay">
+        {replay && captionCases.map((c) => (
+          <figure class="guide__fig">
+            <Caption stamp={playStamp(c.play)} text={c.play.description} his={c.play.is_focus} hot={c.hot} who={lastName(replay.focusName).toUpperCase()} hold={MOMENT_HOLD} />
+            <figcaption>{c.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Court</h2>
+      <p class="eyebrow">
+        A full court in hairlines, the home logo gray at centre, no court art. Both teams' shots at the feed's positions, theirs gray and his team's bone, a miss hollow; his larger and ringed; his blocks dashed on the shot they ended; the five on the floor as chips, his in bone or a dashed bench chip. Behind each basket the team that scores there, read from the positions and swapping at half. The cards sit over the court.
+      </p>
+      <div class="guide__stack guide__replay guide__replay--court">
+        {replay && bugTeams && courtCases.map((c) => (
+          <figure class="guide__fig">
+            <Court plays={replay.plays} playU={replay.tl.playU} cursor={c.m.scene.cursor} u={c.m.u} focusId={replay.focusId} focusTeam={focusTeam} away={bugTeams.away.abbr} home={bugTeams.home} ends={replay.ends.get(c.m.scene.clock.period) ?? null} onFloor={c.m.scene.onFloor} order={replay.order} names={replay.names} blocked={replay.blocked} hot={c.hot}>
+              {c.m.scene.card && (
+                <div class="card">
+                  <div class="card__big">{c.m.scene.card.label}</div>
+                  <div class="card__sm">{bugTeams.away.abbr} {c.m.scene.score.away} – {c.m.scene.score.home} {bugTeams.home.abbr} · {c.m.scene.card.kind === 'halftime' ? 'teams switch ends · ' : ''}the room keeps talking</div>
+                </div>
+              )}
+            </Court>
+            <figcaption>{c.name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>FeedCard and Feed</h2>
+      <p class="eyebrow">A comment as it landed: the sentiment on the left edge, flair as a team abbreviation or "no flair", a phase tag outside live play, the score, the source; in the Everyone view, whom it is about. Never a username. Then the feed at halftime, about him, top-voted per beat.</p>
+      <ol class="feed guide__replay guide__replay--cards">
+        {replay && feedCases.map((f) => (
+          <li class="guide__case">
+            <ol class="feed"><FeedCard comment={f.c!} about={feedAbout(f.c!, f.about)} flair={f.c!.fanTeam ? (abbrOf.get(f.c!.fanTeam) ?? null) : null} fresh={false} /></ol>
+            <span class="guide__cap">{f.name}</span>
+          </li>
+        ))}
+      </ol>
+      <div class="guide__replay guide__replay--room">
+        {replay && feedHalf && <Feed room={replay.room} selection={feedHalf} u={replayMoments[2]!.u} view="him" density="top" onView={noop} onDensity={noop} focusId={replay.focusId} names={playerNameOf} abbrOf={abbrOf} tipLine={feedTip} />}
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>BoxScore</h2>
+      <p class="eyebrow">Both teams at halftime: the line each player has from the plays so far, a dot on whoever is on the floor, his row lit, team totals, and ROOM, net and the mix of the comments about each player so far, with n. The narrow columns hide on a phone.</p>
+      <div class="guide__replay">
+      {replay && boxTeams && <BoxScore teams={boxTeams} lines={replayMoments[2]!.scene.lines} names={replay.names} onFloor={replayMoments[2]!.scene.onFloor} focusId={replay.focusId} room={roomByPlayer(replay.room, replayMoments[2]!.scene.cursor >= 0 ? replay.room.commentU.findLastIndex((cu) => cu <= replayMoments[2]!.u) : -1)} />}
       </div>
     </section>
 
@@ -494,7 +681,10 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
         {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>kindest · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
         <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
         {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
+        {recapLead && <figure class="guide__fig"><VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} /><figcaption>in net, the recap page's metric: {recapLead.entry.attributed_player}'s night against his season; harsher below zero</figcaption></figure>}
       </div>
+      <p class="eyebrow">The hero form, a section's wide axis: the figure over the dot, the ends labeled, zero named for what it stands for.</p>
+      {recapLead && <VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} size="hero" tickLabel={`his season (${fmtNet(netSentiment(recapLead.usual))})`} />}
     </section>
 
     <section class="guide__section">
@@ -682,9 +872,52 @@ const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt
     height: auto;
     border: 1px solid var(--line);
   }
-  /* The rail demo sits in flow; the real one sticks. */
-  .guide__rail .rail {
+  /* The rail and the replay's parts sit in flow; the real ones stick. */
+  .guide__rail .rail,
+  .guide__replay :global(.bug),
+  .guide__replay :global(.flow),
+  .guide__replay :global(.gauge),
+  .guide__replay :global(.box) {
     position: static;
+    grid-area: auto;
+    margin: 0;
+  }
+  .guide__replay :global(.gauge) {
+    display: flex;
+    width: 200px;
+    height: 420px;
+  }
+  .guide__replay--cards {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+    max-width: 420px;
+  }
+  .guide__case .feed {
+    border: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+  .guide__cap {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--mute);
+  }
+  .guide__replay--room :global(.room) {
+    display: flex;
+    width: 316px;
+    height: 480px;
+  }
+  .guide__replay :global(.box) {
+    display: grid;
+  }
+  .guide__replay--court :global(.courtbox) {
+    max-width: 720px;
+  }
+  .guide__replay--meter :global(.meter) {
+    display: block;
+    max-width: 360px;
   }
   .guide__rows {
     margin: 0;

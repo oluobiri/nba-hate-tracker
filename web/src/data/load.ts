@@ -29,7 +29,10 @@ function describeDrift(remote: ContractSchema): string {
   for (const name of new Set([...Object.keys(CONTRACT.manifest.types), ...Object.keys(remote.manifest.types)])) {
     if (!isDeepStrictEqual(CONTRACT.manifest.types[name], remote.manifest.types[name])) return `manifest type ${name} differs`
   }
-  return 'documents differ'
+  for (const name of new Set([...Object.keys(CONTRACT.documents), ...Object.keys(remote.documents ?? {})])) {
+    if (!isDeepStrictEqual(CONTRACT.documents[name], remote.documents?.[name])) return `document ${name} differs`
+  }
+  return 'the contracts differ'
 }
 
 async function loadTable(loc: SeasonLocation, table: TableName, file: string): Promise<RawRow[]> {

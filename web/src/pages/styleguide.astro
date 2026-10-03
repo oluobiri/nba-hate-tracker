@@ -46,6 +46,7 @@ import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pi
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
+import { fmtNet } from '../lib/net'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { PRE, periodStartsU, playStamp } from '../lib/clock'
@@ -682,6 +683,8 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
         {recapLead && <figure class="guide__fig"><VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} /><figcaption>in net, the recap page's metric: {recapLead.entry.attributed_player}'s night against his season; harsher below zero</figcaption></figure>}
       </div>
+      <p class="eyebrow">The hero form, a section's wide axis: the figure over the dot, the ends labeled, zero named for what it stands for.</p>
+      {recapLead && <VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} size="hero" tickLabel={`his season (${fmtNet(netSentiment(recapLead.usual))})`} />}
     </section>
 
     <section class="guide__section">

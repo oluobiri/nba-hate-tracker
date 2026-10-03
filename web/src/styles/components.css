@@ -1146,6 +1146,76 @@
   font-size: 10px;
   color: var(--mute);
 }
+/* The hero form: a section's wide Δ axis, the figure over the dot, the ends labeled. */
+.vd--hero {
+  display: grid;
+  grid-template-areas:
+    'fig'
+    'track'
+    'ends';
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  width: 100%;
+  max-width: 760px;
+}
+.vd--hero .vd__figure {
+  position: relative;
+  left: var(--vd-x);
+  width: max-content;
+  transform: translateX(-50%);
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+.vd--hero .vd__figure small {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--mute);
+}
+.vd--hero .vd__track {
+  height: 1px;
+  margin: 10px 0 8px;
+  background: var(--line-2);
+  overflow: visible;
+}
+.vd--hero .vd__fill {
+  top: -2px;
+  bottom: -2px;
+  opacity: 0.55;
+}
+.vd--hero .vd__base {
+  top: -12px;
+  bottom: -12px;
+}
+.vd--hero .vd__dot {
+  position: absolute;
+  top: -8px;
+  left: var(--vd-x);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--vd-ink);
+  transform: translateX(-50%);
+}
+.vd--hero.vd--neu .vd__dot {
+  background: var(--bone-2);
+}
+.vd--hero .vd__ends {
+  grid-area: ends;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  font-size: 11px;
+  color: var(--mute);
+}
+.vd--hero .vd__ends > span:last-child {
+  text-align: right;
+}
+.vd--hero .vd__tick {
+  text-align: center;
+}
 
 /* GamesTable: the log as a table. Wide columns go on a phone; the line collapses to P/R/A. */
 .gt {
@@ -2262,7 +2332,6 @@ a.hero__who:hover {
   display: grid;
   gap: 8px;
   margin: 0;
-  max-width: 760px;
 }
 .nt__lead {
   margin: 0;
@@ -2340,6 +2409,18 @@ a.hero__who:hover {
   margin: 0 2px 0 6px;
   border-top: 1px dashed var(--mute);
   vertical-align: 3px;
+}
+/* The SVG scales with the page; on a phone the words scale back up. */
+@media (max-width: 520px) {
+  .nt__tick {
+    font-size: 24px;
+  }
+  .nt__label {
+    font-size: 26px;
+  }
+  .nt__pt {
+    r: 9px;
+  }
 }
 
 /* RecapRows: one curated recap per row, the whole row the link; the strip

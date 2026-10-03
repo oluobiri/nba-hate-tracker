@@ -73,13 +73,11 @@ const seasonNet = netSentiment(recap.usual)
   </script>
   <main id="main" class="wrap page rp">
     <header class="rp__head">
-      <div class="rp__head-text">
-        <p class="eyebrow"><a class="rp__up" href="/recaps/">Recaps</a> · <GameLine parts={recap.line} /></p>
-        <h1 class={`rp__name rp__name--${recap.tone}`}>{name}</h1>
-        <p class="rp__hook">{recap.hook}</p>
-        <p class="rp__meta mono">{boxLine(recap.box)} · {countsLine(recap.entry)}</p>
-      </div>
+      <p class="eyebrow rp__eyebrow"><a class="rp__up" href="/recaps/">Recaps</a> · <GameLine parts={recap.line} /></p>
+      <h1 class={`rp__name rp__name--${recap.tone}`}>{name}</h1>
       <img class="rp__mug" src={headshot} srcset={headshotSrcSet(headshot, [180, 420])} sizes="96px" alt="" width="96" height="96" decoding="async" />
+      <p class="rp__hook">{recap.hook}</p>
+      <p class="rp__meta mono">{boxLine(recap.box)} · {countsLine(recap.entry)}</p>
     </header>
 
     <section class="rp__stage" aria-label="The replay">
@@ -89,9 +87,7 @@ const seasonNet = netSentiment(recap.usual)
     <section class="rp__section" aria-labelledby="night-h">
       <h2 id="night-h">The night against his season</h2>
       <p class="rp__lede">{verdict}</p>
-      <div class="rp__verdict">
-        <VerdictDelta delta={netDelta} n={recap.night?.total ?? 0} metric="net" span={0.6} />
-      </div>
+      <VerdictDelta delta={netDelta} n={recap.night?.total ?? 0} metric="net" span={0.6} size="hero" tickLabel={`his season (${fmtNet(seasonNet)})`} />
       <dl class="rp__mix mono">
         <dt>This night</dt>
         <dd>
@@ -138,24 +134,37 @@ const seasonNet = netSentiment(recap.usual)
   .rp {
     gap: 40px;
   }
+  /* The headshot sits on the name's row, centred on it. */
   .rp__head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 96px;
-    gap: 16px;
-    align-items: start;
+    grid-template-areas:
+      'eyebrow eyebrow'
+      'name mug'
+      'hook hook'
+      'meta meta';
+    gap: 12px 16px;
+    align-items: center;
     padding-bottom: 24px;
     border-bottom: 1px solid var(--line);
   }
-  .rp__head-text {
-    display: grid;
-    gap: 12px;
-    min-width: 0;
+  .rp__eyebrow {
+    grid-area: eyebrow;
+    margin: 0;
   }
   .rp__up {
     color: var(--mute);
   }
   .rp__name {
+    grid-area: name;
     margin: 0;
+    min-width: 0;
+  }
+  .rp__hook {
+    grid-area: hook;
+  }
+  .rp__meta {
+    grid-area: meta;
   }
   .rp__name--neg {
     color: var(--heat);
@@ -176,6 +185,7 @@ const seasonNet = netSentiment(recap.usual)
     color: var(--bone-2);
   }
   .rp__mug {
+    grid-area: mug;
     width: 96px;
     height: 96px;
     border-radius: 3px;
@@ -202,17 +212,12 @@ const seasonNet = netSentiment(recap.usual)
     line-height: 1.45;
     color: var(--bone-2);
   }
-  .rp__verdict {
-    display: grid;
-    gap: 12px;
-    justify-items: start;
-  }
   .rp__mix {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 8px 16px;
     align-items: center;
-    max-width: 560px;
+    max-width: 760px;
     margin: 0;
     font-size: 12px;
     color: var(--bone-2);

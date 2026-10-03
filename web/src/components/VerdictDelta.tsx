@@ -15,11 +15,17 @@ export interface VerdictDeltaProps {
   span?: number
   /** What the Δ is in: the negative share (harsher when positive) or net (harsher when negative). */
   metric?: 'neg' | 'net'
+  /** A row's inline figure, or a section's wide axis with the figure over the dot and the ends labeled. */
+  size?: 'row' | 'hero'
+  /** What zero stands for on the hero axis: "his season (+4)". */
+  tickLabel?: string
 }
 
 const DEFAULT_SPAN = 0.4
+/** The hero form sits beside net figures, which print a true minus. */
+const minus = (v: string): string => v.replace('-', '−')
 
-export function VerdictDelta({ delta, n, span = DEFAULT_SPAN, metric = 'neg' }: VerdictDeltaProps) {
+export function VerdictDelta({ delta, n, span = DEFAULT_SPAN, metric = 'neg', size = 'row', tickLabel }: VerdictDeltaProps) {
   const harsher = delta !== null && (metric === 'net' ? delta < 0 : delta > 0)
   const tone = delta === null || delta === 0 ? 'neu' : harsher ? 'neg' : 'pos'
   const pts = delta === null ? 0 : Math.round(Math.abs(delta) * 100)
@@ -31,7 +37,28 @@ export function VerdictDelta({ delta, n, span = DEFAULT_SPAN, metric = 'neg' }: 
         ? `At ${against}, from ${fmtInt(n)} comments.`
         : `${pts} ${pts === 1 ? 'point' : 'points'} ${harsher ? 'harsher' : 'kinder'} than ${against}, from ${fmtInt(n)} comments.`
   const half = Math.min(1, Math.abs(delta ?? 0) / span) * 50
-  const fill = { '--vd-l': `${delta !== null && delta < 0 ? 50 - half : 50}%`, '--vd-w': `${half}%` } as CSSProperties
+  const fill = { '--vd-l': `${delta !== null && delta < 0 ? 50 - half : 50}%`, '--vd-w': `${half}%`, '--vd-x': `${delta !== null && delta < 0 ? 50 - half : 50 + half}%` } as CSSProperties
+  if (size === 'hero') {
+    return (
+      <div className={`vd vd--hero vd--${tone}`} style={fill}>
+        <span className="vd__figure mono" aria-hidden="true">
+          {delta === null ? '—' : minus(fmtSigned(delta, 0))}
+          <small>{delta === null ? '' : ' pts'}</small>
+        </span>
+        <span className="vd__track" aria-hidden="true">
+          {delta !== null && pts > 0 && <span className="vd__fill" />}
+          <span className="vd__base" />
+          {delta !== null && <span className="vd__dot" />}
+        </span>
+        <span className="vd__ends mono" aria-hidden="true">
+          <span>{minus(fmtSigned(-span, 0))}</span>
+          <span className="vd__tick">{tickLabel ?? 'his usual'}</span>
+          <span>{fmtSigned(span, 0)}</span>
+        </span>
+        <span className="visually-hidden">{text}</span>
+      </div>
+    )
+  }
   return (
     <span className={`vd vd--${tone}`}>
       <span className="vd__figure mono" aria-hidden="true">

@@ -17,11 +17,11 @@ export interface GameNetTimelineProps {
   lead: string
 }
 
-const W = 760
-const H = 280
-const PAD = { l: 40, r: 28, t: 34, b: 26 }
+const W = 1100
+const H = 300
+const PAD = { l: 44, r: 28, t: 34, b: 26 }
 /** About the width of the ring's label, in viewBox units. */
-const LABEL_W = 120
+const LABEL_W = 140
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
 const day = (date: string): number => Date.parse(`${date}T00:00:00Z`)
@@ -70,18 +70,18 @@ export function GameNetTimeline({ points, baseline, highlight, highlightLabel, l
         ))}
         {points.map((p) =>
           p.win ? (
-            <circle key={p.gameId} className="nt__pt nt__pt--w" cx={x(day(p.date))} cy={y(p.net)} r={5}>
+            <circle key={p.gameId} className="nt__pt nt__pt--w" cx={x(day(p.date))} cy={y(p.net)} r={5.5}>
               <title>{p.label}</title>
             </circle>
           ) : (
-            <circle key={p.gameId} className="nt__pt nt__pt--l" cx={x(day(p.date))} cy={y(p.net)} r={4.25}>
+            <circle key={p.gameId} className="nt__pt nt__pt--l" cx={x(day(p.date))} cy={y(p.net)} r={4.75}>
               <title>{p.label}</title>
             </circle>
           ),
         )}
         {me && (
           <g>
-            <circle className="nt__ring" cx={x(day(me.date))} cy={y(me.net)} r={12} />
+            <circle className="nt__ring" cx={x(day(me.date))} cy={y(me.net)} r={13} />
             {/* The label hangs inward near the left edge and stays above the floor. */}
             <text className="nt__label" x={x(day(me.date))} y={Math.min(y(me.net) + 29, H - PAD.b - 4)} textAnchor={x(day(me.date)) - PAD.l < LABEL_W ? 'start' : 'end'}>
               {highlightLabel} · {fmtNet(me.net)}

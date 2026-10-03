@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
-import { boxLine, buildRecaps, countsLine, gamePhrase, hook, indexLede, lagPhrase, leadAndList, nightSentence, periodCells, periodsText, recapDelta, recapHrefs, recapTone } from './recaps'
+import type { GameLine } from './games'
+import {
+  boxLine,
+  buildRecaps,
+  countsLine,
+  gamePhrase,
+  hook,
+  indexLede,
+  lagPhrase,
+  leadAndList,
+  nextRecap,
+  nightNetSentence,
+  nightPoints,
+  nightRankSentence,
+  nightSentence,
+  periodCells,
+  periodsText,
+  quarterTurnSentence,
+  recapDelta,
+  recapHrefs,
+  recapNetDelta,
+  recapTone,
+} from './recaps'
 import type { Counts } from './types'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
@@ -18,9 +40,66 @@ describe('periodCells', () => {
     expect(cells[1]!.counts.total).toBe(0)
   })
 
-  it('reads as one line, a silent period named as such', () => {
+  it('reads as one line, a silent period named as such, in share or in net', () => {
     const cells = periodCells({ '1': { neg: 29, pos: 38, neu: 33 }, '2': { neg: 0, pos: 0, neu: 0 } })
     expect(periodsText(cells)).toBe('Q1 29% negative of 100, Q2 no comments')
+    expect(periodsText(cells, 'net')).toBe('Q1 net +9 of 100, Q2 no comments')
+  })
+})
+
+describe('the sections after the buzzer, in net', () => {
+  const usual = c(30, 40, 30)
+
+  it('judges the night in net points against his season, labeled as every thread', () => {
+    expect(nightNetSentence('A Player', c(60, 20, 20), usual, 20)).toBe('Every thread about A Player that night, post-game included: net −40 across 100 comments, 40 points below his season\'s 0.')
+    expect(nightNetSentence('A Player', c(10, 20, 70), c(20, 40, 40), 20)).toBe('Every thread about A Player that night, post-game included: net +60 across 100 comments, 40 points above his season\'s +20.')
+    expect(nightNetSentence('A Player', c(30, 40, 30), usual, 20)).toBe("Every thread about A Player that night, post-game included: net 0 across 100 comments, at his season's 0.")
+    expect(nightNetSentence('A Player', c(5, 5, 5), usual, 20)).toBe('Too few comments about A Player that night to judge: 15.')
+    expect(nightNetSentence('A Player', null, usual, 20)).toBe("Nobody mentioned A Player in the game's threads that night.")
+    expect(recapNetDelta(c(60, 20, 20), usual, 20)).toBeCloseTo(-0.4)
+    expect(recapNetDelta(c(5, 5, 5), usual, 20)).toBeNull()
+  })
+
+  it('reads the arc from the first and last regulation quarters with comments', () => {
+    const turned = periodCells({ '1': { neg: 20, pos: 40, neu: 40 }, '2': { neg: 50, pos: 10, neu: 40 }, '3': { neg: 60, pos: 10, neu: 30 }, '4': { neg: 70, pos: 5, neu: 25 }, '5': { neg: 0, pos: 100, neu: 0 } })
+    expect(quarterTurnSentence(turned)).toBe('The room turned on him as the night went on: net +20 in the 1st, −65 by the 4th. His comments in the live thread, quarter by quarter.')
+    const held = periodCells({ '1': { neg: 30, pos: 30, neu: 40 }, '2': { neg: 0, pos: 0, neu: 0 }, '3': { neg: 35, pos: 30, neu: 35 }, '4': { neg: 0, pos: 0, neu: 0 } })
+    expect(quarterTurnSentence(held)).toBe('The room held its line all night: net 0 in the 1st, −5 by the 3rd. His comments in the live thread, quarter by quarter.')
+    expect(quarterTurnSentence(periodCells({ '1': { neg: 1, pos: 0, neu: 0 }, '2': { neg: 0, pos: 0, neu: 0 } }))).toBe('His comments in the live thread, quarter by quarter.')
+  })
+
+  const night = (gameId: string, date: string, counts: Counts | null, win: boolean, playoffs = false, dnp = false): GameLine => ({
+    gameId,
+    date,
+    opponent: 'Other',
+    opponentAbbr: 'OTH',
+    home: true,
+    win,
+    score: '100–99',
+    seasonType: playoffs ? 'playoffs' : 'regular_season',
+    minutes: dnp ? 0 : 30,
+    pts: 10,
+    reb: 5,
+    ast: 2,
+    plusMinus: 0,
+    gameScore: 8.5,
+    line: '10 pts',
+    dnp,
+    counts,
+    talked: counts !== null && counts.total >= 20,
+    delta: null,
+    recapHref: null,
+  })
+
+  it('points every graded game by date with the room\'s net, and ranks the night worst-first', () => {
+    const log = [night('g1', '2026-10-21', c(10, 10, 80), true), night('g2', '2026-11-02', c(5, 5, 5), false), night('g3', '2026-12-01', c(60, 20, 20), false, true), night('g4', '2026-12-05', c(50, 30, 20), true, true, true), night('g5', '2027-01-09', c(40, 40, 20), false, true)]
+    const points = nightPoints(log)
+    expect(points.map((p) => p.gameId)).toEqual(['g1', 'g3', 'g5'])
+    expect(points[1]).toMatchObject({ n: 100, win: false, playoffs: true, label: '2026-12-01 · L vs OTH 100–99 · net −40 from 100 comments · Game Score 8.5' })
+    expect(points[1]!.net).toBeCloseTo(-0.4)
+    expect(nightRankSentence(points, 'g3', usual)).toBe('The 3 games of his the room talked about, in date order. This was his worst night of the season at net −40, against a season of 0.')
+    expect(nightRankSentence(points, 'g5', usual)).toBe('The 3 games of his the room talked about, in date order. This was his 2nd worst night of the season at net −20, against a season of 0.')
+    expect(nightRankSentence(points, 'g9', usual)).toBe('The 3 games of his the room talked about, in date order.')
   })
 })
 
@@ -243,6 +322,12 @@ describe('buildRecaps', () => {
     expect(recaps[0]!.delta).toBeCloseTo(0.6 - 0.5)
     expect(recaps[0]!.tone).toBe('neg')
     expect(recaps[1]).toMatchObject({ night: null, delta: null, tone: 'neu' })
+  })
+
+  it('names the next recap in config order, wrapping, and none when alone', () => {
+    expect(nextRecap(recaps, 'g7-one-player')?.key).toBe('g1-two-player')
+    expect(nextRecap(recaps, 'g1-two-player')?.key).toBe('g7-one-player')
+    expect(nextRecap(recaps.slice(0, 1), 'g7-one-player')).toBeNull()
   })
 
   it('splits the lead from the list', () => {

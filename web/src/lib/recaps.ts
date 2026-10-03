@@ -4,8 +4,9 @@
 // every figure goes through format.ts. Nothing here opens a recap file.
 import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
 import { fmtInt, fmtPct, ordinal } from './format'
-import { gameLine, type GameLineParts } from './games'
-import { countsOf, negRate, sumCounts } from './metrics'
+import { type GameLine, gameLine, type GameLineParts } from './games'
+import { countsOf, negRate, netSentiment, sumCounts } from './metrics'
+import { fmtNet } from './net'
 import type { Counts } from './types'
 
 export const recapHref = (key: string): string => `/recaps/${key}/`
@@ -43,11 +44,10 @@ export function periodCells(byPeriod: Record<string, PeriodCounts>): PeriodCell[
     .toSorted((a, b) => a.key - b.key)
 }
 
-/** The strip's text alternative: each quarter's negative share and n. */
-export function periodsText(cells: readonly PeriodCell[]): string {
-  return cells
-    .map((c) => (c.counts.total ? `${c.label} ${fmtPct(negRate(c.counts), 0)} negative of ${fmtInt(c.counts.total)}` : `${c.label} no comments`))
-    .join(', ')
+/** The strip's text alternative: each quarter's negative share (or net) and n. */
+export function periodsText(cells: readonly PeriodCell[], figure?: 'net'): string {
+  const read = (c: PeriodCell): string => (figure === 'net' ? `net ${fmtNet(netSentiment(c.counts))}` : `${fmtPct(negRate(c.counts), 0)} negative`)
+  return cells.map((c) => (c.counts.total ? `${c.label} ${read(c)} of ${fmtInt(c.counts.total)}` : `${c.label} no comments`)).join(', ')
 }
 
 // --- The hook ----------------------------------------------------------------
@@ -229,6 +229,76 @@ export function nightSentence(name: string, night: Counts | null, usual: Counts,
   const points = Math.abs(Math.round(100 * delta))
   const against = points === 0 ? 'at his usual' : `${fmtInt(points)} ${plural(points, 'point', 'points')} ${delta > 0 ? 'harsher' : 'kinder'} than his usual ${fmtPct(negRate(usual), 0)}`
   return `Every thread about ${name} that night, post-game included: ${fmtPct(negRate(night), 0)} negative of ${fmtInt(night.total)} comments, ${against}.`
+}
+
+// --- The sections after the buzzer, in net ------------------------------------
+
+/** The night's net minus his season's; null under the floor. */
+export function recapNetDelta(night: Counts | null, usual: Counts, floor: number): number | null {
+  return night && night.total >= floor ? netSentiment(night) - netSentiment(usual) : null
+}
+
+/** The night, every thread about him, against his season, in net points. */
+export function nightNetSentence(name: string, night: Counts | null, usual: Counts, floor: number): string {
+  if (!night) return `Nobody mentioned ${name} in the game's threads that night.`
+  if (night.total < floor) return `Too few comments about ${name} that night to judge: ${fmtInt(night.total)}.`
+  const delta = netSentiment(night) - netSentiment(usual)
+  const points = Math.abs(Math.round(100 * delta))
+  const against = points === 0 ? `at his season's ${fmtNet(netSentiment(usual))}` : `${fmtInt(points)} ${plural(points, 'point', 'points')} ${delta < 0 ? 'below' : 'above'} his season's ${fmtNet(netSentiment(usual))}`
+  return `Every thread about ${name} that night, post-game included: net ${fmtNet(netSentiment(night))} across ${fmtInt(night.total)} comments, ${against}.`
+}
+
+/** The room's arc in net, read from the first and last regulation quarters with comments. */
+export function quarterTurnSentence(cells: readonly PeriodCell[]): string {
+  const spoken = cells.filter((c) => c.counts.total > 0 && c.key <= REGULATION)
+  const first = spoken[0]
+  const last = spoken[spoken.length - 1]
+  if (!first || !last || first === last) return 'His comments in the live thread, quarter by quarter.'
+  const turn = Math.round(100 * (netSentiment(last.counts) - netSentiment(first.counts)))
+  const arc = turn <= -SWING ? 'The room turned on him as the night went on' : turn >= SWING ? 'The room came around as the night went on' : 'The room held its line all night'
+  return `${arc}: net ${fmtNet(netSentiment(first.counts))} in the ${periodWord(first.key)}, ${fmtNet(netSentiment(last.counts))} by the ${periodWord(last.key)}. His comments in the live thread, quarter by quarter.`
+}
+
+export interface NightPoint {
+  gameId: string
+  /** "YYYY-MM-DD". */
+  date: string
+  net: number
+  n: number
+  win: boolean
+  playoffs: boolean
+  label: string
+}
+
+/** His graded games by date with the room's net on each: the season his night sits in. */
+export function nightPoints(log: readonly GameLine[]): NightPoint[] {
+  return log
+    .filter((g) => g.talked && !g.dnp)
+    .map((g) => ({
+      gameId: g.gameId,
+      date: g.date,
+      net: netSentiment(g.counts!),
+      n: g.counts!.total,
+      win: g.win,
+      playoffs: g.seasonType === 'playoffs',
+      label: `${g.date} · ${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score} · net ${fmtNet(netSentiment(g.counts!))} from ${fmtInt(g.counts!.total)} comments · Game Score ${g.gameScore.toFixed(1)}`,
+    }))
+}
+
+/** Where the night ranks among his graded games, worst first. */
+export function nightRankSentence(points: readonly NightPoint[], gameId: string, usual: Counts): string {
+  const me = points.find((p) => p.gameId === gameId)
+  if (!me) return `The ${fmtInt(points.length)} games of his the room talked about, in date order.`
+  const worse = points.filter((p) => p.net < me.net).length
+  const rank = worse === 0 ? 'worst' : `${ordinal(worse + 1)} worst`
+  return `The ${fmtInt(points.length)} games of his the room talked about, in date order. This was his ${rank} night of the season at net ${fmtNet(me.net)}, against a season of ${fmtNet(netSentiment(usual))}.`
+}
+
+/** The recap after this one in config order, wrapping; null when it is the only one. */
+export function nextRecap(recaps: readonly Recap[], key: string): Recap | null {
+  if (recaps.length < 2) return null
+  const i = recaps.findIndex((r) => r.key === key)
+  return recaps[(i + 1) % recaps.length] ?? null
 }
 
 /** The first recap leads; the rest are the list. */

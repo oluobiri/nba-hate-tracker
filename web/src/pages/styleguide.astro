@@ -5,6 +5,7 @@ import { DeltaDot } from '../components/DeltaDot'
 import { Exhibit, commentUrl } from '../components/Exhibit'
 import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
+import { GameNetTimeline } from '../components/GameNetTimeline'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
@@ -43,7 +44,8 @@ import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList, recapHrefs } from '../lib/recaps'
+import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
+import { netSentiment } from '../lib/metrics'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { PRE, periodStartsU, playStamp } from '../lib/clock'
@@ -261,6 +263,8 @@ const recapLog = recapLead
       recapHrefs(manifest.recaps, recapLead.entry.attributed_player),
     ).toSorted((a, b) => b.date.localeCompare(a.date))
   : []
+const recapNights = recapLead ? nightPoints(recapLog) : []
+const recapNet = recapLead ? recapNetDelta(recapLead.night, recapLead.usual, gameFloor) : null
 const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
 const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
 // The replay's parts, from the lead recap's file, at moments chosen by rule:
@@ -521,7 +525,14 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         {mostPeriods && <figure class="guide__fig"><PeriodStrip cells={mostPeriods.cells} size="hero" subject={mostPeriods.entry.attributed_player} /><figcaption>most overtime · {mostPeriods.entry.attributed_player}, {mostPeriods.cells.length} quarters and overtimes, hero size</figcaption></figure>}
         {thinnestRecap && <figure class="guide__fig"><PeriodStrip cells={thinnestRecap.cells} subject={thinnestRecap.entry.attributed_player} /><figcaption>thinnest quarter · {thinnestRecap.entry.attributed_player}, {fmtInt(thinnestPeriod(thinnestRecap))} comments in one quarter or overtime, row size</figcaption></figure>}
         {recapLead && <figure class="guide__fig"><PeriodStrip cells={silenced} subject={recapLead.entry.attributed_player} /><figcaption>a silent quarter, constructed: {recapLead.entry.attributed_player} with Q2 zeroed</figcaption></figure>}
+        {recapLead && <figure class="guide__fig"><PeriodStrip cells={recapLead.cells} size="hero" subject={recapLead.entry.attributed_player} figure="net" /><figcaption>with a net figure over each bar, the recap page's form</figcaption></figure>}
       </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>GameNetTimeline</h2>
+      <p class="eyebrow">His graded games by date, the room's net on each: wins filled, losses hollow, the playoffs as a band, his season dashed, this night ringed and named. The lede carries the rank. {recapLead ? recapLead.entry.attributed_player : ''}.</p>
+      {recapLead && <GameNetTimeline points={recapNights} baseline={netSentiment(recapLead.usual)} highlight={recapLead.entry.game_id} highlightLabel={recapLead.line.game ?? recapLead.line.date} lead={nightRankSentence(recapNights, recapLead.entry.game_id, recapLead.usual)} />}
     </section>
 
     <section class="guide__section">
@@ -669,6 +680,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>kindest · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
         <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
         {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
+        {recapLead && <figure class="guide__fig"><VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} /><figcaption>in net, the recap page's metric: {recapLead.entry.attributed_player}'s night against his season; harsher below zero</figcaption></figure>}
       </div>
     </section>
 

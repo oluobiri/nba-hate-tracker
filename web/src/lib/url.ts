@@ -1,11 +1,12 @@
 // Cross-page state lives in the query string:
-//   ?lens=neg&tab=pos&n=250&all=1&games=all&log=all&scale=raw&min=500&t=600
+//   ?lens=neg&tab=pos&n=250&all=1&games=all&log=all&scale=raw&min=500&t=600&mode=loved&by=count&w=21
 // Defaults come from the caller (the official threshold and the cell floor
 // are manifest values), so a link with only non-default state serialises
 // short. `all` expands a page's primary list: the rows on the leaderboard,
 // the receipts on a player page. The game log has its own keys so the two
 // never collide; the fanbases grid reads `scale` and `min`; a recap's
-// replay reads `t`, wall seconds since tip, and opens paused there.
+// replay reads `t`, wall seconds since tip, and opens paused there; the race
+// reads `mode`, `by` and `w`, the week's index on the season's spine.
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
 import { LENSES, type Lens, type Sentiment } from './types'
@@ -16,6 +17,9 @@ export type GamesFilter = 'talked' | 'all'
 export type LogRows = 'top' | 'all'
 // The grid's colour: each cell's Δ against its roster's usual, or the raw negative share.
 export type Scale = 'delta' | 'raw'
+// The race's two toggles: which pole, and its share or its count.
+export type RaceMode = 'hated' | 'loved'
+export type RaceBy = 'rate' | 'count'
 
 export interface ViewState {
   lens: Lens
@@ -28,6 +32,10 @@ export interface ViewState {
   min: number
   /** The replay's moment, wall seconds since tip; null when the link names none. */
   t: number | null
+  mode: RaceMode
+  by: RaceBy
+  /** The race's week, an index on the spine; null is the final week. */
+  w: number | null
 }
 
 export interface ViewDefaults {
@@ -42,6 +50,7 @@ export const RECEIPT_KEYS: readonly string[] = ['tab', 'all']
 export const GAME_KEYS: readonly string[] = ['games', 'log']
 export const GRID_KEYS: readonly string[] = ['scale', 'min']
 export const REPLAY_KEYS: readonly string[] = ['t']
+export const RACE_KEYS: readonly string[] = ['mode', 'by', 'w']
 
 export function parseViewState(search: string, defaults: ViewDefaults): ViewState {
   const q = new URLSearchParams(search)
@@ -50,6 +59,7 @@ export function parseViewState(search: string, defaults: ViewDefaults): ViewStat
   const n = Number(q.get('n'))
   const min = Number(q.get('min'))
   const t = q.get('t') ? Number(q.get('t')) : NaN
+  const w = q.get('w') ? Number(q.get('w')) : NaN
   return {
     lens: LENSES.includes(lens as Lens) ? (lens as Lens) : 'neg',
     tab: tab === 'pos' || tab === 'neu' ? tab : 'neg',
@@ -60,6 +70,9 @@ export function parseViewState(search: string, defaults: ViewDefaults): ViewStat
     scale: q.get('scale') === 'raw' ? 'raw' : 'delta',
     min: Number.isFinite(min) && min >= 1 ? Math.round(min) : (defaults.min ?? 0),
     t: Number.isFinite(t) && t >= 0 ? Math.round(t) : null,
+    mode: q.get('mode') === 'loved' ? 'loved' : 'hated',
+    by: q.get('by') === 'count' ? 'count' : 'rate',
+    w: Number.isInteger(w) && w >= 0 ? w : null,
   }
 }
 
@@ -74,6 +87,9 @@ export function serializeViewState(s: ViewState, defaults: ViewDefaults): string
   if (s.scale !== 'delta') q.set('scale', s.scale)
   if (s.min !== (defaults.min ?? 0)) q.set('min', String(s.min))
   if (s.t !== null) q.set('t', String(s.t))
+  if (s.mode !== 'hated') q.set('mode', s.mode)
+  if (s.by !== 'rate') q.set('by', s.by)
+  if (s.w !== null) q.set('w', String(s.w))
   const str = q.toString()
   return str ? `?${str}` : ''
 }

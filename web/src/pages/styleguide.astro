@@ -21,6 +21,7 @@ import { Court } from '../components/replay/Court'
 import { FlowStrip } from '../components/replay/FlowStrip'
 import { NetGauge } from '../components/replay/NetGauge'
 import { ScoreBug } from '../components/replay/ScoreBug'
+import { RaceRow } from '../components/RaceRow'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
@@ -53,6 +54,7 @@ import { PRE, periodStartsU, playStamp } from '../lib/clock'
 import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
+import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
@@ -121,6 +123,32 @@ const rowProps = (name: string) => {
   const p = players.get(name)!
   return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, position: p.position, headshot: p.headshot_url }
 }
+// Race rows by rule: the final leader, the last bar of the first week's count race (the
+// minimum width holds the face), the first NEW chip, the longest name, the loved leader, a count.
+const raceEntry = manifest.rules.floors.race_entry_min_n
+const raceNames = raceField(overall.map((r) => ({ ...countsOf(r), name: r.attributed_player })), threshold).map((p) => p.name)
+const raceSpine = weekSpine(tables.player_temporal.map((r) => r.week))
+const raceFrames = cumulate(weeklyCounts(raceNames, tables.player_temporal.map((r) => ({ ...countsOf(r), name: r.attributed_player, week: r.week })), raceSpine))
+const raceCase = (w: number, mode: 'hated' | 'loved', by: 'rate' | 'count', pick: (ranked: ReturnType<typeof rankFrame>, moves: ReturnType<typeof movement>) => number) => {
+  const ranked = rankFrame(raceFrames[w]!, mode, by, raceEntry)
+  const moves = movement(ranked, w > 0 ? rankFrame(raceFrames[w - 1]!, mode, by, raceEntry) : null)
+  const k = pick(ranked, moves)
+  const r = ranked[k]
+  if (!r) return null
+  const { position: _position, ...who } = rowProps(raceNames[r.i]!)
+  return { ...who, rank: k + 1, mode, by, value: r.value, n: r.n, share: r.value / ranked[0]!.value, move: moves.get(r.i) ?? null }
+}
+const raceLast = raceFrames.length - 1
+const raceNewWeek = raceFrames.findIndex((f, w) => w > 0 && rankFrame(f, 'hated', 'rate', raceEntry).slice(0, 10).some((r) => !rankFrame(raceFrames[w - 1]!, 'hated', 'rate', raceEntry).some((b) => b.i === r.i)))
+const raceLongest = raceNames.indexOf(raceNames.toSorted((a, b) => b.length - a.length)[0]!)
+const raceRows = [
+  raceCase(raceLast, 'hated', 'rate', () => 0),
+  raceCase(0, 'hated', 'count', (ranked) => ranked.length - 1),
+  raceNewWeek > 0 ? raceCase(raceNewWeek, 'hated', 'rate', (ranked, moves) => ranked.findIndex((r) => moves.get(r.i) === 'new')) : null,
+  raceCase(raceLast, 'hated', 'rate', (ranked) => ranked.findIndex((r) => r.i === raceLongest)),
+  raceCase(raceLast, 'loved', 'rate', () => 0),
+  raceCase(raceLast, 'loved', 'count', () => 0),
+].filter((r) => r !== null)
 const freeAgent = byNeg.find((r) => r.rank !== null && players.get(r.row.attributed_player)?.roster_team === null)
 const byCustom = rankBy(overall, 'neg', customN)
 const hollow = byCustom.find((r) => r.rank !== null && r.row.total < threshold)!
@@ -444,6 +472,15 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         {byVolume.slice(0, 2).map((r) => <BoardRow rank={r.rank} official {...rowProps(r.row.attributed_player)} counts={r.row} lens="volume" scale={r.value / maxVolume} />)}
       </ol>
       <p class="eyebrow">Official · free agent with a rank-delta chip · hollow (below the official minimum) · ghosted (below the custom threshold) · volume lens.</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>RaceRow</h2>
+      <p class="eyebrow">The race's row: one solid bar in heat or ice, sized against that week's leader, the face at its end, the figure and n just past it. The movement chip is bone.</p>
+      <ol class="guide__rows">
+        {raceRows.map((r) => <RaceRow {...r} />)}
+      </ol>
+      <p class="eyebrow">The final leader · the shortest bar of a count race (the minimum width holds the face) · NEW the week a player joins · the longest name · an ice row · a count figure.</p>
     </section>
 
     <section class="guide__section">

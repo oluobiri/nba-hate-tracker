@@ -1,12 +1,75 @@
 ---
+import { MethodNote } from '../components/MethodNote'
+import { Race, type RacePlayer } from '../components/Race'
+import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
+import { fmtInt } from '../lib/format'
+import { countsOf } from '../lib/metrics'
+import { packCounts, raceField, weeklyCounts } from '../lib/race'
+import { RACE_KEYS } from '../lib/url'
+import { PHASE_LABELS, phaseBands, phaseOf, weekLabel, weekOf, weekSpine } from '../lib/weeks'
+
+// The Race. One island; the field, the weekly counts and both rule numbers
+// are composed here and arrive as props.
+const { manifest, tables } = await getSeason()
+const official = manifest.rules.qualified_threshold
+const entry = manifest.rules.floors.race_entry_min_n
+const calendar = manifest.calendar
+
+const abbr = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+const dim = new Map(tables.players.map((p) => [p.attributed_player, p]))
+const field = raceField(
+  tables.player_overall.map((r) => ({ ...countsOf(r), name: r.attributed_player })),
+  official,
+)
+const players: RacePlayer[] = field.map(({ name }) => {
+  const p = dim.get(name)!
+  return { name, slug: p.slug, abbr: p.roster_team ? (abbr.get(p.roster_team) ?? null) : null, headshot: p.headshot_url }
+})
+
+const spine = weekSpine(tables.player_temporal.map((r) => r.week))
+const counts = packCounts(
+  weeklyCounts(
+    field.map((p) => p.name),
+    tables.player_temporal.map((r) => ({ ...countsOf(r), name: r.attributed_player, week: r.week })),
+    spine,
+  ),
+)
+// Each week is named by its Monday and its phase; the last week is the leaderboard.
+const weeks = spine.map((w, i) => {
+  const phase = phaseOf(w, calendar)
+  return { label: weekLabel(w), phase: i === spine.length - 1 ? 'Season final' : phase ? PHASE_LABELS[phase] : '' }
+})
+const bands = phaseBands(spine, calendar)
+const marks = [
+  { label: 'Christmas', day: calendar['christmas'] },
+  { label: 'Trade deadline', day: calendar['trade_deadline'] },
+  { label: 'Finals', day: calendar['finals_start'] },
+].flatMap(({ label, day }) => {
+  const at = day ? spine.indexOf(weekOf(day)) : -1
+  return at < 0 ? [] : [{ label, at }]
+})
 ---
 
-<Base title="The Race" description="The leaderboard as it moved.">
+<Base title="The Race" description={`r/NBA's most hated player of ${manifest.season}, week by week: the leaderboard as it moved.`}>
+  <script is:inline define:vars={{ race: RACE_KEYS }}>
+    // A deep link carries a view: hold the prerendered final week out of sight
+    // until the island has read the URL (it removes the class).
+    const q = new URLSearchParams(location.search)
+    if (race.some((k) => q.has(k))) document.documentElement.classList.add('has-race-view')
+  </script>
   <main id="main" class="wrap page">
     <header>
-      <h1>The Race</h1>
-      <p class="page__lede">The leaderboard as it moved. This page is on its way.</p>
+      <p class="eyebrow">{manifest.season} · The Race</p>
+      <h1 class="visually-hidden">The Race</h1>
     </header>
+    <Race client:load players={players} weeks={weeks} counts={counts} bands={bands} marks={marks} entry={entry} official={official} />
+    <MethodNote kind="rule">
+      The race is the {players.length} players who finish the season with at least {fmtInt(official)} comments, the
+      same field as the official leaderboard; the other {tables.players.length - players.length} tracked players never
+      appear. Each week counts every comment up to that date. In the rate races a player joins once {fmtInt(entry)}
+      comments about him are in, so the early weeks swing on small samples: n is beside every rate. A bar's length is
+      against that week's leader, not a fixed scale. The last week is the leaderboard.
+    </MethodNote>
   </main>
 </Base>

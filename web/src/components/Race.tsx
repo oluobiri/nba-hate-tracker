@@ -1,5 +1,6 @@
-// The race: one island. The hero (the leader so far and the week), the play
-// button, the two toggles, the scrubber and the board move together on one
+// The race: one island. The hero (the leader so far and the week), the two
+// toggles, the dock (play, the date, the scrubber; it sticks under the site
+// header so the board is never without it) and the board move together on one
 // week. It opens paused on the final week, which is the leaderboard; play
 // restarts from the first. The toggles and the week live in the query string,
 // the week written when playback settles, never per frame.
@@ -49,8 +50,10 @@ const TOP = 10
 const STEP_MS = 900
 const SEEK_S = 0.25
 const URL_DEBOUNCE_MS = 250
-// A band narrower than this many weeks goes unlabelled.
+// A band narrower than this many weeks goes unlabelled; on a phone, where the
+// scale is short, only a band at least this wide keeps its label.
 const BAND_LABEL_WEEKS = 5
+const BAND_LABEL_WEEKS_PHONE = 12
 
 const MODES: readonly { key: RaceMode; label: string }[] = [
   { key: 'hated', label: 'Hated' },
@@ -206,10 +209,6 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
         </header>
 
         <div className="race__controls">
-          <button type="button" className={`btn race__play${playing ? '' : ' race__play--go'}`} onClick={toggle} data-testid="race-play">
-            <span aria-hidden="true">{playGlyph} </span>
-            {playWord}
-          </button>
           <div className="race__seg" role="group" aria-label="Sentiment">
             {MODES.map((m) => (
               <button key={m.key} type="button" className={`btn race__mode race__mode--${m.key}`} aria-pressed={m.key === mode} onClick={() => update(playing ? { mode: m.key } : { mode: m.key, w: urlWeek(w) })}>
@@ -226,7 +225,12 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
           </div>
         </div>
 
-        <div className="race__scrub">
+        <div className="race__dock">
+          <button type="button" className={`btn race__play${playing ? '' : ' race__play--go'}`} onClick={toggle} data-testid="race-play">
+            <span aria-hidden="true">{playGlyph} </span>
+            <span className="race__play-word">{playWord}</span>
+          </button>
+          <span className="race__dock-date mono">{week.label}</span>
           <input
             className="race__range"
             type="range"
@@ -240,14 +244,16 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
             onChange={(e) => seek(Number(e.target.value))}
             data-testid="race-scrub"
           />
-          <div className="race__bands" aria-hidden="true">
+        </div>
+        <div className="race__scale" aria-hidden="true">
+          <div className="race__bands">
             {bands.map((b) => (
               <span key={b.start} className="race__band" style={{ left: `${stop(b.start - 0.5)}%`, width: `${stop(b.end - 0.5) - stop(b.start - 0.5)}%` }}>
-                {b.end - b.start >= BAND_LABEL_WEEKS ? b.label : ''}
+                {b.end - b.start >= BAND_LABEL_WEEKS && <span className={b.end - b.start >= BAND_LABEL_WEEKS_PHONE ? undefined : 'race__band-short'}>{b.label}</span>}
               </span>
             ))}
           </div>
-          <div className="race__marks" aria-hidden="true">
+          <div className="race__marks">
             {marks.map((m) => (
               <span key={m.label} className="race__mark mono" style={{ left: `${stop(m.at)}%` }}>
                 {m.label}

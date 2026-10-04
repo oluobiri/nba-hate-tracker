@@ -2642,9 +2642,9 @@ a.hero__who:hover {
   color: var(--mute);
 }
 @media (max-width: 760px) {
-  /* The name sits over the bar. */
+  /* The name sits over the bar; ten rows, a sticky header and a dock fit a phone's window. */
   :root {
-    --rrow-h: 65px;
+    --rrow-h: 56px;
   }
   .rrow__link {
     --rrow-lab: 82px;
@@ -2652,7 +2652,7 @@ a.hero__who:hover {
     grid-template-areas:
       'rank who'
       'rank bar';
-    gap: 4px 10px;
+    gap: 2px 10px;
     align-content: center;
   }
   .rrow__rank {
@@ -2678,16 +2678,20 @@ a.hero__who:hover {
     gap: 8px;
   }
   .rrow__fill {
-    min-width: 28px;
-    height: 28px;
+    min-width: 24px;
+    height: 24px;
   }
   .rrow__mug {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-width: 1px;
   }
   .rrow__val {
-    font-size: 14px;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .rrow__n {
+    margin-top: 1px;
   }
   .rrow__n {
     font-size: 10px;

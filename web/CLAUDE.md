@@ -132,7 +132,9 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   island as one packed string. `w` is the week's index, absent on the final week, written with
   `replace`, debounced, when playback settles; a deep link's board remounts once the URL is in,
   so nothing travels from the default view. `MotionConfig` does not stop a width or a counting figure:
-  `useReducedMotion` sets the row's `travel` and `count` to zero.
+  `useReducedMotion` sets the row's `travel` and `count` to zero. The dock (play, date,
+  scrubber) sticks under the site header at every width; its button and date are fixed widths
+  so the scale under it starts where the scrubber does.
 - **Net lives on the recap page only** (`lib/net.ts`): the numbers are net, the bars show the
   mix, and the figure's colour is one linear curve from bone to heat or ice. The player page
   ranks by the negative share and never prints net.

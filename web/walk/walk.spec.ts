@@ -659,8 +659,24 @@ test('under reduced motion the race steps: the figure lands with the week', asyn
 test('the race shows ten rows, and its controls are touch-sized', async ({ page }) => {
   await page.goto('/race/', { waitUntil: 'networkidle' })
   await expect(page.locator('.race__rows .rrow')).toHaveCount(10)
-  for (const c of [...(await page.locator('.race__controls .btn').all()), page.getByTestId('race-scrub')])
-    expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  for (const c of [...(await page.locator('.race .btn').all()), page.getByTestId('race-scrub')]) {
+    const box = await c.boundingBox()
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
+  }
+})
+
+test('the dock stays with the board: the tenth row, the first row and the play button share the window', async ({ page }) => {
+  await page.goto('/race/', { waitUntil: 'networkidle' })
+  await page.locator('.race__rows .rrow').last().scrollIntoViewIfNeeded()
+  await expect(racePlay(page)).toBeInViewport({ ratio: 1 })
+  await expect(page.getByTestId('race-scrub')).toBeInViewport({ ratio: 1 })
+  // The dock is under the site header, not behind it.
+  const [dock, header] = await Promise.all([page.locator('.race__dock').boundingBox(), page.locator('.hdr').boundingBox()])
+  expect(dock!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 1)
+  await page.locator('.race__dock').evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 57))
+  await expect(page.locator('.race__rows .rrow').first()).toBeInViewport({ ratio: 1 })
+  await expect(page.locator('.race__rows .rrow').last()).toBeInViewport({ ratio: 1 })
 })
 
 // Share cards: every route names one, its own or the leaderboard's, and

@@ -1,4 +1,4 @@
-// GENERATED from src/data/schema.json (schema_version 9) by scripts/codegen.ts.
+// GENERATED from src/data/schema.json (schema_version 10) by scripts/codegen.ts.
 // Do not edit: run `npm run codegen`. The build fails when this file is stale.
 
 /** One row of player_overall.parquet. */
@@ -252,6 +252,7 @@ export interface Floors {
   week_min_n: number
   belt_min_n: number
   game_min_n: number
+  race_entry_min_n: number
 }
 
 export interface RecapsRule {

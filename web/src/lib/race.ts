@@ -53,16 +53,16 @@ export const packCounts = (weekly: readonly (readonly Triple[])[]): string => we
 
 /** The inverse of `packCounts`; throws when the string is not players × weeks × 3 whole numbers. */
 export function unpackCounts(packed: string, players: number, weeks: number): Triple[][] {
-  const flat = packed ? packed.split(',').map(Number) : []
-  if (flat.length !== players * weeks * 3 || flat.some((v) => !Number.isInteger(v) || v < 0))
-    throw new Error(`race counts: expected ${players} × ${weeks} × 3 whole numbers, got ${flat.length} values`)
+  const tokens = packed ? packed.split(',') : []
+  if (tokens.length !== players * weeks * 3 || tokens.some((v) => !/^\d+$/.test(v)))
+    throw new Error(`race counts: expected ${players} × ${weeks} × 3 whole numbers, got ${tokens.length} values`)
+  const flat = tokens.map(Number)
   const at = (o: number): Triple => [flat[o]!, flat[o + 1]!, flat[o + 2]!]
   return Array.from({ length: players }, (_p, i) => Array.from({ length: weeks }, (_w, k) => at((i * weeks + k) * 3)))
 }
 
-/** Frames: for each week, every player's counts through that week. */
-export function cumulate(weekly: readonly (readonly Triple[])[]): Triple[][] {
-  const weeks = weekly[0]?.length ?? 0
+/** Frames: for each of `weeks` weeks, every player's counts through that week. An empty field still has its weeks. */
+export function cumulate(weekly: readonly (readonly Triple[])[], weeks: number = weekly[0]?.length ?? 0): Triple[][] {
   const frames: Triple[][] = Array.from({ length: weeks }, () => [])
   weekly.forEach((player, i) => {
     let run: Triple = [0, 0, 0]
@@ -86,7 +86,7 @@ export function rankFrame(frame: readonly Triple[], mode: RaceMode, by: RaceBy, 
     .toSorted((a, b) => b.value - a.value || b.n - a.n)
 }
 
-/** Each ranked player's movement against the previous week; a player who held his place is absent. No previous week, no movement. */
+/** Each ranked player's movement against the previous week's whole ranking; a player who held his place is absent. No previous week, no movement. */
 export function movement(now: readonly RaceRank[], before: readonly RaceRank[] | null): Map<number, Move> {
   const moves = new Map<number, Move>()
   if (!before) return moves

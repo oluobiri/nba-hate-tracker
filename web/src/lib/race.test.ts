@@ -44,6 +44,12 @@ describe('weeklyCounts and cumulate', () => {
   it('rejects a packed string of the wrong size or with a broken number', () => {
     expect(() => unpackCounts('1,2,3', 2, 3)).toThrow(/2 × 3 × 3/)
     expect(() => unpackCounts('1,2,x', 1, 1)).toThrow(/race counts/)
+    expect(() => unpackCounts('1,,3', 1, 1)).toThrow(/race counts/)
+  })
+
+  it('gives an empty field its weeks, each an empty frame', () => {
+    expect(cumulate(unpackCounts('', 0, 3), 3)).toEqual([[], [], []])
+    expect(rankFrame(cumulate([], 3)[0]!, 'hated', 'rate', 100)).toEqual([])
   })
 })
 
@@ -76,8 +82,9 @@ describe('rankFrame', () => {
     expect(entered).toEqual([[0], [0, 1], [0, 1]])
   })
 
-  it('orders the last frame exactly as the leaderboard orders the same totals', () => {
-    const rows = [player('a', 60, 30, 10), player('b', 120, 60, 20), player('c', 500, 400, 100), player('d', 9, 1, 0)]
+  it('orders the last frame exactly as the leaderboard orders the same totals, ties included', () => {
+    // a and b tie on both rates; c and e tie on the negative rate.
+    const rows = [player('a', 60, 30, 10), player('b', 120, 60, 20), player('c', 500, 400, 100), player('d', 9, 1, 0), player('e', 100, 60, 40)]
     const last: Triple[] = rows.map((r) => [r.neg, r.neu, r.pos])
     for (const [mode, lens] of [['hated', 'neg'], ['loved', 'pos']] as const) {
       const board = rankBy(rows, lens, 100).filter((r) => r.rank !== null).map((r) => r.row.name)
@@ -93,6 +100,12 @@ describe('movement', () => {
     const moves = movement(rank(3, 0, 2, 1), rank(0, 1, 2))
     expect([...moves]).toEqual([[3, 'new'], [0, -1], [1, -2]])
     expect(moves.has(2)).toBe(false)
+  })
+
+  it('counts places over the whole ranking: a climb into the top ten from below it is a climb, not NEW', () => {
+    const before = rank(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    const now = rank(0, 1, 2, 3, 4, 5, 6, 11, 7, 8, 9, 10)
+    expect(movement(now, before).get(11)).toBe(4)
   })
 
   it('has nothing to say on the first week', () => {

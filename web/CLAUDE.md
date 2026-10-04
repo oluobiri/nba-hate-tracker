@@ -130,7 +130,8 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   `rules.floors.race_entry_min_n` and a count race has no floor; the order is `rankBy`'s, so the
   last frame is the leaderboard (the walk holds the two top tens equal). Weekly counts reach the
   island as one packed string. `w` is the week's index, absent on the final week, written with
-  `replace` when playback settles. `MotionConfig` does not stop a width or a counting figure:
+  `replace`, debounced, when playback settles; a deep link's board remounts once the URL is in,
+  so nothing travels from the default view. `MotionConfig` does not stop a width or a counting figure:
   `useReducedMotion` sets the row's `travel` and `count` to zero.
 - **Net lives on the recap page only** (`lib/net.ts`): the numbers are net, the bars show the
   mix, and the figure's colour is one linear curve from bone to heat or ice. The player page

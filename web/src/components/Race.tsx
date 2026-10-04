@@ -43,10 +43,12 @@ export interface RaceProps {
   official: number
 }
 
-// Page choices, not rules: the rows shown, a week's time on screen, a seek's travel.
+// Page choices, not rules: the rows shown, a week's time on screen, a seek's travel,
+// and how long a settled week waits before it is written to the URL.
 const TOP = 10
 const STEP_MS = 900
 const SEEK_S = 0.25
+const URL_DEBOUNCE_MS = 250
 // A band narrower than this many weeks goes unlabelled.
 const BAND_LABEL_WEEKS = 5
 
@@ -71,35 +73,50 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
     if (ready) document.documentElement.classList.remove('has-race-view')
   }, [ready])
 
-  const frames = useMemo(() => cumulate(unpackCounts(counts, players.length, weeks.length)), [counts, players.length, weeks.length])
+  const frames = useMemo(() => cumulate(unpackCounts(counts, players.length, weeks.length), weeks.length), [counts, players.length, weeks.length])
 
-  // The week while it plays; null when paused, and the URL's week shows.
+  // The week held here: while it plays, and after it settles until the URL has it.
+  // Null, the URL's week shows. The write is debounced: a drag or a held arrow is one write.
   const [live, setLive] = useState<number | null>(null)
+  const [playing, setPlaying] = useState(false)
   const [ran, setRan] = useState(false)
-  const playing = live !== null
+  const urlTimer = useRef(0)
   const w = live ?? Math.min(last, view.w ?? last)
   const isLast = w === last
+  const urlWeek = (week: number): number | null => (week >= last ? null : week)
 
   const settle = useCallback(
     (week: number) => {
-      update({ w: week >= last ? null : week }, { replace: true })
-      setLive(null)
+      setPlaying(false)
+      setLive(week)
+      window.clearTimeout(urlTimer.current)
+      urlTimer.current = window.setTimeout(() => {
+        try {
+          update({ w: week >= last ? null : week }, { replace: true })
+          setLive(null)
+        } catch {
+          // A browser may refuse a history write; the week stays held here.
+        }
+      }, URL_DEBOUNCE_MS)
     },
     [update, last],
   )
+  useEffect(() => () => window.clearTimeout(urlTimer.current), [])
   const seek = useCallback((week: number) => settle(Math.max(0, Math.min(last, week))), [settle, last])
   const toggle = useCallback(() => {
     if (playing) return settle(w)
+    window.clearTimeout(urlTimer.current)
     setRan(true)
+    setPlaying(true)
     setLive(isLast ? 0 : w)
   }, [playing, settle, w, isLast])
 
   // One week per step; the last week holds a step, then playback settles there.
   useEffect(() => {
-    if (live === null) return
+    if (!playing || live === null) return
     const id = window.setTimeout(() => (live >= last ? settle(last) : setLive(live + 1)), STEP_MS)
     return () => window.clearTimeout(id)
-  }, [live, last, settle])
+  }, [playing, live, last, settle])
 
   // Space plays and pauses, the arrows step; a focused control keeps its own keys.
   const keys = useRef({ toggle, seek, w, playing })
@@ -113,7 +130,7 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
       const k = keys.current
       if (e.key === ' ') {
         e.preventDefault()
-        k.toggle()
+        if (!e.repeat) k.toggle()
       } else if (e.key === 'ArrowRight') k.seek(k.w + 1)
       else if (e.key === 'ArrowLeft') k.seek(k.w - 1)
     }
@@ -145,7 +162,9 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
   const travel = reduce ? 0 : playing ? STEP_MS / 1000 : SEEK_S
   const count = reduce || !playing ? 0 : STEP_MS / 1000
   const week = weeks[w]!
-  const playLabel = playing ? '❚❚ Pause' : isLast ? (ran ? '↺ Replay' : '▶ Play the season') : '▶ Play'
+  const [playGlyph, playWord] = playing ? ['❚❚', 'Pause'] : isLast ? (ran ? ['↺', 'Replay'] : ['▶', 'Play the season']) : ['▶', 'Play']
+  // The scrubber's thumb sits at w / last; the bands and marks share that scale, a week centred on its stop.
+  const stop = (k: number): number => (last ? (100 * Math.max(0, Math.min(last, k))) / last : 0)
   const entered = by === 'rate' ? `${ranked.length} of ${players.length} players have ${fmtInt(entry)} comments` : `${players.length} players`
 
   return (
@@ -188,18 +207,19 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
 
         <div className="race__controls">
           <button type="button" className={`btn race__play${playing ? '' : ' race__play--go'}`} onClick={toggle} data-testid="race-play">
-            {playLabel}
+            <span aria-hidden="true">{playGlyph} </span>
+            {playWord}
           </button>
           <div className="race__seg" role="group" aria-label="Sentiment">
             {MODES.map((m) => (
-              <button key={m.key} type="button" className={`btn race__mode race__mode--${m.key}`} aria-pressed={m.key === mode} onClick={() => update({ mode: m.key })}>
+              <button key={m.key} type="button" className={`btn race__mode race__mode--${m.key}`} aria-pressed={m.key === mode} onClick={() => update(playing ? { mode: m.key } : { mode: m.key, w: urlWeek(w) })}>
                 {m.label}
               </button>
             ))}
           </div>
           <div className="race__seg" role="group" aria-label="Measure">
             {MEASURES.map((m) => (
-              <button key={m.key} type="button" className="btn" aria-pressed={m.key === by} onClick={() => update({ by: m.key })}>
+              <button key={m.key} type="button" className="btn" aria-pressed={m.key === by} onClick={() => update(playing ? { by: m.key } : { by: m.key, w: urlWeek(w) })}>
                 {m.label}
               </button>
             ))}
@@ -216,27 +236,33 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
             value={w}
             aria-label="Week"
             aria-valuetext={`Week of ${week.label}, week ${w + 1} of ${weeks.length}${leader ? `, ${leader.name} leads` : ''}`}
-            style={{ '--p': `${last ? (100 * w) / last : 0}%` } as CSSProperties}
+            style={{ '--p': `${stop(w)}%` } as CSSProperties}
             onChange={(e) => seek(Number(e.target.value))}
             data-testid="race-scrub"
           />
           <div className="race__bands" aria-hidden="true">
             {bands.map((b) => (
-              <span key={b.start} className="race__band" style={{ left: `${(100 * b.start) / weeks.length}%`, width: `${(100 * (b.end - b.start)) / weeks.length}%` }}>
+              <span key={b.start} className="race__band" style={{ left: `${stop(b.start - 0.5)}%`, width: `${stop(b.end - 0.5) - stop(b.start - 0.5)}%` }}>
                 {b.end - b.start >= BAND_LABEL_WEEKS ? b.label : ''}
               </span>
             ))}
           </div>
           <div className="race__marks" aria-hidden="true">
             {marks.map((m) => (
-              <span key={m.label} className="race__mark mono" style={{ left: `${(100 * (m.at + 0.5)) / weeks.length}%` }}>
+              <span key={m.label} className="race__mark mono" style={{ left: `${stop(m.at)}%` }}>
                 {m.label}
               </span>
             ))}
           </div>
         </div>
 
-        <ol className="race__rows" aria-label={`The top ${TOP} through the week of ${week.label}`}>
+        {/* Said once a week settles, never per frame while it plays. */}
+        <p className="visually-hidden" role="status" aria-live="polite">
+          {playing ? '' : `Week of ${week.label}, week ${w + 1} of ${weeks.length}${leader ? `: ${leader.name} leads` : ''}`}
+        </p>
+
+        {/* A deep link's board mounts fresh once the URL is in: nothing travels from the default view. */}
+        <ol key={ready ? 'url' : 'default'} className="race__rows" aria-label={`The top ${TOP} through the week of ${week.label}`}>
           <AnimatePresence initial={false} mode="popLayout">
             {top.map((r, k) => {
               const p = players[r.i]!

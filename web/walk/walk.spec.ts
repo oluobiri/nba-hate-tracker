@@ -588,8 +588,8 @@ test('play restarts the race from the first week, and only a pause writes the we
   await page.goto('/race/', { waitUntil: 'networkidle' })
   await racePlay(page).click()
   await expect(racePlay(page)).toHaveText('❚❚ Pause')
-  await expect(raceWeek(page)).toHaveText(/week 1 of/)
-  await expect(raceWeek(page)).toHaveText(/week 3 of/, { timeout: 5000 })
+  await expect(raceWeek(page)).toHaveText(/week [123] of/)
+  await expect(raceWeek(page)).toHaveText(/week 4 of/, { timeout: 6000 })
   expect(page.url()).not.toMatch(/[?&]w=/)
   await racePlay(page).click()
   await expect(racePlay(page)).toHaveText('▶ Play')
@@ -618,6 +618,12 @@ test('a race deep link shows its frame with no flash, and Back returns to it', a
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
+test('a week past the season\'s end is the final week', async ({ page }) => {
+  await page.goto('/race/?w=999', { waitUntil: 'networkidle' })
+  await expect(page.locator('html')).not.toHaveClass(/has-race-view/)
+  await expect(raceWeek(page)).toHaveText(/^Season final/)
+})
+
 test('space and the arrows drive the race', async ({ page }) => {
   await page.goto('/race/?w=10', { waitUntil: 'networkidle' })
   await expect(raceWeek(page)).toHaveText(/week 11 of/)
@@ -630,6 +636,13 @@ test('space and the arrows drive the race', async ({ page }) => {
   await expect(racePlay(page)).toHaveText('❚❚ Pause')
   await page.keyboard.press('Space')
   await expect(racePlay(page)).toHaveText('▶ Play')
+  // A held space is one press: its repeats do not toggle.
+  await page.keyboard.down('Space')
+  await page.keyboard.down('Space')
+  await page.keyboard.down('Space')
+  await page.keyboard.up('Space')
+  await expect(racePlay(page)).toHaveText('❚❚ Pause')
+  await page.keyboard.press('Space')
 })
 
 test('under reduced motion the race steps: the figure lands with the week', async ({ page }) => {

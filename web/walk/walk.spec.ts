@@ -555,6 +555,101 @@ test('every recap page links a live next recap', async ({ page }) => {
   await page.goto(RECAP)
 })
 
+// The race: one island on the week. It opens paused on the final week, which is the leaderboard.
+const raceWeek = (page: Page) => page.getByTestId('race-week')
+const racePlay = (page: Page) => page.getByTestId('race-play')
+const raceNames = (page: Page) => page.locator('.race__rows .rrow__name').allTextContents()
+const boardNames = async (page: Page) => (await page.locator('.lb__rows .row__name').allTextContents()).slice(0, 10)
+
+test('the race opens paused on the final week, and its top ten is the leaderboard\'s', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/', { waitUntil: 'networkidle' })
+  const hated = await boardNames(page)
+  await page.goto('/?lens=pos', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('tab', { name: 'Most loved' })).toHaveAttribute('aria-selected', 'true')
+  const loved = await boardNames(page)
+  await page.goto('/race/', { waitUntil: 'networkidle' })
+  await expect(racePlay(page)).toHaveText('▶ Play the season')
+  await expect(raceWeek(page)).toHaveText(/^Season final · week (\d+) of \1$/)
+  await expect(page.locator('.race__sentence')).toContainText("r/NBA's most hated player is")
+  expect(await raceNames(page)).toEqual(hated)
+  // No autoplay: a wait later it is still the final week.
+  await page.waitForTimeout(1200)
+  await expect(raceWeek(page)).toHaveText(/^Season final/)
+  await page.getByRole('button', { name: 'Loved' }).click()
+  await expect(page).toHaveURL(/mode=loved/)
+  await expect.poll(() => raceNames(page)).toEqual(loved)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('play restarts the race from the first week, and only a pause writes the week', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/race/', { waitUntil: 'networkidle' })
+  await racePlay(page).click()
+  await expect(racePlay(page)).toHaveText('❚❚ Pause')
+  await expect(raceWeek(page)).toHaveText(/week 1 of/)
+  await expect(raceWeek(page)).toHaveText(/week 3 of/, { timeout: 5000 })
+  expect(page.url()).not.toMatch(/[?&]w=/)
+  await racePlay(page).click()
+  await expect(racePlay(page)).toHaveText('▶ Play')
+  await expect(page).toHaveURL(/[?&]w=\d+/)
+  expect(errors).toEqual([])
+})
+
+test('a race deep link shows its frame with no flash, and Back returns to it', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/race/?mode=loved&by=count&w=21', { waitUntil: 'networkidle' })
+  await expect(page.locator('html')).not.toHaveClass(/has-race-view/)
+  await expect(raceWeek(page)).toHaveText(/week 22 of/)
+  await expect(racePlay(page)).toHaveText('▶ Play')
+  const count = page.getByRole('button', { name: 'Count' })
+  await expect(page.getByRole('button', { name: 'Loved' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(count).toHaveAttribute('aria-pressed', 'true')
+  const figure = page.locator('.rrow__val').first()
+  await expect(figure).toHaveText(/^[\d,]+$/)
+  await page.getByRole('button', { name: 'Rate' }).click()
+  await expect(page).not.toHaveURL(/by=/)
+  await expect(figure).toHaveText(/%$/)
+  await page.goBack()
+  await expect(count).toHaveAttribute('aria-pressed', 'true')
+  await expect(raceWeek(page)).toHaveText(/week 22 of/)
+  expect(errors).toEqual([])
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('space and the arrows drive the race', async ({ page }) => {
+  await page.goto('/race/?w=10', { waitUntil: 'networkidle' })
+  await expect(raceWeek(page)).toHaveText(/week 11 of/)
+  await page.keyboard.press('ArrowRight')
+  await expect(raceWeek(page)).toHaveText(/week 12 of/)
+  await expect(page).toHaveURL(/[?&]w=11\b/)
+  await page.keyboard.press('ArrowLeft')
+  await expect(raceWeek(page)).toHaveText(/week 11 of/)
+  await page.keyboard.press('Space')
+  await expect(racePlay(page)).toHaveText('❚❚ Pause')
+  await page.keyboard.press('Space')
+  await expect(racePlay(page)).toHaveText('▶ Play')
+})
+
+test('under reduced motion the race steps: the figure lands with the week', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/race/?w=10', { waitUntil: 'networkidle' })
+  await racePlay(page).click()
+  await expect(raceWeek(page)).toHaveText(/week 12 of/, { timeout: 5000 })
+  // The leader's row and the hero state one figure; a counting row would still be on its way.
+  const [row, hero] = await page.evaluate(() => [document.querySelector('.rrow__val')?.textContent, document.querySelector('.race__fig b')?.textContent])
+  expect(row).toBe(hero)
+  await racePlay(page).click()
+})
+
+test('the race shows ten rows, and its controls are touch-sized', async ({ page }) => {
+  await page.goto('/race/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.race__rows .rrow')).toHaveCount(10)
+  for (const c of [...(await page.locator('.race__controls .btn').all()), page.getByTestId('race-scrub')])
+    expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+})
+
 // Share cards: every route names one, its own or the leaderboard's, and
 // every card serves as a 1200 × 630 PNG at the address the meta gives.
 const SITE = 'https://courtsentiment.com'

@@ -10,7 +10,8 @@ Astro (static output) + React islands + TypeScript, built from the published dat
 parquets the manifest registers. No parquet reaches the browser; every page is rendered at build.
 The one runtime fetch is a recap's document, re-served from the site's own origin (below).
 The design brief is `docs/internal/ux-review.md` (local only, not committed); the recap page's
-reference is the mockup in `docs/internal/recap-mockup/` (local).
+reference is the mockup in `docs/internal/recap-mockup/` (local), the race's is
+`docs/internal/race-mockup/` (local).
 
 ## Map
 
@@ -124,6 +125,13 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   constants are page choices named at the top of that file. `lib/replay.ts` reads the file
   (the room with prefix counts, the floor from the stints, box lines by the pipeline's rules,
   his moments); `sceneAt` is the stage at one second, for the island and the style guide alike.
+- **The race runs on the week** (`lib/race.ts`): the field is the players at or above the
+  official minimum, a frame is every comment through that week, a rate race ranks at or above
+  `rules.floors.race_entry_min_n` and a count race has no floor; the order is `rankBy`'s, so the
+  last frame is the leaderboard (the walk holds the two top tens equal). Weekly counts reach the
+  island as one packed string. `w` is the week's index, absent on the final week, written with
+  `replace` when playback settles. `MotionConfig` does not stop a width or a counting figure:
+  `useReducedMotion` sets the row's `travel` and `count` to zero.
 - **Net lives on the recap page only** (`lib/net.ts`): the numbers are net, the bars show the
   mix, and the figure's colour is one linear curve from bone to heat or ice. The player page
   ranks by the negative share and never prints net.

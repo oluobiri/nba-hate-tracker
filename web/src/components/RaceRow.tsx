@@ -52,7 +52,7 @@ function Figure({ value, by, seconds }: { value: number; by: RaceBy; seconds: nu
 }
 
 export function RaceRow({ rank, name, slug, abbr, headshot, mode, by, value, n, share, move = null, travel = 0, count = 0, presence = false, ref }: RaceRowProps) {
-  const fade = presence ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : {}
+  const fade = presence ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0, transition: { duration: 0.2 } } } : {}
   return (
     <motion.li ref={ref} className="rrow" layout="position" transition={{ layout: { duration: 0.7, ease: [0.45, 0.05, 0.3, 1] }, opacity: { duration: 0.35 } }} {...fade}>
       <a className="rrow__link" href={`/player/${slug}/`}>
@@ -83,8 +83,8 @@ export function RaceRow({ rank, name, slug, abbr, headshot, mode, by, value, n, 
           </motion.span>
           <span className="rrow__lab">
             <span className={`rrow__val rrow__val--${mode} mono`}>
-              {/* A toggle changes the unit: a fresh figure, never a count from a share to a count. */}
-              <Figure key={by} value={value} by={by} seconds={count} />
+              {/* A toggle changes what the figure measures: a fresh figure, never a count across the two. */}
+              <Figure key={`${mode}-${by}`} value={value} by={by} seconds={count} />
             </span>
             <span className="rrow__n mono">n={fmtInt(n)}</span>
           </span>

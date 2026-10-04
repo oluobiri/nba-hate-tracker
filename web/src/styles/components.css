@@ -2525,3 +2525,171 @@ a.hero__who:hover {
     display: none;
   }
 }
+
+/* RaceRow: the whole row is the link. Rank · who · one solid bar sized against the
+   week's leader, the face at its end, the figure and n just past it. Every row is one
+   height, so a board can hold its ten places while rows slide. */
+:root {
+  --rrow-h: 61px;
+}
+.rrow {
+  list-style: none;
+  box-sizing: border-box;
+  height: var(--rrow-h);
+  border-bottom: 1px solid var(--line);
+  background: var(--ink);
+}
+.rrow__link {
+  --rrow-lab: 104px;
+  display: grid;
+  grid-template-columns: 44px 210px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  height: 100%;
+  text-decoration: none;
+  color: inherit;
+}
+.rrow__link:hover {
+  background: var(--ink-2);
+}
+.rrow__link:hover .rrow__name {
+  text-decoration: underline;
+}
+.rrow__rank {
+  text-align: right;
+}
+.rrow__who {
+  min-width: 0;
+}
+.rrow__name {
+  display: block;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1.05;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rrow__team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--mute);
+}
+.rrow__team .row__chip {
+  padding: 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.rrow__track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+/* The length is a share of the track less the label; the minimum holds the face. */
+.rrow__fill {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  width: calc((100% - var(--rrow-lab)) * var(--v, 0));
+  min-width: 38px;
+  height: 38px;
+}
+.rrow__fill--hated {
+  background: var(--heat);
+}
+.rrow__fill--loved {
+  background: var(--ice);
+}
+.rrow__mug {
+  width: 38px;
+  height: 38px;
+  border: 2px solid var(--ink);
+  object-fit: cover;
+  object-position: top;
+  background: var(--ink);
+  filter: grayscale(0.85) contrast(1.05);
+}
+.rrow__lab {
+  flex: 0 0 auto;
+  width: calc(var(--rrow-lab) - 10px);
+}
+.rrow__val {
+  display: block;
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.rrow__val--hated {
+  color: var(--heat);
+}
+.rrow__val--loved {
+  color: var(--ice);
+}
+.rrow__n {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+}
+@media (max-width: 760px) {
+  /* The name sits over the bar. */
+  :root {
+    --rrow-h: 65px;
+  }
+  .rrow__link {
+    --rrow-lab: 82px;
+    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-areas:
+      'rank who'
+      'rank bar';
+    gap: 4px 10px;
+    align-content: center;
+  }
+  .rrow__rank {
+    grid-area: rank;
+  }
+  .rrow__rank .rank {
+    font-size: 22px;
+  }
+  .rrow__who {
+    grid-area: who;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .rrow__name {
+    font-size: 16px;
+  }
+  .rrow__team {
+    margin: 0;
+  }
+  .rrow__track {
+    grid-area: bar;
+    gap: 8px;
+  }
+  .rrow__fill {
+    min-width: 28px;
+    height: 28px;
+  }
+  .rrow__mug {
+    width: 28px;
+    height: 28px;
+    border-width: 1px;
+  }
+  .rrow__val {
+    font-size: 14px;
+  }
+  .rrow__n {
+    font-size: 10px;
+  }
+}

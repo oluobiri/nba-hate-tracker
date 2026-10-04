@@ -64,7 +64,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -855,12 +855,13 @@ class ReceiptsFigures(TypedDict):
 
 
 class Floors(TypedDict):
-    """Consumer-side minimum comment counts per cell."""
+    """Consumer-side minimum comment counts."""
 
     fanbase_min_n: int
     week_min_n: int
     belt_min_n: int
     game_min_n: int
+    race_entry_min_n: int  # season-to-date, not per cell
 
 
 class ReactionLag(TypedDict):

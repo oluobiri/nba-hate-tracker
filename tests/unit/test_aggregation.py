@@ -61,6 +61,7 @@ from pipeline.schemas import (
 )
 from utils.constants import (
     BELT_MIN_N,
+    RACE_ENTRY_MIN_N,
     COMMENT_SAMPLES_MAX_BODY_CHARS,
     COMMENT_SAMPLES_MIN_CONFIDENCE,
     COMMENT_SAMPLES_TOP_N,
@@ -1321,6 +1322,7 @@ class TestBuildManifest:
             "week_min_n": WEEK_MIN_N,
             "belt_min_n": BELT_MIN_N,
             "game_min_n": GAME_MIN_N,
+            "race_entry_min_n": RACE_ENTRY_MIN_N,
         }
         assert rules["recaps"] == {
             "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,

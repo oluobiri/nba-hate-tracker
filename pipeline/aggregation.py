@@ -62,6 +62,7 @@ from utils.constants import (
     FANBASE_MIN_N,
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
+    RACE_ENTRY_MIN_N,
     RECAP_ANCHOR_MIN_REACTIONS,
     RECAP_ANCHOR_VOCABULARY,
     RECAP_ANCHOR_WINDOW_SECONDS,
@@ -661,6 +662,7 @@ def build_manifest(
                 "week_min_n": WEEK_MIN_N,
                 "belt_min_n": BELT_MIN_N,
                 "game_min_n": GAME_MIN_N,
+                "race_entry_min_n": RACE_ENTRY_MIN_N,
             },
             "recaps": {
                 "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,

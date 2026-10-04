@@ -674,7 +674,7 @@ test('the dock stays with the board: the tenth row, the first row and the play b
   // The dock is under the site header, not behind it.
   const [dock, header] = await Promise.all([page.locator('.race__dock').boundingBox(), page.locator('.hdr').boundingBox()])
   expect(dock!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 1)
-  await page.locator('.race__dock').evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 57))
+  await page.locator('.race__scale').evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 57))
   await expect(page.locator('.race__rows .rrow').first()).toBeInViewport({ ratio: 1 })
   await expect(page.locator('.race__rows .rrow').last()).toBeInViewport({ ratio: 1 })
 })

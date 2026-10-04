@@ -76,6 +76,18 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
     if (ready) document.documentElement.classList.remove('has-race-view')
   }, [ready])
 
+  // The dock sticks under the site header, whose height changes with the width.
+  const section = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const header = document.querySelector<HTMLElement>('.hdr')
+    if (!header) return
+    const measure = () => section.current?.style.setProperty('--race-top', `${header.offsetHeight}px`)
+    measure()
+    const seen = new ResizeObserver(measure)
+    seen.observe(header)
+    return () => seen.disconnect()
+  }, [])
+
   const frames = useMemo(() => cumulate(unpackCounts(counts, players.length, weeks.length), weeks.length), [counts, players.length, weeks.length])
 
   // The week held here: while it plays, and after it settles until the URL has it.
@@ -172,7 +184,7 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
 
   return (
     <MotionConfig reducedMotion="user">
-      <section className={`race race--${mode}`} aria-label="The race">
+      <section ref={section} className={`race race--${mode}`} aria-label="The race">
         <header className="race__hero">
           <div className="race__lead">
             <h2 className="race__sentence">

@@ -1560,23 +1560,24 @@ class TestAggregateCorpusDaily:
 class TestComputeCumulativeMetrics:
     """Tests for compute_cumulative_metrics function."""
 
-    def test_excludes_stub_week(self):
-        """The maximum week (stub) is excluded from the output."""
+    def test_keeps_final_week(self):
+        """Every week is a row, the last one included."""
         records = _make_temporal_records(
             {
                 "Player A": [
                     ("2024-10-07 00:00:00", 5, 50),
                     ("2024-10-14 00:00:00", 10, 100),
-                    ("2024-10-21 00:00:00", 2, 10),  # stub (max week)
+                    ("2024-10-21 00:00:00", 2, 10),
                 ],
             }
         )
         result = compute_cumulative_metrics(records)
-        weeks = result["week"].to_list()
-        from datetime import date
 
-        assert date(2024, 10, 21) not in weeks
-        assert len(weeks) == 2
+        assert result["week"].to_list() == [
+            date(2024, 10, 7),
+            date(2024, 10, 14),
+            date(2024, 10, 21),
+        ]
 
     def test_cumulative_sums_correct(self):
         """Running neg and total counts accumulate across weeks."""
@@ -1585,7 +1586,6 @@ class TestComputeCumulativeMetrics:
                 "Player A": [
                     ("2024-10-07 00:00:00", 5, 50),
                     ("2024-10-14 00:00:00", 10, 100),
-                    ("2024-10-21 00:00:00", 1, 10),  # stub
                 ],
             }
         )
@@ -1597,6 +1597,25 @@ class TestComputeCumulativeMetrics:
         assert rows[1]["cum_neg"] == 15
         assert rows[1]["cum_total"] == 150
 
+    def test_final_week_equals_season_totals(self):
+        """The last row is every comment of the season, so the final
+        frame is the leaderboard."""
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 5, 50),
+                    ("2024-10-14 00:00:00", 10, 100),
+                    ("2024-10-21 00:00:00", 5, 50),
+                ],
+            }
+        )
+        result = compute_cumulative_metrics(records)
+        last = result.sort("week").to_dicts()[-1]
+
+        assert last["cum_neg"] == 20
+        assert last["cum_total"] == 200
+        assert last["cum_neg_rate"] == 0.1
+
     def test_fills_missing_weeks(self):
         """A player missing from a week gets zero new counts, cumulative carries forward."""
         records = _make_temporal_records(
@@ -1605,13 +1624,11 @@ class TestComputeCumulativeMetrics:
                     ("2024-10-07 00:00:00", 5, 50),
                     # gap at 2024-10-14
                     ("2024-10-21 00:00:00", 10, 100),
-                    ("2024-10-28 00:00:00", 1, 10),  # stub
                 ],
                 "Player B": [
                     ("2024-10-07 00:00:00", 3, 30),
                     ("2024-10-14 00:00:00", 7, 70),
                     ("2024-10-21 00:00:00", 2, 20),
-                    ("2024-10-28 00:00:00", 1, 10),  # stub
                 ],
             }
         )
@@ -1622,7 +1639,6 @@ class TestComputeCumulativeMetrics:
             .to_dicts()
         )
 
-        # Player A has 3 rows (all non-stub weeks)
         assert len(a_rows) == 3
         # Week 2 (gap): cumulative should equal week 1 values
         assert a_rows[1]["cum_neg"] == 5
@@ -1633,28 +1649,14 @@ class TestComputeCumulativeMetrics:
 
     def test_cum_neg_rate_rounded(self):
         """Cumulative neg_rate is rounded to 4 decimal places."""
-        records = _make_temporal_records(
-            {
-                "Player A": [
-                    ("2024-10-07 00:00:00", 1, 3),
-                    ("2024-10-14 00:00:00", 1, 1),  # stub
-                ],
-            }
-        )
+        records = _make_temporal_records({"Player A": [("2024-10-07 00:00:00", 1, 3)]})
         result = compute_cumulative_metrics(records)
         rate = result["cum_neg_rate"][0]
         assert rate == 0.3333
 
     def test_single_player_single_week(self):
-        """Minimal input: one player, two weeks (one real + one stub)."""
-        records = _make_temporal_records(
-            {
-                "Solo": [
-                    ("2024-10-07 00:00:00", 4, 10),
-                    ("2024-10-14 00:00:00", 1, 5),  # stub
-                ],
-            }
-        )
+        """Minimal input: one player, one week."""
+        records = _make_temporal_records({"Solo": [("2024-10-07 00:00:00", 4, 10)]})
         result = compute_cumulative_metrics(records)
         assert result.height == 1
         row = result.to_dicts()[0]
@@ -1674,7 +1676,6 @@ class TestMaskBelowThreshold:
                 "Player A": [
                     ("2024-10-07 00:00:00", 50, 500),
                     ("2024-10-14 00:00:00", 60, 600),
-                    ("2024-10-21 00:00:00", 1, 10),  # stub
                 ],
             }
         )
@@ -1689,12 +1690,7 @@ class TestMaskBelowThreshold:
     def test_above_threshold_preserved(self):
         """Rows at or above threshold retain their cum_neg_rate."""
         records = _make_temporal_records(
-            {
-                "Player A": [
-                    ("2024-10-07 00:00:00", 100, 1000),
-                    ("2024-10-14 00:00:00", 1, 10),  # stub
-                ],
-            }
+            {"Player A": [("2024-10-07 00:00:00", 100, 1000)]}
         )
         cumulative = compute_cumulative_metrics(records)
         masked = mask_below_threshold(cumulative, min_comments=1000)
@@ -1708,7 +1704,6 @@ class TestMaskBelowThreshold:
                 "Player A": [
                     ("2024-10-07 00:00:00", 25, 250),
                     ("2024-10-14 00:00:00", 30, 300),
-                    ("2024-10-21 00:00:00", 1, 10),  # stub
                 ],
             }
         )
@@ -1719,6 +1714,22 @@ class TestMaskBelowThreshold:
 
         assert rows[0]["cum_neg_rate"] is None  # 250 < 500
         assert rows[1]["cum_neg_rate"] is not None  # 550 >= 500
+
+    def test_default_floor_is_the_race_entry_constant(self):
+        """With no threshold given, a bar appears at RACE_ENTRY_MIN_N."""
+        records = _make_temporal_records(
+            {
+                "Player A": [
+                    ("2024-10-07 00:00:00", 10, RACE_ENTRY_MIN_N - 1),
+                    ("2024-10-14 00:00:00", 0, 1),
+                ],
+            }
+        )
+        cumulative = compute_cumulative_metrics(records)
+        rows = mask_below_threshold(cumulative).sort("week").to_dicts()
+
+        assert rows[0]["cum_neg_rate"] is None
+        assert rows[1]["cum_neg_rate"] is not None
 
 
 class TestPivotBarRaceWide:
@@ -1731,17 +1742,17 @@ class TestPivotBarRaceWide:
                 "Player A": [
                     ("2024-10-07 00:00:00", 100, 1000),
                     ("2024-10-14 00:00:00", 150, 1500),
-                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                    ("2024-10-21 00:00:00", 50, 500),
                 ],
                 "Player B": [
                     ("2024-10-07 00:00:00", 200, 1000),
                     ("2024-10-14 00:00:00", 250, 1500),
-                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                    ("2024-10-21 00:00:00", 150, 500),
                 ],
                 "Player C": [
                     ("2024-10-07 00:00:00", 50, 1000),
                     ("2024-10-14 00:00:00", 80, 1500),
-                    ("2024-10-21 00:00:00", 1, 10),  # stub
+                    ("2024-10-21 00:00:00", 1, 10),
                 ],
             }
         )
@@ -1759,78 +1770,64 @@ class TestPivotBarRaceWide:
         return records, players
 
     def test_output_columns_structure(self):
-        """Output has Label, Category, Image, then date columns."""
+        """Output has Label, Category, Image, then one column per week."""
         records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
             cumulative,
             players,
-            top_n=3,
             min_ranking_comments=0,
             min_entry_comments=0,
         )
 
         cols = wide.columns
-        assert cols[0] == "Label"
-        assert cols[1] == "Category"
-        assert cols[2] == "Image"
-        assert len(cols) == 5  # 3 meta + 2 weeks
+        assert cols[:3] == ["Label", "Category", "Image"]
+        assert cols[3:] == ["2024-10-07", "2024-10-14", "2024-10-21"]
 
-    def test_respects_top_n(self):
-        """Only top_n players appear in output."""
+    def test_field_is_every_player_at_the_ranking_minimum(self):
+        """Everyone who finishes at or above the minimum is in; a player
+        who finishes below it is out."""
+        records, players = self._build_test_data()
+        cumulative = compute_cumulative_metrics(records)
+        # Final totals: A 3000, B 3000, C 2510
+        wide = pivot_bar_race_wide(
+            cumulative,
+            players,
+            min_ranking_comments=3000,
+            min_entry_comments=0,
+        )
+
+        assert sorted(wide["Label"].to_list()) == ["Player A", "Player B"]
+
+    def test_last_column_is_the_final_rate(self):
+        """The last week's column is the season's rate, as a percentage."""
         records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
         wide = pivot_bar_race_wide(
             cumulative,
             players,
-            top_n=2,
             min_ranking_comments=0,
             min_entry_comments=0,
         )
 
-        assert wide.height == 2
-        labels = wide["Label"].to_list()
-        # Player B has highest final neg_rate, then Player A
-        assert "Player B" in labels
-        assert "Player A" in labels
-        assert "Player C" not in labels
-
-    def test_week_columns_are_iso_dates(self):
-        """Week column headers match YYYY-MM-DD format."""
-        import re
-
-        records, players = self._build_test_data()
-        cumulative = compute_cumulative_metrics(records)
-        wide = pivot_bar_race_wide(
-            cumulative,
-            players,
-            top_n=2,
-            min_ranking_comments=0,
-            min_entry_comments=0,
-        )
-
-        date_cols = [c for c in wide.columns if c not in {"Label", "Category", "Image"}]
-        for col in date_cols:
-            assert re.match(r"\d{4}-\d{2}-\d{2}", col), f"Bad date format: {col}"
+        final = dict(zip(wide["Label"], wide["2024-10-21"], strict=True))
+        assert final == {"Player B": 20.0, "Player A": 10.0, "Player C": 5.22}
 
     def test_masked_cells_are_null(self):
         """Cells masked below threshold appear as null in wide format."""
         records, players = self._build_test_data()
         cumulative = compute_cumulative_metrics(records)
-        # Ranking threshold 0 lets all players qualify; entry threshold 1500
-        # means week 1 (cum_total=1000) is below, week 2 (cum_total=2500) is above
+        # Entry threshold 1500: week 1 (cum_total=1000) is below, week 2
+        # (cum_total=2500) is above
         wide = pivot_bar_race_wide(
             cumulative,
             players,
-            top_n=2,
             min_ranking_comments=0,
             min_entry_comments=1500,
         )
 
-        # First week column should have null values
-        first_week_col = wide.columns[3]
-        vals = wide[first_week_col].to_list()
-        assert all(v is None for v in vals)
+        assert all(v is None for v in wide["2024-10-07"].to_list())
+        assert all(v is not None for v in wide["2024-10-14"].to_list())
 
 
 class TestAggregateMetadata:

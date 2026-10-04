@@ -7,7 +7,7 @@ Flourish's bar chart race template expects.
 
 Usage:
     uv run python -m scripts.export_bar_race
-    uv run python -m scripts.export_bar_race --top-n 20 --min-ranking-comments 3000 --min-entry-comments 500
+    uv run python -m scripts.export_bar_race --min-ranking-comments 3000 --min-entry-comments 250
     uv run python -m scripts.export_bar_race --input-dir data/2025-26/dashboard --output data/2025-26/dashboard/bar_race.csv
 """
 
@@ -22,7 +22,7 @@ from pipeline.aggregation import (
     compute_cumulative_metrics,
     pivot_bar_race_wide,
 )
-from utils.constants import QUALIFIED_THRESHOLD
+from utils.constants import QUALIFIED_THRESHOLD, RACE_ENTRY_MIN_N
 from utils.paths import get_dashboard_dir
 
 # -----------------------------------------------------------------------------
@@ -72,23 +72,18 @@ def main() -> None:
         help=f"Path to write bar race CSV (default: {default_output})",
     )
     parser.add_argument(
-        "--top-n",
-        type=int,
-        default=15,
-        help="Number of top players to include (default: 15)",
-    )
-    parser.add_argument(
         "--min-ranking-comments",
         type=int,
         default=QUALIFIED_THRESHOLD,
-        help="Minimum cumulative comments to qualify for top-N ranking "
+        help="Minimum final cumulative comments for a player to be in the field "
         f"(default: {QUALIFIED_THRESHOLD})",
     )
     parser.add_argument(
         "--min-entry-comments",
         type=int,
-        default=1000,
-        help="Minimum cumulative comments for a player's bar to appear (default: 1000)",
+        default=RACE_ENTRY_MIN_N,
+        help="Minimum cumulative comments for a player's bar to appear "
+        f"(default: {RACE_ENTRY_MIN_N})",
     )
     args = parser.parse_args()
 
@@ -110,7 +105,6 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info(f"Input:  {input_dir}")
     logger.info(f"Output: {output_path}")
-    logger.info(f"Top N:  {args.top_n}")
     logger.info(f"Min ranking comments: {args.min_ranking_comments}")
     logger.info(f"Min entry comments:   {args.min_entry_comments}")
     logger.info("=" * 60)
@@ -129,7 +123,6 @@ def main() -> None:
     wide = pivot_bar_race_wide(
         cumulative,
         players,
-        top_n=args.top_n,
         min_ranking_comments=args.min_ranking_comments,
         min_entry_comments=args.min_entry_comments,
     )

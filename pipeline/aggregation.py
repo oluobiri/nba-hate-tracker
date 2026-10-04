@@ -62,6 +62,7 @@ from utils.constants import (
     FANBASE_MIN_N,
     GAME_MIN_N,
     QUALIFIED_THRESHOLD,
+    RACE_ENTRY_MIN_N,
     RECAP_ANCHOR_MIN_REACTIONS,
     RECAP_ANCHOR_VOCABULARY,
     RECAP_ANCHOR_WINDOW_SECONDS,
@@ -661,6 +662,7 @@ def build_manifest(
                 "week_min_n": WEEK_MIN_N,
                 "belt_min_n": BELT_MIN_N,
                 "game_min_n": GAME_MIN_N,
+                "race_entry_min_n": RACE_ENTRY_MIN_N,
             },
             "recaps": {
                 "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,
@@ -880,9 +882,9 @@ def compute_cumulative_metrics(player_temporal: pl.DataFrame) -> pl.DataFrame:
     Compute running cumulative neg_rate for each player across weeks.
 
     Converts weekly snapshot counts into cumulative totals and rates.
-    Excludes the final stub week (max date). Fills gaps so every player
-    has a row for every week — missing weeks contribute zero new comments,
-    keeping cumulative totals stable.
+    Every week is kept, so the final week's row is the season total. Fills
+    gaps so every player has a row for every week — missing weeks
+    contribute zero new comments, keeping cumulative totals stable.
 
     Args:
         player_temporal: The player_temporal view (PLAYER_TEMPORAL_SCHEMA):
@@ -892,10 +894,7 @@ def compute_cumulative_metrics(player_temporal: pl.DataFrame) -> pl.DataFrame:
         DataFrame with columns: attributed_player, week, cum_neg,
         cum_total, cum_neg_rate. Sorted by player then week.
     """
-    # Week to Date and exclude stub week
     df = player_temporal.with_columns(pl.col("week").cast(pl.Date))
-    stub_week = df["week"].max()
-    df = df.filter(pl.col("week") != stub_week)
 
     # Build complete player × week grid to fill gaps
     players = df.select("attributed_player").unique()
@@ -935,7 +934,7 @@ def compute_cumulative_metrics(player_temporal: pl.DataFrame) -> pl.DataFrame:
 
 def mask_below_threshold(
     df: pl.DataFrame,
-    min_comments: int = 1000,
+    min_comments: int = RACE_ENTRY_MIN_N,
 ) -> pl.DataFrame:
     """
     Replace cum_neg_rate with null where cumulative comments are below threshold.
@@ -962,27 +961,23 @@ def mask_below_threshold(
 def pivot_bar_race_wide(
     df: pl.DataFrame,
     players: pl.DataFrame,
-    top_n: int = 15,
     min_ranking_comments: int = QUALIFIED_THRESHOLD,
-    min_entry_comments: int = 1000,
+    min_entry_comments: int = RACE_ENTRY_MIN_N,
 ) -> pl.DataFrame:
     """
     Pivot cumulative metrics to Flourish bar-race-compatible wide format.
 
-    Ranks players by their final-week cumulative neg_rate (before
-    threshold masking), selects the top N, applies the entry mask,
-    joins the Player dimension (roster team and headshot), and pivots
-    week dates into columns.
+    The field is every player at or above the ranking minimum in the
+    final week. Applies the entry mask, joins the Player dimension (roster team and headshot), and
+    pivots week dates into columns.
 
     Args:
         df: DataFrame from compute_cumulative_metrics with attributed_player,
             week, cum_neg, cum_total, and cum_neg_rate columns.
         players: Player dimension (or any frame) with attributed_player,
             roster_team, and headshot_url columns.
-        top_n: Number of top players to include in the output.
         min_ranking_comments: Minimum cumulative comments in the final week
-            for a player to qualify for top-N ranking. Excludes low-volume
-            statistical outliers.
+            for a player to be in the field.
         min_entry_comments: Minimum cumulative comments for a player's bar
             to appear in a given week. Weeks below this get null (empty in
             CSV), causing Flourish to hide the bar.
@@ -991,21 +986,14 @@ def pivot_bar_race_wide(
         Wide-format DataFrame with columns: Label, Category, Image,
         and one column per week (ISO date string headers like '2024-10-07').
     """
-    # Rank by final-week cum_neg_rate among players that have reached
-    # the ranking threshold — excludes low-volume statistical outliers
+    # The field: at or above the ranking minimum in the final week
     final_week = df["week"].max()
-    final_rates = (
-        df.filter(
-            (pl.col("week") == final_week)
-            & (pl.col("cum_total") >= min_ranking_comments)
-        )
-        .select("attributed_player", "cum_neg_rate")
-        .sort("cum_neg_rate", descending=True)
-    )
-    top_players = final_rates.head(top_n)["attributed_player"].to_list()
+    field = df.filter(
+        (pl.col("week") == final_week) & (pl.col("cum_total") >= min_ranking_comments)
+    )["attributed_player"].to_list()
 
-    # Filter to top N players, then apply entry threshold mask
-    df = df.filter(pl.col("attributed_player").is_in(top_players))
+    # Filter to the field, then apply entry threshold mask
+    df = df.filter(pl.col("attributed_player").is_in(field))
     df = mask_below_threshold(df, min_comments=min_entry_comments)
 
     # Format week as ISO date string for column headers

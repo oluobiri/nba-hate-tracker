@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "tables": {
     "player_overall": {
       "columns": [
@@ -909,6 +909,10 @@
           "nullable": false
         },
         "game_min_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "race_entry_min_n": {
           "type": "int",
           "nullable": false
         }

@@ -66,7 +66,7 @@ function manifestFor(tables: Tables): Manifest {
       qualified_threshold: 5,
       samples: { top_n: 1, min_confidence: 0.9, max_body_chars: 500, requires_target: false, pool_k: 1, admission: 'verified' },
       receipts: { verified: true, coverage: null, precision: null, attribution_toward_share: null },
-      floors: { fanbase_min_n: 1, week_min_n: 1, belt_min_n: 1, game_min_n: 1 },
+      floors: { fanbase_min_n: 1, week_min_n: 1, belt_min_n: 1, game_min_n: 1, race_entry_min_n: 1 },
       recaps: {
         room_bucket_seconds: 120,
         room_bodies_per_bucket: 2,

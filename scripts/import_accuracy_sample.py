@@ -1,16 +1,21 @@
 """
 Read the labeled accuracy workbook back and write the sample parquet.
 
-Refuses an incomplete or off-list workbook, naming the rows. Otherwise
-writes data/<season>/reference/accuracy_sample.parquet, stamped with
-the draw's config and classifier identity, and logs the figures the
-next aggregation will publish.
+Reads every drawn row, labeled or not, with its group (the first pass,
+the ordered group, the held-out rows) from the passes file beside the
+workbook when there is one. Refuses an off-list verdict or a skipped
+ordered row, naming the rows. Otherwise writes data/<season>/reference/
+accuracy_sample.parquet, stamped with the draw's config and classifier
+identity and the rubric version, and logs the figures the next
+aggregation will publish.
 
 Usage:
     uv run python -m scripts.import_accuracy_sample
     uv run python -m scripts.import_accuracy_sample --season 2024-25
 
-Input:  data/<season>/reference/accuracy_sample.xlsx
+Input:
+    - data/<season>/reference/accuracy_sample.xlsx
+    - data/<season>/reference/accuracy_sample.passes.json (optional)
 Output: data/<season>/reference/accuracy_sample.parquet
 """
 
@@ -21,8 +26,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pipeline.accuracy import (
+    PASSES_FILENAME,
+    RUBRIC_VERSION,
     SAMPLE_FILENAME,
     WORKBOOK_FILENAME,
+    load_passes,
     log_figures,
     read_workbook,
     score_sample,
@@ -64,6 +72,7 @@ def main() -> None:
         set_season_override(args.season)
 
     workbook_path = args.input or get_reference_dir() / WORKBOOK_FILENAME
+    passes_path = workbook_path.with_name(PASSES_FILENAME)
     output_path = get_reference_dir() / SAMPLE_FILENAME
 
     if not workbook_path.exists():
@@ -74,11 +83,13 @@ def main() -> None:
     logger.info("Import Accuracy Sample")
     logger.info("=" * 60)
     logger.info(f"Workbook: {workbook_path}")
+    logger.info(f"Passes:   {passes_path}{'' if passes_path.exists() else ' (absent)'}")
     logger.info(f"Output:   {output_path}")
     logger.info("=" * 60)
 
     try:
-        sample, stamps = read_workbook(workbook_path)
+        passes = load_passes(passes_path)
+        sample, stamps = read_workbook(workbook_path, passes)
     except ValueError as e:
         logger.error(str(e))
         sys.exit(1)
@@ -90,19 +101,23 @@ def main() -> None:
         metadata={
             "schema_version": str(SCHEMA_VERSION),
             **stamps,
+            "rubric_version": RUBRIC_VERSION,
             "labeled_at": datetime.now(UTC).date().isoformat(),
         },
     )
-    logger.info(f"Wrote {sample.height:,} rows to {output_path}")
+    labeled = sample.filter(sample["labeled"]).height
+    logger.info(f"Wrote {sample.height:,} rows ({labeled:,} labeled) to {output_path}")
 
     seed = stamps.get("sample_seed")
-    log_figures(
-        score_sample(
-            sample,
-            seed=int(seed) if seed is not None else None,
-            drawn_at=stamps.get("drawn_at"),
-        )
+    figures = score_sample(
+        sample,
+        seed=int(seed) if seed is not None else None,
+        drawn_at=stamps.get("drawn_at"),
     )
+    if figures["labeled"]:
+        log_figures(figures)
+    else:
+        logger.warning("no verdict in the workbook: nothing to score yet")
 
 
 if __name__ == "__main__":

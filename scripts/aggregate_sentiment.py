@@ -225,8 +225,8 @@ def main() -> None:
     accuracy = meta["accuracy"]
     if accuracy["labeled"]:
         logger.info(
-            f"Accuracy sample:     n={accuracy['n']:,}, "
-            f"joint {accuracy['joint_agreement']:.1%}"
+            f"Accuracy sample:     {accuracy['scored']:,} scored, "
+            f"joint {accuracy['joint_agreement']:.1%} ± {accuracy['joint_margin']:.1%}"
         )
     else:
         logger.info("Accuracy sample:     none (unlabeled)")

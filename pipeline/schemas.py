@@ -556,15 +556,21 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
 ACCURACY_SAMPLE_SCHEMA = pl.Schema(
     {
         "comment_id": pl.String,
+        "group": pl.String,  # a pipeline.accuracy.GROUPS value
+        "position": pl.Int64,  # draw order, 0-based
+        "mention_count": pl.Int64,  # names the row's target list offered
         # The classifier's side, copied from the fact at draw time
         "sentiment": pl.String,  # "pos" | "neg" | "neu"
         "confidence": pl.Float64,
         "sentiment_player": pl.String,  # nullable: the classifier's named target
         "attributed_player": pl.String,  # the resolution the row was drawn on
-        # The manual side; both null on a rejected row and only there
+        # The manual side; the labels are null on unlabeled and rejected rows
+        "labeled": pl.Boolean,  # a verdict or a reject was entered
         "label_sentiment": pl.String,  # nullable
         "label_target": pl.String,  # nullable: a canonical name, "none" or "other"
         "reject": pl.String,  # nullable: a pipeline.accuracy.REJECT_REASONS value
+        "needed_context": pl.Boolean,  # the note says the thread decided it
+        "unsure": pl.Boolean,  # the note says it was a coin flip
         "note": pl.String,  # nullable
     }
 )
@@ -875,29 +881,61 @@ class ReceiptsFigures(TypedDict):
     attribution_toward_share: float | None  # affirmed share, random named stratum
 
 
+class GroupFigures(TypedDict):
+    """One labeling group of the accuracy sample, unweighted."""
+
+    size: int  # rows of the draw in the group
+    labeled: int
+    rejected: int  # ruled not a valid input
+    scored: int  # labeled minus rejected
+    sentiment_agreement: float | None
+    target_agreement: float | None
+    joint_agreement: float | None
+
+
 class ClassAgreement(TypedDict):
     """One sentiment class of the accuracy sample: the classifier against manual review."""
 
-    predicted: int  # rows the classifier gave this label
-    labeled: int  # rows manual review gave this label
-    precision: float | None  # labeled so, of the predicted
-    recall: float | None  # predicted so, of the labeled
+    predicted: int  # scored rows the classifier gave this label
+    labeled: int  # scored rows manual review gave this label
+    precision: float | None  # labeled so, of the predicted; weighted
+    recall: float | None  # predicted so, of the labeled; weighted
     toward_precision: float | None  # labeled so and about the attributed player
 
 
+class ClassMix(TypedDict):
+    """One sentiment class's share of the scored rows, each side's; weighted."""
+
+    classifier: float | None
+    manual: float | None
+
+
 class AccuracyFigures(TypedDict):
-    """The blind random sample's agreement figures; null until it is labeled."""
+    """The blind random sample's agreement figures; null until it is labeled.
+
+    Every share weights the first pass and the ordered group by their
+    sizes in the draw; a margin is the half-width of a 95% interval.
+    """
 
     labeled: bool
     drawn: int | None  # rows in the sample
-    rejected: int | None  # rows manual review ruled not a valid input
-    n: int | None  # scored rows: drawn minus rejected
+    scored: int | None  # labeled minus rejected, every group
+    rejected: int | None  # ruled not a valid input
     seed: int | None
     drawn_at: str | None
-    sentiment_agreement: float | None  # label matches, of n
-    target_agreement: float | None  # the manual target is the attributed player, of n
-    joint_agreement: float | None  # both, of n
+    rubric: str | None  # the labeling rubric's version
+    groups: dict[str, GroupFigures] | None  # keyed by pipeline.accuracy.GROUPS
+    sentiment_agreement: float | None  # label matches, of the comparable rows
+    sentiment_margin: float | None
+    target_agreement: float | None  # manual target is the attributed player, of polar
+    target_margin: float | None
+    joint_agreement: float | None  # label matches and, when polar, the target too
+    joint_margin: float | None
     by_class: dict[str, ClassAgreement] | None  # keyed neg / neu / pos
+    class_mix: dict[str, ClassMix] | None  # keyed neg / neu / pos
+    context_share: float | None  # scored rows the thread decided
+    unsure_share: float | None  # scored rows judged a coin flip
+    reject_share: float | None  # labeled rows ruled not a valid input
 
 
 class Floors(TypedDict):

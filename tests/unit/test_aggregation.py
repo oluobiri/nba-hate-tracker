@@ -1383,17 +1383,19 @@ class TestBuildManifest:
 
     def test_accuracy_figures_pass_through(self):
         """The accuracy sample's block rides under rules.accuracy as scored."""
-        outputs, metadata, season_config, versions = _manifest_inputs()
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
         metadata["accuracy"] = {
             **unlabeled_figures(),
             "labeled": True,
             "drawn": 1000,
             "rejected": 4,
-            "n": 996,
+            "scored": 996,
             "sentiment_agreement": 0.9,
         }
 
-        rules = build_manifest(outputs, metadata, season_config, versions)["rules"]
+        rules = build_manifest(outputs, metadata, season_config, versions, recaps)[
+            "rules"
+        ]
 
         assert rules["accuracy"] == metadata["accuracy"]
         assert list(rules)[2:4] == ["receipts", "accuracy"]

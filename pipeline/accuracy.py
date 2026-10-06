@@ -4,12 +4,22 @@ The accuracy sample: a blind random draw of the attributed population.
 The eval suite (pipeline/evaluation.py, pipeline/targets.py) is a
 regression tripwire over chosen cases; its pass rate describes the
 suite. This module draws rows uniformly at random from the population
-the rankings are computed over, hands them out for manual review as a workbook
-with no prediction in sight, reads the verdicts back, and scores the
-classifier against them. It is the only producer of an accuracy figure.
+the rankings are computed over, hands them out for manual review as a
+workbook with no prediction in sight, reads the verdicts back, and
+scores the classifier against them. It is the only producer of an
+accuracy figure.
+
+The draw is labeled in two groups. Rows chosen freely in a first pass
+are a group counted in full; every other row is the ordered group,
+labeled top-down in draw order so any labeled prefix is a random
+sample of it. The published figure weights the two by their sizes.
+Rows set aside from the estimate (verdicts entered after seeing a
+model's read) are held out.
 """
 
+import json
 import logging
+import math
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -24,6 +34,8 @@ from pipeline.schemas import (
     ACCURACY_SAMPLE_SCHEMA,
     AccuracyFigures,
     ClassAgreement,
+    ClassMix,
+    GroupFigures,
     validate_schema,
 )
 from pipeline.stage import classifier_stamp_keys
@@ -36,9 +48,19 @@ from utils.constants import (
 logger = logging.getLogger(__name__)
 
 SENTIMENT_VERDICTS = ("neg", "neu", "pos")
+POLAR_VERDICTS = ("neg", "pos")
 TARGET_NONE = "none"  # the sentiment is not aimed at a player
 TARGET_OTHER = "other"  # aimed at a player the row's list does not offer
 REJECT_REASONS = ("alias_false_positive", "unreadable")
+CONTEXT_TAG = "ctx"  # in the note: the thread decided the verdict
+UNSURE_TAG = "?"  # in the note: a coin flip even with the thread
+RUBRIC_VERSION = "v1"
+
+GROUP_FIRST = "first"  # chosen freely, labeled in full
+GROUP_ORDERED = "ordered"  # labeled top-down in draw order
+GROUP_HELD_OUT = "held_out"  # set aside from the estimate
+GROUPS = (GROUP_FIRST, GROUP_ORDERED, GROUP_HELD_OUT)
+PASSES_FILENAME = "accuracy_sample.passes.json"
 
 WORKBOOK_FILENAME = "accuracy_sample.xlsx"
 SAMPLE_FILENAME = "accuracy_sample.parquet"
@@ -78,6 +100,7 @@ MENTIONED_SEPARATOR = "|"
 PERMALINK = "https://www.reddit.com/r/nba/comments/{}/comment/{}/"
 SENTIMENT_STAMP_KEYS = classifier_stamp_keys("sentiment")
 RATE_DECIMALS = 4
+Z_95 = 1.96
 MAX_REPORTED_PROBLEMS = 40
 
 SAMPLE_COLUMNS = (
@@ -103,11 +126,12 @@ def draw_sample(
     Draw the sample: n attributed rows, uniformly at random, under a seed.
 
     The population is the fact's attributed rows with a real label, the
-    set every negative rate is computed over. The draw is reproducible
-    from the seed as long as the fact's row order is; the ids are what
-    the workbook and the parquet carry, so a redraw is never needed to
-    score. Each row gets its Reddit permalink and, when the bridge is
-    given, its post title.
+    set every negative rate is computed over. The rows come back in
+    random order, so any top-down prefix is itself a random sample. The
+    draw is reproducible from the seed as long as the fact's row order
+    is; the ids are what the workbook and the parquet carry. Each row
+    gets its Reddit permalink and, when the bridge is given, its post
+    title.
 
     Args:
         df: The fact (SENTIMENT_SCHEMA columns; error rows may be present).
@@ -279,6 +303,37 @@ def write_workbook(sample: pl.DataFrame, path: Path, stamps: Mapping[str, str]) 
     workbook.save(path)
 
 
+def load_passes(path: Path) -> dict[str, list[str]] | None:
+    """
+    Read the group assignment beside the workbook, if any.
+
+    The file names the comment ids of the first pass and of the held-out
+    rows; every other drawn row is the ordered group. Without the file
+    the whole draw is the ordered group.
+
+    Args:
+        path: Path to the passes JSON.
+
+    Returns:
+        {"first": [...], "held_out": [...]} (missing keys read as empty),
+        or None when the file is absent.
+
+    Raises:
+        ValueError: If an id appears in both lists.
+    """
+    if not path.exists():
+        return None
+    document = json.loads(path.read_text())
+    passes = {
+        GROUP_FIRST: [str(c) for c in document.get(GROUP_FIRST, [])],
+        GROUP_HELD_OUT: [str(c) for c in document.get(GROUP_HELD_OUT, [])],
+    }
+    both = set(passes[GROUP_FIRST]) & set(passes[GROUP_HELD_OUT])
+    if both:
+        raise ValueError(f"{path}: ids in both first and held_out: {sorted(both)[:5]}")
+    return passes
+
+
 def _text(value: object) -> str | None:
     """A cell as stripped text; None for an empty cell."""
     if value is None:
@@ -287,25 +342,39 @@ def _text(value: object) -> str | None:
     return text or None
 
 
-def read_workbook(path: Path) -> tuple[pl.DataFrame, dict[str, str]]:
-    """
-    Read the labeled workbook back as the accuracy sample.
+def _header_matches(values: tuple, expected: tuple[str, ...]) -> bool:
+    """The sheet's header equals the contract, ignoring trailing empty columns."""
+    cells = [_text(value) for value in values]
+    while cells and cells[-1] is None:
+        cells.pop()
+    return tuple(cells) == expected
 
-    Refuses the file rather than scoring a partial or off-list set:
-    every drawn id must appear exactly once, an unrejected row needs a
-    sentiment and a target from its own list, a rejected row needs a
-    known reason. Problems are reported by sheet row.
+
+def read_workbook(
+    path: Path, passes: Mapping[str, list[str]] | None = None
+) -> tuple[pl.DataFrame, dict[str, str]]:
+    """
+    Read the workbook back as the accuracy sample, labeled rows and not.
+
+    Every drawn row comes back, in draw order, with its group. A labeled
+    row needs a sentiment and a target from its own list, or a known
+    reject reason; the ordered group must be labeled top-down, so an
+    unlabeled ordered row above a labeled one is refused. Problems are
+    reported by sheet row, all at once.
 
     Args:
-        path: The .xlsx written by write_workbook and filled in.
+        path: The .xlsx written by write_workbook, filled in or partly.
+        passes: Group assignment from load_passes; None puts every row
+            in the ordered group.
 
     Returns:
         (frame under ACCURACY_SAMPLE_SCHEMA in draw order; the stamps
         from the meta sheet).
 
     Raises:
-        ValueError: If a sheet or header is missing, or any row fails
-            the checks; the message lists the rows.
+        ValueError: If a sheet or header is missing, a passes id is not
+            in the draw, or any row fails the checks; the message lists
+            the rows.
     """
     workbook = load_workbook(path, read_only=True, data_only=True)
     for sheet in (LABELS_SHEET, CLASSIFIER_SHEET, META_SHEET):
@@ -319,19 +388,28 @@ def read_workbook(path: Path) -> tuple[pl.DataFrame, dict[str, str]]:
     }
 
     classifier_rows = workbook[CLASSIFIER_SHEET].iter_rows(values_only=True)
-    if tuple(next(classifier_rows, ())) != CLASSIFIER_COLUMNS:
+    if not _header_matches(next(classifier_rows, ()), CLASSIFIER_COLUMNS):
         raise ValueError(f"{path}: the {CLASSIFIER_SHEET} sheet's header was changed")
     drawn: dict[str, dict] = {}
     for values in classifier_rows:
         row = dict(zip(CLASSIFIER_COLUMNS, values))
+        if row["comment_id"] is None:
+            continue
         mentioned = _text(row["mentioned_players"])
         row["mentioned_players"] = (
             mentioned.split(MENTIONED_SEPARATOR) if mentioned else []
         )
         drawn[str(row["comment_id"])] = row
 
+    groups = dict.fromkeys(drawn, GROUP_ORDERED)
+    for group in (GROUP_FIRST, GROUP_HELD_OUT):
+        for comment_id in (passes or {}).get(group, []):
+            if comment_id not in drawn:
+                raise ValueError(f"{path}: {group} id {comment_id} is not in the draw")
+            groups[comment_id] = group
+
     label_rows = workbook[LABELS_SHEET].iter_rows(values_only=True)
-    if tuple(next(label_rows, ())) != LABEL_COLUMNS:
+    if not _header_matches(next(label_rows, ()), LABEL_COLUMNS):
         raise ValueError(f"{path}: the {LABELS_SHEET} sheet's header was changed")
 
     problems: list[str] = []
@@ -349,30 +427,31 @@ def read_workbook(path: Path) -> tuple[pl.DataFrame, dict[str, str]]:
         if comment_id in labels:
             problems.append(f"row {row_number}: {comment_id} appears twice")
             continue
+        row["row"] = row_number
+        labels[comment_id] = row
 
         reject = row["reject"]
-        if row["sentiment"] is None and row["target"] is None and reject is None:
-            problems.append(f"row {row_number}: unlabeled")
-        elif reject is not None:
+        labeled = bool(row["sentiment"] or row["target"] or reject)
+        if not labeled:
+            continue
+        if reject is not None:
             if reject not in REJECT_REASONS:
                 problems.append(
                     f"row {row_number}: reject {reject!r} is not one of "
                     f"{list(REJECT_REASONS)}"
                 )
-        else:
-            sentiment = row["sentiment"]
-            if sentiment not in SENTIMENT_VERDICTS:
-                problems.append(
-                    f"row {row_number}: sentiment {sentiment!r} is not one of "
-                    f"{list(SENTIMENT_VERDICTS)}"
-                )
-            options = target_options(drawn[comment_id]["mentioned_players"])
-            if row["target"] not in options:
-                problems.append(
-                    f"row {row_number}: target {row['target']!r} is not one of "
-                    f"{list(options)}"
-                )
-        labels[comment_id] = row
+            continue
+        if row["sentiment"] not in SENTIMENT_VERDICTS:
+            problems.append(
+                f"row {row_number}: sentiment {row['sentiment']!r} is not one of "
+                f"{list(SENTIMENT_VERDICTS)}"
+            )
+        options = target_options(drawn[comment_id]["mentioned_players"])
+        if row["target"] not in options:
+            problems.append(
+                f"row {row_number}: target {row['target']!r} is not one of "
+                f"{list(options)}"
+            )
 
     missing = [comment_id for comment_id in drawn if comment_id not in labels]
     if missing:
@@ -381,6 +460,27 @@ def read_workbook(path: Path) -> tuple[pl.DataFrame, dict[str, str]]:
             + ", ".join(missing[:10])
             + (", ..." if len(missing) > 10 else "")
         )
+
+    # The ordered group is a prefix sample only if nothing was skipped
+    skipped: list[int] = []
+    seen_unlabeled: list[int] = []
+    for comment_id in drawn:
+        if groups[comment_id] != GROUP_ORDERED or comment_id not in labels:
+            continue
+        row = labels[comment_id]
+        if row["sentiment"] or row["target"] or row["reject"]:
+            skipped.extend(seen_unlabeled)
+            seen_unlabeled = []
+        else:
+            seen_unlabeled.append(row["row"])
+    if skipped:
+        problems.append(
+            f"{len(skipped)} ordered row(s) were skipped (the ordered group is "
+            f"labeled top-down, no gaps): rows "
+            + ", ".join(str(r) for r in skipped[:15])
+            + (", ..." if len(skipped) > 15 else "")
+        )
+
     if problems:
         shown = problems[:MAX_REPORTED_PROBLEMS]
         more = len(problems) - len(shown)
@@ -391,20 +491,28 @@ def read_workbook(path: Path) -> tuple[pl.DataFrame, dict[str, str]]:
         )
 
     records = []
-    for comment_id, prediction in drawn.items():
+    for position, (comment_id, prediction) in enumerate(drawn.items()):
         label = labels[comment_id]
         rejected = label["reject"] is not None
+        labeled = bool(label["sentiment"] or label["target"] or rejected)
+        note = label["note"]
         records.append(
             {
                 "comment_id": comment_id,
+                "group": groups[comment_id],
+                "position": position,
+                "mention_count": len(prediction["mentioned_players"]),
                 "sentiment": prediction["sentiment"],
                 "confidence": float(prediction["confidence"]),
                 "sentiment_player": _text(prediction["sentiment_player"]),
                 "attributed_player": prediction["attributed_player"],
+                "labeled": labeled,
                 "label_sentiment": None if rejected else label["sentiment"],
                 "label_target": None if rejected else label["target"],
                 "reject": label["reject"],
-                "note": label["note"],
+                "needed_context": bool(note and CONTEXT_TAG in note.lower()),
+                "unsure": bool(note and UNSURE_TAG in note),
+                "note": note,
             }
         )
     frame = pl.DataFrame(records, schema=ACCURACY_SAMPLE_SCHEMA)
@@ -412,7 +520,7 @@ def read_workbook(path: Path) -> tuple[pl.DataFrame, dict[str, str]]:
     return frame, stamps
 
 
-def _rate(numerator: int, denominator: int) -> float | None:
+def _rate(numerator: float, denominator: float) -> float | None:
     """A share rounded for the manifest; None over an empty denominator."""
     if not denominator:
         return None
@@ -424,70 +532,237 @@ def unlabeled_figures() -> AccuracyFigures:
     return {
         "labeled": False,
         "drawn": None,
+        "scored": None,
         "rejected": None,
-        "n": None,
         "seed": None,
         "drawn_at": None,
+        "rubric": None,
+        "groups": None,
         "sentiment_agreement": None,
+        "sentiment_margin": None,
         "target_agreement": None,
+        "target_margin": None,
         "joint_agreement": None,
+        "joint_margin": None,
         "by_class": None,
+        "class_mix": None,
+        "context_share": None,
+        "unsure_share": None,
+        "reject_share": None,
+    }
+
+
+# Scoring predicates over a scored (labeled, not rejected) row.
+_SENTIMENT_OK = pl.col("sentiment") == pl.col("label_sentiment")
+_TARGET_OK = pl.col("attributed_player") == pl.col("label_target")
+_POLAR = pl.col("label_sentiment").is_in(POLAR_VERDICTS)
+# A row naming several players whose manual target is another listed
+# player judged a different player's sentiment: not comparable
+_COMPARABLE = (
+    (pl.col("mention_count") <= 1)
+    | _TARGET_OK
+    | pl.col("label_target").is_in([TARGET_NONE, TARGET_OTHER])
+)
+_JOINT_OK = _SENTIMENT_OK & _COMPARABLE & (_TARGET_OK | ~_POLAR)
+
+
+def _weighted(
+    groups: Mapping[str, pl.DataFrame],
+    weights: Mapping[str, float],
+    numerator: pl.Expr,
+    denominator: pl.Expr,
+) -> float | None:
+    """
+    A share over scored rows, each estimating group weighted by its size.
+
+    The share is the ratio of two weighted means (rows meeting the
+    numerator, rows meeting the denominator), so a conditional figure
+    like a class precision stays a proper population estimate.
+
+    Args:
+        groups: Scored rows per estimating group.
+        weights: Group -> population weight (sums to 1).
+        numerator: Row predicate counted in the numerator.
+        denominator: Row predicate counted in the denominator.
+
+    Returns:
+        The rounded share, or None when no group has a denominator row.
+    """
+    top = bottom = 0.0
+    for name, frame in groups.items():
+        if not frame.height:
+            return None
+        top += (
+            weights[name] * frame.filter(numerator & denominator).height / frame.height
+        )
+        bottom += weights[name] * frame.filter(denominator).height / frame.height
+    return _rate(top, bottom)
+
+
+def _margin(
+    groups: Mapping[str, pl.DataFrame],
+    weights: Mapping[str, float],
+    sizes: Mapping[str, int],
+    drawn: int,
+    predicate: pl.Expr,
+    denominator: pl.Expr,
+) -> float | None:
+    """
+    Half-width of the 95% interval on a weighted share.
+
+    Two-phase sampling: the draw's own variance over the population,
+    plus the ordered group's sampling variance within its part of the
+    draw, finite-population corrected. The first pass is a census of
+    its part and adds no second-phase term.
+
+    Args:
+        groups: Scored rows per estimating group.
+        weights: Group -> population weight.
+        sizes: Group -> rows of the draw in the group's population.
+        drawn: Rows in the draw.
+        predicate: Row predicate the share counts.
+        denominator: Row predicate the share is over.
+
+    Returns:
+        The rounded half-width, or None when the share is undefined.
+    """
+    share = _weighted(groups, weights, predicate, denominator)
+    if share is None:
+        return None
+    variance = share * (1 - share) / drawn
+    ordered = groups.get(GROUP_ORDERED)
+    if ordered is not None:
+        rows = ordered.filter(denominator)
+        if rows.height:
+            p = rows.filter(predicate).height / rows.height
+            fraction = min(ordered.height / sizes[GROUP_ORDERED], 1.0)
+            variance += (
+                weights[GROUP_ORDERED] ** 2 * p * (1 - p) / rows.height * (1 - fraction)
+            )
+    return round(Z_95 * math.sqrt(variance), RATE_DECIMALS)
+
+
+def _group_figures(frame: pl.DataFrame, size: int) -> GroupFigures:
+    """One group's unweighted figures, for the record."""
+    labeled = frame.filter(pl.col("labeled"))
+    scored = labeled.filter(pl.col("reject").is_null())
+    comparable = scored.filter(_COMPARABLE)
+    polar = scored.filter(_POLAR)
+    return {
+        "size": size,
+        "labeled": labeled.height,
+        "rejected": labeled.height - scored.height,
+        "scored": scored.height,
+        "sentiment_agreement": _rate(
+            comparable.filter(_SENTIMENT_OK).height, comparable.height
+        ),
+        "target_agreement": _rate(polar.filter(_TARGET_OK).height, polar.height),
+        "joint_agreement": _rate(scored.filter(_JOINT_OK).height, scored.height),
     }
 
 
 def score_sample(
-    sample: pl.DataFrame, *, seed: int | None, drawn_at: str | None
+    sample: pl.DataFrame,
+    *,
+    seed: int | None,
+    drawn_at: str | None,
+    rubric: str | None = RUBRIC_VERSION,
 ) -> AccuracyFigures:
     """
     Score the classifier against the manual verdicts.
 
-    Rejected rows are excluded before anything is counted. Sentiment
-    agreement is the label match; target agreement is the manual target
-    being the attributed player (none and other both count against); joint is
-    both on the same row. Per class: precision and recall of the label,
-    and toward_precision, labeled so and about the attributed player,
-    of the predicted, which is the figure a negative rate rests on.
+    Rejected and unlabeled rows are excluded before anything is counted.
+    Sentiment agreement is the label match over comparable rows; target
+    agreement is the manual target being the attributed player, over the
+    rows the manual read calls positive or negative; joint is both on
+    the same row (a neutral row needs only the label). Per class:
+    precision and recall of the label, and toward_precision, labeled so
+    and about the attributed player, of the predicted, which is the
+    figure a negative rate rests on. Every published share weights the
+    first pass and the ordered group by their sizes; held-out rows are
+    reported per group and never estimate.
 
     Args:
         sample: Frame under ACCURACY_SAMPLE_SCHEMA.
         seed: The draw's seed, for the block.
         drawn_at: The draw's date, for the block.
+        rubric: The labeling rubric's version, for the block.
 
     Returns:
-        The AccuracyFigures block, labeled=True.
+        The AccuracyFigures block; unlabeled when no row is labeled.
     """
-    scored = sample.filter(pl.col("reject").is_null())
-    n = scored.height
-    sentiment_ok = pl.col("sentiment") == pl.col("label_sentiment")
-    target_ok = pl.col("attributed_player") == pl.col("label_target")
+    if not sample.filter(pl.col("labeled")).height:
+        return unlabeled_figures()
+
+    drawn = sample.height
+    sizes = {
+        GROUP_FIRST: sample.filter(pl.col("group") == GROUP_FIRST).height,
+    }
+    sizes[GROUP_ORDERED] = drawn - sizes[GROUP_FIRST]
+    sizes[GROUP_HELD_OUT] = sample.filter(pl.col("group") == GROUP_HELD_OUT).height
+    weights = {name: sizes[name] / drawn for name in (GROUP_FIRST, GROUP_ORDERED)}
+
+    scored_by_group = {
+        name: sample.filter(
+            (pl.col("group") == name) & pl.col("labeled") & pl.col("reject").is_null()
+        )
+        for name in (GROUP_FIRST, GROUP_ORDERED)
+    }
+    estimating = {name: f for name, f in scored_by_group.items() if sizes[name]}
+    labeled_by_group = {
+        name: sample.filter((pl.col("group") == name) & pl.col("labeled"))
+        for name in estimating
+    }
+
+    def share(predicate: pl.Expr, denominator: pl.Expr = pl.lit(True)) -> float | None:
+        return _weighted(estimating, weights, predicate, denominator)
+
+    def margin(predicate: pl.Expr, denominator: pl.Expr = pl.lit(True)) -> float | None:
+        return _margin(estimating, weights, sizes, drawn, predicate, denominator)
 
     by_class: dict[str, ClassAgreement] = {}
+    class_mix: dict[str, ClassMix] = {}
+    scored_all = pl.concat(scored_by_group.values())
     for label in SENTIMENT_VERDICTS:
-        predicted = scored.filter(pl.col("sentiment") == label)
-        labeled = scored.filter(pl.col("label_sentiment") == label)
-        agreed = pl.col("label_sentiment") == label
+        predicted = pl.col("sentiment") == label
+        manual = pl.col("label_sentiment") == label
         by_class[label] = {
-            "predicted": predicted.height,
-            "labeled": labeled.height,
-            "precision": _rate(predicted.filter(agreed).height, predicted.height),
-            "recall": _rate(
-                labeled.filter(pl.col("sentiment") == label).height, labeled.height
-            ),
-            "toward_precision": _rate(
-                predicted.filter(agreed & target_ok).height, predicted.height
-            ),
+            "predicted": scored_all.filter(predicted).height,
+            "labeled": scored_all.filter(manual).height,
+            "precision": share(manual, predicted & _COMPARABLE),
+            "recall": share(predicted, manual & _COMPARABLE),
+            "toward_precision": share(manual & _TARGET_OK, predicted & _COMPARABLE),
         }
+        class_mix[label] = {"classifier": share(predicted), "manual": share(manual)}
+
     return {
         "labeled": True,
-        "drawn": sample.height,
-        "rejected": sample.height - n,
-        "n": n,
+        "drawn": drawn,
+        "scored": scored_all.height,
+        "rejected": sample.filter(
+            pl.col("labeled") & pl.col("reject").is_not_null()
+        ).height,
         "seed": seed,
         "drawn_at": drawn_at,
-        "sentiment_agreement": _rate(scored.filter(sentiment_ok).height, n),
-        "target_agreement": _rate(scored.filter(target_ok).height, n),
-        "joint_agreement": _rate(scored.filter(sentiment_ok & target_ok).height, n),
+        "rubric": rubric,
+        "groups": {
+            name: _group_figures(sample.filter(pl.col("group") == name), sizes[name])
+            for name in GROUPS
+            if sizes[name]
+        },
+        "sentiment_agreement": share(_SENTIMENT_OK, _COMPARABLE),
+        "sentiment_margin": margin(_SENTIMENT_OK, _COMPARABLE),
+        "target_agreement": share(_TARGET_OK, _POLAR),
+        "target_margin": margin(_TARGET_OK, _POLAR),
+        "joint_agreement": share(_JOINT_OK),
+        "joint_margin": margin(_JOINT_OK),
         "by_class": by_class,
+        "class_mix": class_mix,
+        "context_share": share(pl.col("needed_context")),
+        "unsure_share": share(pl.col("unsure")),
+        "reject_share": _weighted(
+            labeled_by_group, weights, pl.col("reject").is_not_null(), pl.lit(True)
+        ),
     }
 
 
@@ -507,7 +782,8 @@ def load_accuracy_sample(
         fact_stamps: The fact's classifier_sentiment stamps.
 
     Returns:
-        The AccuracyFigures block; unlabeled when the file is absent.
+        The AccuracyFigures block; unlabeled when the file is absent or
+        holds no verdict.
 
     Raises:
         ValueError: If the file does not conform to ACCURACY_SAMPLE_SCHEMA.
@@ -544,8 +820,12 @@ def load_accuracy_sample(
         sample,
         seed=int(seed) if seed is not None else None,
         drawn_at=metadata.get("drawn_at"),
+        rubric=metadata.get("rubric_version"),
     )
-    log_figures(figures)
+    if figures["labeled"]:
+        log_figures(figures)
+    else:
+        logger.warning(f"{path} holds no verdict: the manifest carries no figure")
     return figures
 
 
@@ -560,15 +840,32 @@ def log_figures(figures: AccuracyFigures) -> None:
     def pct(value: float | None) -> str:
         return "n/a" if value is None else f"{value:.1%}"
 
+    def pm(value: float | None, half: float | None) -> str:
+        return pct(value) if half is None else f"{pct(value)} ± {pct(half)}"
+
     logger.info(
-        f"accuracy sample: n={figures['n']:,} scored of {figures['drawn']:,} drawn "
+        f"accuracy sample: {figures['scored']:,} scored of {figures['drawn']:,} drawn "
         f"({figures['rejected']:,} rejected); sentiment "
-        f"{pct(figures['sentiment_agreement'])}, target "
-        f"{pct(figures['target_agreement'])}, joint {pct(figures['joint_agreement'])}"
+        f"{pm(figures['sentiment_agreement'], figures['sentiment_margin'])}, target "
+        f"{pm(figures['target_agreement'], figures['target_margin'])}, joint "
+        f"{pm(figures['joint_agreement'], figures['joint_margin'])}"
     )
+    for name, block in (figures["groups"] or {}).items():
+        logger.info(
+            f"  {name}: {block['labeled']:,} labeled of {block['size']:,}, "
+            f"{block['scored']:,} scored; sentiment {pct(block['sentiment_agreement'])}, "
+            f"target {pct(block['target_agreement'])}, joint "
+            f"{pct(block['joint_agreement'])}"
+        )
     for label, block in (figures["by_class"] or {}).items():
+        mix = (figures["class_mix"] or {}).get(label, {})
         logger.info(
             f"  {label}: predicted {block['predicted']:,} / labeled "
             f"{block['labeled']:,}; precision {pct(block['precision'])}, recall "
-            f"{pct(block['recall'])}, toward {pct(block['toward_precision'])}"
+            f"{pct(block['recall'])}, toward {pct(block['toward_precision'])}; share "
+            f"classifier {pct(mix.get('classifier'))} vs manual {pct(mix.get('manual'))}"
         )
+    logger.info(
+        f"  needed the thread {pct(figures['context_share'])}, unsure "
+        f"{pct(figures['unsure_share'])}, rejected {pct(figures['reject_share'])}"
+    )

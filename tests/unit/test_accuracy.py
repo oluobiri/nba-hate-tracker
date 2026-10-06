@@ -13,6 +13,7 @@ from pipeline.accuracy import (
     GROUP_FIRST,
     GROUP_HELD_OUT,
     GROUP_ORDERED,
+    GROUPS,
     LABEL_COLUMNS,
     LABELS_SHEET,
     LISTS_SHEET,
@@ -645,7 +646,7 @@ class TestScoreSample:
         assert figures == unlabeled_figures()
 
     def test_counts_and_identity(self):
-        """Drawn, scored and rejected count every group; the stamps pass through."""
+        """Drawn counts the draw, scored and rejected the estimating groups."""
         figures = score_sample(TWO_GROUPS, seed=11, drawn_at="2026-09-24", rubric="v1")
 
         assert figures["labeled"] is True
@@ -656,12 +657,21 @@ class TestScoreSample:
             "v1",
         )
 
+    def test_a_held_out_reject_is_not_counted(self):
+        """Scored and rejected describe the same rows: the two estimating groups."""
+        sample = _labeled([{}, {"group": GROUP_HELD_OUT, **REJECTED}, REJECTED])
+
+        figures = score_sample(sample, seed=1, drawn_at=None)
+
+        assert (figures["drawn"], figures["scored"], figures["rejected"]) == (3, 1, 1)
+
     def test_groups_are_reported_unweighted(self):
         """Each group's own figures, the held-out rows included, for the record."""
         groups = score_sample(TWO_GROUPS, seed=1, drawn_at=None)["groups"]
 
         assert groups[GROUP_FIRST] == {
             "size": 4,
+            "weight": 0.4,
             "labeled": 4,
             "rejected": 1,
             "scored": 3,
@@ -670,7 +680,8 @@ class TestScoreSample:
             "joint_agreement": 0.6667,
         }
         assert groups[GROUP_ORDERED] == {
-            "size": 6,
+            "size": 5,
+            "weight": 0.6,
             "labeled": 3,
             "rejected": 0,
             "scored": 3,
@@ -680,6 +691,15 @@ class TestScoreSample:
         }
         assert groups[GROUP_HELD_OUT]["size"] == 1
         assert groups[GROUP_HELD_OUT]["sentiment_agreement"] == 1.0
+
+    def test_sizes_sum_to_the_draw_and_the_ordered_weight_carries_the_held_out(self):
+        """A group's size is its own rows; the held-out rows' weight rides with
+        the ordered group, so the weights sum to one."""
+        figures = score_sample(TWO_GROUPS, seed=1, drawn_at=None)
+        groups = figures["groups"]
+
+        assert sum(block["size"] for block in groups.values()) == figures["drawn"]
+        assert [groups[name]["weight"] for name in GROUPS] == [0.4, 0.6, 0.0]
 
     def test_headline_weights_the_groups_by_size(self):
         """First pass at 4/10, ordered at 6/10; the held-out row never estimates."""

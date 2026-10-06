@@ -14,7 +14,7 @@ are a group counted in full; every other row is the ordered group,
 labeled top-down in draw order so any labeled prefix is a random
 sample of it. The published figure weights the two by their sizes.
 Rows set aside from the estimate (verdicts entered after seeing a
-model's read) are held out.
+model's read) are held out; their weight rides with the ordered group.
 """
 
 import json
@@ -618,7 +618,7 @@ def _margin(
     Args:
         groups: Scored rows per estimating group.
         weights: Group -> population weight.
-        sizes: Group -> rows of the draw in the group's population.
+        sizes: Group -> rows of the draw the group stands for.
         drawn: Rows in the draw.
         predicate: Row predicate the share counts.
         denominator: Row predicate the share is over.
@@ -642,14 +642,15 @@ def _margin(
     return round(Z_95 * math.sqrt(variance), RATE_DECIMALS)
 
 
-def _group_figures(frame: pl.DataFrame, size: int) -> GroupFigures:
-    """One group's unweighted figures, for the record."""
+def _group_figures(frame: pl.DataFrame, weight: float) -> GroupFigures:
+    """One group's unweighted figures and its weight in the estimate."""
     labeled = frame.filter(pl.col("labeled"))
     scored = labeled.filter(pl.col("reject").is_null())
     comparable = scored.filter(_COMPARABLE)
     polar = scored.filter(_POLAR)
     return {
-        "size": size,
+        "size": frame.height,
+        "weight": round(weight, RATE_DECIMALS),
         "labeled": labeled.height,
         "rejected": labeled.height - scored.height,
         "scored": scored.height,
@@ -679,8 +680,9 @@ def score_sample(
     precision and recall of the label, and toward_precision, labeled so
     and about the attributed player, of the predicted, which is the
     figure a negative rate rests on. Every published share weights the
-    first pass and the ordered group by their sizes; held-out rows are
-    reported per group and never estimate.
+    first pass by its size and the ordered group by every row outside
+    the first pass; held-out rows are reported per group and never
+    estimate.
 
     Args:
         sample: Frame under ACCURACY_SAMPLE_SCHEMA.
@@ -695,12 +697,13 @@ def score_sample(
         return unlabeled_figures()
 
     drawn = sample.height
-    sizes = {
-        GROUP_FIRST: sample.filter(pl.col("group") == GROUP_FIRST).height,
+    sizes = {name: sample.filter(pl.col("group") == name).height for name in GROUPS}
+    # The ordered group stands for every row outside the first pass
+    spans = {
+        GROUP_FIRST: sizes[GROUP_FIRST],
+        GROUP_ORDERED: drawn - sizes[GROUP_FIRST],
     }
-    sizes[GROUP_ORDERED] = drawn - sizes[GROUP_FIRST]
-    sizes[GROUP_HELD_OUT] = sample.filter(pl.col("group") == GROUP_HELD_OUT).height
-    weights = {name: sizes[name] / drawn for name in (GROUP_FIRST, GROUP_ORDERED)}
+    weights = {name: spans[name] / drawn for name in spans}
 
     scored_by_group = {
         name: sample.filter(
@@ -708,7 +711,7 @@ def score_sample(
         )
         for name in (GROUP_FIRST, GROUP_ORDERED)
     }
-    estimating = {name: f for name, f in scored_by_group.items() if sizes[name]}
+    estimating = {name: f for name, f in scored_by_group.items() if spans[name]}
     labeled_by_group = {
         name: sample.filter((pl.col("group") == name) & pl.col("labeled"))
         for name in estimating
@@ -718,7 +721,7 @@ def score_sample(
         return _weighted(estimating, weights, predicate, denominator)
 
     def margin(predicate: pl.Expr, denominator: pl.Expr = pl.lit(True)) -> float | None:
-        return _margin(estimating, weights, sizes, drawn, predicate, denominator)
+        return _margin(estimating, weights, spans, drawn, predicate, denominator)
 
     by_class: dict[str, ClassAgreement] = {}
     class_mix: dict[str, ClassMix] = {}
@@ -739,14 +742,15 @@ def score_sample(
         "labeled": True,
         "drawn": drawn,
         "scored": scored_all.height,
-        "rejected": sample.filter(
-            pl.col("labeled") & pl.col("reject").is_not_null()
-        ).height,
+        "rejected": sum(frame.height for frame in labeled_by_group.values())
+        - scored_all.height,
         "seed": seed,
         "drawn_at": drawn_at,
         "rubric": rubric,
         "groups": {
-            name: _group_figures(sample.filter(pl.col("group") == name), sizes[name])
+            name: _group_figures(
+                sample.filter(pl.col("group") == name), weights.get(name, 0.0)
+            )
             for name in GROUPS
             if sizes[name]
         },

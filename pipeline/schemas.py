@@ -886,6 +886,7 @@ class GroupFigures(TypedDict):
     """One labeling group of the accuracy sample, unweighted."""
 
     size: int  # rows of the draw in the group
+    weight: float  # share of the estimate; ordered carries the held-out rows' too
     labeled: int
     rejected: int  # ruled not a valid input
     scored: int  # labeled minus rejected
@@ -920,8 +921,8 @@ class AccuracyFigures(TypedDict):
 
     labeled: bool
     drawn: int | None  # rows in the sample
-    scored: int | None  # labeled minus rejected, every group
-    rejected: int | None  # ruled not a valid input
+    scored: int | None  # labeled minus rejected, the estimating groups
+    rejected: int | None  # ruled not a valid input, the estimating groups
     seed: int | None
     drawn_at: str | None
     rubric: str | None  # the labeling rubric's version

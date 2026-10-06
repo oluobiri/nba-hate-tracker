@@ -268,6 +268,7 @@ REFERENCE_DATA_SUBDIR = "reference"
 LIVE_PLAY_BY_PLAY_SUBDIR = "play_by_play_live"
 RECAPS_SUBDIR = "recaps"  # under dashboard/: one JSON per curated recap
 RECAP_CANDIDATES_FILENAME = "recap_candidates.csv"  # under reference/, never published
+METHOD_EXAMPLE_CANDIDATES_FILENAME = "method_example_candidates_{slot}.csv"  # same
 
 # Season-independent: one set of originals and variants serves every
 # season, so it sits beside the season directories, not under them.

@@ -11,7 +11,7 @@
 scripts/          → CLI entry points (download, filter, batch, aggregate, publish)
 pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
-config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts + recaps.yaml curation; teams.yaml; publish.yaml target)
+config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts + recaps.yaml / method_examples.yaml curation; teams.yaml; publish.yaml target)
 app/              → Streamlit dashboard (V1 lab, retires in #114)
 web/              → The site: Astro + React islands, built from the published contract (conventions: web/CLAUDE.md)
 tests/            → pytest (unit/, conftest.py)
@@ -22,7 +22,7 @@ data/             → Not committed
   │   ├── filtered/   → Player-mention filtered JSONL
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
-  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + the cdn.nba.com live feed (play_by_play_live/<game_id>.parquet) + posts_bridge.parquet + corpus_daily.parquet + the accuracy sample (accuracy_sample.xlsx, .passes.json, .parquet)
+  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + the cdn.nba.com live feed (play_by_play_live/<game_id>.parquet) + posts_bridge.parquet + corpus_daily.parquet + the accuracy sample (accuracy_sample.xlsx, .passes.json, .parquet) + the curation scans (recap_candidates.csv, method_example_candidates_<slot>.csv), never published
   │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json + recaps/<game_id>-<slug>.json
   ├── 2025-26/    → V2 season data (same structure)
   └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed
@@ -59,6 +59,10 @@ npm run walk                         # Playwright over dist/ at 1280 and 400
 # Recaps (curated in config/<season>/recaps.yaml; built by aggregate_sentiment)
 uv run python -m scripts.build_recaps --season 2025-26 --scan     # Candidate report to reference/, never published
 uv run python -m scripts.build_recaps --season 2025-26 --dry-run  # Build in memory, report the box-score check/swing/size, write nothing
+
+# Method examples (curated in config/<season>/method_examples.yaml; built by aggregate_sentiment)
+uv run python -m scripts.build_method_examples --season 2025-26 --scan     # Per-slot candidate reports to reference/ + rows per attribution case
+uv run python -m scripts.build_method_examples --season 2025-26 --dry-run  # Build the curated table in memory, report each row, write nothing
 
 # Media (headshots + logos from cdn.nba.com into data/media/, WebP variants derived; resumable)
 uv run python -m scripts.fetch_media --dry-run  # Plan only, no request

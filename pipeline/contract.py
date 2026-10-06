@@ -14,7 +14,7 @@ rebuild under the same contract is byte-identical.
 """
 
 import types
-from typing import Union, get_args, get_origin, get_type_hints, is_typeddict
+from typing import Any, Union, get_args, get_origin, get_type_hints, is_typeddict
 
 import polars as pl
 
@@ -149,6 +149,9 @@ def _field_node(where: str, hint: object, named_types: dict[str, dict]) -> dict:
 
     if hint in MANIFEST_PRIMITIVES:
         return {"type": MANIFEST_PRIMITIVES[hint], "nullable": nullable}
+    if hint is Any:
+        # An opaque value, taken as it comes: no shape the contract declares
+        return {"type": "json", "nullable": nullable}
     if get_origin(hint) is dict:
         key, value = get_args(hint)
         if key is not str:

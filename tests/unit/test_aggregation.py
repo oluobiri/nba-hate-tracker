@@ -1290,8 +1290,9 @@ class TestBuildManifest:
         }
 
     def test_classifiers_by_stage_from_the_stamps(self):
-        """Each stamped stage is a {model, prompt_version, prompt} block; the
-        template text rides along while the live stage carries that version."""
+        """Each stamped stage is a {model, prompt_version, prompt, max_tokens,
+        sampling_params} block; the template text and the request settings
+        ride along while the live stage carries that version."""
         manifest = build_manifest(*_manifest_inputs())
 
         assert manifest["classifiers"] == {
@@ -1299,11 +1300,15 @@ class TestBuildManifest:
                 "model": "claude-haiku-4-5-20251001",
                 "prompt_version": "v2-production+s-hint",
                 "prompt": SENTIMENT_STAGE.prompt_template,
+                "max_tokens": SENTIMENT_STAGE.max_tokens,
+                "sampling_params": {"temperature": 0.0},
             },
             "target": {
                 "model": "claude-sonnet-5",
                 "prompt_version": "v1",
                 "prompt": TARGET_STAGE.prompt_template,
+                "max_tokens": TARGET_STAGE.max_tokens,
+                "sampling_params": {"thinking": {"type": "disabled"}},
             },
         }
 
@@ -1315,6 +1320,8 @@ class TestBuildManifest:
         manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
 
         assert manifest["classifiers"]["sentiment"]["prompt"] is None
+        assert manifest["classifiers"]["sentiment"]["max_tokens"] is None
+        assert manifest["classifiers"]["sentiment"]["sampling_params"] is None
         assert manifest["classifiers"]["sentiment"]["prompt_version"] == "v1-retired"
 
     def test_unstamped_stage_is_absent(self):
@@ -1512,6 +1519,8 @@ class TestBuildManifest:
                 "model": "claude-haiku-4-5-20251001",
                 "prompt_version": "v2-production+s-hint",
                 "prompt": SENTIMENT_STAGE.prompt_template,
+                "max_tokens": SENTIMENT_STAGE.max_tokens,
+                "sampling_params": {"temperature": 0.0},
             }
         }
         assert manifest["config_versions"] == {

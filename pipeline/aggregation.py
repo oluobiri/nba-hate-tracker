@@ -615,15 +615,16 @@ def classifier_identities(metadata: dict) -> dict[str, ClassifierIdentity]:
         model_key, prompt_key = classifier_stamp_keys(stage)
         stamps = (metadata.get(model_key), metadata.get(prompt_key))
         if None not in stamps:
-            # The template text travels only while the live stage still
+            # The request settings travel only while the live stage still
             # carries the stamped version; a retired prompt is a label alone
             live = get_stage(stage)
+            current = live.prompt_version == metadata[prompt_key]
             classifiers[stage] = {
                 "model": metadata[model_key],
                 "prompt_version": metadata[prompt_key],
-                "prompt": live.prompt_template
-                if live.prompt_version == metadata[prompt_key]
-                else None,
+                "prompt": live.prompt_template if current else None,
+                "max_tokens": live.max_tokens if current else None,
+                "sampling_params": dict(live.sampling_params) if current else None,
             }
     return classifiers
 

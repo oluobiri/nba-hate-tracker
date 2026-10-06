@@ -1,7 +1,7 @@
 """Tests for pipeline/contract.py: schema.json generated from the contract."""
 
 import json
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import polars as pl
 import pytest
@@ -227,6 +227,26 @@ class TestManifestBlock:
         assert manifest["types"]["Rules"]["floors"] == {
             "type": "Floors",
             "nullable": False,
+        }
+
+    def test_json_is_an_opaque_value(self, manifest, monkeypatch):
+        """Any renders as json: a value the consumer takes as it comes. The
+        classifier block's sampling_params is one, a map of them."""
+        assert manifest["types"]["ClassifierIdentity"]["sampling_params"] == {
+            "type": "map",
+            "values": {"type": "json", "nullable": False},
+            "nullable": True,
+        }
+
+        class Root(TypedDict):
+            settings: Any
+            maybe: Any | None
+
+        monkeypatch.setattr("pipeline.contract.MANIFEST_ROOT", Root)
+
+        assert build_contract_schema()["manifest"]["types"]["Root"] == {
+            "settings": {"type": "json", "nullable": False},
+            "maybe": {"type": "json", "nullable": True},
         }
 
     def test_optional_ref_and_optional_map(self, monkeypatch):

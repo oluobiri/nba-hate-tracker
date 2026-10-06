@@ -62,7 +62,7 @@ by them).
 
 import json
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 
 import polars as pl
 
@@ -910,7 +910,13 @@ class ClassifierIdentity(TypedDict):
 
     model: str
     prompt_version: str
-    prompt: str | None  # the template text, when the live stage still carries it
+    # The request as the live stage builds it, while it still carries the
+    # stamped version: the template text, the output cap and the sampling
+    # settings in the stage's own shape (one stage sets a temperature, the
+    # other a thinking block)
+    prompt: str | None
+    max_tokens: int | None
+    sampling_params: dict[str, Any] | None
 
 
 class SamplesRule(TypedDict):

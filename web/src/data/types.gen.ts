@@ -220,12 +220,14 @@ export interface Manifest {
 export interface ClassifierIdentity {
   model: string
   prompt_version: string
+  prompt: string | null
 }
 
 export interface Rules {
   qualified_threshold: number
   samples: SamplesRule
   receipts: ReceiptsFigures
+  accuracy: AccuracyFigures
   floors: Floors
   recaps: RecapsRule
   metrics: Record<string, string>
@@ -245,6 +247,54 @@ export interface ReceiptsFigures {
   coverage: number | null
   precision: number | null
   attribution_toward_share: number | null
+}
+
+export interface AccuracyFigures {
+  labeled: boolean
+  drawn: number | null
+  scored: number | null
+  rejected: number | null
+  seed: number | null
+  drawn_at: string | null
+  rubric: string | null
+  groups: Record<string, GroupFigures> | null
+  sentiment_agreement: number | null
+  sentiment_margin: number | null
+  target_agreement: number | null
+  target_margin: number | null
+  joint_agreement: number | null
+  joint_margin: number | null
+  by_class: Record<string, ClassAgreement> | null
+  class_mix: Record<string, ClassMix> | null
+  context_share: number | null
+  unsure_share: number | null
+  reject_share: number | null
+}
+
+export interface GroupFigures {
+  size: number
+  weight: number
+  labeled: number
+  rejected: number
+  scored: number
+  sentiment_agreement: number | null
+  target_agreement: number | null
+  joint_agreement: number | null
+}
+
+export interface ClassAgreement {
+  predicted: number
+  labeled: number
+  precision: number | null
+  recall: number | null
+  toward_precision: number | null
+}
+
+export interface ClassMix {
+  classifier: number | null
+  manual: number | null
+  gap: number | null
+  gap_margin: number | null
 }
 
 export interface Floors {

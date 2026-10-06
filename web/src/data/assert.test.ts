@@ -66,6 +66,7 @@ function manifestFor(tables: Tables): Manifest {
       qualified_threshold: 5,
       samples: { top_n: 1, min_confidence: 0.9, max_body_chars: 500, requires_target: false, pool_k: 1, admission: 'verified' },
       receipts: { verified: true, coverage: null, precision: null, attribution_toward_share: null },
+      accuracy: { labeled: false, drawn: null, scored: null, rejected: null, seed: null, drawn_at: null, rubric: null, groups: null, sentiment_agreement: null, sentiment_margin: null, target_agreement: null, target_margin: null, joint_agreement: null, joint_margin: null, by_class: null, class_mix: null, context_share: null, unsure_share: null, reject_share: null },
       floors: { fanbase_min_n: 1, week_min_n: 1, belt_min_n: 1, game_min_n: 1, race_entry_min_n: 1 },
       recaps: {
         room_bucket_seconds: 120,

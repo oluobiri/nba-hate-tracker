@@ -819,6 +819,10 @@
         "prompt_version": {
           "type": "string",
           "nullable": false
+        },
+        "prompt": {
+          "type": "string",
+          "nullable": true
         }
       },
       "Rules": {
@@ -832,6 +836,10 @@
         },
         "receipts": {
           "type": "ReceiptsFigures",
+          "nullable": false
+        },
+        "accuracy": {
+          "type": "AccuracyFigures",
           "nullable": false
         },
         "floors": {
@@ -891,6 +899,170 @@
           "nullable": true
         },
         "attribution_toward_share": {
+          "type": "float",
+          "nullable": true
+        }
+      },
+      "AccuracyFigures": {
+        "labeled": {
+          "type": "bool",
+          "nullable": false
+        },
+        "drawn": {
+          "type": "int",
+          "nullable": true
+        },
+        "scored": {
+          "type": "int",
+          "nullable": true
+        },
+        "rejected": {
+          "type": "int",
+          "nullable": true
+        },
+        "seed": {
+          "type": "int",
+          "nullable": true
+        },
+        "drawn_at": {
+          "type": "string",
+          "nullable": true
+        },
+        "rubric": {
+          "type": "string",
+          "nullable": true
+        },
+        "groups": {
+          "type": "map",
+          "values": {
+            "type": "GroupFigures",
+            "nullable": false
+          },
+          "nullable": true
+        },
+        "sentiment_agreement": {
+          "type": "float",
+          "nullable": true
+        },
+        "sentiment_margin": {
+          "type": "float",
+          "nullable": true
+        },
+        "target_agreement": {
+          "type": "float",
+          "nullable": true
+        },
+        "target_margin": {
+          "type": "float",
+          "nullable": true
+        },
+        "joint_agreement": {
+          "type": "float",
+          "nullable": true
+        },
+        "joint_margin": {
+          "type": "float",
+          "nullable": true
+        },
+        "by_class": {
+          "type": "map",
+          "values": {
+            "type": "ClassAgreement",
+            "nullable": false
+          },
+          "nullable": true
+        },
+        "class_mix": {
+          "type": "map",
+          "values": {
+            "type": "ClassMix",
+            "nullable": false
+          },
+          "nullable": true
+        },
+        "context_share": {
+          "type": "float",
+          "nullable": true
+        },
+        "unsure_share": {
+          "type": "float",
+          "nullable": true
+        },
+        "reject_share": {
+          "type": "float",
+          "nullable": true
+        }
+      },
+      "GroupFigures": {
+        "size": {
+          "type": "int",
+          "nullable": false
+        },
+        "weight": {
+          "type": "float",
+          "nullable": false
+        },
+        "labeled": {
+          "type": "int",
+          "nullable": false
+        },
+        "rejected": {
+          "type": "int",
+          "nullable": false
+        },
+        "scored": {
+          "type": "int",
+          "nullable": false
+        },
+        "sentiment_agreement": {
+          "type": "float",
+          "nullable": true
+        },
+        "target_agreement": {
+          "type": "float",
+          "nullable": true
+        },
+        "joint_agreement": {
+          "type": "float",
+          "nullable": true
+        }
+      },
+      "ClassAgreement": {
+        "predicted": {
+          "type": "int",
+          "nullable": false
+        },
+        "labeled": {
+          "type": "int",
+          "nullable": false
+        },
+        "precision": {
+          "type": "float",
+          "nullable": true
+        },
+        "recall": {
+          "type": "float",
+          "nullable": true
+        },
+        "toward_precision": {
+          "type": "float",
+          "nullable": true
+        }
+      },
+      "ClassMix": {
+        "classifier": {
+          "type": "float",
+          "nullable": true
+        },
+        "manual": {
+          "type": "float",
+          "nullable": true
+        },
+        "gap": {
+          "type": "float",
+          "nullable": true
+        },
+        "gap_margin": {
           "type": "float",
           "nullable": true
         }
@@ -1138,6 +1310,10 @@
             "prompt_version": {
               "type": "string",
               "nullable": false
+            },
+            "prompt": {
+              "type": "string",
+              "nullable": true
             }
           }
         }

@@ -32,10 +32,12 @@ from pipeline.aggregation import (
 from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
+from pipeline.method_examples import MethodExamplesError
 from pipeline.recaps import RecapError
 from pipeline.sentiment import SENTIMENT_STAGE
 from pipeline.targets import TARGET_STAGE
 from pipeline.schemas import LIVE_PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
+from utils.method_examples_config import MethodExampleSpec
 from utils.recaps_config import RecapSpec
 from tests.conftest import live_action
 from pipeline.schemas import (
@@ -54,6 +56,7 @@ from pipeline.schemas import (
     PLAYER_GAMES_SCHEMA,
     TEAM_GAME_LOG_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
+    METHOD_EXAMPLES_SCHEMA,
     PLAYERS_SCHEMA,
     POSTS_SCHEMA,
     ROSTERS_SCHEMA,
@@ -2506,4 +2509,46 @@ class TestAggregateRecaps:
             aggregate_sentiment(
                 _lebron_parquet(tmp_path),
                 recaps=(RecapSpec("0000000000", "lebron-james"),),
+            )
+
+
+class TestAggregateMethodExamples:
+    """Tests for the curated examples' passage through aggregate_sentiment."""
+
+    def test_no_curation_is_an_empty_registered_table(self, tmp_path, pinned_snapshot):
+        """The default is an empty table in the registry, not a failure."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["method_examples"].schema == METHOD_EXAMPLES_SCHEMA
+        assert result["method_examples"].height == 0
+        assert result["manifest"]["tables"]["method_examples"] == {
+            "file": "method_examples.parquet",
+            "rows": 0,
+            "population": None,
+        }
+
+    def test_a_curated_comment_outside_the_fact_fails_by_name(
+        self, tmp_path, pinned_snapshot
+    ):
+        """The build stops on the first entry that cannot be joined."""
+        with pytest.raises(MethodExamplesError, match="read zz: not in the fact"):
+            aggregate_sentiment(
+                _lebron_parquet(tmp_path),
+                method_examples=(MethodExampleSpec("read", "zz"),),
+            )
+
+    def test_the_usable_fact_is_the_pool(self, tmp_path, pinned_snapshot):
+        """A row that counts for nobody is still an example: the case slot
+        shows it. Only the exact-count checks stop this minimal curation."""
+        rows = _lebron_rows()
+        rows["mentioned_players"] = [["LeBron James", "Jayson Tatum"], ["LeBron James"]]
+        rows["sentiment_player"] = [None, "LeBron James"]
+
+        with pytest.raises(MethodExamplesError, match="trace: 1 row"):
+            aggregate_sentiment(
+                _make_test_parquet(tmp_path, rows),
+                method_examples=(
+                    MethodExampleSpec("case", "c1"),
+                    MethodExampleSpec("case", "c2"),
+                ),
             )

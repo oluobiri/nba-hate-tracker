@@ -811,11 +811,11 @@ def score_sample(
     }
 
 
-def load_accuracy_sample(
+def read_accuracy_sample(
     path: Path | None, fact_stamps: Mapping[str, str | None]
-) -> AccuracyFigures:
+) -> tuple[pl.DataFrame, dict[str, str]] | None:
     """
-    Score the labeled sample on disk, or report that there is none.
+    Read the labeled sample on disk with its stamps, or report that there is none.
 
     The sample's players-config stamp is drift-checked (the target
     options were built under it) and its classifier identity is compared
@@ -827,8 +827,8 @@ def load_accuracy_sample(
         fact_stamps: The fact's classifier_sentiment stamps.
 
     Returns:
-        The AccuracyFigures block; unlabeled when the file is absent or
-        holds no verdict.
+        The sample frame and the file's metadata, or None when the file
+        is absent.
 
     Raises:
         ValueError: If the file does not conform to ACCURACY_SAMPLE_SCHEMA.
@@ -837,7 +837,7 @@ def load_accuracy_sample(
         logger.warning(
             f"no accuracy sample at {path}: the manifest carries no accuracy figure"
         )
-        return unlabeled_figures()
+        return None
 
     metadata = pl.read_parquet_metadata(path)
     check_config_stamps(
@@ -860,6 +860,45 @@ def load_accuracy_sample(
 
     sample = pl.read_parquet(path)
     validate_schema(sample, ACCURACY_SAMPLE_SCHEMA, str(path))
+    return sample, metadata
+
+
+def load_accuracy_sample(
+    path: Path | None, fact_stamps: Mapping[str, str | None]
+) -> AccuracyFigures:
+    """
+    Score the labeled sample on disk, or report that there is none.
+
+    Args:
+        path: Path to accuracy_sample.parquet, or None.
+        fact_stamps: The fact's classifier_sentiment stamps.
+
+    Returns:
+        The AccuracyFigures block; unlabeled when the file is absent or
+        holds no verdict.
+
+    Raises:
+        ValueError: If the file does not conform to ACCURACY_SAMPLE_SCHEMA.
+    """
+    read = read_accuracy_sample(path, fact_stamps)
+    if read is None:
+        return unlabeled_figures()
+    return score_read_sample(*read)
+
+
+def score_read_sample(
+    sample: pl.DataFrame, metadata: Mapping[str, str]
+) -> AccuracyFigures:
+    """
+    Score a sample frame under its file's stamps.
+
+    Args:
+        sample: Frame conforming to ACCURACY_SAMPLE_SCHEMA.
+        metadata: The file's parquet metadata (seed, draw date, rubric).
+
+    Returns:
+        The AccuracyFigures block; unlabeled when the sample holds no verdict.
+    """
     seed = metadata.get("sample_seed")
     figures = score_sample(
         sample,
@@ -870,7 +909,9 @@ def load_accuracy_sample(
     if figures["labeled"]:
         log_figures(figures)
     else:
-        logger.warning(f"{path} holds no verdict: the manifest carries no figure")
+        logger.warning(
+            "the accuracy sample holds no verdict: the manifest carries no figure"
+        )
     return figures
 
 

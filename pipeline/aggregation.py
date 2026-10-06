@@ -14,10 +14,11 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.accuracy import load_accuracy_sample
+from pipeline.accuracy import read_accuracy_sample, score_read_sample, unlabeled_figures
 from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_box_scores, load_game_tables
 from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
+from pipeline.method_examples import build_method_examples
 from pipeline.nba_stats import check_snapshot_season, load_live_play_by_play
 from pipeline.posts import load_posts_table
 from pipeline.recaps import (
@@ -72,6 +73,7 @@ from utils.constants import (
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
+from utils.method_examples_config import MethodExampleSpec
 from utils.paths import get_live_play_by_play_dir, get_reference_dir
 from utils.player_config import build_alias_to_player_map, load_player_metadata
 from utils.recaps_config import RecapSpec
@@ -302,6 +304,7 @@ def aggregate_sentiment(
     accuracy_path: Path | None = None,
     *,
     recaps: Sequence[RecapSpec] = (),
+    method_examples: Sequence[MethodExampleSpec] = (),
 ) -> dict:
     """
     Aggregate classified sentiment data into the published tables and recaps.
@@ -319,18 +322,21 @@ def aggregate_sentiment(
         accuracy_path: Path to accuracy_sample.parquet; None or a
             missing file leaves the manifest's accuracy block unlabeled.
         recaps: The curation (load_recaps_config); empty builds none.
+        method_examples: The curation (load_method_examples_config);
+            empty builds an empty table.
 
     Returns:
         Dict where player_overall, player_temporal, player_fan_team,
         fan_team_overall, game_sentiment, players, teams, games, player_games,
-        posts, comment_samples and corpus_daily hold pl.DataFrames
-        conforming to DASHBOARD_OUTPUT_SCHEMAS; recaps is the list of
+        posts, comment_samples, corpus_daily and method_examples hold
+        pl.DataFrames conforming to DASHBOARD_OUTPUT_SCHEMAS; recaps is the list of
         built RecapDocument in page order; manifest is the Manifest built
         from them; metadata is the build's internal block (the stamp
         source for the write site).
 
     Raises:
         RecapError: If a curated recap cannot be resolved or built.
+        MethodExamplesError: If a curated example does not fit its slot.
         ValueError: If the input parquet does not match SENTIMENT_SCHEMA,
             or a computed output does not match its schema contract.
     """
@@ -443,7 +449,21 @@ def aggregate_sentiment(
     # The accuracy sample: manual verdicts on a blind random draw,
     # scored against the classifier; absent, the manifest says unlabeled
     logger.info("Scoring the accuracy sample...")
-    metadata["accuracy"] = load_accuracy_sample(accuracy_path, classifier_stamps)
+    sample = read_accuracy_sample(accuracy_path, classifier_stamps)
+    metadata["accuracy"] = (
+        score_read_sample(*sample) if sample is not None else unlabeled_figures()
+    )
+
+    # The method examples: curated rows of the usable fact, including
+    # the ones that count for nobody, checked against their slots
+    logger.info("Building method_examples...")
+    method_examples_table = build_method_examples(
+        df,
+        method_examples,
+        alias_map=alias_map,
+        verdicts=verdicts,
+        sample=sample[0] if sample is not None else None,
+    )
 
     # Post bridge: the threads plus each receipt's post, from the bridge
     # scripts.process_posts derived against the same game-log snapshot
@@ -515,6 +535,7 @@ def aggregate_sentiment(
         "posts": posts,
         "comment_samples": comment_samples,
         "corpus_daily": corpus_daily,
+        "method_examples": method_examples_table,
     }
     for name, schema in DASHBOARD_OUTPUT_SCHEMAS.items():
         validate_schema(outputs[name], schema, name)

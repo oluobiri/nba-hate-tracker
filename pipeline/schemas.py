@@ -555,6 +555,40 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
     }
 )
 
+# data/<season>/dashboard/method_examples.parquet — the comments the How it
+# works page shows, one row per curated entry in page order, with what the
+# pipeline stored for each (pipeline/method_examples.py). A curated fact
+# subset: rows of the fact chosen by hand, each checked against its slot at
+# build. author is never published.
+METHOD_EXAMPLES_SCHEMA = pl.Schema(
+    {
+        "slot": pl.String,  # a utils.method_examples_config.SLOTS value
+        "position": pl.Int64,  # 0-based, the config's order
+        "comment_id": pl.String,  # provenance back to the fact
+        "link_id": pl.String,  # -> Reddit permalink, with comment_id
+        "body": pl.String,  # verbatim
+        "author_flair_text": pl.String,  # nullable: the raw flair behind fan_team
+        "score": pl.Int64,
+        "created_utc": pl.Int64,  # epoch seconds, as the fact
+        "mentioned_players": pl.List(pl.String),
+        "mentioned_text": pl.List(pl.String),  # parallel: the body's match per name
+        "sentiment": pl.String,  # the classifier's s
+        "confidence": pl.Float64,  # the classifier's c
+        "sentiment_player": pl.String,  # nullable: the classifier's p, raw
+        "attributed_player": pl.String,  # nullable: nobody is a case the page shows
+        "player_id": pl.Int64,  # nullable with attributed_player
+        "fan_team": pl.String,  # nullable: unflaired commenter
+        "attribution_case": pl.String,  # a utils.player_config.ATTRIBUTION_CASES value
+        # The verifier's verdict, null outside its pool; verified_target is
+        # the resolved name of a valid verdict, null when it named nobody tracked
+        "target_raw": pl.String,  # nullable
+        "verified_target": pl.String,  # nullable
+        # The manual labels, null outside the accuracy sample
+        "label_sentiment": pl.String,  # nullable
+        "label_target": pl.String,  # nullable: a canonical name, "none" or "other"
+    }
+)
+
 ACCURACY_SAMPLE_SCHEMA = pl.Schema(
     {
         "comment_id": pl.String,
@@ -611,6 +645,7 @@ DASHBOARD_OUTPUT_SCHEMAS: dict[str, pl.Schema] = {
     "posts": POSTS_SCHEMA,
     "comment_samples": COMMENT_SAMPLES_SCHEMA,
     "corpus_daily": CORPUS_DAILY_SCHEMA,
+    "method_examples": METHOD_EXAMPLES_SCHEMA,
 }
 
 # Which columns of each produced table may hold nulls. Polars schemas
@@ -633,6 +668,19 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "posts": frozenset({"game_id", "link_flair_text", "source"}),
     "comment_samples": frozenset({"fan_team"}),  # unflaired commenter
     "corpus_daily": frozenset({"attributed"}),
+    "method_examples": frozenset(
+        {
+            "author_flair_text",
+            "sentiment_player",
+            "attributed_player",
+            "player_id",
+            "fan_team",
+            "target_raw",
+            "verified_target",
+            "label_sentiment",
+            "label_target",
+        }
+    ),
 }
 
 # --- Recap files (built in pipeline/recaps.py) -------------------------------
@@ -853,6 +901,7 @@ TABLE_POPULATIONS: dict[str, str | None] = {
     "posts": None,
     "comment_samples": "attributed",
     "corpus_daily": None,
+    "method_examples": None,  # curated by hand, not drawn from a population
 }
 
 

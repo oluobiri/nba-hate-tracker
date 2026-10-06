@@ -30,6 +30,7 @@ from pipeline.recaps import write_recaps
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS, SCHEMA_VERSION
 from utils.constants import MANIFEST_FILENAME, SCHEMA_FILENAME
 from utils.paths import get_dashboard_dir, get_processed_dir, get_reference_dir
+from utils.method_examples_config import load_method_examples_config
 from utils.recaps_config import load_recaps_config
 from utils.season_config import set_season_override
 
@@ -138,10 +139,15 @@ def main() -> None:
     # version is pre-flighted here for the same reason
     config_stamps("recaps")
     recaps = load_recaps_config()
+    method_examples = load_method_examples_config()
 
     # Run aggregation
     result = aggregate_sentiment(
-        input_path, targets_path, accuracy_path, recaps=recaps
+        input_path,
+        targets_path,
+        accuracy_path,
+        recaps=recaps,
+        method_examples=method_examples,
     )
     # The samples stamp is read back from the sidecar inside aggregation
     # (verified flag + verifier identity), so it joins the set here

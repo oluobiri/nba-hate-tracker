@@ -13,7 +13,7 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.processors import find_player_mentions
+from pipeline.processors import find_player_matches
 from pipeline.schemas import (
     COMMENT_INPUT_SCHEMA,
     RESULTS_SCHEMA,
@@ -28,6 +28,20 @@ from utils.player_config import build_alias_to_player_map, resolve_player
 from utils.team_config import build_alias_to_team_map, extract_team_from_flair
 
 logger = logging.getLogger(__name__)
+
+_MENTIONS_DTYPE = pl.Struct(
+    {"mentioned_players": pl.List(pl.String), "mentioned_text": pl.List(pl.String)}
+)
+
+
+def _mentions(body: str) -> dict[str, list[str]]:
+    """One finder pass per row: the names found and the text that matched each."""
+    matches = find_player_matches(body)
+    return {
+        "mentioned_players": [player for player, _ in matches],
+        "mentioned_text": [text for _, text in matches],
+    }
+
 
 # The classifier's multi-pick form: several names in one sentiment_player.
 # Diagnostic only, best-effort (separators seen in practice, not exhaustive)
@@ -119,16 +133,16 @@ def build_sentiment_dataframe(
     """
     Build sentiment DataFrame by joining results with comment metadata.
 
-    mentioned_players is re-derived from body at assembly time under the
-    active (or --season override) season's config — the filtered NDJSON's
-    filter-time copy is ignored, so alias fixes reach the parquet on any
-    rebuild. Rows whose body no longer matches any tracked player are
-    kept with an empty list: population selection stays frozen at filter
-    time, only the derivation tracks config. attributed_player and
-    fan_team are materialized the same way, from mentioned_players +
-    sentiment_player and from the flair, so every reader of the fact
-    shares one resolution. Error-sentiment rows get all three derived
-    too (harmless; aggregation filters them).
+    mentioned_players and mentioned_text are re-derived from body at
+    assembly time under the active (or --season override) season's config
+    — the filtered NDJSON's filter-time copy is ignored, so alias fixes
+    reach the parquet on any rebuild. Rows whose body no longer matches
+    any tracked player are kept with empty lists: population selection
+    stays frozen at filter time, only the derivation tracks config.
+    attributed_player and fan_team are materialized the same way, from
+    mentioned_players + sentiment_player and from the flair, so every
+    reader of the fact shares one resolution. Error-sentiment rows get
+    all four derived too (harmless; aggregation filters them).
 
     Token and cost accounting happens per batch at download time (see
     summarize_actual_usage in pipeline.batch); this function is a pure
@@ -195,9 +209,10 @@ def build_sentiment_dataframe(
         .rename({"id": "comment_id"})
         .with_columns(
             pl.col("body")
-            .map_elements(find_player_mentions, return_dtype=pl.List(pl.String))
-            .alias("mentioned_players")
+            .map_elements(_mentions, return_dtype=_MENTIONS_DTYPE)
+            .alias("mentions")
         )
+        .with_columns(pl.col("mentions").struct.unnest())
         .with_columns(
             pl.struct(["mentioned_players", "sentiment_player"])
             .map_elements(

@@ -63,6 +63,7 @@ def sentiment_frame() -> pl.DataFrame:
                 "score": 10,
                 "link_id": "t3_post123",
                 "mentioned_players": ["LeBron James"],
+                "mentioned_text": ["LeBron"],
                 "sentiment": "neg",
                 "confidence": 0.95,
                 "sentiment_player": "LeBron James",

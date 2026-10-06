@@ -175,11 +175,14 @@ class TestComputeMetrics:
 
 
 def _derive(rows: dict) -> dict:
-    """Add attributed_player and fan_team the way assembly does, if absent.
+    """Add the assembly-derived columns the way assembly does, if absent.
 
     Tests describe a comment by its mentions and flair; the materialized
-    columns follow from those under the active configs.
+    columns follow from those under the active configs. mentioned_text
+    defaults to the names themselves: the bodies here are not matched.
     """
+    if "mentioned_text" not in rows:
+        rows = {**rows, "mentioned_text": rows["mentioned_players"]}
     if "attributed_player" in rows and "fan_team" in rows:
         return rows
     alias_map = build_alias_to_player_map()

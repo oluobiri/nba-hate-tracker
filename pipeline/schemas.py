@@ -69,7 +69,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -83,8 +83,10 @@ SENTIMENT_SCHEMA = pl.Schema(
         "score": pl.Int64,
         "link_id": pl.String,  # post fullname (t3_...), the v3 comment->game bridge
         # Re-derived from body at assembly under the active players.yaml
-        # (pipeline/results.py) - NOT projected from the filtered NDJSON
+        # (pipeline/results.py) - NOT projected from the filtered NDJSON.
+        # mentioned_text is parallel: the body's substring that matched each name
         "mentioned_players": pl.List(pl.String),
+        "mentioned_text": pl.List(pl.String),
         "sentiment": pl.String,  # "pos" | "neg" | "neu" | "error"
         "confidence": pl.Float64,
         "sentiment_player": pl.String,  # nullable
@@ -98,10 +100,10 @@ SENTIMENT_SCHEMA = pl.Schema(
 )
 
 # --- Construction-side schemas, derived from SENTIMENT_SCHEMA ---------------
-# The joined frame is assembled from two file inputs plus three assembly-derived
-# columns: mentioned_players is recomputed from body at assembly time, and
-# attributed_player / fan_team are resolved from it and from the flair, so
-# neither input schema carries them. Deriving the input schemas from
+# The joined frame is assembled from two file inputs plus four assembly-derived
+# columns: mentioned_players / mentioned_text are recomputed from body at
+# assembly time, and attributed_player / fan_team are resolved from them and
+# from the flair, so neither input schema carries them. Deriving the input schemas from
 # SENTIMENT_SCHEMA means a dtype change happens in exactly one place and the
 # strict boundary check can never drift from construction.
 

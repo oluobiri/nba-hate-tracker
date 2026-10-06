@@ -54,7 +54,7 @@ from pipeline.schemas import (
     validate_nullability,
     validate_schema,
 )
-from pipeline.stage import STAGE_NAMES, classifier_stamp_keys
+from pipeline.stage import STAGE_NAMES, classifier_stamp_keys, get_stage
 from utils.constants import (
     BELT_MIN_N,
     COMMENT_SAMPLES_MAX_BODY_CHARS,
@@ -594,9 +594,15 @@ def classifier_identities(metadata: dict) -> dict[str, ClassifierIdentity]:
         model_key, prompt_key = classifier_stamp_keys(stage)
         stamps = (metadata.get(model_key), metadata.get(prompt_key))
         if None not in stamps:
+            # The template text travels only while the live stage still
+            # carries the stamped version; a retired prompt is a label alone
+            live = get_stage(stage)
             classifiers[stage] = {
                 "model": metadata[model_key],
                 "prompt_version": metadata[prompt_key],
+                "prompt": live.prompt_template
+                if live.prompt_version == metadata[prompt_key]
+                else None,
             }
     return classifiers
 

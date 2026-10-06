@@ -859,6 +859,7 @@ class ClassifierIdentity(TypedDict):
 
     model: str
     prompt_version: str
+    prompt: str | None  # the template text, when the live stage still carries it
 
 
 class SamplesRule(TypedDict):

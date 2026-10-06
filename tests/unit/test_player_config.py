@@ -10,7 +10,10 @@ import pytest
 import yaml
 
 from utils.player_config import (
+    ATTRIBUTION_CASES,
+    COUNTING_CASES,
     build_alias_to_player_map,
+    classify_attribution,
     invert_player_aliases,
     load_player_config,
     load_player_config_version,
@@ -284,6 +287,52 @@ class TestResolvePlayer:
         """None mentioned_players returns None."""
         result = resolve_player(None, "LeBron James", player_alias_map)
         assert result is None
+
+
+BRANCHES = [
+    ([], "LeBron James", "no_name"),
+    (None, None, "no_name"),
+    (["LeBron James"], None, "one_name"),
+    (["LeBron James"], "lebron", "one_name"),
+    (["LeBron James"], "Nikola Jokic", "one_name_other_pick"),
+    (["LeBron James"], "unknown_player_xyz", "one_name_other_pick"),
+    (["LeBron James", "Nikola Jokic"], "jokic", "several_resolved"),
+    (["LeBron James", "Nikola Jokic"], "AD", "several_resolved_unlisted"),
+    (["LeBron James", "Nikola Jokic"], None, "several_no_pick"),
+    (["LeBron James", "Nikola Jokic"], "unknown_player_xyz", "several_unresolved"),
+]
+
+
+class TestClassifyAttribution:
+    """Tests for classify_attribution: one value per branch of resolve_player."""
+
+    @pytest.mark.parametrize("mentions,pick,expected", BRANCHES)
+    def test_names_the_branch(self, player_alias_map, mentions, pick, expected):
+        """Each shape of (names found, pick) lands on its branch."""
+        assert classify_attribution(mentions, pick, player_alias_map) == expected
+
+    @pytest.mark.parametrize("mentions,pick,expected", BRANCHES)
+    def test_counting_cases_agree_with_resolve_player(
+        self, player_alias_map, mentions, pick, expected
+    ):
+        """A comment counts for someone exactly when its case is a counting case."""
+        counts = resolve_player(mentions, pick, player_alias_map) is not None
+
+        assert (expected in COUNTING_CASES) == counts
+
+    def test_every_branch_is_a_case(self):
+        """The vocabulary is pinned: the published column takes these values."""
+        assert ATTRIBUTION_CASES == (
+            "no_name",
+            "one_name",
+            "one_name_other_pick",
+            "several_resolved",
+            "several_resolved_unlisted",
+            "several_no_pick",
+            "several_unresolved",
+        )
+        assert {case for _, _, case in BRANCHES} == set(ATTRIBUTION_CASES)
+        assert set(COUNTING_CASES) < set(ATTRIBUTION_CASES)
 
 
 class TestLoadPlayerMetadata:

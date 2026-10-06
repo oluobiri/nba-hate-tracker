@@ -22,6 +22,20 @@ import yaml
 from utils.config_version import require_version_string
 from utils.season_config import get_active_season
 
+# The branches of resolve_player, by names found and what the pick does.
+ATTRIBUTION_CASES = (
+    "no_name",
+    "one_name",  # that player; the pick is null or agrees
+    "one_name_other_pick",  # that player; the pick names someone else, ignored
+    "several_resolved",  # the pick, one of the names found
+    "several_resolved_unlisted",  # the pick, a tracked player not among the names
+    "several_no_pick",  # nobody
+    "several_unresolved",  # nobody; the pick resolves to no tracked player
+)
+COUNTING_CASES = frozenset(
+    {"one_name", "one_name_other_pick", "several_resolved", "several_resolved_unlisted"}
+)
+
 
 def _get_players_path() -> Path:
     """Resolve the players.yaml path for the active season."""
@@ -189,6 +203,41 @@ def resolve_player(
     # Multi-player: disambiguate via the classifier's sentiment_player,
     # normalizing punctuation/case before the alias lookup.
     return resolve_sentiment_player(sentiment_player, alias_map)
+
+
+def classify_attribution(
+    mentioned_players: list[str] | None,
+    sentiment_player: str | None,
+    alias_map: dict[str, str],
+) -> str:
+    """
+    Name the branch of resolve_player a comment takes.
+
+    Same inputs as resolve_player; the value is one of ATTRIBUTION_CASES,
+    and the comment counts for someone exactly when the value is in
+    COUNTING_CASES.
+
+    Args:
+        mentioned_players: List of player names mentioned in the comment.
+        sentiment_player: Player identified by sentiment classification.
+        alias_map: Mapping of lowercase aliases to canonical player names.
+
+    Returns:
+        The attribution case.
+    """
+    if not mentioned_players:
+        return "no_name"
+
+    pick = resolve_sentiment_player(sentiment_player, alias_map)
+    names = [alias_map.get(_normalize_player_name(p), p) for p in mentioned_players]
+
+    if len(names) == 1:
+        if sentiment_player is None or pick == names[0]:
+            return "one_name"
+        return "one_name_other_pick"
+    if pick is None:
+        return "several_no_pick" if sentiment_player is None else "several_unresolved"
+    return "several_resolved" if pick in names else "several_resolved_unlisted"
 
 
 @lru_cache(maxsize=1)

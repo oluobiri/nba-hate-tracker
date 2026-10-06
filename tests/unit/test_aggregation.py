@@ -14,6 +14,7 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
+from pipeline.accuracy import unlabeled_figures
 from pipeline.aggregation import (
     _build_players_dimension,
     aggregate_sentiment,
@@ -32,6 +33,8 @@ from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.recaps import RecapError
+from pipeline.sentiment import SENTIMENT_STAGE
+from pipeline.targets import TARGET_STAGE
 from pipeline.schemas import LIVE_PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
 from utils.recaps_config import RecapSpec
 from tests.conftest import live_action
@@ -1113,6 +1116,13 @@ class TestAggregateViews:
         assert meta["receipts_precision"] is None
         assert meta["classifier_target_model"] is None
 
+    def test_no_accuracy_sample_reports_unlabeled(self, views_parquet):
+        """Without a labeled sample the accuracy block is the unlabeled one."""
+        result = aggregate_sentiment(views_parquet)
+
+        assert result["metadata"]["accuracy"] == unlabeled_figures()
+        assert result["manifest"]["rules"]["accuracy"]["labeled"] is False
+
     def test_player_overall_sorted_by_neg_rate_desc_then_player_asc(
         self, views_parquet
     ):
@@ -1228,6 +1238,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
         "receipts_precision": 0.777,
         "attribution_toward_share": 0.74,
         "recap_reaction_lag": REACTION_LAG,
+        "accuracy": unlabeled_figures(),
     }
     season_config = {
         "calendar": {"opening_night": "2025-10-21", "finals_end": None},
@@ -1272,16 +1283,32 @@ class TestBuildManifest:
         }
 
     def test_classifiers_by_stage_from_the_stamps(self):
-        """Each stamped stage is a {model, prompt_version} block."""
+        """Each stamped stage is a {model, prompt_version, prompt} block; the
+        template text rides along while the live stage carries that version."""
         manifest = build_manifest(*_manifest_inputs())
 
         assert manifest["classifiers"] == {
             "sentiment": {
                 "model": "claude-haiku-4-5-20251001",
                 "prompt_version": "v2-production+s-hint",
+                "prompt": SENTIMENT_STAGE.prompt_template,
             },
-            "target": {"model": "claude-sonnet-5", "prompt_version": "v1"},
+            "target": {
+                "model": "claude-sonnet-5",
+                "prompt_version": "v1",
+                "prompt": TARGET_STAGE.prompt_template,
+            },
         }
+
+    def test_retired_prompt_version_carries_no_text(self):
+        """A stamp the live stage no longer matches is a label alone."""
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
+        metadata["classifier_sentiment_prompt_version"] = "v1-retired"
+
+        manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
+
+        assert manifest["classifiers"]["sentiment"]["prompt"] is None
+        assert manifest["classifiers"]["sentiment"]["prompt_version"] == "v1-retired"
 
     def test_unstamped_stage_is_absent(self):
         """Feature detection: a stage with no stamps has no block, not nulls."""
@@ -1372,6 +1399,25 @@ class TestBuildManifest:
             "attribution_toward_share": 0.74,
         }
 
+    def test_accuracy_figures_pass_through(self):
+        """The accuracy sample's block rides under rules.accuracy as scored."""
+        outputs, metadata, season_config, versions, recaps = _manifest_inputs()
+        metadata["accuracy"] = {
+            **unlabeled_figures(),
+            "labeled": True,
+            "drawn": 1000,
+            "rejected": 4,
+            "scored": 996,
+            "sentiment_agreement": 0.9,
+        }
+
+        rules = build_manifest(outputs, metadata, season_config, versions, recaps)[
+            "rules"
+        ]
+
+        assert rules["accuracy"] == metadata["accuracy"]
+        assert list(rules)[2:4] == ["receipts", "accuracy"]
+
     def test_gate_only_fallback_says_so(self):
         """Without a sidecar the samples admit on the gate and the figures are null."""
         outputs, metadata, season_config, versions, recaps = _manifest_inputs()
@@ -1458,6 +1504,7 @@ class TestBuildManifest:
             "sentiment": {
                 "model": "claude-haiku-4-5-20251001",
                 "prompt_version": "v2-production+s-hint",
+                "prompt": SENTIMENT_STAGE.prompt_template,
             }
         }
         assert manifest["config_versions"] == {

@@ -39,6 +39,11 @@ pipeline produces. Data dictionary first, enforcement second:
 - CORPUS_DAILY_SCHEMA describes the corpus funnel at day grain
   (corpus_daily.parquet), built from the raw download by
   pipeline/corpus.py and cached as a reference snapshot.
+- ACCURACY_SAMPLE_SCHEMA describes the accuracy sample
+  (reference/accuracy_sample.parquet): manual verdicts on a blind
+  random draw of the attributed population beside the classifier's
+  labels for the same rows (pipeline/accuracy.py); enforced at the
+  import write boundary.
 - NULLABLE_COLUMNS declares, per produced table, which columns may hold
   nulls; every other column is enforced null-free at the same write
   boundary (validate_nullability).
@@ -548,6 +553,28 @@ SENTIMENT_TARGETS_SCHEMA = pl.Schema(
     }
 )
 
+ACCURACY_SAMPLE_SCHEMA = pl.Schema(
+    {
+        "comment_id": pl.String,
+        "group": pl.String,  # a pipeline.accuracy.GROUPS value
+        "position": pl.Int64,  # draw order, 0-based
+        "mention_count": pl.Int64,  # names the row's target list offered
+        # The classifier's side, copied from the fact at draw time
+        "sentiment": pl.String,  # "pos" | "neg" | "neu"
+        "confidence": pl.Float64,
+        "sentiment_player": pl.String,  # nullable: the classifier's named target
+        "attributed_player": pl.String,  # the resolution the row was drawn on
+        # The manual side; the labels are null on unlabeled and rejected rows
+        "labeled": pl.Boolean,  # a verdict or a reject was entered
+        "label_sentiment": pl.String,  # nullable
+        "label_target": pl.String,  # nullable: a canonical name, "none" or "other"
+        "reject": pl.String,  # nullable: a pipeline.accuracy.REJECT_REASONS value
+        "needed_context": pl.Boolean,  # the note says the thread decided it
+        "unsure": pl.Boolean,  # the note says it was a coin flip
+        "note": pl.String,  # nullable
+    }
+)
+
 # --- Corpus at day grain (built in pipeline/corpus.py) -----------------------
 # One row per UTC day of the download's extent, zero-filled: the funnel's
 # stages as counts, named exactly as the manifest's corpus block so each
@@ -832,6 +859,7 @@ class ClassifierIdentity(TypedDict):
 
     model: str
     prompt_version: str
+    prompt: str | None  # the template text, when the live stage still carries it
 
 
 class SamplesRule(TypedDict):
@@ -852,6 +880,66 @@ class ReceiptsFigures(TypedDict):
     coverage: float | None  # share of the current pool with a verdict
     precision: float | None  # affirmed share of the would-have-shipped top-n
     attribution_toward_share: float | None  # affirmed share, random named stratum
+
+
+class GroupFigures(TypedDict):
+    """One labeling group of the accuracy sample, unweighted."""
+
+    size: int  # rows of the draw in the group
+    weight: float  # share of the estimate; ordered carries the held-out rows' too
+    labeled: int
+    rejected: int  # ruled not a valid input
+    scored: int  # labeled minus rejected
+    sentiment_agreement: float | None
+    target_agreement: float | None
+    joint_agreement: float | None
+
+
+class ClassAgreement(TypedDict):
+    """One sentiment class of the accuracy sample: the classifier against manual review."""
+
+    predicted: int  # scored rows the classifier gave this label
+    labeled: int  # scored rows manual review gave this label
+    precision: float | None  # labeled so, of the predicted; weighted
+    recall: float | None  # predicted so, of the labeled; weighted
+    toward_precision: float | None  # labeled so and about the attributed player
+
+
+class ClassMix(TypedDict):
+    """One sentiment class's share of the scored rows, each side's; weighted."""
+
+    classifier: float | None
+    manual: float | None
+    gap: float | None  # classifier minus manual
+    gap_margin: float | None  # half-width of the gap's 95% interval, paired by row
+
+
+class AccuracyFigures(TypedDict):
+    """The blind random sample's agreement figures; null until it is labeled.
+
+    Every share weights the first pass and the ordered group by their
+    sizes in the draw; a margin is the half-width of a 95% interval.
+    """
+
+    labeled: bool
+    drawn: int | None  # rows in the sample
+    scored: int | None  # labeled minus rejected, the estimating groups
+    rejected: int | None  # ruled not a valid input, the estimating groups
+    seed: int | None
+    drawn_at: str | None
+    rubric: str | None  # the labeling rubric's version
+    groups: dict[str, GroupFigures] | None  # keyed by pipeline.accuracy.GROUPS
+    sentiment_agreement: float | None  # label matches, of the comparable rows
+    sentiment_margin: float | None
+    target_agreement: float | None  # manual target is the attributed player, of polar
+    target_margin: float | None
+    joint_agreement: float | None  # label matches and, when polar, the target too
+    joint_margin: float | None
+    by_class: dict[str, ClassAgreement] | None  # keyed neg / neu / pos
+    class_mix: dict[str, ClassMix] | None  # keyed neg / neu / pos
+    context_share: float | None  # scored rows the thread decided
+    unsure_share: float | None  # scored rows judged a coin flip
+    reject_share: float | None  # labeled rows ruled not a valid input
 
 
 class Floors(TypedDict):
@@ -892,6 +980,7 @@ class Rules(TypedDict):
     qualified_threshold: int
     samples: SamplesRule
     receipts: ReceiptsFigures
+    accuracy: AccuracyFigures
     floors: Floors
     recaps: RecapsRule
     metrics: dict[str, str]  # METRIC_FORMULAS

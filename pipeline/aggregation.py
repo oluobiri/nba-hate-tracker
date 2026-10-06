@@ -14,6 +14,7 @@ from pathlib import Path
 
 import polars as pl
 
+from pipeline.accuracy import load_accuracy_sample
 from pipeline.corpus import load_corpus_daily
 from pipeline.games import load_box_scores, load_game_tables
 from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
@@ -53,7 +54,7 @@ from pipeline.schemas import (
     validate_nullability,
     validate_schema,
 )
-from pipeline.stage import STAGE_NAMES, classifier_stamp_keys
+from pipeline.stage import STAGE_NAMES, classifier_stamp_keys, get_stage
 from utils.constants import (
     BELT_MIN_N,
     COMMENT_SAMPLES_MAX_BODY_CHARS,
@@ -298,6 +299,7 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
 def aggregate_sentiment(
     input_path: Path,
     targets_path: Path | None = None,
+    accuracy_path: Path | None = None,
     *,
     recaps: Sequence[RecapSpec] = (),
 ) -> dict:
@@ -314,6 +316,8 @@ def aggregate_sentiment(
         input_path: Path to sentiment.parquet file.
         targets_path: Path to sentiment_targets.parquet; None or a
             missing file selects the fallback posture.
+        accuracy_path: Path to accuracy_sample.parquet; None or a
+            missing file leaves the manifest's accuracy block unlabeled.
         recaps: The curation (load_recaps_config); empty builds none.
 
     Returns:
@@ -435,6 +439,11 @@ def aggregate_sentiment(
         df_attributed, verdicts=verdicts, alias_map=alias_map
     )
     log_comment_samples_diagnostics(df_attributed, comment_samples)
+
+    # The accuracy sample: manual verdicts on a blind random draw,
+    # scored against the classifier; absent, the manifest says unlabeled
+    logger.info("Scoring the accuracy sample...")
+    metadata["accuracy"] = load_accuracy_sample(accuracy_path, classifier_stamps)
 
     # Post bridge: the threads plus each receipt's post, from the bridge
     # scripts.process_posts derived against the same game-log snapshot
@@ -585,9 +594,15 @@ def classifier_identities(metadata: dict) -> dict[str, ClassifierIdentity]:
         model_key, prompt_key = classifier_stamp_keys(stage)
         stamps = (metadata.get(model_key), metadata.get(prompt_key))
         if None not in stamps:
+            # The template text travels only while the live stage still
+            # carries the stamped version; a retired prompt is a label alone
+            live = get_stage(stage)
             classifiers[stage] = {
                 "model": metadata[model_key],
                 "prompt_version": metadata[prompt_key],
+                "prompt": live.prompt_template
+                if live.prompt_version == metadata[prompt_key]
+                else None,
             }
     return classifiers
 
@@ -657,6 +672,7 @@ def build_manifest(
                 "precision": metadata["receipts_precision"],
                 "attribution_toward_share": metadata["attribution_toward_share"],
             },
+            "accuracy": metadata["accuracy"],
             "floors": {
                 "fanbase_min_n": FANBASE_MIN_N,
                 "week_min_n": WEEK_MIN_N,

@@ -566,37 +566,64 @@ _COMPARABLE = (
 _JOINT_OK = _SENTIMENT_OK & _COMPARABLE & (_TARGET_OK | ~_POLAR)
 
 
+def _weighted_means(
+    groups: Mapping[str, pl.DataFrame],
+    weights: Mapping[str, float],
+    value: pl.Expr,
+    denominator: pl.Expr,
+) -> tuple[float, float] | None:
+    """
+    The two weighted per-row means a figure is the ratio of.
+
+    Args:
+        groups: Scored rows per estimating group.
+        weights: Group -> population weight (sums to 1).
+        value: Row predicate or signed value, counted on denominator rows.
+        denominator: Row predicate the figure is over.
+
+    Returns:
+        (mean of the value, mean of the denominator), each group weighted
+        by its size; None when a group has no scored row.
+    """
+    inside = denominator.cast(pl.Float64)
+    top = bottom = 0.0
+    for name, frame in groups.items():
+        if not frame.height:
+            return None
+        means = frame.select(
+            (value.cast(pl.Float64) * inside).mean().alias("top"),
+            inside.mean().alias("bottom"),
+        ).row(0)
+        top += weights[name] * means[0]
+        bottom += weights[name] * means[1]
+    return top, bottom
+
+
 def _weighted(
     groups: Mapping[str, pl.DataFrame],
     weights: Mapping[str, float],
-    numerator: pl.Expr,
+    value: pl.Expr,
     denominator: pl.Expr,
 ) -> float | None:
     """
     A share over scored rows, each estimating group weighted by its size.
 
     The share is the ratio of two weighted means (rows meeting the
-    numerator, rows meeting the denominator), so a conditional figure
-    like a class precision stays a proper population estimate.
+    predicate, rows meeting the denominator), so a conditional figure
+    like a class precision stays a proper population estimate. A signed
+    value in place of the predicate gives its weighted mean.
 
     Args:
         groups: Scored rows per estimating group.
         weights: Group -> population weight (sums to 1).
-        numerator: Row predicate counted in the numerator.
+        value: Row predicate counted in the numerator, or a signed value.
         denominator: Row predicate counted in the denominator.
 
     Returns:
         The rounded share, or None when no group has a denominator row.
     """
-    top = bottom = 0.0
-    for name, frame in groups.items():
-        if not frame.height:
-            return None
-        top += (
-            weights[name] * frame.filter(numerator & denominator).height / frame.height
-        )
-        bottom += weights[name] * frame.filter(denominator).height / frame.height
-    return _rate(top, bottom)
+    means = _weighted_means(groups, weights, value, denominator)
+    return None if means is None else _rate(*means)
 
 
 def _margin(
@@ -604,40 +631,46 @@ def _margin(
     weights: Mapping[str, float],
     sizes: Mapping[str, int],
     drawn: int,
-    predicate: pl.Expr,
+    value: pl.Expr,
     denominator: pl.Expr,
 ) -> float | None:
     """
-    Half-width of the 95% interval on a weighted share.
+    Half-width of the 95% interval on a weighted share or mean.
 
     Two-phase sampling: the draw's own variance over the population,
     plus the ordered group's sampling variance within its part of the
     draw, finite-population corrected. The first pass is a census of
-    its part and adds no second-phase term.
+    its part and adds no second-phase term. Both terms are taken over
+    each row's pull on the figure (its value less the figure, on the
+    rows the figure is over), so a conditional share is as wide as its
+    own rows make it.
 
     Args:
         groups: Scored rows per estimating group.
         weights: Group -> population weight.
         sizes: Group -> rows of the draw the group stands for.
         drawn: Rows in the draw.
-        predicate: Row predicate the share counts.
-        denominator: Row predicate the share is over.
+        value: Row predicate the share counts, or a signed value.
+        denominator: Row predicate the figure is over.
 
     Returns:
-        The rounded half-width, or None when the share is undefined.
+        The rounded half-width, or None when the figure is undefined.
     """
-    share = _weighted(groups, weights, predicate, denominator)
-    if share is None:
+    means = _weighted_means(groups, weights, value, denominator)
+    if means is None or not means[1]:
         return None
-    variance = share * (1 - share) / drawn
-    ordered = groups.get(GROUP_ORDERED)
-    if ordered is not None:
-        rows = ordered.filter(denominator)
-        if rows.height:
-            p = rows.filter(predicate).height / rows.height
-            fraction = min(ordered.height / sizes[GROUP_ORDERED], 1.0)
+    top, bottom = means
+    pull = (
+        (value.cast(pl.Float64) - top / bottom) * denominator.cast(pl.Float64) / bottom
+    )
+    variance = 0.0
+    for name, frame in groups.items():
+        pulls = frame.select(pull.alias("pull"))["pull"]
+        variance += weights[name] * (pulls**2).mean() / drawn
+        if name == GROUP_ORDERED:
+            fraction = min(frame.height / sizes[GROUP_ORDERED], 1.0)
             variance += (
-                weights[GROUP_ORDERED] ** 2 * p * (1 - p) / rows.height * (1 - fraction)
+                weights[name] ** 2 * pulls.var(ddof=0) / frame.height * (1 - fraction)
             )
     return round(Z_95 * math.sqrt(variance), RATE_DECIMALS)
 
@@ -676,7 +709,9 @@ def score_sample(
     Sentiment agreement is the label match over comparable rows; target
     agreement is the manual target being the attributed player, over the
     rows the manual read calls positive or negative; joint is both on
-    the same row (a neutral row needs only the label). Per class:
+    the same row (a neutral row needs only the label). Each class's
+    share is given for both sides with the gap between them and its
+    margin, paired by row. Per class:
     precision and recall of the label, and toward_precision, labeled so
     and about the attributed player, of the predicted, which is the
     figure a negative rate rests on. Every published share weights the
@@ -736,7 +771,13 @@ def score_sample(
             "recall": share(predicted, manual & _COMPARABLE),
             "toward_precision": share(manual & _TARGET_OK, predicted & _COMPARABLE),
         }
-        class_mix[label] = {"classifier": share(predicted), "manual": share(manual)}
+        gap = predicted.cast(pl.Int8) - manual.cast(pl.Int8)
+        class_mix[label] = {
+            "classifier": share(predicted),
+            "manual": share(manual),
+            "gap": share(gap),
+            "gap_margin": margin(gap),
+        }
 
     return {
         "labeled": True,
@@ -867,7 +908,8 @@ def log_figures(figures: AccuracyFigures) -> None:
             f"  {label}: predicted {block['predicted']:,} / labeled "
             f"{block['labeled']:,}; precision {pct(block['precision'])}, recall "
             f"{pct(block['recall'])}, toward {pct(block['toward_precision'])}; share "
-            f"classifier {pct(mix.get('classifier'))} vs manual {pct(mix.get('manual'))}"
+            f"classifier {pct(mix.get('classifier'))} vs manual "
+            f"{pct(mix.get('manual'))}, gap {pm(mix.get('gap'), mix.get('gap_margin'))}"
         )
     logger.info(
         f"  needed the thread {pct(figures['context_share'])}, unsure "

@@ -910,6 +910,8 @@ class ClassMix(TypedDict):
 
     classifier: float | None
     manual: float | None
+    gap: float | None  # classifier minus manual
+    gap_margin: float | None  # half-width of the gap's 95% interval, paired by row
 
 
 class AccuracyFigures(TypedDict):

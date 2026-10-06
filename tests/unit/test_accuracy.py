@@ -714,8 +714,14 @@ class TestScoreSample:
         figures = score_sample(TWO_GROUPS, seed=1, drawn_at=None)
 
         assert figures["sentiment_margin"] == 0.3696
-        assert figures["target_margin"] == 0.4088
         assert figures["joint_margin"] > 0
+
+    def test_a_conditional_share_s_margin_is_over_its_own_rows(self):
+        """Target agreement is over the polar rows, four of the six scored: its
+        margin is wider than the same share over every row would carry."""
+        figures = score_sample(TWO_GROUPS, seed=1, drawn_at=None)
+
+        assert figures["target_margin"] == 0.4605
 
     def test_per_class_figures_are_weighted_ratios(self):
         """Precision and recall are ratios of weighted shares, counts are raw."""
@@ -742,7 +748,12 @@ class TestScoreSample:
         """What each side's rate would read, and the tagged shares, weighted."""
         figures = score_sample(TWO_GROUPS, seed=1, drawn_at=None)
 
-        assert figures["class_mix"]["neg"] == {"classifier": 0.4667, "manual": 0.5333}
+        assert figures["class_mix"]["neg"] == {
+            "classifier": 0.4667,
+            "manual": 0.5333,
+            "gap": -0.0667,
+            "gap_margin": 0.4214,
+        }
         assert figures["context_share"] == 0.1333
         assert figures["unsure_share"] == 0.2
         assert figures["reject_share"] == 0.1

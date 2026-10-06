@@ -79,6 +79,7 @@ from utils.constants import (
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
+from utils.method_examples_config import load_method_examples_config_version
 from utils.player_config import (
     build_alias_to_player_map,
     load_player_config_version,
@@ -1515,6 +1516,7 @@ class TestBuildManifest:
             "teams": load_team_config_version(),
             "season": load_season_config_version(),
             "recaps": load_recaps_config_version(),
+            "method_examples": load_method_examples_config_version(),
         }
         assert manifest["corpus"]["classified"] == 3
         assert manifest["corpus"]["usable"] == 2

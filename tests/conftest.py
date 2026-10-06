@@ -565,6 +565,10 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
     later tests see the on-disk active season again.
     """
     import pipeline.processors
+    from utils.method_examples_config import (
+        load_method_examples_config,
+        load_method_examples_config_version,
+    )
     from utils.player_config import (
         build_alias_to_player_map,
         load_player_config,
@@ -587,6 +591,8 @@ def season_override() -> Generator[Callable[[str], None], None, None]:
             load_player_config_version,
             load_recaps_config,
             load_recaps_config_version,
+            load_method_examples_config,
+            load_method_examples_config_version,
         ):
             fn.cache_clear()
         # cache_clear() is a side door the override's warm-cache guard

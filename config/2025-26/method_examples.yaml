@@ -1,0 +1,10 @@
+# Curated method examples — 2025-26. One entry per comment, in page order:
+# slot -> trace | case | read | slip | quote_check, comment_id -> the fact.
+# Picks come from scripts.build_method_examples --scan; the build checks
+# each slot's fit. Empty list = nothing curated.
+# version: MAJOR = entry add/drop, MINOR = reorder.
+
+version: "1.0"
+season: "2025-26"
+
+examples: []

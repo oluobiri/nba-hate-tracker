@@ -13,6 +13,7 @@ import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
+import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
@@ -47,7 +48,8 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
-import { answerOf, rawRecord, requireTrace, stageDrops, stageShare } from '../lib/method'
+import { answerOf, bySlot, caseRows, joinCopy, rawRecord, requireTrace, stageDrops, stageShare } from '../lib/method'
+import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
@@ -105,6 +107,13 @@ const negAnswer = tables.method_examples.find((r) => r.sentiment === 'neg')!
 const nullAnswer = tables.method_examples.find((r) => r.sentiment_player === null)!
 const corpus = manifest.corpus
 const drops = stageDrops(corpus)
+// The three ledgers on live rows; the copy join fails the build when the examples and their lines disagree.
+const exampleCopy = joinCopy(tables.method_examples.map((r) => r.comment_id), EXAMPLE_COPY, 'method_examples')
+const caseTitle = joinCopy([...new Set(tables.method_examples.map((r) => r.attribution_case))], CASE_COPY, 'attribution_case')
+const quoted = (r: (typeof tables.method_examples)[number]) => ({ row: r, note: exampleCopy.get(r.comment_id)! })
+const caseLines = caseRows(tables.method_examples).map((r) => ({ ...quoted(r), title: caseTitle.get(r.attribution_case)! }))
+const slipLines = bySlot(tables.method_examples, 'slip').map(quoted)
+const quoteLines = bySlot(tables.method_examples, 'quote_check').map((r) => ({ ...quoted(r), caseTitle: caseTitle.get(r.attribution_case)! }))
 
 // Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
 const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
@@ -495,6 +504,18 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
           <p>A step with no population of its own: no bar, no drop.</p>
         </Stage>
       </ol>
+    </section>
+
+    <section class="guide__section">
+      <h2>CaseTable, SlipTable, QuoteCheckTable</h2>
+      <p class="eyebrow">
+        Three ledgers on one primitive: a table that becomes a stack of labeled blocks below 860, each cell carrying its column head. The case table opens with the comments that were never classified, then one row per attribution case, the trace among them. Names found are chips; the classifier's p is the chip's own JSON; a comment that counts for nobody says so in gray capitals.
+      </p>
+      <CaseTable rows={caseLines} neverClassified={drops.find} />
+      <p class="eyebrow">Where it slips: the answer beside the hand label, with the Checked by hand stamp. The hand label is a read under a rubric, never "the truth".</p>
+      <SlipTable rows={slipLines} />
+      <p class="eyebrow">The quote check: the verifier's answer in method yellow, the comment still counted.</p>
+      <QuoteCheckTable rows={quoteLines} />
     </section>
 
     <section class="guide__section">

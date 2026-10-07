@@ -2950,3 +2950,138 @@ a.hero__who:hover {
     display: none;
   }
 }
+
+/* Ledger: a table of comments that becomes a stack of labeled blocks on a phone. */
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.ledger th,
+.ledger td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px 14px 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ledger thead th {
+  padding-top: 0;
+  font: 700 12px var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.ledger tbody th {
+  width: 150px;
+  font: 700 14px/1.2 var(--display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.ledger__body {
+  max-width: 44ch;
+}
+.ledger__q {
+  quotes: none;
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  color: var(--bone);
+}
+.ledger b {
+  font-weight: 600;
+}
+.src {
+  display: block;
+  margin-top: 6px;
+  font: 11px var(--mono);
+  color: var(--mute);
+}
+.src a {
+  color: var(--mute);
+}
+.why {
+  margin: 8px 0 0;
+  max-width: 44ch;
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.why--lead {
+  margin-top: 0;
+}
+.why:empty {
+  display: none;
+}
+.chip {
+  display: inline-block;
+  margin: 0 6px 6px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  font: 12px var(--mono);
+  color: var(--bone);
+  white-space: nowrap;
+}
+.nobody {
+  font: 600 12px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.muted {
+  color: var(--mute);
+}
+.verdict {
+  font: 600 12px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hl);
+}
+.meant {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  font: 12.5px var(--mono);
+  white-space: nowrap;
+}
+.meant .stamp {
+  transform: rotate(-2deg);
+}
+@media (max-width: 860px) {
+  .ledger thead {
+    display: none;
+  }
+  .ledger,
+  .ledger tbody,
+  .ledger tr,
+  .ledger th,
+  .ledger td {
+    display: block;
+    width: auto;
+    max-width: none;
+  }
+  .ledger tr {
+    display: grid;
+    gap: 8px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .ledger th,
+  .ledger td {
+    padding: 0;
+    border: 0;
+  }
+  .ledger td[data-l]::before {
+    content: attr(data-l);
+    display: block;
+    margin-bottom: 3px;
+    font: 700 11px var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .meant {
+    white-space: normal;
+  }
+}

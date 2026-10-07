@@ -44,6 +44,7 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
+import { requireTrace } from '../lib/method'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
@@ -79,7 +80,7 @@ const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
 const noRoster = tables.players.find((p) => p.roster_team === null)!
 const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
 const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
-const exhibitProps = (r: (typeof tables.comment_samples)[number]) => {
+const exhibitProps = (r: Pick<(typeof tables.comment_samples)[number], 'body' | 'sentiment' | 'score' | 'link_id' | 'comment_id' | 'fan_team' | 'created_utc'>) => {
   const post = posts.get(r.link_id)
   return {
     body: r.body,
@@ -94,6 +95,8 @@ const exhibitProps = (r: (typeof tables.comment_samples)[number]) => {
 const receipt = tables.comment_samples.find((r) => r.sentiment === 'neg' && posts.has(r.link_id) && r.body.length < 240)!
 const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
+// The walkthrough's comment: the finder's names marked, a line under the body.
+const trace = requireTrace(tables.method_examples)
 
 // Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
 const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
@@ -438,7 +441,8 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>Stamp</h2>
-      <div class="guide__row"><Stamp kind="verified" /><Stamp kind="unofficial" /></div>
+      <p class="eyebrow">Three method marks, one yellow. Verified on a receipt the target check passed; Unofficial under the minimum; Checked by hand where a manual label sits beside the classifier's answer.</p>
+      <div class="guide__row"><Stamp kind="verified" /><Stamp kind="unofficial" /><Stamp kind="checked" /></div>
     </section>
 
     <section class="guide__section">
@@ -448,8 +452,11 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <Exhibit number={1} {...exhibitProps(receipt)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />
         <Exhibit number={2} {...exhibitProps(neutral)} />
         {orphan && <Exhibit number={3} {...exhibitProps(orphan)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />}
+        <Exhibit number={4} {...exhibitProps(trace)} marks={trace.mentioned_text}>
+          <p>The names the finder matched, marked as the body spells them; a line about the comment sits here, between the body and its source.</p>
+        </Exhibit>
       </div>
-      <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge.</p>
+      <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge. The fourth is the walkthrough's comment, with the finder's marks and the extra slot.</p>
     </section>
 
     <section class="guide__section">

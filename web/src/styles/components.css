@@ -294,6 +294,24 @@
 .exhibit__meta a {
   margin-left: auto;
 }
+/* The finder's match in a body: method yellow, since the mark is about how the comment was read. */
+mark {
+  padding: 0 1px;
+  background: var(--hl-dim);
+  color: inherit;
+  border-bottom: 2px solid var(--hl);
+}
+/* Between body and footer: the answer and a line about it. */
+.exhibit__extra {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.exhibit__extra p {
+  margin: 0;
+  max-width: 60ch;
+}
 
 /* StatFigure: one number, its label, quiet detail. */
 .stat {

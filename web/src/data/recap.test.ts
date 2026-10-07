@@ -21,6 +21,8 @@ function fieldValue(spec: FieldSpec, types: Record<string, Record<string, FieldS
       return 1.5
     case 'bool':
       return true
+    case 'json':
+      return { any: ['shape'] }
     case 'map':
       return { k: fieldValue(spec.values!, types) }
     default:

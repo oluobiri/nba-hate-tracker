@@ -111,6 +111,24 @@ describe('renderTypes', () => {
     expect(text).toContain('  live: boolean\n')
   })
 
+  it('renders json as unknown, a value the page takes as it comes', () => {
+    const withJson: ContractSchema = {
+      ...fixture,
+      manifest: {
+        root: 'Manifest',
+        types: {
+          Manifest: {
+            settings: { type: 'map', nullable: true, values: { type: 'json', nullable: false } },
+            blob: { type: 'json', nullable: false },
+          },
+        },
+      },
+    }
+    const rendered = renderTypes(withJson)
+    expect(rendered).toContain('  settings: Record<string, unknown> | null\n')
+    expect(rendered).toContain('  blob: unknown\n')
+  })
+
   it('is deterministic and names the schema version in its header', () => {
     expect(renderTypes(fixture)).toBe(text)
     expect(text.startsWith('// GENERATED from src/data/schema.json (schema_version 5)')).toBe(true)

@@ -14,12 +14,14 @@ const TABLE_DTYPES: Record<string, string> = {
   'list<string>': 'string[]',
 }
 
-// JSON-side primitives of the manifest; anything else names a type.
+// JSON-side primitives of the manifest; json is an opaque value the
+// contract declares no shape for; anything else names a type.
 const MANIFEST_PRIMITIVES: Record<string, string> = {
   string: 'string',
   int: 'number',
   float: 'number',
   bool: 'boolean',
+  json: 'unknown',
 }
 
 function pascal(name: string): string {

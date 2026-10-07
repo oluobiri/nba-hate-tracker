@@ -39,3 +39,8 @@ export const CASE_COPY: Readonly<Record<string, string>> = {
   several_resolved_unlisted: 'Several names, the pick is a tracked player not in the text',
   several_unresolved: 'Several names, the pick resolves to nobody',
 }
+
+/** The walkthrough's own line about its comment at the download step, keyed like the rest. */
+export const TRACE_COPY: Readonly<Record<string, string>> = {
+  oldhosi: 'A Thunder fan comparing two guards.',
+}

@@ -39,6 +39,8 @@
 
   --hl: #ffd21f;
   --hl-dim: rgba(255, 210, 31, 0.14);
+  /* Net sentiment is the two poles mixed; it is not a sentiment value, so it takes neither pure heat nor pure ice. */
+  --net: color-mix(in srgb, var(--heat) 55%, var(--ice));
 
   --focus: var(--bone);
 

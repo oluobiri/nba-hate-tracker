@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, markNames, MethodCopyError, metricsPair, rawRecord, requireTrace, rowRecord, shortModel, stageDrops, stageShare } from './method'
+import { answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, markNames, MethodCopyError, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, shortModel, stageDrops, stageShare } from './method'
 import { classifier, corpus, example } from './method.fixture'
 
 describe('stageDrops', () => {
@@ -187,5 +187,20 @@ describe('caseRows', () => {
   it('refuses a case the table does not know', () => {
     const rows = [example({ slot: 'case', comment_id: 'q', attribution_case: 'mystery' }), example({ slot: 'trace' })]
     expect(() => caseRows(rows)).toThrow(/q has an unknown attribution_case mystery/)
+  })
+})
+
+describe('the manifest blocks the page needs whole', () => {
+  it('passes a filled classifier block and names a hole', () => {
+    expect(requireClassifier({ sentiment: classifier() }, 'sentiment').prompt).toMatch(/^Classify/)
+    expect(() => requireClassifier({}, 'sentiment')).toThrow('classifiers.sentiment: absent')
+    expect(() => requireClassifier({ target: classifier({ max_tokens: null }) }, 'target')).toThrow('classifiers.target.max_tokens: null')
+  })
+
+  it('refuses an unlabeled accuracy block or one with a null figure', () => {
+    const base = { labeled: true, drawn: 1, scored: 1, rejected: 0, seed: 1, drawn_at: 'd', rubric: 'v1', groups: {}, sentiment_agreement: 0.5, sentiment_margin: 0.1, target_agreement: 0.5, target_margin: 0.1, joint_agreement: 0.5, joint_margin: 0.1, by_class: {}, class_mix: {}, context_share: 0, unsure_share: 0, reject_share: 0 }
+    expect(requireAccuracy(base).scored).toBe(1)
+    expect(() => requireAccuracy({ ...base, labeled: false })).toThrow('not labeled')
+    expect(() => requireAccuracy({ ...base, joint_margin: null })).toThrow('rules.accuracy.joint_margin: null')
   })
 })

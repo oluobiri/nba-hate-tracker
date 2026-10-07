@@ -3,7 +3,7 @@
 // the request as it went out and the answer as it came back; then the pair
 // that shows why four metrics, the hand check's gaps on a Δ axis, and the
 // copy join that fails the build when the examples and their lines disagree.
-import type { ClassifierIdentity, ClassMix, Corpus, MethodExamplesRow } from '../data/types.gen'
+import type { AccuracyFigures, ClassifierIdentity, ClassMix, Corpus, MethodExamplesRow } from '../data/types.gen'
 import { negRate, posRate } from './metrics'
 import { type Counts, type Sentiment, SENTIMENTS } from './types'
 
@@ -257,4 +257,21 @@ export function caseRows(rows: readonly MethodExamplesRow[]): MethodExamplesRow[
     if (!CASE_ORDER.includes(r.attribution_case)) throw new Error(`method_examples: ${r.comment_id} has an unknown attribution_case ${r.attribution_case}`)
   }
   return picked.toSorted((a, b) => CASE_ORDER.indexOf(a.attribution_case) - CASE_ORDER.indexOf(b.attribution_case))
+}
+
+type Filled<T> = { [K in keyof T]: NonNullable<T[K]> }
+
+/** The hand check's figures with every field present; a block still unlabeled, or with a hole, fails the build naming the field. */
+export function requireAccuracy(a: AccuracyFigures): Filled<AccuracyFigures> {
+  if (!a.labeled) throw new Error('rules.accuracy: not labeled, the hand check cannot be shown')
+  for (const [k, v] of Object.entries(a)) if (v === null) throw new Error(`rules.accuracy.${k}: null, the hand check needs it`)
+  return a as Filled<AccuracyFigures>
+}
+
+/** One classifier block with its prompt and settings present, so the page can quote and rebuild. */
+export function requireClassifier(classifiers: Readonly<Record<string, ClassifierIdentity>>, name: string): Filled<ClassifierIdentity> {
+  const c = classifiers[name]
+  if (!c) throw new Error(`classifiers.${name}: absent from the manifest`)
+  for (const [k, v] of Object.entries(c)) if (v === null) throw new Error(`classifiers.${name}.${k}: null, the page needs it`)
+  return c as Filled<ClassifierIdentity>
 }

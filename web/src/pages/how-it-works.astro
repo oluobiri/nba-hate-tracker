@@ -1,12 +1,905 @@
 ---
+// How it works: one comment followed from download to its row, the rule that
+// ties a comment to a player, the prompt word for word, a check by hand; the
+// data and how to use it. Nine sections behind the rail, no island. Every
+// figure is read from the manifest or a table, and the line beside each
+// example is keyed to its row, so a changed curation fails the build here.
+import { Answer } from '../components/Answer'
+import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
+import { Fold, JsonBlock } from '../components/Fold'
+import { GapChart } from '../components/GapChart'
+import { MethodNote } from '../components/MethodNote'
+import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
+import SectionRail from '../components/SectionRail.astro'
+import { SentimentBar } from '../components/SentimentBar'
+import { Said, Stage } from '../components/Stage'
+import { Stamp } from '../components/Stamp'
+import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
+import { nickname } from '../lib/fans'
+import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
+import { BATCH_SIZE, answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, stageDrops, stageShare } from '../lib/method'
+import { CASE_COPY, EXAMPLE_COPY, TRACE_COPY } from '../lib/method-copy'
+import { countsOf, negRate, netSentiment, polarization, posRate } from '../lib/metrics'
+import { commentDate, receiptContext } from '../lib/receipts'
+import { AUTHOR, GITHUB_URL, LINKEDIN_URL, SITE_URL } from '../site'
+import type { Counts, Sentiment } from '../lib/types'
+
+const { manifest, tables } = await getSeason()
+const { corpus, rules } = manifest
+const official = rules.qualified_threshold
+const floors = rules.floors
+const samples = rules.samples
+const accuracy = requireAccuracy(rules.accuracy)
+const sent = requireClassifier(manifest.classifiers, 'sentiment')
+const tgt = requireClassifier(manifest.classifiers, 'target')
+
+// The examples and their lines; a mismatch either way fails the build by name.
+const examples = tables.method_examples
+const trace = requireTrace(examples)
+const copy = joinCopy(examples.map((r) => r.comment_id), EXAMPLE_COPY, 'method_examples')
+const caseTitle = joinCopy([...new Set(examples.map((r) => r.attribution_case))], CASE_COPY, 'attribution_case')
+const traceLine = joinCopy([trace.comment_id], TRACE_COPY, 'trace').get(trace.comment_id)!
+
+// The funnel: every count and every drop from corpus.
+const drops = stageDrops(corpus)
+const raw = corpus.raw_comments!
+const submitted = corpus.population_submitted!
+const share = (n: number): number => stageShare(n, raw)
+
+// Joins for the receipts' context.
+const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
+const games = new Map(tables.games.map((g) => [g.game_id, g]))
+const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+type Example = (typeof examples)[number]
+const exhibitProps = (r: Example) => {
+  const post = posts.get(r.link_id)
+  return {
+    body: r.body,
+    sentiment: r.sentiment as Sentiment,
+    score: r.score,
+    sourceUrl: commentUrl(r.link_id, r.comment_id),
+    context: receiptContext(post, post?.game_id ? games.get(post.game_id) : undefined, abbrOf),
+    flair: r.fan_team ? (abbrOf.get(r.fan_team) ?? null) : null,
+    date: commentDate(r.created_utc),
+    marks: r.mentioned_text,
+  }
+}
+const quoted = (r: Example) => ({ row: r, note: copy.get(r.comment_id)! })
+const reads = bySlot(examples, 'read')
+const slips = bySlot(examples, 'slip').map(quoted)
+const quoteChecks = bySlot(examples, 'quote_check').map((r) => ({ ...quoted(r), caseTitle: caseTitle.get(r.attribution_case)! }))
+const cases = caseRows(examples).map((r) => ({ ...quoted(r), title: caseTitle.get(r.attribution_case)! }))
+
+// The walkthrough's comment, step by step.
+const WORD: Record<Sentiment, string> = { neg: 'negative', neu: 'neutral', pos: 'positive' }
+const answer = answerOf(trace)
+const request = buildRequest(trace, sent)
+const quotable = isQuotable(trace, samples.min_confidence)
+const traceFans = trace.fan_team ? `${nickname(trace.fan_team)} fan` : 'commenter with no flair'
+const found = trace.mentioned_text.map((t, i) => ({ text: t, player: trace.mentioned_players[i] ?? '' }))
+const severalNames = trace.mentioned_players.length > 1
+const sampling = Object.entries(sent.sampling_params).map(([k, v]) => `${k} ${JSON.stringify(v)}`)
+const verifierSampling = Object.entries(tgt.sampling_params).map(([k, v]) => `${k} ${JSON.stringify(v)}`)
+// The prompt, line by line, its slot marked; doubled braces read as one.
+const promptLines = fillPrompt(sent.prompt, {}).split('\n').map((line) => line.split('{comment_body}'))
+const verifierPrompt = fillPrompt(tgt.prompt, {})
+
+// What the numbers mean: the formulas from the manifest, the pair from live rows.
+type Token = { text: string; tone: 'neg' | 'pos' | null }
+const formula = (f: string): Token[] => f.split(/(neg_count|pos_count)/).filter(Boolean).map((text) => ({ text, tone: text === 'neg_count' ? 'neg' : text === 'pos_count' ? 'pos' : null }))
+const metricRows = [
+  { key: 'neg_rate', name: 'Negative rate', tone: 'neg', words: "The share of a player's comments that were negative." },
+  { key: 'pos_rate', name: 'Positive rate', tone: 'pos', words: 'The share that were positive.' },
+  { key: 'net_sentiment', name: 'Net sentiment', tone: 'net', words: 'Praise minus criticism, from −1 to +1. One figure for where r/NBA stands overall.' },
+  { key: 'polarization', name: null, tone: 'polar', words: 'The share that took a side either way. High means strong opinions.' },
+] as const
+const overall = tables.player_overall.map((r) => ({ ...countsOf(r), name: r.attributed_player }))
+const pair = metricsPair(overall, official)
+const splitPct = (v: number): [string, string] => {
+  const [whole, rest] = fmtPct(v).split('.')
+  return [whole!, rest ? `.${rest}` : '']
+}
+const pairRows = (c: Counts) => [
+  { label: 'Positive rate', value: fmtPct(posRate(c)), tone: 'pos' },
+  { label: 'Negative rate', value: fmtPct(negRate(c)), tone: 'neg' },
+  { label: 'Net sentiment', value: fmtSigned(netSentiment(c)), tone: 'net' },
+]
+
+// Checked by hand.
+const gaps = gapRows(accuracy.class_mix)
+const gapsDomain = gapDomain(gaps)
+const classes: Sentiment[] = ['neg', 'neu', 'pos']
+const NAME: Record<Sentiment, string> = { neg: 'Negative', neu: 'Neutral', pos: 'Positive' }
+const pctOrDash = (v: number | null): string => (v === null ? '—' : fmtPct(v))
+const margin = (m: number): string => `± ${(100 * m).toFixed(1)}`
+const figures = [
+  { figure: fmtPct(accuracy.sentiment_agreement), margin: margin(accuracy.sentiment_margin), label: 'agree on the sentiment' },
+  { figure: fmtPct(accuracy.target_agreement), margin: margin(accuracy.target_margin), label: 'agree on the player' },
+  { figure: fmtPct(accuracy.joint_agreement), margin: margin(accuracy.joint_margin), label: 'agree on both' },
+]
+
+// The rules.
+const ranked = overall.filter((r) => r.total >= official)
+const minimums = [
+  { name: 'The official minimum', n: official, where: `A player's place on the leaderboard and a bar in the race. ${fmtInt(ranked.length)} players clear it; the slider lets you lower it, and says so.` },
+  { name: 'A fanbase on a roster', n: floors.fanbase_min_n, where: 'A row in the grudges and flowers lists, a cell in the grid.' },
+  { name: 'A week', n: floors.week_min_n, where: "A point on a player's season line." },
+  { name: 'The belt', n: floors.belt_min_n, where: "A week's title for most hated and most loved." },
+  { name: 'A game', n: floors.game_min_n, where: "A game's verdict on a player, in his game thread." },
+  { name: 'Entry to the race', n: floors.race_entry_min_n, where: "A player's bar appears once his comments reach it." },
+]
+
+// What this is not: the figures it leans on.
+const flaired = tables.fan_team_overall.reduce((n, r) => n + r.comment_count, 0)
+const thinnest = tables.fan_team_overall.toSorted((a, b) => a.comment_count - b.comment_count)[0]!
+const scores = examples.map((r) => r.score)
+const loudest = Math.max(...scores)
+const quietest = Math.min(...scores)
+
+// Use the data, and the versions.
+const dataBase = `${SITE_URL}/data/season=${manifest.season}`
+const duckdb = `duckdb -c "SELECT attributed_player, neg_rate, comment_count FROM '${dataBase}/player_overall.parquet' WHERE comment_count >= ${official} ORDER BY neg_rate DESC LIMIT 10"`
+const configLine = Object.entries(manifest.config_versions).map(([k, v]) => `${k} ${v}`).join(' · ')
+const snapshotLine = Object.entries(manifest.snapshots).map(([k, v]) => `${k.replaceAll('_', ' ')} ${v ?? '—'}`).join(' · ')
+
+const sections = [
+  { id: 'what', label: 'What this is' },
+  { id: 'numbers', label: 'The numbers' },
+  { id: 'read', label: 'How a comment is read' },
+  { id: 'checked', label: 'Checked by hand' },
+  { id: 'rules', label: 'The rules' },
+  { id: 'not', label: 'What it is not' },
+  { id: 'use', label: 'Use the data' },
+  { id: 'who', label: 'Who made it' },
+  { id: 'versions', label: 'Versions' },
+] as const
+const description = 'Where the numbers come from, and what they are not. One real comment followed from download to its row, the rule that ties a comment to a player, the prompt word for word, and a check by hand.'
 ---
 
-<Base title="How it works" description="Where the numbers come from, and what they are not.">
-  <main id="main" class="wrap page">
-    <header>
+<Base title="How it works" description={description}>
+  <main id="main" class="wrap page hw">
+    <header class="hw__head">
+      <p class="eyebrow">{manifest.season} · How it works</p>
       <h1>How it works</h1>
-      <p class="page__lede">Where the numbers come from, and what they are not. This page is on its way.</p>
+      <p class="hw__lede">{description}</p>
+      <p class="hw__jump">Here for how it's built? <a href="#use">Jump to Use the data ↓</a></p>
     </header>
+
+    <div class="hw__grid">
+      <div class="hw__rail"><SectionRail sections={sections} /></div>
+      <div class="hw__sections">
+        <section class="hw__section" id="what" aria-labelledby="what-h">
+          <h2 id="what-h">What this is</h2>
+          <p class="hw__p hw__p--lede">
+            Every r/NBA comment of the {manifest.season} season that names a tracked player, read by a language model and tied to one player. Here is one, followed from download to its row in the data. The figures down the side are the season's totals at each step.
+          </p>
+          <ol class="trace">
+            <Stage n={1} name="Download" where="Arctic Shift · r/NBA" count={`${fmtInt(raw)} comments`} share={1} drop={{ text: 'Deleted, removed and empty bodies drop out first.' }}>
+              <Said>{trace.body}</Said>
+              <p>One line per comment, the whole regular season and playoffs. {traceLine} {commentDate(trace.created_utc)}.</p>
+              <Fold summary="The raw record">
+                <JsonBlock value={rawRecord(trace)} note="+ created_utc and the rest of what Reddit stores. The author's name never leaves the pipeline." />
+              </Fold>
+            </Stage>
+            <Stage n={2} name="Find names" where={`players.yaml · ${fmtInt(tables.players.length)} players`} count={`${fmtInt(submitted)} kept`} share={share(submitted)} drop={{ count: drops.find, text: 'comments name no tracked player and stop here. None of them are ever classified.' }}>
+              <Said><MarkedBody body={trace.body} marks={trace.mentioned_text} /></Said>
+              <p>
+                Every name r/NBA uses for a tracked player is matched against the body. {found.map((f, i) => (<>{i > 0 && '; '}“{f.text}” is {f.player}</>))}. Short names only match as whole words.
+              </p>
+              <Fold summary="The names found">
+                <JsonBlock value={{ mentioned_players: trace.mentioned_players, mentioned_text: trace.mentioned_text }} />
+              </Fold>
+            </Stage>
+            <Stage n={3} name="Ask the classifier" where="Anthropic Batch API" count={`${fmtInt(BATCH_SIZE)} per batch`}>
+              <p>The whole prompt goes out with the comment inside it, to <b>{sent.model}</b>, in batches of {fmtInt(BATCH_SIZE)}. The prompt is below, word for word.</p>
+              <Fold summary="The request">
+                <JsonBlock value={request} />
+              </Fold>
+            </Stage>
+            <Stage n={4} name="The answer" where={sent.model} count={`${fmtInt(corpus.usable)} usable`} share={share(corpus.usable)} drop={{ count: drops.answer, text: "requests fail or come back as something that can't be read." }}>
+              <pre class="json"><Answer {...answer} /></pre>
+              <p>That is the entire response. <b>s</b> is the sentiment, <b>c</b> the model's own confidence from 0 to 1, <b>p</b> who it thinks the comment is about.</p>
+            </Stage>
+            <Stage n={5} name="Pick the player" where="the attribution rule" count={`${fmtInt(corpus.attributed)} counted`} share={share(corpus.attributed)} drop={{ count: drops.pick, text: "usable comments can't be pinned to one player and count for nobody." }}>
+              <div class="resolve">
+                <div><span class="resolve__lab">names found</span>{trace.mentioned_players.map((n) => <span class="chip">{n}</span>)}</div>
+                <div>
+                  <span class="resolve__lab">{severalNames ? 'several names, so ask p' : 'one name, so that player'}</span>
+                  {answer.p !== null && <code class="ans">"{answer.p}"</code>}
+                  <span class="resolve__arr">→ players.yaml →</span>
+                  <b>{trace.attributed_player ?? 'nobody'}</b>
+                </div>
+                <div>
+                  <span class="resolve__lab">flair</span>
+                  <code class="ans">{trace.author_flair_text === null ? <span class="ans__null">null</span> : `"${trace.author_flair_text}"`}</code>
+                  <span class="resolve__arr">→ teams.yaml →</span>
+                  <b>{trace.fan_team ?? 'no fan team'}</b>
+                </div>
+              </div>
+              <p>p comes back as the model wrote it, so it goes through the same name list as the body did. The flair goes through the team list.</p>
+            </Stage>
+            <Stage n={6} name="One row" where="sentiment.parquet" count="1 row per comment">
+              <p>
+                One <b class={`v-${answer.s}`}>{WORD[answer.s]}</b> for <b>{trace.attributed_player ?? 'nobody'}</b>, from a {traceFans}. At c = {answer.c} it counts in the rates {quotable ? 'and can be quoted' : `but is never quoted: a quote needs ${samples.min_confidence}`}.
+              </p>
+              <Fold summary="The row">
+                <JsonBlock value={rowRecord(trace)} note="+ body, created_utc, link_id …" />
+              </Fold>
+            </Stage>
+          </ol>
+        </section>
+
+        <section class="hw__section" id="numbers" aria-labelledby="numbers-h">
+          <h2 id="numbers-h">What the numbers mean</h2>
+          <table class="metrics">
+            <thead><tr><th scope="col">Metric</th><th scope="col">In plain words</th><th scope="col">How it's computed</th></tr></thead>
+            <tbody>
+              {
+                metricRows.map((m) => (
+                  <tr>
+                    <th scope="row" class={`metrics__name metrics__name--${m.tone}`}>
+                      {m.name ?? (<><span class="v-neg">Polar</span><span class="v-pos">ization</span></>)}
+                    </th>
+                    <td>{m.words}</td>
+                    <td><code class="metrics__formula">{formula(rules.metrics[m.key]!).map((t) => (t.tone ? <span class={`v-${t.tone}`}>{t.text}</span> : t.text))}</code></td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+          {
+            pair && (
+              <>
+                <p class="hw__p">
+                  <b>Why four?</b> One rate tells you one thing. {pair[0].name} and {pair[1].name} are praised at nearly the same rate, and that is the only thing their numbers share: the comments around that praise split differently, and a different metric is needed to see it.
+                </p>
+                <div class="pair">
+                  {
+                    pair.map((p) => (
+                      <div class="pair__card">
+                        <h3>{p.name}</h3>
+                        <SentimentBar counts={p} subject={p.name} />
+                        {pairRows(p).map((r) => (
+                          <div class="pair__row"><span>{r.label}</span><b class={`pair__v pair__v--${r.tone}`}>{r.value}</b></div>
+                        ))}
+                        <div class="pair__row"><span>Polarization</span><b class="pair__v"><span class="v-neg">{splitPct(polarization(p))[0]}</span><span class="v-pos">{splitPct(polarization(p))[1]}</span></b></div>
+                        <div class="pair__row"><span>Comments</span><b class="pair__v">{fmtInt(p.total)}</b></div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </>
+            )
+          }
+          <p class="hw__p">
+            The positive rate says how much praise a player draws and the negative rate how much criticism; neither says anything about the other. <b>Net sentiment</b> puts the two together, praise minus criticism, one figure for where r/NBA stands on a player overall. <b>Polarization</b> sets the neutral comments aside and asks how much of the conversation took a side at all.
+          </p>
+        </section>
+
+        <section class="hw__section" id="read" aria-labelledby="read-h">
+          <h2 id="read-h">How a comment is read</h2>
+          <div class="hw__sub">
+            <h3>Whose comment is it</h3>
+            <p class="hw__p hw__p--lede">
+              Names are found in the comment before the classifier sees it. After it answers, one rule decides who the comment counts for: <b>one name, that player; several names, whichever tracked player the classifier names; otherwise nobody.</b> Of {fmtInt(corpus.usable)} usable comments, {fmtInt(corpus.attributed)} count for exactly one player and {fmtInt(drops.pick)} for nobody.
+            </p>
+            <Fold summary="Every case the rule can produce"><CaseTable rows={cases} neverClassified={drops.find} /></Fold>
+          </div>
+          <div class="hw__sub">
+            <h3>The prompt</h3>
+            <p class="hw__p hw__p--lede">The entire instruction, word for word. There is no system prompt and no examples. Every comment gets the same lines.</p>
+            <div class="chips">
+              <span class="chip">{sent.model}</span>
+              {sampling.map((s) => <span class="chip">{s}</span>)}
+              <span class="chip">max {sent.max_tokens} tokens</span>
+              <span class="chip">prompt {sent.prompt_version}</span>
+            </div>
+            <div class="prompt">
+              {promptLines.map((parts) => (<code class="prompt__line">{parts.length === 1 && parts[0] === '' ? ' ' : parts.map((part, i) => (<>{i > 0 && <span class="prompt__slot">{'{comment_body}'}</span>}{part}</>))}</code>))}
+            </div>
+          </div>
+          <div class="hw__sub">
+            <h3>What comes back</h3>
+            <p class="hw__p hw__p--lede">Three keys, and one of them is a number the model gives about itself.</p>
+            <div class="conf">
+              <div><h4>What c is</h4><p>The model's own estimate of how sure it is, from <code>0.0</code> to <code>1.0</code>. It isn't a measured probability, and nothing checks it.</p></div>
+              <div><h4>Where it's used</h4><p>Once. A positive or negative comment needs <code>c ≥ {samples.min_confidence}</code> before it can be quoted on a player page.</p></div>
+              <div><h4>Where it isn't</h4><p>The rates. Every usable comment counts once, whatever c came back as.</p></div>
+            </div>
+          </div>
+          <div class="hw__sub">
+            <h3>Reads</h3>
+            <p class="hw__p hw__p--lede">{reads.length === 6 ? 'Six' : fmtInt(reads.length)} answers from the season, as they stand in the data.</p>
+            <div class="reads">
+              {
+                reads.map((r, i) => (
+                  <Exhibit number={i + 1} {...exhibitProps(r)}>
+                    <div class="reads__answer"><Answer {...answerOf(r)} /><span class="src">counts for <b>{r.attributed_player ?? 'nobody'}</b></span></div>
+                    <p>{copy.get(r.comment_id)}</p>
+                  </Exhibit>
+                ))
+              }
+            </div>
+          </div>
+          <div class="hw__sub">
+            <h3>Where it slips</h3>
+            <p class="hw__p hw__p--lede">{slips.length === 3 ? 'Three' : fmtInt(slips.length)} answers that a careful read disagrees with. The hand label is a read under a rubric, not the truth; here the two differ.</p>
+            <SlipTable rows={slips} />
+          </div>
+          <div class="hw__sub">
+            <h3>Before a comment is quoted</h3>
+            <p class="hw__p hw__p--lede">
+              A positive or negative comment with <code class="ans">c ≥ {samples.min_confidence}</code> can be quoted on a player page, but only after a second, larger model (<b>{tgt.model}</b>) reads it and names who the opinion is aimed at. Both of these passed every rule above.
+            </p>
+            <QuoteCheckTable rows={quoteChecks} />
+            <Fold summary="The verifier's prompt">
+              <div class="chips">
+                <span class="chip">{tgt.model}</span>
+                <span class="chip">prompt {tgt.prompt_version}</span>
+                <span class="chip">max {tgt.max_tokens} tokens</span>
+                {verifierSampling.map((s) => <span class="chip">{s}</span>)}
+              </div>
+              <pre class="code">{verifierPrompt}</pre>
+            </Fold>
+            <MethodNote kind="rule">
+              <b>The check decides what is quoted, not what is counted.</b> Both comments still count in the rates. How often a counted comment is really about someone else is what the check by hand measures.
+            </MethodNote>
+          </div>
+        </section>
+
+        <section class="hw__section" id="checked" aria-labelledby="checked-h">
+          <h2 id="checked-h">Checked by hand</h2>
+          <div class="figs">
+            {
+              figures.map((f, i) => (
+                <div class="figs__cell">
+                  <span class="figs__fig">{f.figure}<small>{f.margin}</small></span>
+                  <span class="figs__lab">{f.label}</span>
+                  <span class="figs__n">{i === 0 ? <Stamp kind="checked" /> : i === 1 ? `of ${fmtInt(accuracy.scored)} scored` : `drawn ${accuracy.drawn_at}`}</span>
+                </div>
+              ))
+            }
+          </div>
+          <p class="hw__p">
+            A blind random draw of <b>{fmtInt(accuracy.drawn)}</b> counted comments, each read and labeled under a written rubric without the classifier's answer in view; <b>{fmtInt(accuracy.scored)}</b> were scored. The margins are at 95%. A label is a careful read, not the truth: where the two disagree, the page says so, and never says which is right.
+          </p>
+          <GapChart rows={gaps} domain={gapsDomain} ticks={gapTicks(gapsDomain)} zeroLabel="Same share as the hand labels" caption="Per class: the classifier's share of the sample minus the hand labels' share, in points, with its margin. Negative → neutral → positive." />
+          <p class="hw__p"><b>Why positive runs low.</b> The prompt never says what counts as positive, so mild approval reads as neutral. The first comment under <i>Where it slips</i> is the pattern: praise with no praise word in it.</p>
+          <p class="hw__p"><b>What it cannot say.</b> The check is across every player together. It says nothing about any one player's rate, and nothing about a single comment.</p>
+          <Fold summary="Per class, the groups and the draw">
+            <div class="scroll">
+              <table class="small">
+                <thead><tr><th scope="col">Class</th><th scope="col">Classifier said</th><th scope="col">Labels said</th><th scope="col">Precision</th><th scope="col">Recall</th></tr></thead>
+                <tbody>
+                  {
+                    classes.map((c) => {
+                      const b = accuracy.by_class[c]
+                      return b ? (
+                        <tr><td>{NAME[c]}</td><td class="num">{fmtInt(b.predicted)}</td><td class="num">{fmtInt(b.labeled)}</td><td class="num">{pctOrDash(b.precision)}</td><td class="num">{pctOrDash(b.recall)}</td></tr>
+                      ) : null
+                    })
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="scroll">
+              <table class="small">
+                <thead><tr><th scope="col">Group</th><th scope="col">Size</th><th scope="col">Weight</th><th scope="col">Labeled</th><th scope="col">Scored</th><th scope="col">Sentiment</th><th scope="col">Player</th><th scope="col">Both</th></tr></thead>
+                <tbody>
+                  {
+                    Object.entries(accuracy.groups).map(([g, v]) => (
+                      <tr><td>{g.replaceAll('_', ' ')}</td><td class="num">{fmtInt(v.size)}</td><td class="num">{v.weight}</td><td class="num">{fmtInt(v.labeled)}</td><td class="num">{fmtInt(v.scored)}</td><td class="num">{pctOrDash(v.sentiment_agreement)}</td><td class="num">{pctOrDash(v.target_agreement)}</td><td class="num">{pctOrDash(v.joint_agreement)}</td></tr>
+                    ))
+                  }
+                </tbody>
+              </table>
+            </div>
+            <dl class="kv">
+              <dt>rejected</dt><dd>{fmtInt(accuracy.rejected)} rows set aside (deleted, unreadable, or not about a player)</dd>
+              <dt>rubric</dt><dd>{accuracy.rubric}</dd>
+              <dt>seed</dt><dd>{accuracy.seed}</dd>
+              <dt>drawn</dt><dd>{accuracy.drawn_at}</dd>
+              <dt>needed context</dt><dd>{fmtPct(accuracy.context_share)} of labels</dd>
+              <dt>unsure</dt><dd>{fmtPct(accuracy.unsure_share)}</dd>
+            </dl>
+          </Fold>
+        </section>
+
+        <section class="hw__section" id="rules" aria-labelledby="rules-h">
+          <h2 id="rules-h">The rules</h2>
+          <table class="rules">
+            <thead><tr><th scope="col">Minimum</th><th scope="col">Comments</th><th scope="col">Where it applies</th></tr></thead>
+            <tbody>
+              {minimums.map((m) => <tr><td class="rules__k">{m.name}</td><td class="rules__n">{fmtInt(m.n)}</td><td>{m.where}</td></tr>)}
+            </tbody>
+          </table>
+          <p class="hw__p">
+            <b>Receipts.</b> The comments quoted on a player page are the top {samples.top_n} by score among his positive and negative comments at c ≥ {samples.min_confidence}, up to {fmtInt(samples.max_body_chars)} characters, after the quote check.
+            {rules.receipts.coverage !== null && rules.receipts.precision !== null && ` The check reached ${fmtPct(rules.receipts.coverage)} of the candidates; ${fmtPct(rules.receipts.precision)} of them were about the player they count for, and only those are shown.`}
+          </p>
+        </section>
+
+        <section class="hw__section" id="not" aria-labelledby="not-h">
+          <h2 id="not-h">What this is not</h2>
+          <ul class="plain">
+            <li><b>Sentiment is not hate.</b> A box-score criticism and a personal attack both register as negative. The rates measure the tone of the conversation, not hostility.</li>
+            <li><b>Every comment weighs the same.</b> A comment with {fmtInt(loudest)} upvotes counts once, the same as one with {fmtInt(quietest)}. Viral threads carry no extra weight.</li>
+            <li><b>Flair is a sample.</b> {fmtInt(flaired)} of the {fmtInt(corpus.usable)} usable comments carry a team flair. The fanbase views are about those commenters only, and the thinnest fanbase ({thinnest.fan_team}) is {fmtInt(thinnest.comment_count)} comments.</li>
+            <li><b>Small samples move.</b> Under the minimums above, one viral thread can swing a rate. That is why the minimums exist and why the slider says so.</li>
+            <li><b>One subreddit, one season.</b> r/NBA is not the NBA audience, and {manifest.season} is not any other year.</li>
+          </ul>
+        </section>
+
+        <section class="hw__section" id="use" aria-labelledby="use-h">
+          <h2 id="use-h">Use the data</h2>
+          <p class="hw__p">Everything the site shows is read from one folder of Parquet files at a public URL. The manifest says what was published and under which rules; the schema says every table's columns, types and what may be null.</p>
+          <div class="urls"><a href={`${dataBase}/manifest.json`}>{dataBase}/manifest.json</a><a href={`${dataBase}/schema.json`}>{dataBase}/schema.json</a></div>
+          <p class="hw__p">The leaderboard, from your terminal (DuckDB; the line selects whole on a click):</p>
+          <pre class="code code--select">{duckdb}</pre>
+        </section>
+
+        <section class="hw__section" id="who" aria-labelledby="who-h">
+          <h2 id="who-h">Who made it and why</h2>
+          <p class="hw__p">Built by {AUTHOR}, as the answer to one question and then as a way to show the work. The pipeline is Python, the site is Astro, and both are open. <a href={LINKEDIN_URL} rel="noopener noreferrer">LinkedIn</a></p>
+          <p class="hw__p">
+            <a class="star" href={GITHUB_URL} rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
+              Star on GitHub
+            </a>
+          </p>
+        </section>
+
+        <section class="hw__section" id="versions" aria-labelledby="versions-h">
+          <h2 id="versions-h">Versions</h2>
+          <div class="versions">
+            <span><b>config</b> {configLine}</span>
+            <span><b>sentiment</b> {sent.model} · prompt {sent.prompt_version}</span>
+            <span><b>target</b> {tgt.model} · prompt {tgt.prompt_version}</span>
+            <span><b>snapshots</b> {snapshotLine}</span>
+            <span><b>schema</b> v{manifest.schema_version} · <b>generated</b> {manifest.generated_at}</span>
+          </div>
+        </section>
+      </div>
+    </div>
   </main>
 </Base>
+
+<style>
+  .hw {
+    gap: 0;
+  }
+  .hw__head {
+    display: grid;
+    gap: 12px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  .hw__head .eyebrow {
+    margin: 0;
+  }
+  /* The title in method yellow: the whole page is method, and the yellow has meant that everywhere. */
+  .hw__head h1 {
+    color: var(--hl);
+  }
+  .hw__lede {
+    margin: 0;
+    max-width: 64ch;
+    font-size: 17px;
+    color: var(--bone-2);
+  }
+  .hw__jump {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--mute);
+  }
+  .hw__jump a {
+    color: var(--bone-2);
+  }
+  .hw__grid,
+  .hw__rail {
+    display: contents;
+  }
+  .hw__sections {
+    display: grid;
+    gap: 56px;
+    min-width: 0;
+    padding-top: 32px;
+  }
+  .hw__section {
+    display: grid;
+    gap: 18px;
+    min-width: 0;
+    scroll-margin-top: 112px;
+  }
+  .hw__section > h2 {
+    max-width: 24ch;
+  }
+  .hw__section h3 {
+    font-size: clamp(18px, 2.2vw, 22px);
+    letter-spacing: 0.02em;
+    color: var(--bone);
+  }
+  .hw__sub {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .hw__p {
+    margin: 0;
+    max-width: 68ch;
+    color: var(--bone-2);
+  }
+  .hw__p--lede {
+    font-size: 16px;
+  }
+  .hw__p b,
+  .plain b {
+    font-weight: 600;
+    color: var(--bone);
+  }
+  .plain {
+    margin: 0;
+    padding-left: 20px;
+    max-width: 68ch;
+    display: grid;
+    gap: 8px;
+    color: var(--bone-2);
+  }
+  @media (min-width: 1024px) {
+    .hw__grid {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 72px;
+      align-items: start;
+    }
+    .hw__rail {
+      display: block;
+      align-self: stretch;
+    }
+    .hw__section {
+      scroll-margin-top: 80px;
+    }
+  }
+
+  /* Pick the player: names found → the pick → the player; flair → fan team. */
+  .resolve {
+    display: grid;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    font-size: 15px;
+  }
+  .resolve > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+  }
+  .resolve__lab {
+    min-width: 150px;
+    font: 11.5px var(--mono);
+    color: var(--mute);
+  }
+  .resolve__arr {
+    font: 12px var(--mono);
+    color: var(--mute);
+  }
+  .resolve b {
+    font-weight: 600;
+  }
+
+  /* What the numbers mean: heat and ice on the two rates, the net mix, polarization split at the letter. */
+  .metrics {
+    width: 100%;
+    font-size: 15px;
+  }
+  .metrics th,
+  .metrics td {
+    text-align: left;
+    vertical-align: top;
+    padding: 10px 14px 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .metrics thead th {
+    padding-top: 0;
+    font: 700 12px var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .metrics__name {
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--bone);
+  }
+  .metrics__name--neg {
+    color: var(--heat);
+  }
+  .metrics__name--pos {
+    color: var(--ice);
+  }
+  .metrics__name--net {
+    color: var(--net);
+  }
+  .metrics__formula {
+    font: 12.5px var(--mono);
+    color: var(--bone-2);
+    white-space: nowrap;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .pair__card {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    background: var(--ink-2);
+  }
+  .pair__card h3 {
+    font-size: 18px;
+  }
+  .pair__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    color: var(--bone-2);
+  }
+  .pair__v {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--bone);
+  }
+  .pair__v--neg {
+    color: var(--heat);
+  }
+  .pair__v--pos {
+    color: var(--ice);
+  }
+  .pair__v--net {
+    color: var(--net);
+  }
+  @media (max-width: 600px) {
+    .pair {
+      grid-template-columns: 1fr;
+    }
+    .metrics__formula {
+      white-space: normal;
+    }
+  }
+
+  /* The prompt and its settings. */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chips .chip {
+    margin: 0;
+  }
+  .prompt {
+    display: grid;
+    padding: 10px 0;
+    border: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+  .prompt__line {
+    display: block;
+    padding: 5px 16px;
+    font: 13px/1.55 var(--mono);
+    color: var(--bone);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .prompt__slot {
+    color: var(--hl);
+  }
+  .conf {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .conf > div {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    padding: 14px 16px;
+    background: var(--ink-2);
+  }
+  .conf h4 {
+    font: 700 12.5px var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--hl);
+  }
+  .conf p {
+    margin: 0;
+    font-size: 14.5px;
+    color: var(--bone-2);
+  }
+  .conf code {
+    font: 12.5px var(--mono);
+    color: var(--bone);
+  }
+  @media (max-width: 760px) {
+    .conf {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Reads: the exhibit with the answer and the line under the body. */
+  .reads {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+  }
+  .reads__answer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+  }
+  .reads__answer .src {
+    margin: 0;
+  }
+  .reads__answer b {
+    color: var(--bone);
+  }
+
+  /* Checked by hand. */
+  .figs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .figs__cell {
+    display: grid;
+    gap: 4px;
+    align-content: start;
+    padding: 14px 16px;
+    background: var(--ink-2);
+  }
+  .figs__fig {
+    font: 500 34px/1 var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--bone);
+  }
+  .figs__fig small {
+    margin-left: 4px;
+    font-size: 14px;
+    color: var(--mute);
+  }
+  .figs__lab {
+    font-size: 14px;
+    color: var(--bone-2);
+  }
+  .figs__n {
+    font: 11.5px var(--mono);
+    color: var(--mute);
+  }
+  @media (max-width: 600px) {
+    .figs {
+      grid-template-columns: 1fr;
+    }
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+  .small {
+    font-size: 14px;
+  }
+  .small th,
+  .small td {
+    text-align: left;
+    vertical-align: top;
+    padding: 6px 16px 6px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .small thead th {
+    font: 700 11.5px var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .kv {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 16px;
+    font-size: 14px;
+  }
+  .kv dt {
+    padding-top: 2px;
+    font: 12px var(--mono);
+    color: var(--mute);
+  }
+  .kv dd {
+    margin: 0;
+    color: var(--bone-2);
+  }
+
+  /* The rules. */
+  .rules {
+    width: 100%;
+    font-size: 15px;
+  }
+  .rules th,
+  .rules td {
+    text-align: left;
+    vertical-align: top;
+    padding: 10px 14px 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .rules thead th {
+    padding-top: 0;
+    font: 700 12px var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .rules__k {
+    font-weight: 600;
+    color: var(--bone);
+  }
+  .rules__n {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--hl);
+  }
+
+  /* Use the data, who made it, versions. */
+  .urls {
+    display: grid;
+    gap: 6px;
+    font: 13px var(--mono);
+  }
+  .urls a {
+    color: var(--bone-2);
+    overflow-wrap: anywhere;
+  }
+  .code--select {
+    user-select: all;
+    cursor: text;
+  }
+  .star {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--bone-2);
+    font: 500 12px var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--bone);
+  }
+  .star:hover {
+    background: var(--bone);
+    color: var(--ink);
+  }
+  .versions {
+    display: grid;
+    gap: 2px;
+    font: 12.5px/1.7 var(--mono);
+    color: var(--mute);
+  }
+  .versions b {
+    font-weight: 500;
+    color: var(--bone-2);
+  }
+</style>

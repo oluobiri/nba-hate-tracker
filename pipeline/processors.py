@@ -105,18 +105,43 @@ def _get_player_patterns() -> tuple[dict, frozenset, dict]:
     return _player_patterns
 
 
-def find_player_mentions(text: str) -> list[str]:
+def _slice_lowered(text: str, text_lower: str, start: int, length: int) -> str:
     """
-    Find all player mentions in text.
+    Slice the original text at a span found in its lowercase form.
+
+    Lowercasing keeps length except for the few code points that expand
+    (U+0130 'İ'); then the span is mapped back character by character.
+
+    Args:
+        text: The original text.
+        text_lower: `text.lower()`.
+        start: Start of the span in `text_lower`.
+        length: Length of the span in `text_lower`.
+
+    Returns:
+        The substring of `text` covering the span.
+    """
+    if len(text_lower) == len(text):
+        return text[start : start + length]
+    origin = [i for i, char in enumerate(text) for _ in char.lower()]
+    return text[origin[start] : origin[start + length - 1] + 1]
+
+
+def find_player_matches(text: str) -> list[tuple[str, str]]:
+    """
+    Find all player mentions in text, each with the text that matched.
 
     Uses simple substring matching for most aliases, and word boundary
     matching for short aliases (like 'AD', 'Curry') to avoid false positives.
+    Players are walked in config order and the first alias that hits wins,
+    so each player appears once.
 
     Args:
         text: Text to search for player mentions.
 
     Returns:
-        List of player names found (deduplicated).
+        List of (player name, matched text) pairs, the text as it appears
+        in `text`.
     """
     if not text:
         return []
@@ -129,17 +154,35 @@ def find_player_mentions(text: str) -> list[str]:
         for alias in aliases:
             alias_lower = alias.lower()
             if alias_lower in short_aliases:
-                # Use word boundary matching for short aliases
-                if patterns[alias_lower].search(text):
-                    found.append(player)
+                match = patterns[alias_lower].search(text)
+                if match:
+                    found.append((player, match.group()))
                     break
             else:
-                # Simple substring match for longer aliases
-                if alias_lower in text_lower:
-                    found.append(player)
+                start = text_lower.find(alias_lower)
+                if start >= 0:
+                    found.append(
+                        (
+                            player,
+                            _slice_lowered(text, text_lower, start, len(alias_lower)),
+                        )
+                    )
                     break
 
     return found
+
+
+def find_player_mentions(text: str) -> list[str]:
+    """
+    Find all player mentions in text.
+
+    Args:
+        text: Text to search for player mentions.
+
+    Returns:
+        List of player names found (deduplicated), in config order.
+    """
+    return [player for player, _ in find_player_matches(text)]
 
 
 def filter_player_mentions(comment: dict) -> dict | None:

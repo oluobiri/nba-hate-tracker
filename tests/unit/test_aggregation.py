@@ -32,10 +32,12 @@ from pipeline.aggregation import (
 from pipeline.corpus import CORPUS_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
+from pipeline.method_examples import MethodExamplesError
 from pipeline.recaps import RecapError
 from pipeline.sentiment import SENTIMENT_STAGE
 from pipeline.targets import TARGET_STAGE
 from pipeline.schemas import LIVE_PLAY_BY_PLAY_SCHEMA, RECAP_FRAME_SCHEMAS
+from utils.method_examples_config import MethodExampleSpec
 from utils.recaps_config import RecapSpec
 from tests.conftest import live_action
 from pipeline.schemas import (
@@ -54,6 +56,7 @@ from pipeline.schemas import (
     PLAYER_GAMES_SCHEMA,
     TEAM_GAME_LOG_SCHEMA,
     COMMENT_SAMPLES_SCHEMA,
+    METHOD_EXAMPLES_SCHEMA,
     PLAYERS_SCHEMA,
     POSTS_SCHEMA,
     ROSTERS_SCHEMA,
@@ -79,6 +82,7 @@ from utils.constants import (
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
+from utils.method_examples_config import load_method_examples_config_version
 from utils.player_config import (
     build_alias_to_player_map,
     load_player_config_version,
@@ -175,11 +179,14 @@ class TestComputeMetrics:
 
 
 def _derive(rows: dict) -> dict:
-    """Add attributed_player and fan_team the way assembly does, if absent.
+    """Add the assembly-derived columns the way assembly does, if absent.
 
     Tests describe a comment by its mentions and flair; the materialized
-    columns follow from those under the active configs.
+    columns follow from those under the active configs. mentioned_text
+    defaults to the names themselves: the bodies here are not matched.
     """
+    if "mentioned_text" not in rows:
+        rows = {**rows, "mentioned_text": rows["mentioned_players"]}
     if "attributed_player" in rows and "fan_team" in rows:
         return rows
     alias_map = build_alias_to_player_map()
@@ -1283,8 +1290,9 @@ class TestBuildManifest:
         }
 
     def test_classifiers_by_stage_from_the_stamps(self):
-        """Each stamped stage is a {model, prompt_version, prompt} block; the
-        template text rides along while the live stage carries that version."""
+        """Each stamped stage is a {model, prompt_version, prompt, max_tokens,
+        sampling_params} block; the template text and the request settings
+        ride along while the live stage carries that version."""
         manifest = build_manifest(*_manifest_inputs())
 
         assert manifest["classifiers"] == {
@@ -1292,11 +1300,15 @@ class TestBuildManifest:
                 "model": "claude-haiku-4-5-20251001",
                 "prompt_version": "v2-production+s-hint",
                 "prompt": SENTIMENT_STAGE.prompt_template,
+                "max_tokens": SENTIMENT_STAGE.max_tokens,
+                "sampling_params": {"temperature": 0.0},
             },
             "target": {
                 "model": "claude-sonnet-5",
                 "prompt_version": "v1",
                 "prompt": TARGET_STAGE.prompt_template,
+                "max_tokens": TARGET_STAGE.max_tokens,
+                "sampling_params": {"thinking": {"type": "disabled"}},
             },
         }
 
@@ -1308,6 +1320,8 @@ class TestBuildManifest:
         manifest = build_manifest(outputs, metadata, season_config, versions, recaps)
 
         assert manifest["classifiers"]["sentiment"]["prompt"] is None
+        assert manifest["classifiers"]["sentiment"]["max_tokens"] is None
+        assert manifest["classifiers"]["sentiment"]["sampling_params"] is None
         assert manifest["classifiers"]["sentiment"]["prompt_version"] == "v1-retired"
 
     def test_unstamped_stage_is_absent(self):
@@ -1505,6 +1519,8 @@ class TestBuildManifest:
                 "model": "claude-haiku-4-5-20251001",
                 "prompt_version": "v2-production+s-hint",
                 "prompt": SENTIMENT_STAGE.prompt_template,
+                "max_tokens": SENTIMENT_STAGE.max_tokens,
+                "sampling_params": {"temperature": 0.0},
             }
         }
         assert manifest["config_versions"] == {
@@ -1512,6 +1528,7 @@ class TestBuildManifest:
             "teams": load_team_config_version(),
             "season": load_season_config_version(),
             "recaps": load_recaps_config_version(),
+            "method_examples": load_method_examples_config_version(),
         }
         assert manifest["corpus"]["classified"] == 3
         assert manifest["corpus"]["usable"] == 2
@@ -2501,4 +2518,46 @@ class TestAggregateRecaps:
             aggregate_sentiment(
                 _lebron_parquet(tmp_path),
                 recaps=(RecapSpec("0000000000", "lebron-james"),),
+            )
+
+
+class TestAggregateMethodExamples:
+    """Tests for the curated examples' passage through aggregate_sentiment."""
+
+    def test_no_curation_is_an_empty_registered_table(self, tmp_path, pinned_snapshot):
+        """The default is an empty table in the registry, not a failure."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["method_examples"].schema == METHOD_EXAMPLES_SCHEMA
+        assert result["method_examples"].height == 0
+        assert result["manifest"]["tables"]["method_examples"] == {
+            "file": "method_examples.parquet",
+            "rows": 0,
+            "population": None,
+        }
+
+    def test_a_curated_comment_outside_the_fact_fails_by_name(
+        self, tmp_path, pinned_snapshot
+    ):
+        """The build stops on the first entry that cannot be joined."""
+        with pytest.raises(MethodExamplesError, match="read zz: not in the fact"):
+            aggregate_sentiment(
+                _lebron_parquet(tmp_path),
+                method_examples=(MethodExampleSpec("read", "zz"),),
+            )
+
+    def test_the_usable_fact_is_the_pool(self, tmp_path, pinned_snapshot):
+        """A row that counts for nobody is still an example: the case slot
+        shows it. Only the exact-count checks stop this minimal curation."""
+        rows = _lebron_rows()
+        rows["mentioned_players"] = [["LeBron James", "Jayson Tatum"], ["LeBron James"]]
+        rows["sentiment_player"] = [None, "LeBron James"]
+
+        with pytest.raises(MethodExamplesError, match="trace: 1 row"):
+            aggregate_sentiment(
+                _make_test_parquet(tmp_path, rows),
+                method_examples=(
+                    MethodExampleSpec("case", "c1"),
+                    MethodExampleSpec("case", "c2"),
+                ),
             )

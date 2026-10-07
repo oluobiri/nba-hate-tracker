@@ -5,11 +5,57 @@ Tests cover find_player_mentions, filter_player_mentions, and word boundary
 handling.
 """
 
+import pytest
 
 from pipeline.processors import (
+    find_player_matches,
     find_player_mentions,
     filter_player_mentions,
 )
+
+
+class TestFindPlayerMatches:
+    """Tests for find_player_matches: the name beside the text that matched it."""
+
+    def test_match_keeps_the_body_spelling(self):
+        """The matched text is the body's substring, not the lowercase alias."""
+        assert find_player_matches("LEBRON is washed") == [("LeBron James", "LEBRON")]
+
+    def test_short_alias_match_is_the_bounded_word(self):
+        """A short alias reports the word the boundary pattern matched."""
+        assert find_player_matches("AD had a great game") == [("Anthony Davis", "AD")]
+
+    def test_first_alias_in_config_order_wins(self):
+        """Adebayo's aliases are [adebayo, bam], so 'Bam Adebayo' matches as 'Adebayo'."""
+        assert find_player_matches("Bam Adebayo is elite") == [
+            ("Bam Adebayo", "Adebayo")
+        ]
+
+    def test_match_survives_a_length_changing_lowercase(self):
+        """'İ' lowercases to two code points; the match still slices the body."""
+        assert find_player_matches("İstanbul fans love LeBron") == [
+            ("LeBron James", "LeBron")
+        ]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "LeBron passed to Curry who missed, KD got the rebound",
+            "LeBron to LeBron, he's talking to himself about LeBron",
+            "This advertisement is annoying",
+            "Steph just hit another 3!",
+        ],
+    )
+    def test_names_agree_with_find_player_mentions(self, text: str):
+        """find_player_mentions is the names of find_player_matches, in order."""
+        assert [name for name, _ in find_player_matches(text)] == find_player_mentions(
+            text
+        )
+
+    @pytest.mark.parametrize("text", ["", None, "The game was really exciting"])
+    def test_empty_when_nothing_matches(self, text: str | None):
+        """Empty, None and mention-free text give an empty list."""
+        assert find_player_matches(text) == []
 
 
 class TestFindPlayerMentions:

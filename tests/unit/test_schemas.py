@@ -63,6 +63,7 @@ def sentiment_frame() -> pl.DataFrame:
                 "score": 10,
                 "link_id": "t3_post123",
                 "mentioned_players": ["LeBron James"],
+                "mentioned_text": ["LeBron"],
                 "sentiment": "neg",
                 "confidence": 0.95,
                 "sentiment_player": "LeBron James",
@@ -120,8 +121,8 @@ class TestPlayersContract:
             assert PLAYERS_SCHEMA[col] == ROSTERS_SCHEMA[col]
 
     def test_dashboard_outputs_superset(self):
-        """Verify the output mapping is the rollups + the dimensions + the
-        comment-samples fact subset, and the rollup mapping stays rollup-only."""
+        """Verify the output mapping is the rollups + the dimensions + the two
+        fact subsets, and the rollup mapping stays rollup-only."""
         assert set(DASHBOARD_OUTPUT_SCHEMAS) == set(AGGREGATE_VIEW_SCHEMAS) | {
             "players",
             "teams",
@@ -130,6 +131,7 @@ class TestPlayersContract:
             "posts",
             "comment_samples",
             "corpus_daily",
+            "method_examples",
         }
         assert DASHBOARD_OUTPUT_SCHEMAS["players"] is PLAYERS_SCHEMA
         assert "players" not in AGGREGATE_VIEW_SCHEMAS
@@ -149,6 +151,7 @@ class TestPlayersContract:
             "game_sentiment",
             "player_games",
             "comment_samples",
+            "method_examples",
         }
         for name, schema in player_keyed.items():
             at = schema.names().index("attributed_player")

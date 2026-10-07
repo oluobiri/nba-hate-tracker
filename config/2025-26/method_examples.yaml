@@ -1,0 +1,27 @@
+# Curated method examples — 2025-26. One entry per comment, in page order:
+# slot -> trace | case | read | slip | quote_check, comment_id -> the fact.
+# Picks come from scripts.build_method_examples --scan; the build checks
+# each slot's fit. Empty list = nothing curated.
+# version: MAJOR = entry add/drop, MINOR = reorder.
+
+version: "1.0"
+season: "2025-26"
+
+examples:
+  - {slot: trace, comment_id: oldhosi}
+  - {slot: case, comment_id: nybof3j}
+  - {slot: case, comment_id: o0sjgjm}
+  - {slot: case, comment_id: otq1na6}
+  - {slot: case, comment_id: npljrmh}
+  - {slot: case, comment_id: orj7zfz}
+  - {slot: read, comment_id: ooviaeg}
+  - {slot: read, comment_id: oovib06}
+  - {slot: read, comment_id: o1jce9x}
+  - {slot: read, comment_id: odx8fa9}
+  - {slot: read, comment_id: nrep0bd}
+  - {slot: read, comment_id: onpa94y}
+  - {slot: slip, comment_id: nsxfnml}
+  - {slot: slip, comment_id: oi9sy59}
+  - {slot: slip, comment_id: novjx43}
+  - {slot: quote_check, comment_id: o3ksoqr}
+  - {slot: quote_check, comment_id: oibjnzp}

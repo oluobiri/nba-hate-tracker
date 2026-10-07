@@ -20,6 +20,7 @@ from pipeline.lineage import (
     config_versions,
 )
 from pipeline.schemas import DASHBOARD_OUTPUT_SCHEMAS
+from utils.method_examples_config import load_method_examples_config_version
 from utils.player_config import load_player_config_version
 from utils.recaps_config import load_recaps_config_version
 from utils.season_config import load_season_config_version
@@ -30,12 +31,13 @@ class TestConfigVersionLoaders:
     """The config name -> version-loader registry."""
 
     def test_registers_every_versioned_config(self):
-        """players, teams, season and recaps are the four versioned configs."""
+        """players, teams, season, recaps and method_examples are the versioned configs."""
         assert CONFIG_VERSION_LOADERS == {
             "players": load_player_config_version,
             "teams": load_team_config_version,
             "season": load_season_config_version,
             "recaps": load_recaps_config_version,
+            "method_examples": load_method_examples_config_version,
         }
 
     def test_config_versions_reads_every_loader(self):

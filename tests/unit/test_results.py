@@ -164,6 +164,21 @@ class TestBuildSentimentDataframe:
             "def456": ["Jayson Tatum"],
         }
 
+    def test_mentioned_text_is_the_body_match_beside_each_name(
+        self, responses_dir, filtered_comments_file
+    ):
+        """Verify mentioned_text carries the body's substring per name found.
+
+        Same finder call as mentioned_players, so the lists are parallel.
+        Real-config dependent, like the mentions test above.
+        """
+        # Act
+        df, _ = build_sentiment_dataframe(responses_dir, filtered_comments_file)
+
+        # Assert
+        text = dict(zip(df["comment_id"].to_list(), df["mentioned_text"].to_list()))
+        assert text == {"abc123": ["LeBron"], "def456": ["Tatum"]}
+
     def test_attributed_player_and_fan_team_materialized(
         self, responses_dir, filtered_comments_file
     ):
@@ -260,7 +275,10 @@ class TestBuildSentimentDataframe:
         assert "multi-pick sentiment_player on 1 multi-mention rows" in message
 
     def test_zero_mention_rows_kept_with_empty_list(
-        self, tmp_path, valid_nba_comment, valid_team_subreddit_comment,
+        self,
+        tmp_path,
+        valid_nba_comment,
+        valid_team_subreddit_comment,
         valid_sentiment_responses,
     ):
         """Verify rows with no re-derived mentions stay in the frame (#54).
@@ -329,6 +347,7 @@ class TestBuildSentimentDataframe:
         # Assert
         assert df.height == 1
         assert df["mentioned_players"].to_list() == [None]
+        assert df["mentioned_text"].to_list() == [None]
 
     def test_empty_results_yield_empty_conformant_frame(
         self, tmp_path, filtered_comments_file
@@ -433,8 +452,7 @@ class TestBuildSentimentDataframe:
             for message in warnings
         )
         assert any(
-            "def456" in message and "'Chet Holmgren'" in message
-            for message in warnings
+            "def456" in message and "'Chet Holmgren'" in message for message in warnings
         )
         assert any("Normalized 2 list-valued p field(s)" in m for m in warnings)
 

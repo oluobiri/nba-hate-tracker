@@ -35,7 +35,15 @@ _MENTIONS_DTYPE = pl.Struct(
 
 
 def _mentions(body: str) -> dict[str, list[str]]:
-    """One finder pass per row: the names found and the text that matched each."""
+    """
+    One finder pass per row: the names found and the text that matched each.
+
+    Args:
+        body: The comment text.
+
+    Returns:
+        The two parallel lists, keyed as the fact's columns are named.
+    """
     matches = find_player_matches(body)
     return {
         "mentioned_players": [player for player, _ in matches],

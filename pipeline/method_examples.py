@@ -52,7 +52,8 @@ def attribution_cases(df: pl.DataFrame, alias_map: dict[str, str]) -> pl.DataFra
 
     Vectorized for the whole fact: the classifier's picks are resolved
     once per distinct string and joined back, and the branch follows
-    from the names found, the raw pick and the resolved pick.
+    from the names found, the raw pick and the resolved pick. The names
+    are compared as stored: canonical, as the finder emits them.
 
     Args:
         df: Fact rows with mentioned_players and sentiment_player.
@@ -201,8 +202,8 @@ SLOT_CHECKS: dict[str, tuple[str, pl.Expr]] = {
         "a scored accuracy-sample row where the classifier and the manual label disagree",
         pl.col("label_scored").fill_null(False)
         & (
-            (pl.col("sentiment") != pl.col("label_sentiment"))
-            | (pl.col("attributed_player") != pl.col("label_target"))
+            pl.col("sentiment").ne_missing(pl.col("label_sentiment"))
+            | pl.col("attributed_player").ne_missing(pl.col("label_target"))
         ),
     ),
     "quote_check": (
@@ -218,7 +219,8 @@ SLOT_CHECKS: dict[str, tuple[str, pl.Expr]] = {
         ),
     ),
 }
-assert set(SLOT_CHECKS) == set(SLOTS)
+if set(SLOT_CHECKS) != set(SLOTS):
+    raise RuntimeError("every slot needs a check and every check a slot")
 
 
 def _required_cases(annotated: pl.DataFrame) -> set[str]:
@@ -258,6 +260,7 @@ def build_method_examples(
         return pl.DataFrame(schema=METHOD_EXAMPLES_SCHEMA)
 
     annotated = annotate(df, alias_map=alias_map, verdicts=verdicts, sample=sample)
+    annotated = annotated.with_columns(pl.lit(True).alias("in_fact"))
     curated = pl.DataFrame(
         {
             "slot": [spec.slot for spec in specs],
@@ -374,7 +377,10 @@ def scan_candidates(
         if slot == "case":
             passing = passing.filter(
                 pl.col("comment_id").cum_count().over("attribution_case") <= per_slot
-            ).sort(["attribution_case", "score"], descending=[False, True])
+            ).sort(
+                ["attribution_case", "score", "comment_id"],
+                descending=[False, True, False],
+            )
         else:
             passing = passing.head(per_slot)
         report[slot] = passing.select(columns).with_columns(

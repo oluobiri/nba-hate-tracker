@@ -27,11 +27,7 @@ class ProcessingStats:
     @property
     def rejected_comments(self) -> int:
         """Total rejected comments (sum of all rejection reasons)."""
-        return (
-            self.rejected_body
-            + self.rejected_malformed
-            + self.rejected_no_player_mention
-        )
+        return self.rejected_body + self.rejected_malformed + self.rejected_no_player_mention
 
     @property
     def acceptance_rate(self) -> float:
@@ -51,13 +47,9 @@ class ProcessingStats:
         logger.info("Accepted:                     %s", f"{self.accepted_comments:,}")
         logger.info("Rejected (invalid body):      %s", f"{self.rejected_body:,}")
         logger.info("Rejected (malformed JSON):    %s", f"{self.rejected_malformed:,}")
-        logger.info(
-            "Rejected (no player mention): %s", f"{self.rejected_no_player_mention:,}"
-        )
+        logger.info("Rejected (no player mention): %s", f"{self.rejected_no_player_mention:,}")
         if self.total_comments > 0:
-            logger.info(
-                "Acceptance rate:              %s", f"{self.acceptance_rate:.2%}"
-            )
+            logger.info("Acceptance rate:              %s", f"{self.acceptance_rate:.2%}")
 
 
 def has_valid_body(comment: dict) -> dict | None:

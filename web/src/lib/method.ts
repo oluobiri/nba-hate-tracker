@@ -1,11 +1,22 @@
 // How a comment becomes a row, told from the published figures: the stage
 // counts and what drops between them, the names the finder marked in a body,
-// the request as it went out and the answer as it came back.
-import type { ClassifierIdentity, Corpus, MethodExamplesRow } from '../data/types.gen'
-import type { Sentiment } from './types'
+// the request as it went out and the answer as it came back; then the pair
+// that shows why four metrics, the hand check's gaps on a Δ axis, and the
+// copy join that fails the build when the examples and their lines disagree.
+import type { ClassifierIdentity, ClassMix, Corpus, MethodExamplesRow } from '../data/types.gen'
+import { negRate, posRate } from './metrics'
+import { type Counts, type Sentiment, SENTIMENTS } from './types'
 
 /** Requests leave in batches of this many: a fact about the process, never a rule of the data. */
 export const BATCH_SIZE = 100_000
+/** Two players are "praised at nearly the same rate" within this many points of positive rate. */
+export const PAIR_POS_TOLERANCE = 0.01
+/** Padding past the widest range on the gap chart's axis. */
+export const GAP_AXIS_PAD = 1.15
+/** The ticks the gap chart may show, in points; those inside the domain are drawn. */
+export const GAP_TICKS: readonly number[] = [-0.1, -0.05, 0, 0.05, 0.1]
+/** The attribution cases in the order the table tells them. */
+export const CASE_ORDER: readonly string[] = ['one_name', 'one_name_other_pick', 'several_resolved', 'several_no_pick', 'several_resolved_unlisted', 'several_unresolved']
 
 export interface StageDrops {
   /** Downloaded comments that name no tracked player. */
@@ -143,4 +154,107 @@ export function requireTrace(rows: readonly MethodExamplesRow[]): MethodExamples
   const traces = bySlot(rows, 'trace')
   if (traces.length !== 1) throw new Error(`method_examples: ${traces.length} trace rows, the walkthrough needs exactly one`)
   return traces[0]!
+}
+
+/**
+ * The two ranked players praised at nearly the same rate whose negative rates
+ * are furthest apart: the same praise, a different conversation around it.
+ * Harsher first. Null when no two players are that close.
+ */
+export function metricsPair<T extends Counts>(rows: readonly T[], official: number): [T, T] | null {
+  const ranked = rows.filter((r) => r.total >= official)
+  let best: [T, T] | null = null
+  let widest = -1
+  for (let i = 0; i < ranked.length; i++) {
+    for (let j = i + 1; j < ranked.length; j++) {
+      const a = ranked[i]!
+      const b = ranked[j]!
+      if (Math.abs(posRate(a) - posRate(b)) > PAIR_POS_TOLERANCE) continue
+      const gap = Math.abs(negRate(a) - negRate(b))
+      if (gap > widest) {
+        widest = gap
+        best = negRate(a) >= negRate(b) ? [a, b] : [b, a]
+      }
+    }
+  }
+  return best
+}
+
+export type GapCall = 'within' | 'outside'
+
+export interface GapRow {
+  cls: Sentiment
+  /** Classifier share minus manual share, a fraction. */
+  gap: number
+  /** Half the 95% interval, a fraction. */
+  margin: number
+  /** Whether the range crosses zero: the wording is chosen here, never typed. */
+  call: GapCall
+}
+
+/** The hand check's per-class gaps in display order; a block with a hole fails the build. */
+export function gapRows(classMix: Record<string, ClassMix> | null): GapRow[] {
+  if (classMix === null) throw new Error('rules.accuracy.class_mix: absent, the hand check cannot be drawn')
+  return SENTIMENTS.map((cls) => {
+    const m = classMix[cls]
+    if (!m || m.gap === null || m.gap_margin === null) throw new Error(`rules.accuracy.class_mix.${cls}: gap or gap_margin missing`)
+    return { cls, gap: m.gap, margin: m.gap_margin, call: Math.abs(m.gap) <= m.gap_margin ? 'within' : 'outside' }
+  })
+}
+
+/** A symmetric Δ domain holding every range, padded. */
+export function gapDomain(rows: readonly GapRow[], pad: number = GAP_AXIS_PAD): [number, number] {
+  const lim = Math.max(...rows.map((r) => Math.abs(r.gap) + r.margin)) * pad
+  return [-lim, lim]
+}
+
+/** The ticks inside the domain. */
+export const gapTicks = (domain: readonly [number, number]): number[] => GAP_TICKS.filter((t) => t >= domain[0] && t <= domain[1])
+
+/** "claude-haiku-4-5-20251001" → "Haiku 4.5"; "claude-sonnet-5" → "Sonnet 5". */
+export function shortModel(id: string): string {
+  const tokens = id
+    .replace(/^claude-/, '')
+    .replace(/-\d{8}$/, '')
+    .split('-')
+  const words: string[] = []
+  for (const t of tokens) {
+    const last = words.at(-1)
+    if (/^\d+$/.test(t) && last !== undefined && /^\d+(\.\d+)*$/.test(last)) words[words.length - 1] = `${last}.${t}`
+    else words.push(t)
+  }
+  return words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ')
+}
+
+export class MethodCopyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MethodCopyError'
+  }
+}
+
+/**
+ * The page's lines joined to the rows they are about. A row without a line
+ * or a line without a row fails the build, naming each.
+ */
+export function joinCopy<T>(keys: readonly string[], copy: Readonly<Record<string, T>>, what: string): Map<string, T> {
+  const wanted = new Set(keys)
+  const missing = [...wanted].filter((k) => !(k in copy))
+  const orphans = Object.keys(copy).filter((k) => !wanted.has(k))
+  if (missing.length || orphans.length) {
+    const parts = []
+    if (missing.length) parts.push(`no copy for ${missing.join(', ')}`)
+    if (orphans.length) parts.push(`copy with no row: ${orphans.join(', ')}`)
+    throw new MethodCopyError(`${what}: ${parts.join('; ')}`)
+  }
+  return new Map([...wanted].map((k) => [k, copy[k] as T]))
+}
+
+/** The case rows and the trace, one per attribution case, in the table's order. */
+export function caseRows(rows: readonly MethodExamplesRow[]): MethodExamplesRow[] {
+  const picked = [...bySlot(rows, 'case'), requireTrace(rows)]
+  for (const r of picked) {
+    if (!CASE_ORDER.includes(r.attribution_case)) throw new Error(`method_examples: ${r.comment_id} has an unknown attribution_case ${r.attribution_case}`)
+  }
+  return picked.toSorted((a, b) => CASE_ORDER.indexOf(a.attribution_case) - CASE_ORDER.indexOf(b.attribution_case))
 }

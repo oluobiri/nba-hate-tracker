@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { answerOf, buildRequest, bySlot, fillPrompt, isQuotable, markNames, rawRecord, requireTrace, rowRecord, stageDrops, stageShare } from './method'
+import { answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, markNames, MethodCopyError, metricsPair, rawRecord, requireTrace, rowRecord, shortModel, stageDrops, stageShare } from './method'
 import { classifier, corpus, example } from './method.fixture'
 
 describe('stageDrops', () => {
@@ -102,5 +102,90 @@ describe('slots', () => {
   it('refuses a table without exactly one trace', () => {
     expect(() => requireTrace(rows.slice(0, 1))).toThrow(/0 trace rows/)
     expect(() => requireTrace([...rows, example({ slot: 'trace' })])).toThrow(/2 trace rows/)
+  })
+})
+
+const p = (name: string, neg: number, pos: number, total = 100) => ({ name, neg, pos, neu: total - neg - pos, total })
+
+describe('metricsPair', () => {
+  it('picks the two ranked players praised within tolerance whose negative rates are furthest apart, harsher first', () => {
+    const rows = [p('a', 10, 30), p('b', 50, 30), p('c', 30, 31), p('d', 90, 60), p('thin', 95, 30, 10)]
+    expect(metricsPair(rows, 50)!.map((r) => r.name)).toEqual(['b', 'a'])
+  })
+
+  it('is null when no two players are that close', () => {
+    expect(metricsPair([p('a', 10, 30), p('b', 50, 50)], 50)).toBeNull()
+  })
+})
+
+describe('the hand check gaps', () => {
+  const mix = {
+    neg: { classifier: 0.34, manual: 0.32, gap: 0.02, gap_margin: 0.05 },
+    neu: { classifier: 0.37, manual: 0.32, gap: 0.05, gap_margin: 0.05 },
+    pos: { classifier: 0.29, manual: 0.36, gap: -0.07, gap_margin: 0.06 },
+  }
+
+  it('reads the rows in sentiment order and calls a range that touches zero within', () => {
+    expect(gapRows(mix)).toEqual([
+      { cls: 'neg', gap: 0.02, margin: 0.05, call: 'within' },
+      { cls: 'neu', gap: 0.05, margin: 0.05, call: 'within' },
+      { cls: 'pos', gap: -0.07, margin: 0.06, call: 'outside' },
+    ])
+  })
+
+  it('pads the widest range into a symmetric domain and keeps the ticks inside it', () => {
+    const domain = gapDomain(gapRows(mix), 1)
+    expect(domain).toEqual([-0.13, 0.13])
+    expect(gapTicks(domain)).toEqual([-0.1, -0.05, 0, 0.05, 0.1])
+    expect(gapTicks([-0.06, 0.06])).toEqual([-0.05, 0, 0.05])
+  })
+
+  it('fails on a block with a hole', () => {
+    expect(() => gapRows(null)).toThrow(/class_mix/)
+    expect(() => gapRows({ ...mix, neu: { ...mix.neu, gap: null } })).toThrow(/class_mix\.neu/)
+    expect(() => gapRows({ neg: mix.neg, pos: mix.pos })).toThrow(/class_mix\.neu/)
+  })
+})
+
+describe('shortModel', () => {
+  it.each([
+    ['claude-haiku-4-5-20251001', 'Haiku 4.5'],
+    ['claude-sonnet-5', 'Sonnet 5'],
+    ['claude-opus-4-1', 'Opus 4.1'],
+    ['claude-3-5-haiku-20241022', '3.5 haiku'],
+  ])('%s → %s', (id, short) => {
+    expect(shortModel(id)).toBe(short)
+  })
+})
+
+describe('joinCopy', () => {
+  it('joins each key to its line', () => {
+    expect([...joinCopy(['a', 'b'], { b: 'B', a: 'A' }, 'x').entries()]).toEqual([
+      ['a', 'A'],
+      ['b', 'B'],
+    ])
+  })
+
+  it('names a row without copy and copy without a row', () => {
+    expect(() => joinCopy(['a', 'b'], { a: 'A' }, 'method_examples')).toThrow(MethodCopyError)
+    expect(() => joinCopy(['a', 'b'], { a: 'A' }, 'method_examples')).toThrow('method_examples: no copy for b')
+    expect(() => joinCopy(['a'], { a: 'A', z: 'Z' }, 'method_examples')).toThrow('copy with no row: z')
+  })
+})
+
+describe('caseRows', () => {
+  it('orders the case rows and the trace by the table’s case order', () => {
+    const rows = [
+      example({ slot: 'case', position: 1, comment_id: 'u', attribution_case: 'several_unresolved' }),
+      example({ slot: 'case', position: 2, comment_id: 'o', attribution_case: 'one_name' }),
+      example({ slot: 'trace', position: 0, comment_id: 't', attribution_case: 'several_resolved' }),
+      example({ slot: 'read', position: 1, comment_id: 'r', attribution_case: 'one_name' }),
+    ]
+    expect(caseRows(rows).map((r) => r.comment_id)).toEqual(['o', 't', 'u'])
+  })
+
+  it('refuses a case the table does not know', () => {
+    const rows = [example({ slot: 'case', comment_id: 'q', attribution_case: 'mystery' }), example({ slot: 'trace' })]
+    expect(() => caseRows(rows)).toThrow(/q has an unknown attribution_case mystery/)
   })
 })

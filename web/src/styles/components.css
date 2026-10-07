@@ -3085,3 +3085,72 @@ a.hero__who:hover {
     white-space: normal;
   }
 }
+
+/* GapChart: the hand check's Δ axis. Dots in sentiment colour; a call outside the margin is method yellow. */
+.gapchart {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.gapchart svg {
+  width: 100%;
+  height: auto;
+}
+.gapchart__narrow {
+  display: none;
+}
+.gapchart__axis {
+  font: 11px var(--mono);
+  fill: var(--mute);
+}
+.gapchart__lab {
+  font: 500 13px var(--body);
+  fill: var(--bone);
+}
+.gapchart__val {
+  font: 500 12px var(--mono);
+  fill: var(--bone);
+}
+.gapchart__call {
+  font: 11px var(--mono);
+  fill: var(--mute);
+}
+.gapchart__call--out {
+  fill: var(--hl);
+}
+.gapchart__zero {
+  stroke: var(--bone-2);
+  stroke-width: 1;
+}
+.gapchart__grid {
+  stroke: var(--line);
+}
+.gapchart__range {
+  stroke: var(--line-2);
+  stroke-width: 6;
+}
+.gapchart__mask {
+  fill: var(--ink);
+}
+.gapchart__dot--neg {
+  fill: var(--heat);
+}
+.gapchart__dot--neu {
+  fill: var(--neu);
+}
+.gapchart__dot--pos {
+  fill: var(--ice);
+}
+.gapchart__caption {
+  margin: 0;
+  font: 12px var(--mono);
+  color: var(--mute);
+}
+@media (max-width: 600px) {
+  .gapchart__wide {
+    display: none;
+  }
+  .gapchart__narrow {
+    display: block;
+  }
+}

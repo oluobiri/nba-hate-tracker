@@ -7,6 +7,7 @@ import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
 import { Fold, JsonBlock } from '../components/Fold'
 import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
+import { GapChart } from '../components/GapChart'
 import { GameNetTimeline } from '../components/GameNetTimeline'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
@@ -48,7 +49,7 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
-import { answerOf, bySlot, caseRows, joinCopy, rawRecord, requireTrace, stageDrops, stageShare } from '../lib/method'
+import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireTrace, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
@@ -114,6 +115,15 @@ const quoted = (r: (typeof tables.method_examples)[number]) => ({ row: r, note: 
 const caseLines = caseRows(tables.method_examples).map((r) => ({ ...quoted(r), title: caseTitle.get(r.attribution_case)! }))
 const slipLines = bySlot(tables.method_examples, 'slip').map(quoted)
 const quoteLines = bySlot(tables.method_examples, 'quote_check').map((r) => ({ ...quoted(r), caseTitle: caseTitle.get(r.attribution_case)! }))
+// The hand check's gaps as published, then a made-up set: a range that touches zero (within, by the rule), one far outside.
+const liveGaps = classGaps(manifest.rules.accuracy.class_mix)
+const liveDomain = gapDomain(liveGaps)
+const edgeGaps = classGaps({
+  neg: { classifier: 0.35, manual: 0.3, gap: 0.05, gap_margin: 0.05 },
+  neu: { classifier: 0.3, manual: 0.3, gap: 0, gap_margin: 0.04 },
+  pos: { classifier: 0.2, manual: 0.4, gap: -0.2, gap_margin: 0.06 },
+})
+const edgeDomain = gapDomain(edgeGaps)
 
 // Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
 const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
@@ -516,6 +526,16 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <SlipTable rows={slipLines} />
       <p class="eyebrow">The quote check: the verifier's answer in method yellow, the comment still counted.</p>
       <QuoteCheckTable rows={quoteLines} />
+    </section>
+
+    <section class="guide__section">
+      <h2>GapChart</h2>
+      <p class="eyebrow">
+        A Δ axis: per class, the classifier's share of the hand-checked sample minus the hand labels' share, in points, with its margin as the bar. The zero line says what it stands for. Each row's call is chosen by whether its range crosses zero; outside is method yellow. Below 600 the figures move over the row. Negative → neutral → positive, as published.
+      </p>
+      <GapChart rows={liveGaps} domain={liveDomain} ticks={gapTicks(liveDomain)} zeroLabel="Same share as the hand labels" caption="Per class: the classifier's share minus the hand labels' share, in points, with its margin." />
+      <p class="eyebrow">Made-up rows: a range whose end touches zero reads within; a gap at zero; one far outside, the axis widened to hold it.</p>
+      <GapChart rows={edgeGaps} domain={edgeDomain} ticks={gapTicks(edgeDomain)} zeroLabel="Same share as the hand labels" caption="Made-up figures for the awkward cases." />
     </section>
 
     <section class="guide__section">

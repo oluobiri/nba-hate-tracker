@@ -1,4 +1,4 @@
-// GENERATED from src/data/schema.json (schema_version 10) by scripts/codegen.ts.
+// GENERATED from src/data/schema.json (schema_version 11) by scripts/codegen.ts.
 // Do not edit: run `npm run codegen`. The build fails when this file is stale.
 
 /** One row of player_overall.parquet. */
@@ -185,7 +185,32 @@ export interface CorpusDailyRow {
   attributed: number | null
 }
 
-export type TableName = "player_overall" | "player_temporal" | "player_fan_team" | "fan_team_overall" | "game_sentiment" | "players" | "teams" | "games" | "player_games" | "posts" | "comment_samples" | "corpus_daily"
+/** One row of method_examples.parquet. */
+export interface MethodExamplesRow {
+  slot: string
+  position: number
+  comment_id: string
+  link_id: string
+  body: string
+  author_flair_text: string | null
+  score: number
+  created_utc: number
+  mentioned_players: string[]
+  mentioned_text: string[]
+  sentiment: string
+  confidence: number
+  sentiment_player: string | null
+  attributed_player: string | null
+  player_id: number | null
+  fan_team: string | null
+  attribution_case: string
+  target_raw: string | null
+  verified_target: string | null
+  label_sentiment: string | null
+  label_target: string | null
+}
+
+export type TableName = "player_overall" | "player_temporal" | "player_fan_team" | "fan_team_overall" | "game_sentiment" | "players" | "teams" | "games" | "player_games" | "posts" | "comment_samples" | "corpus_daily" | "method_examples"
 
 export interface Tables {
   player_overall: PlayerOverallRow[]
@@ -200,6 +225,7 @@ export interface Tables {
   posts: PostsRow[]
   comment_samples: CommentSamplesRow[]
   corpus_daily: CorpusDailyRow[]
+  method_examples: MethodExamplesRow[]
 }
 
 export interface Manifest {
@@ -221,6 +247,8 @@ export interface ClassifierIdentity {
   model: string
   prompt_version: string
   prompt: string | null
+  max_tokens: number | null
+  sampling_params: Record<string, unknown> | null
 }
 
 export interface Rules {

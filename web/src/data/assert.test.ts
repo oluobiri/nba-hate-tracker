@@ -47,6 +47,10 @@ function fixture(): Tables {
     posts: [{ post_id: 't3_x', title: 'Game Thread', created_utc: 1, score: 1, num_comments: 1, link_flair_text: null, post_type: 'game_thread', source: null, game_id: 'g1', is_primary: true }],
     comment_samples: [{ attributed_player: 'A Player', player_id: 1, sentiment: 'neg', rank: 1, comment_id: 'c1', link_id: 't3_x', body: 'nope', score: 3, created_utc: 1, fan_team: null }],
     corpus_daily: [{ day: '2025-10-21', raw_comments: 10, population_submitted: 5, usable: 5, attributed: 4 }],
+    method_examples: [
+      { slot: 'trace', position: 0, comment_id: 'c1', link_id: 't3_x', body: 'nope', author_flair_text: null, score: 3, created_utc: 1, mentioned_players: ['A Player', 'B Player'], mentioned_text: ['A', 'B'], sentiment: 'neg', confidence: 0.8, sentiment_player: 'A', attributed_player: 'A Player', player_id: 1, fan_team: 'Team One', attribution_case: 'several_resolved', target_raw: null, verified_target: null, label_sentiment: null, label_target: null },
+      { slot: 'case', position: 1, comment_id: 'c2', link_id: 't3_x', body: 'both', author_flair_text: null, score: 1, created_utc: 1, mentioned_players: ['A Player', 'B Player'], mentioned_text: ['A', 'B'], sentiment: 'neu', confidence: 0.5, sentiment_player: null, attributed_player: null, player_id: null, fan_team: null, attribution_case: 'several_no_pick', target_raw: null, verified_target: null, label_sentiment: null, label_target: null },
+    ],
   }
   return tables
 }

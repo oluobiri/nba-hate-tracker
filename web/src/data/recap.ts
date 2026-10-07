@@ -39,6 +39,10 @@ function checkField(fail: Fail, where: string, value: unknown, spec: FieldSpec, 
     case 'bool':
       if (typeof value !== 'boolean') throw bad()
       return
+    case 'json':
+      // An opaque value: present and not undefined is all the contract asks
+      if (value === undefined) throw bad()
+      return
     case 'map': {
       if (!isRecord(value)) throw bad()
       if (!spec.values) throw fail(`${where}: the contract declares a map without values`)

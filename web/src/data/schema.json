@@ -1,5 +1,5 @@
 {
-  "schema_version": 10,
+  "schema_version": 11,
   "tables": {
     "player_overall": {
       "columns": [
@@ -728,6 +728,115 @@
           "nullable": true
         }
       ]
+    },
+    "method_examples": {
+      "columns": [
+        {
+          "name": "slot",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "position",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "link_id",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "body",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "author_flair_text",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "score",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "created_utc",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "mentioned_players",
+          "dtype": "list<string>",
+          "nullable": false
+        },
+        {
+          "name": "mentioned_text",
+          "dtype": "list<string>",
+          "nullable": false
+        },
+        {
+          "name": "sentiment",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "confidence",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "sentiment_player",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": true
+        },
+        {
+          "name": "fan_team",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "attribution_case",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "target_raw",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "verified_target",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "label_sentiment",
+          "dtype": "string",
+          "nullable": true
+        },
+        {
+          "name": "label_target",
+          "dtype": "string",
+          "nullable": true
+        }
+      ]
     }
   },
   "manifest": {
@@ -822,6 +931,18 @@
         },
         "prompt": {
           "type": "string",
+          "nullable": true
+        },
+        "max_tokens": {
+          "type": "int",
+          "nullable": true
+        },
+        "sampling_params": {
+          "type": "map",
+          "values": {
+            "type": "json",
+            "nullable": false
+          },
           "nullable": true
         }
       },
@@ -1313,6 +1434,18 @@
             },
             "prompt": {
               "type": "string",
+              "nullable": true
+            },
+            "max_tokens": {
+              "type": "int",
+              "nullable": true
+            },
+            "sampling_params": {
+              "type": "map",
+              "values": {
+                "type": "json",
+                "nullable": false
+              },
               "nullable": true
             }
           }

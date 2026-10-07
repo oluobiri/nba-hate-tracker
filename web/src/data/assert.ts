@@ -141,6 +141,10 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
   assertForeignKeys('player_fan_team', 'fan_team', tables.player_fan_team, (r) => r.fan_team, 'teams.team', teams)
   assertForeignKeys('fan_team_overall', 'fan_team', tables.fan_team_overall, (r) => r.fan_team, 'teams.team', teams)
   assertForeignKeys('comment_samples', 'fan_team', tables.comment_samples, (r) => r.fan_team, 'teams.team', teams)
+  // An example that counts for nobody has no player: the keys are nullable here
+  assertForeignKeys('method_examples', 'attributed_player', tables.method_examples, (r) => r.attributed_player, 'players.attributed_player', players)
+  assertForeignKeys('method_examples', 'player_id', tables.method_examples, (r) => r.player_id, 'players.player_id', playerIds)
+  assertForeignKeys('method_examples', 'fan_team', tables.method_examples, (r) => r.fan_team, 'teams.team', teams)
   assertForeignKeys('games', 'home_team', tables.games, (g) => g.home_team, 'teams.team', teams)
   assertForeignKeys('games', 'away_team', tables.games, (g) => g.away_team, 'teams.team', teams)
   assertForeignKeys('games', 'winner', tables.games, (g) => g.winner, 'teams.team', teams)

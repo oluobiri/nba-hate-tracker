@@ -19,8 +19,8 @@ import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { nickname } from '../lib/fans'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
-import { BATCH_SIZE, answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, shortModel, stageDrops, stageShare } from '../lib/method'
-import { CASE_COPY, EXAMPLE_COPY, TRACE_COPY } from '../lib/method-copy'
+import { BATCH_SIZE, answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
+import { CASE_COPY, EXAMPLE_COPY, QUIET_APPROVAL_SLIP, TRACE_COPY } from '../lib/method-copy'
 import { countsOf, negRate, netSentiment, polarization, posRate } from '../lib/metrics'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { AUTHOR, GITHUB_URL, LINKEDIN_URL, SITE_URL } from '../site'
@@ -68,7 +68,7 @@ const exhibitProps = (r: Example) => {
 }
 const quoted = (r: Example) => ({ row: r, note: copy.get(r.comment_id)! })
 const reads = bySlot(examples, 'read')
-const slips = bySlot(examples, 'slip').map(quoted)
+const slips = bySlot(examples, 'slip').map((r) => ({ ...quoted(r), label: slipLabel(r) }))
 const quoteChecks = bySlot(examples, 'quote_check').map((r) => ({ ...quoted(r), caseTitle: caseTitle.get(r.attribution_case)! }))
 const cases = caseRows(examples).map((r) => ({ ...quoted(r), title: caseTitle.get(r.attribution_case)! }))
 
@@ -114,6 +114,11 @@ const classes: Sentiment[] = ['neg', 'neu', 'pos']
 const NAME: Record<Sentiment, string> = { neg: 'Negative', neu: 'Neutral', pos: 'Positive' }
 const pctOrDash = (v: number | null): string => (v === null ? '—' : fmtPct(v))
 const margin = (m: number): string => `± ${(100 * m).toFixed(1)}`
+// The positive gap, and the slip that shows the pattern: both are read, so the paragraph holds only while they do.
+const positiveGap = gaps.find((g) => g.cls === 'pos')!
+const positiveRunsLow = positiveGap.gap < 0 && positiveGap.call === 'outside'
+const quietSlip = slips.find((s) => s.row.comment_id === QUIET_APPROVAL_SLIP)
+if (positiveRunsLow && !quietSlip) throw new Error(`method_examples: ${QUIET_APPROVAL_SLIP} is not a slip row, and the hand check points at it`)
 const figures = [
   { figure: fmtPct(accuracy.sentiment_agreement), margin: margin(accuracy.sentiment_margin), label: 'agree on the sentiment' },
   { figure: fmtPct(accuracy.target_agreement), margin: margin(accuracy.target_margin), label: 'agree on the player' },
@@ -215,7 +220,7 @@ const description = 'Where the numbers come from, and what they are not. One rea
             </Stage>
             <Stage n={5} name="Pick the player" where="the attribution rule" count={`${fmtInt(corpus.attributed)} counted`} share={share(corpus.attributed)} drop={{ count: drops.pick, text: "usable comments can't be pinned to one player and count for nobody." }}>
               <div class="resolve">
-                <div><span class="resolve__lab">names found</span>{trace.mentioned_players.map((n) => <span class="chip">{n}</span>)}</div>
+                <div><span class="resolve__lab">names found</span>{trace.mentioned_players.map((n) => <span class="namechip">{n}</span>)}</div>
                 <div>
                   <span class="resolve__lab">{severalNames ? 'several names, so ask p' : 'one name, so that player'}</span>
                   {answer.p !== null && <code class="ans">"{answer.p}"</code>}
@@ -233,7 +238,8 @@ const description = 'Where the numbers come from, and what they are not. One rea
             </Stage>
             <Stage n={6} name="One row" where="sentiment.parquet" count="1 row per comment">
               <p>
-                One <b class={`v-${answer.s}`}>{WORD[answer.s]}</b> for <b>{trace.attributed_player ?? 'nobody'}</b>, from a {traceFans}. At c = {answer.c} it counts in the rates {quotable ? 'and can be quoted' : `but is never quoted: a quote needs ${samples.min_confidence}`}.
+                One <b class={`v-${answer.s}`}>{WORD[answer.s]}</b> for <b>{trace.attributed_player ?? 'nobody'}</b>, from a {traceFans}. At c = {answer.c} it {trace.attributed_player ? 'counts in the rates' : 'counts for nobody'}{' '}
+                {quotable ? 'and can be quoted' : answer.s === 'neu' ? 'and is never quoted: a neutral comment never is' : `but is never quoted: a quote needs ${samples.min_confidence}`}.
               </p>
               <Fold summary="The row">
                 <JsonBlock value={rowRecord(trace)} note="+ body, created_utc, link_id …" />
@@ -301,11 +307,11 @@ const description = 'Where the numbers come from, and what they are not. One rea
           <div class="hw__sub">
             <h3>The prompt</h3>
             <p class="hw__p hw__p--lede">The entire instruction, word for word. There is no system prompt and no examples. Every comment gets the same lines.</p>
-            <div class="chips">
-              <span class="chip">{sent.model}</span>
-              {sampling.map((s) => <span class="chip">{s}</span>)}
-              <span class="chip">max {sent.max_tokens} tokens</span>
-              <span class="chip">prompt {sent.prompt_version}</span>
+            <div class="hw__chips">
+              <span class="namechip">{sent.model}</span>
+              {sampling.map((s) => <span class="namechip">{s}</span>)}
+              <span class="namechip">max {sent.max_tokens} tokens</span>
+              <span class="namechip">prompt {sent.prompt_version}</span>
             </div>
             <div class="prompt">
               {promptLines.map((parts) => (<code class="prompt__line">{parts.length === 1 && parts[0] === '' ? ' ' : parts.map((part, i) => (<>{i > 0 && <span class="prompt__slot">{'{comment_body}'}</span>}{part}</>))}</code>))}
@@ -322,7 +328,7 @@ const description = 'Where the numbers come from, and what they are not. One rea
           </div>
           <div class="hw__sub">
             <h3>Reads</h3>
-            <p class="hw__p hw__p--lede">{reads.length === 6 ? 'Six' : fmtInt(reads.length)} answers from the season, as they stand in the data.</p>
+            <p class="hw__p hw__p--lede">Answers from the season, as they stand in the data.</p>
             <div class="reads">
               {
                 reads.map((r, i) => (
@@ -336,7 +342,7 @@ const description = 'Where the numbers come from, and what they are not. One rea
           </div>
           <div class="hw__sub">
             <h3>Where it slips</h3>
-            <p class="hw__p hw__p--lede">{slips.length === 3 ? 'Three' : fmtInt(slips.length)} answers that a careful read disagrees with. The hand label is a read under a rubric, not the truth; here the two differ.</p>
+            <p class="hw__p hw__p--lede">Answers that a careful read disagrees with. The hand label is a read under a rubric, not the truth; here the two differ.</p>
             <SlipTable rows={slips} />
           </div>
           <div class="hw__sub">
@@ -346,11 +352,11 @@ const description = 'Where the numbers come from, and what they are not. One rea
             </p>
             <QuoteCheckTable rows={quoteChecks} />
             <Fold summary="The verifier's prompt">
-              <div class="chips">
-                <span class="chip">{tgt.model}</span>
-                <span class="chip">prompt {tgt.prompt_version}</span>
-                <span class="chip">max {tgt.max_tokens} tokens</span>
-                {verifierSampling.map((s) => <span class="chip">{s}</span>)}
+              <div class="hw__chips">
+                <span class="namechip">{tgt.model}</span>
+                <span class="namechip">prompt {tgt.prompt_version}</span>
+                <span class="namechip">max {tgt.max_tokens} tokens</span>
+                {verifierSampling.map((s) => <span class="namechip">{s}</span>)}
               </div>
               <pre class="code">{verifierPrompt}</pre>
             </Fold>
@@ -377,7 +383,13 @@ const description = 'Where the numbers come from, and what they are not. One rea
             A blind random draw of <b>{fmtInt(accuracy.drawn)}</b> counted comments, each read and labeled under a written rubric without the classifier's answer in view; <b>{fmtInt(accuracy.scored)}</b> were scored. The margins are at 95%. A label is a careful read, not the truth: where the two disagree, the page says so, and never says which is right.
           </p>
           <GapChart rows={gaps} domain={gapsDomain} ticks={gapTicks(gapsDomain)} zeroLabel="Same share as the hand labels" caption="Per class: the classifier's share of the sample minus the hand labels' share, in points, with its margin. Negative → neutral → positive." />
-          <p class="hw__p"><b>Why positive runs low.</b> The prompt never says what counts as positive, so mild approval reads as neutral. The first comment under <i>Where it slips</i> is the pattern: praise with no praise word in it.</p>
+          {
+            positiveRunsLow && quietSlip && (
+              <p class="hw__p">
+                <b>Why positive runs low.</b> The prompt never says what counts as positive, so mild approval reads as neutral. The {quietSlip.row.attributed_player} comment under <i>Where it slips</i> is the pattern: praise with no praise word in it.
+              </p>
+            )
+          }
           <p class="hw__p"><b>What it cannot say.</b> The check is across every player together. It says nothing about any one player's rate, and nothing about a single comment.</p>
           <Fold summary="Per class, the groups and the draw">
             <div class="scroll">
@@ -408,7 +420,7 @@ const description = 'Where the numbers come from, and what they are not. One rea
               </table>
             </div>
             <dl class="kv">
-              <dt>rejected</dt><dd>{fmtInt(accuracy.rejected)} rows set aside (deleted, unreadable, or not about a player)</dd>
+              <dt>rejected</dt><dd>{fmtInt(accuracy.rejected)} rows set aside before scoring</dd>
               <dt>rubric</dt><dd>{accuracy.rubric}</dd>
               <dt>seed</dt><dd>{accuracy.seed}</dd>
               <dt>drawn</dt><dd>{accuracy.drawn_at}</dd>
@@ -696,12 +708,12 @@ const description = 'Where the numbers come from, and what they are not. One rea
   }
 
   /* The prompt and its settings. */
-  .chips {
+  .hw__chips {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
   }
-  .chips .chip {
+  .hw__chips .namechip {
     margin: 0;
   }
   .prompt {

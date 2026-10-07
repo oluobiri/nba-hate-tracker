@@ -40,7 +40,8 @@ export function Stage({ n, name, where, count, share, drop, children }: StagePro
         {children}
         {drop && (
           <p className="stage__drop">
-            <span aria-hidden="true">↳</span> {drop.count !== undefined && <b>{fmtInt(drop.count)}</b>} {drop.text}
+            <span aria-hidden="true">↳</span> {drop.count !== undefined && <><b>{fmtInt(drop.count)}</b> </>}
+            {drop.text}
           </p>
         )}
       </div>

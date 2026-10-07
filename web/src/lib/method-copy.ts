@@ -40,6 +40,9 @@ export const CASE_COPY: Readonly<Record<string, string>> = {
   several_unresolved: 'Several names, the pick resolves to nobody',
 }
 
+/** The slip the hand-check section points at as the quiet-approval pattern; must be a slip row. */
+export const QUIET_APPROVAL_SLIP = 'nsxfnml'
+
 /** The walkthrough's own line about its comment at the download step, keyed like the rest. */
 export const TRACE_COPY: Readonly<Record<string, string>> = {
   oldhosi: 'A Thunder fan comparing two guards.',

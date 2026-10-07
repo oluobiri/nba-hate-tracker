@@ -3,7 +3,7 @@
 // the quote check. Each row is a method_examples row with its line of copy.
 import type { MethodExamplesRow } from '../data/types.gen'
 import { fmtInt } from '../lib/format'
-import { answerOf } from '../lib/method'
+import { type HandLabel, answerOf } from '../lib/method'
 import { commentDate } from '../lib/receipts'
 import type { Sentiment } from '../lib/types'
 import { Answer } from './Answer'
@@ -67,7 +67,11 @@ export function CaseTable({ rows, neverClassified }: CaseTableProps) {
   return <Ledger<CaseLine> caption="Every case the attribution rule can produce" keyOf={(l) => (l.kind === 'none' ? 'none' : l.row.comment_id)} rows={lines} columns={CASE_COLUMNS} />
 }
 
-const SLIP_COLUMNS: readonly LedgerColumn<Quoted>[] = [
+export interface SlipRow extends Quoted {
+  label: HandLabel
+}
+
+const SLIP_COLUMNS: readonly LedgerColumn<SlipRow>[] = [
   { head: 'Comment', body: true, cell: (q) => <Comment row={q.row} note="" /> },
   {
     head: 'The answer',
@@ -84,7 +88,7 @@ const SLIP_COLUMNS: readonly LedgerColumn<Quoted>[] = [
       <span className="meant">
         <Stamp kind="checked" />
         <span>
-          <span className={`v-${q.row.label_sentiment ?? 'neu'}`}>{SENTIMENT[(q.row.label_sentiment ?? 'neu') as Sentiment]}</span> · {q.row.label_target ?? 'nobody'}
+          <span className={`v-${q.label.sentiment}`}>{SENTIMENT[q.label.sentiment]}</span> · {q.label.target ?? 'nobody'}
         </span>
       </span>
     ),
@@ -93,8 +97,8 @@ const SLIP_COLUMNS: readonly LedgerColumn<Quoted>[] = [
 ]
 
 /** Three answers a careful read disagrees with: the answer beside the hand label. */
-export function SlipTable({ rows }: { rows: readonly Quoted[] }) {
-  return <Ledger<Quoted> caption="Where the classifier slips: the answer beside the hand label" keyOf={(q) => q.row.comment_id} rows={rows} columns={SLIP_COLUMNS} />
+export function SlipTable({ rows }: { rows: readonly SlipRow[] }) {
+  return <Ledger<SlipRow> caption="Where the classifier slips: the answer beside the hand label" keyOf={(q) => q.row.comment_id} rows={rows} columns={SLIP_COLUMNS} />
 }
 
 export interface QuoteCheckRow extends Quoted {

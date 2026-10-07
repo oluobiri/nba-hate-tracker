@@ -2743,6 +2743,9 @@ a.hero__who:hover {
 .v-neu {
   color: var(--neu);
 }
+.ledger .ans {
+  white-space: normal;
+}
 @media (max-width: 480px) {
   .ans {
     white-space: normal;
@@ -2898,9 +2901,12 @@ a.hero__who:hover {
   font-size: 15px;
   color: var(--bone-2);
 }
-.stage__body b {
+.stage__body b:not([class]) {
   font-weight: 600;
   color: var(--bone);
+}
+.stage__body b[class] {
+  font-weight: 600;
 }
 .stage__drop {
   margin: 0;
@@ -3013,7 +3019,7 @@ a.hero__who:hover {
 .why:empty {
   display: none;
 }
-.chip {
+.namechip {
   display: inline-block;
   margin: 0 6px 6px 0;
   padding: 2px 8px;
@@ -3055,6 +3061,7 @@ a.hero__who:hover {
   .ledger,
   .ledger tbody,
   .ledger tr,
+  .ledger tbody th,
   .ledger th,
   .ledger td {
     display: block;

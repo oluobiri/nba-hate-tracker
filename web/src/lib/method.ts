@@ -11,6 +11,8 @@ import { type Counts, type Sentiment, SENTIMENTS } from './types'
 export const BATCH_SIZE = 100_000
 /** Two players are "praised at nearly the same rate" within this many points of positive rate. */
 export const PAIR_POS_TOLERANCE = 0.01
+/** The pair's negative rates must sit at least this far apart, or there is no pair to show. */
+export const PAIR_MIN_GAP = 0.05
 /** Padding past the widest range on the gap chart's axis. */
 export const GAP_AXIS_PAD = 1.15
 /** The ticks the gap chart may show, in points; those inside the domain are drawn. */
@@ -42,7 +44,7 @@ export interface Segment {
   mark: boolean
 }
 
-const isWord = (ch: string | undefined): boolean => ch !== undefined && /\w/.test(ch)
+const isWord = (ch: string | undefined): boolean => ch !== undefined && /[\p{L}\p{N}_]/u.test(ch)
 
 /** The first whole-word occurrence of `name` in `body`, or -1. */
 function firstWholeWord(body: string, name: string): number {
@@ -60,30 +62,59 @@ function firstWholeWord(body: string, name: string): number {
 /**
  * The body split around the finder's matches: one mark per name, the first
  * whole-word hit, as the body spells it. A name the body does not carry marks
- * nothing; overlapping hits keep the earlier one.
+ * nothing; of two hits at one place the longer wins, and later overlaps are skipped.
  */
 export function markNames(body: string, names: readonly string[]): Segment[] {
   const hits = names
-    .map((n) => ({ start: firstWholeWord(body, n), end: firstWholeWord(body, n) + n.length }))
+    .map((n) => ({ start: firstWholeWord(body, n), length: n.length }))
     .filter((h) => h.start >= 0)
-    .toSorted((a, b) => a.start - b.start)
+    .toSorted((a, b) => a.start - b.start || b.length - a.length)
   const out: Segment[] = []
   let cursor = 0
   for (const h of hits) {
     if (h.start < cursor) continue
+    const end = h.start + h.length
     if (h.start > cursor) out.push({ text: body.slice(cursor, h.start), mark: false })
-    out.push({ text: body.slice(h.start, h.end), mark: true })
-    cursor = h.end
+    out.push({ text: body.slice(h.start, end), mark: true })
+    cursor = end
   }
   if (cursor < body.length || out.length === 0) out.push({ text: body.slice(cursor), mark: false })
   return out
 }
 
-/** A prompt template with its `{slot}` values filled and its `{{ }}` braces unescaped. */
+/**
+ * A prompt template with its `{slot}` values filled and its `{{ }}` braces
+ * unescaped, in one pass as Python's str.format reads it: a value is never
+ * scanned again, so braces or dollar signs inside a comment survive.
+ */
 export function fillPrompt(template: string, vars: Readonly<Record<string, string>>): string {
-  let out = template.replaceAll('{{', '\u0000').replaceAll('}}', '\u0001')
-  for (const [k, v] of Object.entries(vars)) out = out.replaceAll(`{${k}}`, v)
-  return out.replaceAll('\u0000', '{').replaceAll('\u0001', '}')
+  let out = ''
+  let i = 0
+  while (i < template.length) {
+    const ch = template[i]!
+    const next = template[i + 1]
+    if (ch === '{' && next === '{') {
+      out += '{'
+      i += 2
+    } else if (ch === '}' && next === '}') {
+      out += '}'
+      i += 2
+    } else if (ch === '{') {
+      const close = template.indexOf('}', i)
+      const name = close === -1 ? null : template.slice(i + 1, close)
+      if (name !== null && name in vars) {
+        out += vars[name]
+        i = close + 1
+      } else {
+        out += ch
+        i += 1
+      }
+    } else {
+      out += ch
+      i += 1
+    }
+  }
+  return out
 }
 
 export interface BatchRequest {
@@ -159,19 +190,20 @@ export function requireTrace(rows: readonly MethodExamplesRow[]): MethodExamples
 /**
  * The two ranked players praised at nearly the same rate whose negative rates
  * are furthest apart: the same praise, a different conversation around it.
- * Harsher first. Null when no two players are that close.
+ * Harsher first. Null when no two players are that close, or none that close
+ * differ by the minimum gap. Rows are taken in name order, so ties are stable.
  */
-export function metricsPair<T extends Counts>(rows: readonly T[], official: number): [T, T] | null {
-  const ranked = rows.filter((r) => r.total >= official)
+export function metricsPair<T extends Counts & { name: string }>(rows: readonly T[], official: number): [T, T] | null {
+  const ranked = rows.filter((r) => r.total >= official).toSorted((a, b) => a.name.localeCompare(b.name))
   let best: [T, T] | null = null
-  let widest = -1
+  let widest = PAIR_MIN_GAP
   for (let i = 0; i < ranked.length; i++) {
     for (let j = i + 1; j < ranked.length; j++) {
       const a = ranked[i]!
       const b = ranked[j]!
       if (Math.abs(posRate(a) - posRate(b)) > PAIR_POS_TOLERANCE) continue
       const gap = Math.abs(negRate(a) - negRate(b))
-      if (gap > widest) {
+      if (gap >= widest && (gap > widest || best === null)) {
         widest = gap
         best = negRate(a) >= negRate(b) ? [a, b] : [b, a]
       }
@@ -202,9 +234,9 @@ export function gapRows(classMix: Record<string, ClassMix> | null): GapRow[] {
   })
 }
 
-/** A symmetric Δ domain holding every range, padded. */
+/** A symmetric Δ domain holding every range, padded; never narrower than the first tick. */
 export function gapDomain(rows: readonly GapRow[], pad: number = GAP_AXIS_PAD): [number, number] {
-  const lim = Math.max(...rows.map((r) => Math.abs(r.gap) + r.margin)) * pad
+  const lim = Math.max(GAP_TICKS.find((t) => t > 0) ?? 0, Math.max(...rows.map((r) => Math.abs(r.gap) + r.margin)) * pad)
   return [-lim, lim]
 }
 
@@ -274,4 +306,16 @@ export function requireClassifier(classifiers: Readonly<Record<string, Classifie
   if (!c) throw new Error(`classifiers.${name}: absent from the manifest`)
   for (const [k, v] of Object.entries(c)) if (v === null) throw new Error(`classifiers.${name}.${k}: null, the page needs it`)
   return c as Filled<ClassifierIdentity>
+}
+
+export interface HandLabel {
+  sentiment: Sentiment
+  /** Null when the label says the comment is about nobody. */
+  target: string | null
+}
+
+/** A slip row's hand label; a slip with no label fails the build rather than reading as one. */
+export function slipLabel(row: Pick<MethodExamplesRow, 'comment_id' | 'label_sentiment' | 'label_target'>): HandLabel {
+  if (row.label_sentiment === null) throw new Error(`method_examples: slip ${row.comment_id} has no hand label`)
+  return { sentiment: row.label_sentiment as Sentiment, target: row.label_target }
 }

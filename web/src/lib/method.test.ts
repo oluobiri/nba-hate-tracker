@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, markNames, MethodCopyError, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, shortModel, stageDrops, stageShare } from './method'
+import { answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, markNames, MethodCopyError, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, shortModel, slipLabel, stageDrops, stageShare } from './method'
 import { classifier, corpus, example } from './method.fixture'
 
 describe('stageDrops', () => {
@@ -48,18 +48,40 @@ describe('markNames', () => {
     ])
   })
 
-  it('keeps the earlier of two overlapping hits and returns a body with no hit whole', () => {
+  it('takes the longer of two hits at one place, skips later overlaps, and returns a body with no hit whole', () => {
     expect(markNames('Jaylen Brunson is a legend', ['Jaylen', 'Jaylen Brunson'])).toEqual([
-      { text: 'Jaylen', mark: true },
-      { text: ' Brunson is a legend', mark: false },
+      { text: 'Jaylen Brunson', mark: true },
+      { text: ' is a legend', mark: false },
+    ])
+    expect(markNames('Jaylen Brunson is a legend', ['Jaylen Brunson', 'Brunson'])).toEqual([
+      { text: 'Jaylen Brunson', mark: true },
+      { text: ' is a legend', mark: false },
     ])
     expect(markNames('nothing here', ['Luka'])).toEqual([{ text: 'nothing here', mark: false }])
+  })
+
+  it('reads a letter outside ASCII as part of a word', () => {
+    expect(markNames('Jokićs night, Jokić said', ['Jokić'])).toEqual([
+      { text: 'Jokićs night, ', mark: false },
+      { text: 'Jokić', mark: true },
+      { text: ' said', mark: false },
+    ])
   })
 })
 
 describe('fillPrompt', () => {
   it('fills the slot and unescapes doubled braces, leaving braces in the value alone', () => {
     expect(fillPrompt('Comment: {comment_body}\n{{"s":"pos"}}', { comment_body: 'a {b} c' })).toBe('Comment: a {b} c\n{"s":"pos"}')
+  })
+
+  it('never reads a value again: dollar patterns and other slots inside a comment survive', () => {
+    expect(fillPrompt('{a} / {b}', { a: 'that $$$ deal $& done', b: 'x' })).toBe('that $$$ deal $& done / x')
+    expect(fillPrompt('{a} / {b}', { a: 'says {b}', b: 'x' })).toBe('says {b} / x')
+  })
+
+  it('reads a slot inside doubled braces as str.format does, and leaves an unknown slot alone', () => {
+    expect(fillPrompt('{{{t}}}', { t: 'v' })).toBe('{v}')
+    expect(fillPrompt('{sentiment_word} {comment_body}', {})).toBe('{sentiment_word} {comment_body}')
   })
 })
 
@@ -113,8 +135,15 @@ describe('metricsPair', () => {
     expect(metricsPair(rows, 50)!.map((r) => r.name)).toEqual(['b', 'a'])
   })
 
-  it('is null when no two players are that close', () => {
+  it('is null when no two players are that close, or the closest pairs do not differ by the minimum gap', () => {
     expect(metricsPair([p('a', 10, 30), p('b', 50, 50)], 50)).toBeNull()
+    expect(metricsPair([p('a', 30, 30), p('b', 32, 30), p('c', 33, 31)], 50)).toBeNull()
+  })
+
+  it('breaks a tie by name order, whatever order the rows arrive in', () => {
+    const rows = [p('zed', 50, 30), p('amy', 10, 30), p('bob', 10, 30)]
+    expect(metricsPair(rows, 50)!.map((r) => r.name)).toEqual(['zed', 'amy'])
+    expect(metricsPair(rows.toReversed(), 50)!.map((r) => r.name)).toEqual(['zed', 'amy'])
   })
 })
 
@@ -138,6 +167,11 @@ describe('the hand check gaps', () => {
     expect(domain).toEqual([-0.13, 0.13])
     expect(gapTicks(domain)).toEqual([-0.1, -0.05, 0, 0.05, 0.1])
     expect(gapTicks([-0.06, 0.06])).toEqual([-0.05, 0, 0.05])
+  })
+
+  it('never collapses the domain to a point', () => {
+    const flat = gapRows({ neg: { ...mix.neg, gap: 0, gap_margin: 0 }, neu: { ...mix.neu, gap: 0, gap_margin: 0 }, pos: { ...mix.pos, gap: 0, gap_margin: 0 } })
+    expect(gapDomain(flat)).toEqual([-0.05, 0.05])
   })
 
   it('fails on a block with a hole', () => {
@@ -202,5 +236,12 @@ describe('the manifest blocks the page needs whole', () => {
     expect(requireAccuracy(base).scored).toBe(1)
     expect(() => requireAccuracy({ ...base, labeled: false })).toThrow('not labeled')
     expect(() => requireAccuracy({ ...base, joint_margin: null })).toThrow('rules.accuracy.joint_margin: null')
+  })
+})
+
+describe('slipLabel', () => {
+  it('reads the hand label and refuses a slip without one', () => {
+    expect(slipLabel(example({ label_sentiment: 'pos', label_target: null }))).toEqual({ sentiment: 'pos', target: null })
+    expect(() => slipLabel(example({ comment_id: 'q', label_sentiment: null }))).toThrow('slip q has no hand label')
   })
 })

@@ -71,7 +71,7 @@ export function Chips({ names }: { names: readonly string[] }) {
   return (
     <>
       {names.map((n) => (
-        <span key={n} className="chip">
+        <span key={n} className="namechip">
           {n}
         </span>
       ))}

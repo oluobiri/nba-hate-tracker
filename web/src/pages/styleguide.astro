@@ -50,7 +50,7 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
-import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, stageDrops, stageShare } from '../lib/method'
+import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
@@ -114,7 +114,7 @@ const exampleCopy = joinCopy(tables.method_examples.map((r) => r.comment_id), EX
 const caseTitle = joinCopy([...new Set(tables.method_examples.map((r) => r.attribution_case))], CASE_COPY, 'attribution_case')
 const quoted = (r: (typeof tables.method_examples)[number]) => ({ row: r, note: exampleCopy.get(r.comment_id)! })
 const caseLines = caseRows(tables.method_examples).map((r) => ({ ...quoted(r), title: caseTitle.get(r.attribution_case)! }))
-const slipLines = bySlot(tables.method_examples, 'slip').map(quoted)
+const slipLines = bySlot(tables.method_examples, 'slip').map((r) => ({ ...quoted(r), label: slipLabel(r) }))
 const quoteLines = bySlot(tables.method_examples, 'quote_check').map((r) => ({ ...quoted(r), caseTitle: caseTitle.get(r.attribution_case)! }))
 // The hand check's gaps as published, then a made-up set: a range that touches zero (within, by the rule), one far outside.
 const liveGaps = classGaps(manifest.rules.accuracy.class_mix)

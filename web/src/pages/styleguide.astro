@@ -2,7 +2,9 @@
 import { cardHref } from '../cards/model'
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
-import { Exhibit, commentUrl } from '../components/Exhibit'
+import { Answer } from '../components/Answer'
+import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
+import { Fold, JsonBlock } from '../components/Fold'
 import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
 import { GameNetTimeline } from '../components/GameNetTimeline'
@@ -25,6 +27,7 @@ import { RaceRow } from '../components/RaceRow'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
+import { Said, Stage } from '../components/Stage'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
@@ -44,7 +47,7 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
-import { requireTrace } from '../lib/method'
+import { answerOf, rawRecord, requireTrace, stageDrops, stageShare } from '../lib/method'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
@@ -97,6 +100,11 @@ const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
 // The walkthrough's comment: the finder's names marked, a line under the body.
 const trace = requireTrace(tables.method_examples)
+// The answer in each tone: one negative, one positive (the trace), one neutral with no player named.
+const negAnswer = tables.method_examples.find((r) => r.sentiment === 'neg')!
+const nullAnswer = tables.method_examples.find((r) => r.sentiment_player === null)!
+const corpus = manifest.corpus
+const drops = stageDrops(corpus)
 
 // Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
 const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
@@ -453,10 +461,40 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <Exhibit number={2} {...exhibitProps(neutral)} />
         {orphan && <Exhibit number={3} {...exhibitProps(orphan)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />}
         <Exhibit number={4} {...exhibitProps(trace)} marks={trace.mentioned_text}>
-          <p>The names the finder matched, marked as the body spells them; a line about the comment sits here, between the body and its source.</p>
+          <Answer {...answerOf(trace)} />
+          <p>The names the finder matched, marked as the body spells them; the answer and a line about the comment sit here, between the body and its source.</p>
         </Exhibit>
       </div>
       <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge. The fourth is the walkthrough's comment, with the finder's marks and the extra slot.</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>Answer</h2>
+      <p class="eyebrow">The classifier's whole reply as one chip. Only s takes a sentiment colour; a null p is italic gray. Wraps below 480.</p>
+      <div class="guide__row"><Answer {...answerOf(negAnswer)} /><Answer {...answerOf(trace)} /><Answer {...answerOf(nullAnswer)} /></div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Stage, Said, Fold</h2>
+      <p class="eyebrow">
+        One step of the walkthrough: number and name down the side, the season's count in method yellow with its share of the download as a bar, the comment's state across. A step with no population has no bar. What drops out is the dashed line under the body. The fold is a native details; a heading never lives inside one. Below 760 the side folds above the body.
+      </p>
+      <ol class="trace">
+        <Stage n={1} name="Download" where="Arctic Shift · r/NBA" count={`${fmtInt(corpus.raw_comments!)} comments`} share={1} drop={{ text: 'Deleted, removed and empty bodies drop out first.' }}>
+          <Said>{trace.body}</Said>
+          <p>One line per comment, the whole season.</p>
+          <Fold summary="The raw record">
+            <JsonBlock value={rawRecord(trace)} note="+ created_utc and the rest of what Reddit stores. The author's name never leaves the pipeline." />
+          </Fold>
+        </Stage>
+        <Stage n={2} name="Find names" where={`players.yaml · ${fmtInt(tables.players.length)} players`} count={`${fmtInt(corpus.population_submitted!)} kept`} share={stageShare(corpus.population_submitted!, corpus.raw_comments!)} drop={{ count: drops.find, text: 'comments name no tracked player and stop here.' }}>
+          <Said><MarkedBody body={trace.body} marks={trace.mentioned_text} /></Said>
+          <p>Every name r/NBA uses for a tracked player is matched against the body.</p>
+        </Stage>
+        <Stage n={3} name="Ask the classifier" where="Anthropic Batch API" count="100,000 per batch">
+          <p>A step with no population of its own: no bar, no drop.</p>
+        </Stage>
+      </ol>
     </section>
 
     <section class="guide__section">

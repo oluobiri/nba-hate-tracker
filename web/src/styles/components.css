@@ -2715,3 +2715,238 @@ a.hero__who:hover {
     font-size: 10px;
   }
 }
+
+/* Answer: the classifier's reply as one chip. s is the only sentiment value in it. */
+.ans {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: var(--bone);
+}
+.ans__p {
+  color: var(--mute-2);
+}
+.ans__k {
+  color: var(--mute);
+}
+.ans__null {
+  color: var(--mute);
+  font-style: italic;
+}
+.v-neg {
+  color: var(--heat);
+}
+.v-pos {
+  color: var(--ice);
+}
+.v-neu {
+  color: var(--neu);
+}
+@media (max-width: 480px) {
+  .ans {
+    white-space: normal;
+  }
+}
+
+/* Fold: a native details, the summary a mono line with a marker. Headings never live inside one. */
+.fold {
+  border-top: 1px solid var(--line);
+}
+.fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.fold > summary::before {
+  content: '+';
+  width: 16px;
+  color: var(--mute);
+}
+.fold[open] > summary::before {
+  content: '−';
+}
+.fold > summary:hover {
+  color: var(--bone);
+}
+.fold__body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 16px;
+}
+
+/* JSON and code blocks: wrap, never scroll sideways. */
+.json,
+.code {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--bone-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.json__k {
+  color: var(--mute);
+}
+.json__s,
+.json__n {
+  color: var(--bone);
+}
+.json__p {
+  color: var(--mute-2);
+}
+.json__null,
+.json__note {
+  color: var(--mute);
+  font-style: italic;
+}
+
+/* Stage: one step of the walkthrough. Number and name down the side, the comment across;
+   the count is method yellow, since the funnel is the method's own line. */
+.trace {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 24px;
+  padding-bottom: 30px;
+}
+.stage:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 34px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-2);
+}
+.stage__id {
+  display: grid;
+  grid-template-columns: 29px 1fr;
+  column-gap: 12px;
+  align-content: start;
+}
+.stage__n {
+  grid-row: span 4;
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bone-2);
+  border-radius: 50%;
+  font: 600 12px var(--mono);
+  color: var(--bone);
+  background: var(--ink);
+}
+.stage__name {
+  padding-top: 5px;
+  font: 700 18px/1.1 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.stage__where {
+  margin-top: 3px;
+  font: 11.5px var(--mono);
+  color: var(--mute);
+}
+.stage__count {
+  display: block;
+  margin-top: 8px;
+  font: 500 13px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--hl);
+}
+.stage__bar {
+  display: block;
+  position: relative;
+  height: 3px;
+  margin-top: 6px;
+  background: var(--line);
+}
+.stage__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--hl);
+}
+.stage__body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.stage__body > p {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 15px;
+  color: var(--bone-2);
+}
+.stage__body b {
+  font-weight: 600;
+  color: var(--bone);
+}
+.stage__drop {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 1px dashed var(--mute-2);
+  font: 12px/1.5 var(--mono);
+  color: var(--mute);
+  max-width: 80ch;
+}
+.stage__drop b {
+  font-weight: 500;
+  color: var(--bone-2);
+}
+.stage .fold {
+  border-top: 0;
+}
+.stage .fold > summary {
+  min-height: 32px;
+  font-size: 11px;
+}
+.said {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  background: var(--surface);
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.said--neg {
+  border-left-color: var(--heat);
+}
+.said--pos {
+  border-left-color: var(--ice);
+}
+.said--neu {
+  border-left-color: var(--neu);
+}
+@media (max-width: 760px) {
+  .stage {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .stage::before {
+    display: none;
+  }
+}

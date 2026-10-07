@@ -1,6 +1,6 @@
-export type StampKind = 'verified' | 'unofficial' | 'checked'
+export type StampKind = 'verified' | 'unofficial'
 
-const TEXT: Record<StampKind, string> = { verified: 'Verified', unofficial: 'Unofficial', checked: 'Checked by hand' }
+const TEXT: Record<StampKind, string> = { verified: 'Verified', unofficial: 'Unofficial' }
 
 /** A method mark on a receipt or a view. */
 export function Stamp({ kind }: { kind: StampKind }) {

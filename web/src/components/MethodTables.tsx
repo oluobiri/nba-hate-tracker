@@ -9,7 +9,6 @@ import type { Sentiment } from '../lib/types'
 import { Answer } from './Answer'
 import { MarkedBody, commentUrl } from './Exhibit'
 import { Chips, Ledger, type LedgerColumn, SourceLine } from './Ledger'
-import { Stamp } from './Stamp'
 
 const SENTIMENT: Record<Sentiment, string> = { neg: 'negative', neu: 'neutral', pos: 'positive' }
 
@@ -86,10 +85,7 @@ const SLIP_COLUMNS: readonly LedgerColumn<SlipRow>[] = [
     head: 'Read by hand',
     cell: (q) => (
       <span className="meant">
-        <Stamp kind="checked" />
-        <span>
-          <span className={`v-${q.label.sentiment}`}>{SENTIMENT[q.label.sentiment]}</span> · {q.label.target ?? 'nobody'}
-        </span>
+        <span className={`v-${q.label.sentiment}`}>{SENTIMENT[q.label.sentiment]}</span> · {q.label.target ?? 'nobody'}
       </span>
     ),
   },

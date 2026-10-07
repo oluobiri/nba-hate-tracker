@@ -14,7 +14,6 @@ import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTable
 import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
 import { Said, Stage } from '../components/Stage'
-import { Stamp } from '../components/Stamp'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { nickname } from '../lib/fans'
@@ -251,7 +250,7 @@ const description = 'Where the numbers come from, and what they are not. One rea
         <section class="hw__section" id="numbers" aria-labelledby="numbers-h">
           <h2 id="numbers-h">What the numbers mean</h2>
           <table class="metrics">
-            <thead><tr><th scope="col">Metric</th><th scope="col">In plain words</th><th scope="col">How it's computed</th></tr></thead>
+            <thead><tr><th scope="col">Metric</th><th scope="col">Definition</th><th scope="col">How it's computed</th></tr></thead>
             <tbody>
               {
                 metricRows.map((m) => (
@@ -374,7 +373,7 @@ const description = 'Where the numbers come from, and what they are not. One rea
                 <div class="figs__cell">
                   <span class="figs__fig">{f.figure}<small>{f.margin}</small></span>
                   <span class="figs__lab">{f.label}</span>
-                  <span class="figs__n">{i === 0 ? <Stamp kind="checked" /> : i === 1 ? `of ${fmtInt(accuracy.scored)} scored` : `drawn ${accuracy.drawn_at}`}</span>
+                  <span class="figs__n">{i === 0 ? `of ${fmtInt(accuracy.drawn)} drawn` : i === 1 ? `of ${fmtInt(accuracy.scored)} scored` : `drawn ${accuracy.drawn_at}`}</span>
                 </div>
               ))
             }

@@ -3045,14 +3045,9 @@ a.hero__who:hover {
   color: var(--hl);
 }
 .meant {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
+  display: block;
   font: 12.5px var(--mono);
   white-space: nowrap;
-}
-.meant .stamp {
-  transform: rotate(-2deg);
 }
 @media (max-width: 860px) {
   .ledger thead {

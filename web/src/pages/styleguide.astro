@@ -481,8 +481,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>Stamp</h2>
-      <p class="eyebrow">Three method marks, one yellow. Verified on a receipt the target check passed; Unofficial under the minimum; Checked by hand where a manual label sits beside the classifier's answer.</p>
-      <div class="guide__row"><Stamp kind="verified" /><Stamp kind="unofficial" /><Stamp kind="checked" /></div>
+      <div class="guide__row"><Stamp kind="verified" /><Stamp kind="unofficial" /></div>
     </section>
 
     <section class="guide__section">
@@ -535,7 +534,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         Three ledgers on one primitive: a table that becomes a stack of labeled blocks below 860, each cell carrying its column head. The case table opens with the comments that were never classified, then one row per attribution case, the trace among them. Names found are chips; the classifier's p is the chip's own JSON; a comment that counts for nobody says so in gray capitals.
       </p>
       <CaseTable rows={caseLines} neverClassified={drops.find} />
-      <p class="eyebrow">Where it slips: the answer beside the hand label, with the Checked by hand stamp. The hand label is a read under a rubric, never "the truth".</p>
+      <p class="eyebrow">Where it slips: the answer beside the hand label. The hand label is a read under a rubric, never "the truth".</p>
       <SlipTable rows={slipLines} />
       <p class="eyebrow">The quote check: the verifier's answer in method yellow, the comment still counted.</p>
       <QuoteCheckTable rows={quoteLines} />

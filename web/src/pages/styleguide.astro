@@ -16,6 +16,7 @@ import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
 import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
+import { PipelineDiagram } from '../components/PipelineDiagram'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
 import { BoxScore } from '../components/replay/BoxScore'
@@ -49,7 +50,7 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
-import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireTrace, stageDrops, stageShare } from '../lib/method'
+import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
@@ -124,6 +125,18 @@ const edgeGaps = classGaps({
   pos: { classifier: 0.2, manual: 0.4, gap: -0.2, gap_margin: 0.06 },
 })
 const edgeDomain = gapDomain(edgeGaps)
+// The pipeline drawing on the published figures.
+const diagram = {
+  season: manifest.season,
+  counts: { raw: corpus.raw_comments!, submitted: corpus.population_submitted!, usable: corpus.usable, attributed: corpus.attributed },
+  tracked: tables.players.length,
+  tables: Object.keys(manifest.tables).length,
+  recaps: Object.keys(manifest.recaps).length,
+  sentimentModel: shortModel(requireClassifier(manifest.classifiers, 'sentiment').model),
+  targetModel: shortModel(requireClassifier(manifest.classifiers, 'target').model),
+  drawn: manifest.rules.accuracy.drawn ?? 0,
+  scored: manifest.rules.accuracy.scored ?? 0,
+}
 
 // Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
 const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
@@ -536,6 +549,14 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <GapChart rows={liveGaps} domain={liveDomain} ticks={gapTicks(liveDomain)} zeroLabel="Same share as the hand labels" caption="Per class: the classifier's share minus the hand labels' share, in points, with its margin." />
       <p class="eyebrow">Made-up rows: a range whose end touches zero reads within; a gap at zero; one far outside, the axis widened to hold it.</p>
       <GapChart rows={edgeGaps} domain={edgeDomain} ticks={gapTicks(edgeDomain)} zeroLabel="Same share as the hand labels" caption="Made-up figures for the awkward cases." />
+    </section>
+
+    <section class="guide__section">
+      <h2>PipelineDiagram</h2>
+      <p class="eyebrow">
+        The pipeline in two forms. At 1024 and up, the wide drawing in two rows (the laptop, then AWS and its readers) at 1:1 in the column; below, the stack. The funnel's main flow and every count are method yellow; the two publish paths are the S3 green, dashed; AWS orange outlines its panel; brand marks keep their colours. Every count, model name and registry size is read at build. Resize to see the other form.
+      </p>
+      <PipelineDiagram {...diagram} />
     </section>
 
     <section class="guide__section">

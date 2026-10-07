@@ -41,6 +41,8 @@
   --hl-dim: rgba(255, 210, 31, 0.14);
   /* Net sentiment is the two poles mixed; it is not a sentiment value, so it takes neither pure heat nor pure ice. */
   --net: color-mix(in srgb, var(--heat) 55%, var(--ice));
+  /* The publish paths on the pipeline diagram: S3's green, and nothing else. */
+  --pub: #7aa116;
 
   --focus: var(--bone);
 

@@ -3154,3 +3154,221 @@ a.hero__who:hover {
     display: block;
   }
 }
+
+/* PipelineDiagram: the wide drawing where the column holds it, the stack below 1024.
+   The funnel's main flow is method yellow; the publish paths are the S3 green; AWS orange outlines its panel;
+   brand marks keep their own colours, since the drawing names the tools. */
+.pipe {
+  min-width: 0;
+}
+.pipe__wide {
+  display: none;
+  width: 100%;
+  height: auto;
+}
+.pipe__wide text {
+  font-family: var(--body);
+}
+.pipe-panel {
+  fill: none;
+  stroke: var(--mute);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+.pipe-panel--aws {
+  stroke: #ff9900;
+  stroke-opacity: 0.7;
+  stroke-dasharray: none;
+}
+.pipe-box {
+  fill: var(--surface);
+  stroke: var(--line-2);
+}
+.pipe-box--ext {
+  fill: var(--ink-2);
+  stroke: var(--mute-2);
+  stroke-dasharray: 3 3;
+}
+.pipe-box--key {
+  fill: var(--surface-2);
+  stroke: var(--bone-2);
+}
+.pipe-band {
+  fill: var(--ink-2);
+  stroke: var(--line);
+}
+.pipe-sep {
+  stroke: var(--line);
+  stroke-dasharray: 2 5;
+}
+.pipe-t {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--bone);
+}
+.pipe-m {
+  font: 10.5px var(--mono);
+  fill: var(--mute);
+}
+.pipe-n {
+  font: 500 11px var(--mono);
+  fill: var(--hl);
+}
+.pipe-ph {
+  font: 700 14px var(--display);
+  letter-spacing: 0.1em;
+  fill: var(--bone);
+}
+.pipe-pm {
+  font: 10.5px var(--mono);
+  fill: var(--mute);
+}
+.pipe-zh {
+  font: 700 12px var(--display);
+  letter-spacing: 0.12em;
+  fill: var(--bone-2);
+}
+.pipe-zm {
+  font: 10.5px var(--mono);
+  fill: var(--mute);
+}
+.pipe-l {
+  font: 10.5px var(--mono);
+  fill: var(--bone-2);
+}
+.pipe-l--sm {
+  fill: var(--mute);
+}
+.pipe-l--pub {
+  fill: var(--pub);
+}
+.pipe-bh {
+  font: 700 12px var(--display);
+  letter-spacing: 0.12em;
+  fill: var(--bone);
+}
+.pipe-bt {
+  font-size: 12px;
+  fill: var(--bone-2);
+}
+.pipe-a {
+  fill: none;
+  stroke: var(--bone-2);
+  stroke-width: 1.2;
+}
+.pipe-a--main {
+  stroke: var(--hl);
+  stroke-width: 1.8;
+}
+.pipe-a--pub {
+  stroke: var(--pub);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+.pipe-ah path {
+  fill: var(--bone-2);
+}
+.pipe-ah--main path {
+  fill: var(--hl);
+}
+.pipe-ah--pub path {
+  fill: var(--pub);
+}
+
+.pipe__stack {
+  display: grid;
+  max-width: 480px;
+}
+.pipe-sec {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-2);
+  background: var(--ink-2);
+}
+.pipe-sec--aws {
+  border-style: solid;
+  border-color: rgba(255, 153, 0, 0.7);
+}
+.pipe-sec--under {
+  margin-top: 14px;
+}
+.pipe-sec--under p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.pipe-sec--under b {
+  font-weight: 600;
+  color: var(--bone);
+}
+.pipe-sec__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.pipe-sec__name {
+  font: 700 13px var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pipe-sec__fold {
+  font: 11px var(--mono);
+  color: var(--mute);
+}
+.pipe-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.pipe-item__mark {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.pipe-item__title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.pipe-item__sub {
+  display: block;
+  font: 11px/1.35 var(--mono);
+  color: var(--mute);
+}
+.pipe-item__count {
+  font: 500 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--hl);
+}
+.pipe-hop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 6px 18px;
+  font: 11px var(--mono);
+  color: var(--mute);
+}
+.pipe-hop span {
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.pipe-hop--main,
+.pipe-hop--main span {
+  color: var(--hl);
+}
+.pipe-hop--pub,
+.pipe-hop--pub span {
+  color: var(--pub);
+}
+@media (min-width: 1024px) {
+  .pipe__wide {
+    display: block;
+  }
+  .pipe__stack {
+    display: none;
+  }
+}

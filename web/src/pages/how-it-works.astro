@@ -9,6 +9,7 @@ import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
 import { Fold, JsonBlock } from '../components/Fold'
 import { GapChart } from '../components/GapChart'
 import { MethodNote } from '../components/MethodNote'
+import { PipelineDiagram } from '../components/PipelineDiagram'
 import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import SectionRail from '../components/SectionRail.astro'
 import { SentimentBar } from '../components/SentimentBar'
@@ -18,7 +19,7 @@ import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { nickname } from '../lib/fans'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
-import { BATCH_SIZE, answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, stageDrops, stageShare } from '../lib/method'
+import { BATCH_SIZE, answerOf, buildRequest, bySlot, caseRows, fillPrompt, gapDomain, gapRows, gapTicks, isQuotable, joinCopy, metricsPair, rawRecord, requireAccuracy, requireClassifier, requireTrace, rowRecord, shortModel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY, TRACE_COPY } from '../lib/method-copy'
 import { countsOf, negRate, netSentiment, polarization, posRate } from '../lib/metrics'
 import { commentDate, receiptContext } from '../lib/receipts'
@@ -138,6 +139,17 @@ const loudest = Math.max(...scores)
 const quietest = Math.min(...scores)
 
 // Use the data, and the versions.
+const diagram = {
+  season: manifest.season,
+  counts: { raw, submitted, usable: corpus.usable, attributed: corpus.attributed },
+  tracked: tables.players.length,
+  tables: Object.keys(manifest.tables).length,
+  recaps: Object.keys(manifest.recaps).length,
+  sentimentModel: shortModel(sent.model),
+  targetModel: shortModel(tgt.model),
+  drawn: accuracy.drawn,
+  scored: accuracy.scored,
+}
 const dataBase = `${SITE_URL}/data/season=${manifest.season}`
 const duckdb = `duckdb -c "SELECT attributed_player, neg_rate, comment_count FROM '${dataBase}/player_overall.parquet' WHERE comment_count >= ${official} ORDER BY neg_rate DESC LIMIT 10"`
 const configLine = Object.entries(manifest.config_versions).map(([k, v]) => `${k} ${v}`).join(' · ')
@@ -433,6 +445,12 @@ const description = 'Where the numbers come from, and what they are not. One rea
 
         <section class="hw__section" id="use" aria-labelledby="use-h">
           <h2 id="use-h">Use the data</h2>
+          <figure class="diagram">
+            <PipelineDiagram {...diagram} />
+            <figcaption>
+              Comments move left to right and down. The gold line is the funnel, {fmtInt(raw)} downloaded to {fmtInt(corpus.attributed)} counted; reference data and media skip classification. The green dashed lines are the two publish paths. GitHub Actions is one more reader of the public data, so the site is built from what was published, never from a laptop.
+            </figcaption>
+          </figure>
           <p class="hw__p">Everything the site shows is read from one folder of Parquet files at a public URL. The manifest says what was published and under which rules; the schema says every table's columns, types and what may be null.</p>
           <div class="urls"><a href={`${dataBase}/manifest.json`}>{dataBase}/manifest.json</a><a href={`${dataBase}/schema.json`}>{dataBase}/schema.json</a></div>
           <p class="hw__p">The leaderboard, from your terminal (DuckDB; the line selects whole on a click):</p>
@@ -862,6 +880,17 @@ const description = 'Where the numbers come from, and what they are not. One rea
   }
 
   /* Use the data, who made it, versions. */
+  .diagram {
+    margin: 0;
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .diagram figcaption {
+    max-width: 70ch;
+    font-size: 14px;
+    color: var(--bone-2);
+  }
   .urls {
     display: grid;
     gap: 6px;

@@ -1,5 +1,5 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "tables": {
     "player_overall": {
       "columns": [
@@ -297,6 +297,119 @@
         {
           "name": "thread_comment_count",
           "dtype": "int64",
+          "nullable": false
+        }
+      ]
+    },
+    "player_room": {
+      "columns": [
+        {
+          "name": "attributed_player",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "player_id",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "post_type",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
+          "nullable": false
+        }
+      ]
+    },
+    "room_temporal": {
+      "columns": [
+        {
+          "name": "post_type",
+          "dtype": "string",
+          "nullable": false
+        },
+        {
+          "name": "week",
+          "dtype": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "comment_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neg_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "pos_rate",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "net_sentiment",
+          "dtype": "float64",
+          "nullable": false
+        },
+        {
+          "name": "polarization",
+          "dtype": "float64",
           "nullable": false
         }
       ]
@@ -1206,6 +1319,10 @@
           "nullable": false
         },
         "race_entry_min_n": {
+          "type": "int",
+          "nullable": false
+        },
+        "room_min_n": {
           "type": "int",
           "nullable": false
         }

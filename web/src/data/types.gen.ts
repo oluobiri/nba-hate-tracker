@@ -1,4 +1,4 @@
-// GENERATED from src/data/schema.json (schema_version 11) by scripts/codegen.ts.
+// GENERATED from src/data/schema.json (schema_version 12) by scripts/codegen.ts.
 // Do not edit: run `npm run codegen`. The build fails when this file is stale.
 
 /** One row of player_overall.parquet. */
@@ -75,6 +75,35 @@ export interface GameSentimentRow {
   net_sentiment: number
   polarization: number
   thread_comment_count: number
+}
+
+/** One row of player_room.parquet. */
+export interface PlayerRoomRow {
+  attributed_player: string
+  player_id: number
+  post_type: string
+  neg_count: number
+  pos_count: number
+  neu_count: number
+  comment_count: number
+  neg_rate: number
+  pos_rate: number
+  net_sentiment: number
+  polarization: number
+}
+
+/** One row of room_temporal.parquet. */
+export interface RoomTemporalRow {
+  post_type: string
+  week: string
+  neg_count: number
+  pos_count: number
+  neu_count: number
+  comment_count: number
+  neg_rate: number
+  pos_rate: number
+  net_sentiment: number
+  polarization: number
 }
 
 /** One row of players.parquet. */
@@ -210,7 +239,7 @@ export interface MethodExamplesRow {
   label_target: string | null
 }
 
-export type TableName = "player_overall" | "player_temporal" | "player_fan_team" | "fan_team_overall" | "game_sentiment" | "players" | "teams" | "games" | "player_games" | "posts" | "comment_samples" | "corpus_daily" | "method_examples"
+export type TableName = "player_overall" | "player_temporal" | "player_fan_team" | "fan_team_overall" | "game_sentiment" | "player_room" | "room_temporal" | "players" | "teams" | "games" | "player_games" | "posts" | "comment_samples" | "corpus_daily" | "method_examples"
 
 export interface Tables {
   player_overall: PlayerOverallRow[]
@@ -218,6 +247,8 @@ export interface Tables {
   player_fan_team: PlayerFanTeamRow[]
   fan_team_overall: FanTeamOverallRow[]
   game_sentiment: GameSentimentRow[]
+  player_room: PlayerRoomRow[]
+  room_temporal: RoomTemporalRow[]
   players: PlayersRow[]
   teams: TeamsRow[]
   games: GamesRow[]
@@ -331,6 +362,7 @@ export interface Floors {
   belt_min_n: number
   game_min_n: number
   race_entry_min_n: number
+  room_min_n: number
 }
 
 export interface RecapsRule {

@@ -21,6 +21,7 @@ from pipeline.schemas import (
     RECAP_POPULATION,
     TABLE_POPULATIONS,
     Corpus,
+    Floors,
     Manifest,
     RecapEntry,
     RecapHeader,
@@ -33,6 +34,9 @@ from pipeline.schemas import (
     PLAYER_GAME_LOG_SCHEMA,
     PLAYER_GAMES_SCHEMA,
     PLAYER_OVERALL_SCHEMA,
+    PLAYER_ROOM_SCHEMA,
+    PLAYER_TEMPORAL_SCHEMA,
+    ROOM_TEMPORAL_SCHEMA,
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
@@ -149,6 +153,7 @@ class TestPlayersContract:
             "player_temporal",
             "player_fan_team",
             "game_sentiment",
+            "player_room",
             "player_games",
             "comment_samples",
             "method_examples",
@@ -337,6 +342,59 @@ class TestGameSentimentContract:
         hence in the outputs."""
         assert AGGREGATE_VIEW_SCHEMAS["game_sentiment"] is GAME_SENTIMENT_SCHEMA
         assert DASHBOARD_OUTPUT_SCHEMAS["game_sentiment"] is GAME_SENTIMENT_SCHEMA
+
+
+class TestRoomViewsContract:
+    """Contract guards for the two room rollups (player_room.parquet,
+    room_temporal.parquet): the fact by the room its post was written in."""
+
+    def test_player_room_keys_lead(self):
+        """Verify the player keys lead as on every player-keyed view, then
+        the room, typed as the bridge's post_type."""
+        assert PLAYER_ROOM_SCHEMA.names()[:3] == [
+            "attributed_player",
+            "player_id",
+            "post_type",
+        ]
+        assert (
+            PLAYER_ROOM_SCHEMA["attributed_player"]
+            == PLAYERS_SCHEMA["attributed_player"]
+        )
+        assert PLAYER_ROOM_SCHEMA["post_type"] == POSTS_SCHEMA["post_type"]
+
+    def test_room_temporal_keys_lead(self):
+        """Verify the room leads, then the week typed as player_temporal's."""
+        assert ROOM_TEMPORAL_SCHEMA.names()[:2] == ["post_type", "week"]
+        assert ROOM_TEMPORAL_SCHEMA["post_type"] == POSTS_SCHEMA["post_type"]
+        assert ROOM_TEMPORAL_SCHEMA["week"] == PLAYER_TEMPORAL_SCHEMA["week"]
+
+    def test_metrics_match_the_other_views(self):
+        """Verify the measure block is the shared compute_metrics shape and
+        nothing follows it."""
+        metrics = PLAYER_OVERALL_SCHEMA.names()[2:]
+        assert PLAYER_ROOM_SCHEMA.names()[3:] == metrics
+        assert ROOM_TEMPORAL_SCHEMA.names()[2:] == metrics
+        for col in metrics:
+            assert PLAYER_ROOM_SCHEMA[col] == PLAYER_OVERALL_SCHEMA[col]
+            assert ROOM_TEMPORAL_SCHEMA[col] == PLAYER_OVERALL_SCHEMA[col]
+
+    def test_excludes_rejected_columns(self):
+        """Verify decided-out columns stay out: no whole-room size (that is
+        posts'), no source, no player on the temporal view."""
+        for col in ("num_comments", "source", "title"):
+            assert col not in PLAYER_ROOM_SCHEMA.names()
+            assert col not in ROOM_TEMPORAL_SCHEMA.names()
+        assert "attributed_player" not in ROOM_TEMPORAL_SCHEMA.names()
+
+    def test_are_views(self):
+        """Verify both are fact rollups: in AGGREGATE_VIEW_SCHEMAS, hence in
+        the outputs, with no nullable column."""
+        assert AGGREGATE_VIEW_SCHEMAS["player_room"] is PLAYER_ROOM_SCHEMA
+        assert AGGREGATE_VIEW_SCHEMAS["room_temporal"] is ROOM_TEMPORAL_SCHEMA
+        assert DASHBOARD_OUTPUT_SCHEMAS["player_room"] is PLAYER_ROOM_SCHEMA
+        assert DASHBOARD_OUTPUT_SCHEMAS["room_temporal"] is ROOM_TEMPORAL_SCHEMA
+        assert NULLABLE_COLUMNS["player_room"] == frozenset()
+        assert NULLABLE_COLUMNS["room_temporal"] == frozenset()
 
 
 class TestGameLogSnapshotsContract:
@@ -539,6 +597,17 @@ class TestManifestContract:
         assert TABLE_POPULATIONS["player_fan_team"] == "attributed_flaired"
         assert TABLE_POPULATIONS["fan_team_overall"] == "flaired"
         assert TABLE_POPULATIONS["game_sentiment"] == "in_thread"
+
+    def test_room_views_draw_from_the_bridged_population(self):
+        """The room views count the attributed comments whose post the
+        bridge holds: a fourth universe, nearly but not exactly attributed."""
+        assert TABLE_POPULATIONS["player_room"] == "bridged"
+        assert TABLE_POPULATIONS["room_temporal"] == "bridged"
+        assert "bridged" in POPULATIONS
+
+    def test_room_floor_is_published(self):
+        """A player x room cell has a floor beside the other cell floors."""
+        assert "room_min_n" in Floors.__annotations__
 
     def test_corpus_stages_are_the_funnel(self):
         """The corpus block's keys are the funnel stages, each a defined

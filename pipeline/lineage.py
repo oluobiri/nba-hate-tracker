@@ -43,6 +43,8 @@ OUTPUT_CONFIGS: dict[str, tuple[str, ...]] = {
     "player_fan_team": (),
     "fan_team_overall": (),
     "game_sentiment": (),
+    "player_room": (),
+    "room_temporal": (),
     "players": ("players",),
     "teams": ("teams",),
     "games": (),

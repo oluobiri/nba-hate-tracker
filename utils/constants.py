@@ -228,6 +228,7 @@ WEEK_MIN_N = 30  # player x week cell
 BELT_MIN_N = 300  # the weekly leader ("the belt")
 GAME_MIN_N = 20  # player x game cell
 RACE_ENTRY_MIN_N = 500  # season-to-date comments for a bar to join a rate race
+ROOM_MIN_N = 200  # player x post_type cell
 
 # =============================================================================
 # Published recap rules (manifest rules.recaps; pipeline/recaps.py)

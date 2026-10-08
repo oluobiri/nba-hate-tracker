@@ -125,7 +125,7 @@ The distinction matters because the two layers age differently: frozen fields st
 |---|---|
 | `team` | canonical name (PK) |
 | `abbreviation`, `conference`, `team_id`, `logo_url` | descriptive attributes |
-| `aliases[]` | the flair fragments feeding `fan_team` resolution |
+| `aliases[]` | the flair fragments feeding `fan_team` resolution, and, at four characters or more, the title spellings the Post bridge reads |
 
 ### `Game` — dimension
 
@@ -161,7 +161,7 @@ The distinction matters because the two layers age differently: frozen fields st
 | `title`, `created_utc`, `score`, `num_comments`, `link_flair_text` | as the source. `num_comments` is the whole room, not the fact-row count |
 | `post_type` | the room a comment was written in: `game_thread` / `post_game_thread` / `highlight` / `lowlight` / `injury` / `news` / `discussion` / `other`. Flair decides; an unflaired post is read by its title, an anchored thread prefix first (flair-stripped removals), then its leading `[Tag]`. A tag is a type in itself (`[Lowlight]`), a convention that names no source (`[OC]`, a date), or a source, which makes the post `news` |
 | `source` | the leading tag of a `news` post, lowercased: the reporter, the outlet, or the person quoted. As written in the title, so one reporter may appear under more than one spelling. Null on every other type |
-| `game_id` | → **Game**, 0-or-1, on threads only. Resolved from the title's unordered team pair and the Eastern day of `created_utc`, validated against `games` at aggregation; null on non-games, non-NBA opponents and postponements |
+| `game_id` | → **Game**, 0-or-1, on threads only. Resolved from the title's unordered team pair and the Eastern day of `created_utc`, validated against `games` at aggregation; null on non-games, non-NBA opponents and postponements. A mod-removed thread (flair intact, title replaced by the removal marker) resolves from the Eastern day alone when exactly one game sits within a day of it; on any other night it stays null |
 | `is_primary` | the largest thread by `num_comments` per (`game_id`, `post_type`); split, second-half and repost threads share a `game_id` |
 
 **Published subset:** every game and post-game thread, plus every post a receipt points at (its title is the receipt's context). A game's room is the **sum** of `num_comments` over its threads — a second-half thread can outgrow the primary.

@@ -27,6 +27,7 @@ from pipeline.posts import (
     load_posts_table,
     local_date,
     match_game,
+    match_game_by_day,
     parse_score,
     parse_title_date,
     post_source,
@@ -53,6 +54,7 @@ TEAM_CONFIG = {
     },
     "Washington Wizards": {"abbreviation": "WAS", "aliases": ["was", "wizards"]},
     "Toronto Raptors": {"abbreviation": "TOR", "aliases": ["tor", "raptors"]},
+    "Miami Heat": {"abbreviation": "MIA", "aliases": ["mia", "heat"]},
 }
 NAME_MAP = build_title_name_map(TEAM_CONFIG)
 
@@ -262,16 +264,23 @@ class TestPostSource:
 
 
 class TestBuildTitleNameMap:
-    """Tests for build_title_name_map (canonical names + multi-word aliases)."""
+    """Tests for build_title_name_map (canonical names + aliases of four letters or more)."""
 
-    def test_canonical_names_and_multiword_aliases_only(self):
-        """Verify single-token aliases stay out: `was` and `tor` would
-        match inside ordinary words of a post-game title."""
+    def test_names_multiword_aliases_and_nicknames_map(self):
+        """Verify the canonical name, the multi-word spellings and the
+        nicknames all resolve; `heat` sits exactly at the length floor."""
         assert NAME_MAP["boston celtics"] == "Boston Celtics"
         assert NAME_MAP["orland magic"] == "Orlando Magic"
         assert NAME_MAP["la clippers"] == "Los Angeles Clippers"
-        for single in ("was", "tor", "bos", "celtics", "wizards"):
-            assert single not in NAME_MAP
+        assert NAME_MAP["celtics"] == "Boston Celtics"
+        assert NAME_MAP["wizards"] == "Washington Wizards"
+        assert NAME_MAP["heat"] == "Miami Heat"
+
+    def test_three_letter_codes_stay_out(self):
+        """Verify the codes never become spellings: `was`, `den` and `ind`
+        are English words on a word boundary in a post-game title."""
+        for code in ("was", "tor", "bos", "por", "mia"):
+            assert code not in NAME_MAP
 
 
 class TestExtractTeamPair:
@@ -330,11 +339,41 @@ class TestExtractTeamPair:
             {"Orlando Magic", "Boston Celtics"}
         )
 
-    def test_single_token_aliases_never_fire(self):
-        """Verify prose containing `was` and `victory` names no third team."""
+    def test_three_letter_codes_never_fire(self):
+        """Verify prose containing `was` names no third team: a code is
+        not a spelling."""
         title = (
             "[Post Game Thread] The Boston Celtics (1-0) defeat the New York "
             "Knicks (0-1), 99-84. It was a victory for the ages."
+        )
+        assert extract_team_pair(title, NAME_MAP) == frozenset(
+            {"Boston Celtics", "New York Knicks"}
+        )
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "[Post Game Thread] The Celtics (1-0) defeat the Knicks (0-1), 99-84.",
+            "Post-Game Thread: Celtics defeat Knicks, 123-91 | NBA Playoffs | Apr 19, 2026",
+            "GAME THREAD: Celtics (47-17) vs Knicks (43-21)",
+            "Game Thread: Boston Celtics vs Knicks Live Score | NBA | Feb 9, 2026",
+            "[Post Game Thread] The Hospital Celtics (26-13) defeat the Knicks (17-22), 108-104.",
+        ],
+    )
+    def test_nicknames_yield_the_pair(self, title):
+        """Verify a title that names its teams by nickname alone, or mixes
+        a nickname with a full name, or prefixes a nickname with a joke,
+        still parses to the pair."""
+        assert extract_team_pair(title, NAME_MAP) == frozenset(
+            {"Boston Celtics", "New York Knicks"}
+        )
+
+    def test_a_nickname_in_trailing_prose_never_displaces_the_pair(self):
+        """Verify a nickname used as an ordinary word after the matchup
+        (`heat`, `magic`) never becomes a third team."""
+        title = (
+            "[Post Game Thread] The Boston Celtics (1-0) defeat the New York "
+            "Knicks (0-1), 99-84. The heat is on and it was magic."
         )
         assert extract_team_pair(title, NAME_MAP) == frozenset(
             {"Boston Celtics", "New York Knicks"}
@@ -570,6 +609,80 @@ class TestMatchGame:
         assert "Ambiguous" in caplog.text
 
 
+class TestMatchGameByDay:
+    """Tests for match_game_by_day (a titleless thread, the window's lone game)."""
+
+    def _index(self, rows):
+        return build_game_index(_games(rows))
+
+    def test_lone_game_in_window_links(self):
+        """Verify a thread created the evening of the night's only game links to it."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                )
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) == "0022500001"
+
+    def test_after_midnight_reaches_the_previous_day(self):
+        """Verify a thread posted after midnight ET still finds the game
+        of the night before."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                )
+            ]
+        )
+        assert match_game_by_day(_AFTER_MIDNIGHT_ET, index) == "0022500001"
+
+    def test_a_second_game_in_the_window_is_none(self):
+        """Verify two games within a day of creation stay unlinked: the
+        creation day does not narrow, or a post-game thread posted after
+        midnight would take the next night's lone game."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                ),
+                _game(
+                    "0022500002",
+                    "Washington Wizards",
+                    "Toronto Raptors",
+                    date(2026, 1, 21),
+                ),
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) is None
+
+    def test_a_doubleheader_is_none(self):
+        """Verify two games of one pair on one day count as two candidates."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                ),
+                _game(
+                    "0022500002", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                ),
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) is None
+
+    def test_no_game_in_window_is_none(self):
+        """Verify a window with no game at all stays unlinked."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 10)
+                )
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) is None
+
+
 def _post(post_id, title, created_utc, flair, num_comments=10, score=5) -> dict:
     """One raw-projected post row (the read_raw_posts shape)."""
     return {
@@ -772,6 +885,110 @@ class TestBuildPostsBridge:
         assert bridge["game_id"].null_count() == bridge.height
         assert not bridge["is_primary"].any()
         assert bridge.filter(pl.col("post_type") == GAME_THREAD).height == 3
+
+    def test_removed_thread_links_by_day_on_a_one_game_night(self, caplog):
+        """Verify a mod-removed thread of either type links to the night's
+        lone game through its flair and day, never outranks a larger
+        thread for primary, and an unflaired removed post is not attempted."""
+        rows = self.ROWS + [
+            _post("t3_rm_gt", "[ Removed by moderator ]", _EVENING_ET, "Game Thread"),
+            _post(
+                "t3_rm_pgt",
+                "[ Removed by moderator ]",
+                _AFTER_MIDNIGHT_ET,
+                "Post Game Thread",
+                num_comments=9,
+            ),
+            _post("t3_rm_other", "[ Removed by moderator ]", _EVENING_ET, None),
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_rm_gt"]["post_type"] == GAME_THREAD
+        assert by_id["t3_rm_gt"]["game_id"] == "0022500001"
+        assert by_id["t3_rm_gt"]["is_primary"] is False
+        assert by_id["t3_rm_pgt"]["post_type"] == POST_GAME_THREAD
+        assert by_id["t3_rm_pgt"]["game_id"] == "0022500001"
+        assert by_id["t3_rm_pgt"]["is_primary"] is False
+        assert by_id["t3_rm_other"]["post_type"] == OTHER
+        assert by_id["t3_rm_other"]["game_id"] is None
+        assert "game_thread: 3/4 linked" in caplog.text
+        assert "post_game_thread: 2/2 linked" in caplog.text
+
+    def test_removed_thread_on_a_multi_game_night_stays_unlinked_and_counted(
+        self, caplog
+    ):
+        """Verify a mod-removed thread on a night with two games in the
+        window keeps a null game_id, is counted by its night in the report,
+        and its marker never lands in the unparsed-title list."""
+        games = self.GAMES + [
+            _game(
+                "0022500002", "Washington Wizards", "Toronto Raptors", date(2026, 1, 21)
+            )
+        ]
+        rows = [
+            _post("t3_rm_gt", "[ Removed by moderator ]", _EVENING_ET, "Game Thread"),
+            self.ROWS[3],
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(games), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_rm_gt"]["game_id"] is None
+        assert "1 mod-removed without a lone game in the window" in caplog.text
+        assert "removed, by night (head): ['2026-01-20']" in caplog.text
+        assert "Removed by moderator" not in caplog.text
+
+    def test_a_larger_removed_thread_is_primary_and_its_link_is_logged(self, caplog):
+        """Verify the largest thread stays primary whatever its title: a
+        removed thread that outgrew the titled one is the room. Every link
+        made by day alone is logged in full for a hand check."""
+        rows = self.ROWS + [
+            _post(
+                "t3_rm_big",
+                "[ Removed by moderator ]",
+                _EVENING_ET,
+                "Game Thread",
+                num_comments=200,
+            )
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_rm_big"]["is_primary"] is True
+        assert by_id["t3_gt2"]["is_primary"] is False
+        assert (
+            "Mod-removed threads linked by day: ['2026-01-20 t3_rm_big -> 0022500001']"
+            in caplog.text
+        )
+
+    @pytest.mark.parametrize(
+        "title,linked",
+        [
+            ("[removed by moderator]", True),
+            ("  [ Removed By Moderator ]  ", True),
+            ("Removed by moderator", False),
+            ("[removed]", False),
+            ("[ Removed by moderator ] Boston Celtics @ New York Knicks", True),
+        ],
+    )
+    def test_removed_marker_is_the_whole_title(self, title, linked, caplog):
+        """Verify case and spacing variants of the marker link by day; a
+        near-miss or a marker with a tail falls to the title parser, which
+        links only when it reads a pair."""
+        rows = [_post("t3_rm", title, _EVENING_ET, "Game Thread")]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        assert (bridge["game_id"][0] == "0022500001") is linked
+        by_day = "Mod-removed threads linked by day" in caplog.text
+        assert by_day is (linked and title.strip().endswith("]"))
 
 
 class TestLoadPostsTable:

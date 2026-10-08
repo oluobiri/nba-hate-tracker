@@ -26,7 +26,6 @@ from pipeline.posts import (
     extract_team_pair,
     leading_tag,
     load_posts_bridge,
-    load_posts_table,
     local_date,
     match_game,
     match_game_by_day,
@@ -1039,8 +1038,9 @@ class TestBuildPostsBridge:
         assert by_day is (linked and title.strip().endswith("]"))
 
 
-class TestLoadPostsTable:
-    """Tests for load_posts_table (bridge -> published subset at aggregation)."""
+class TestLoadPostsBridge:
+    """Tests for load_posts_bridge and select_published_posts (bridge ->
+    published subset at aggregation)."""
 
     GAMES = [
         _game("0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)),
@@ -1099,13 +1099,15 @@ class TestLoadPostsTable:
     def test_missing_bridge_degrades_to_empty(self, tmp_path, caplog):
         """Verify aggregation stays runnable before the bridge exists."""
         with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
-            posts, metadata = load_posts_table(
-                tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS
+            bridge, metadata = load_posts_bridge(
+                tmp_path, _games(self.GAMES), "2026-09-12"
             )
+        posts = select_published_posts(bridge, self.RECEIPTS)
 
-        assert posts.schema == POSTS_SCHEMA
+        assert bridge.schema == POSTS_SCHEMA
+        assert bridge.height == 0
         assert posts.height == 0
-        assert metadata == {"post_count": 0, "posts_processed_at": None}
+        assert metadata == {"posts_processed_at": None}
         assert "scripts.process_posts" in caplog.text
 
     def test_bridge_loads_whole_without_the_receipts(self, tmp_path):
@@ -1125,25 +1127,33 @@ class TestLoadPostsTable:
         assert metadata == {"posts_processed_at": "2026-09-13"}
         assert posts["post_id"].to_list() == ["t3_gt", "t3_receipt"]
 
-    def test_publishes_threads_and_receipt_posts(self, tmp_path):
+    def test_publishes_threads_and_receipt_posts(self, tmp_path, caplog):
         """Verify the subset is every thread plus each post a receipt
         points at, and nothing else: a typed post that is neither stays
-        in the bridge."""
+        in the bridge; the build logs the split."""
         self._write_bridge(tmp_path)
+        bridge, _ = load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
 
-        posts, metadata = load_posts_table(
-            tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS
-        )
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            posts = select_published_posts(bridge, self.RECEIPTS)
 
         assert posts["post_id"].to_list() == ["t3_gt", "t3_receipt"]
-        assert metadata == {"post_count": 2, "posts_processed_at": "2026-09-13"}
+        assert "posts: 2 published of 4 (1 threads, 1 receipt context)" in caplog.text
+
+    def test_repeated_post_id_fails_the_build(self, tmp_path):
+        """Verify a bridge that repeats a post_id raises: every consumer
+        joins on it and a repeat would fan the join out."""
+        self._write_bridge(tmp_path, self.BRIDGE + [self.BRIDGE[1]])
+
+        with pytest.raises(ValueError, match="repeats 1 post_id"):
+            load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
 
     def test_game_id_absent_from_games_fails_the_build(self, tmp_path):
         """Verify a bridge pointing at a game the dimension lacks raises."""
         self._write_bridge(tmp_path)
 
         with pytest.raises(ValueError, match="absent from games"):
-            load_posts_table(tmp_path, _games([]), "2026-09-12", self.RECEIPTS)
+            load_posts_bridge(tmp_path, _games([]), "2026-09-12")
 
     def test_bridge_of_another_shape_names_the_remedy(self, tmp_path):
         """Verify a bridge written before a column was added fails the
@@ -1160,14 +1170,14 @@ class TestLoadPostsTable:
         )
 
         with pytest.raises(ValueError, match="missing columns.*process_posts --force"):
-            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+            load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
 
     def test_fetch_date_mismatch_warns(self, tmp_path, caplog):
         """Verify a bridge derived from another game-log fetch is flagged."""
         self._write_bridge(tmp_path, games_fetched_at="2026-09-01")
 
         with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
-            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+            load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
 
         assert "2026-09-01" in caplog.text and "2026-09-12" in caplog.text
 
@@ -1177,7 +1187,7 @@ class TestLoadPostsTable:
         self._write_bridge(tmp_path, teams_config_version="0.1")
 
         with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
-            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+            load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
 
         assert "teams_config_version drift" in caplog.text
         assert "'0.1'" in caplog.text
@@ -1187,6 +1197,6 @@ class TestLoadPostsTable:
         self._write_bridge(tmp_path, season="1999-00")
 
         with caplog.at_level(logging.WARNING, logger="pipeline.posts"):
-            load_posts_table(tmp_path, _games(self.GAMES), "2026-09-12", self.RECEIPTS)
+            load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
 
         assert "1999-00" in caplog.text

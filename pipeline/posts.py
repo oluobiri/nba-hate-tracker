@@ -638,7 +638,7 @@ def load_posts_bridge(
 
     Raises:
         ValueError: If the bridge links a post to a game_id absent from
-            games, or does not conform to POSTS_SCHEMA.
+            games, repeats a post_id, or does not conform to POSTS_SCHEMA.
     """
     path = reference_dir / POSTS_BRIDGE_FILENAME
     if not path.exists():
@@ -680,6 +680,14 @@ def load_posts_bridge(
             f"{unknown['game_id'].unique().sort().head(10).to_list()}; re-run "
             "scripts.process_posts against the current snapshot"
         )
+    # Every consumer joins the fact to the bridge on post_id; a repeated
+    # id would fan the join out and inflate every count silently
+    duplicates = bridge.height - bridge["post_id"].n_unique()
+    if duplicates:
+        raise ValueError(
+            f"{path} repeats {duplicates} post_id(s); rebuild it with "
+            "scripts.process_posts --force"
+        )
     return bridge, {"posts_processed_at": stamps.get("processed_at")}
 
 
@@ -710,30 +718,3 @@ def select_published_posts(
         f"({thread_count} threads, {posts.height - thread_count} receipt context)"
     )
     return posts
-
-
-def load_posts_table(
-    reference_dir: Path,
-    games: pl.DataFrame,
-    games_fetched_at: str | None,
-    comment_samples: pl.DataFrame,
-) -> tuple[pl.DataFrame, dict]:
-    """
-    Read the bridge and select the published posts in one step.
-
-    Args:
-        reference_dir: Season reference directory holding the bridge.
-        games: Frame conforming to GAMES_SCHEMA, this run's dimension.
-        games_fetched_at: The game tables' snapshot fetch date, or None.
-        comment_samples: Frame conforming to COMMENT_SAMPLES_SCHEMA.
-
-    Returns:
-        (posts, metadata) where metadata carries post_count and
-        posts_processed_at.
-
-    Raises:
-        ValueError: As load_posts_bridge.
-    """
-    bridge, metadata = load_posts_bridge(reference_dir, games, games_fetched_at)
-    posts = select_published_posts(bridge, comment_samples)
-    return posts, {"post_count": posts.height, **metadata}

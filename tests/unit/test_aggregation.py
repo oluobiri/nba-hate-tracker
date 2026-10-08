@@ -2168,8 +2168,8 @@ class TestAggregatePosts:
             pinned_snapshot,
             [
                 self._row("t3_gt", "game_thread", "0022500001", True),
-                self._row("t3_post123", "other", None, False),
-                self._row("t3_noise", "other", None, False),
+                self._row("t3_post123", "general", None, False),
+                self._row("t3_noise", "general", None, False),
             ],
         )
 
@@ -2211,7 +2211,7 @@ class TestComputeGameSentiment:
             [
                 _post_row("t3_gt1", "game_thread", "G1", True),
                 _post_row("t3_pgt1", "post_game_thread", "G1", True),
-                _post_row("t3_news", "other", None, False),
+                _post_row("t3_news", "general", None, False),
                 _post_row("t3_gt2", "game_thread", "G2", True),
             ],
             schema=POSTS_SCHEMA,
@@ -2329,7 +2329,7 @@ class TestAggregateGameSentiment:
             pinned_snapshot,
             [
                 _post_row("t3_post123", "game_thread", "0022500001", True),
-                _post_row("t3_post456", "other", None, False),
+                _post_row("t3_post456", "general", None, False),
             ],
         )
 
@@ -2462,7 +2462,7 @@ class TestAggregateRecaps:
             pinned_snapshot,
             [
                 _post_row("t3_post123", "game_thread", "0022500001", True),
-                _post_row("t3_post456", "other", None, False),
+                _post_row("t3_post456", "general", None, False),
             ],
         )
         _write_play_by_play(pbp_dir)

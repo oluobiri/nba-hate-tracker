@@ -51,7 +51,7 @@ LOWLIGHT = "lowlight"
 INJURY = "injury"
 NEWS = "news"
 DISCUSSION = "discussion"
-OTHER = "other"
+GENERAL = "general"
 POST_TYPES = (
     GAME_THREAD,
     POST_GAME_THREAD,
@@ -60,7 +60,7 @@ POST_TYPES = (
     INJURY,
     NEWS,
     DISCUSSION,
-    OTHER,
+    GENERAL,
 )
 # The types resolved to a game and always published.
 THREAD_TYPES = (GAME_THREAD, POST_GAME_THREAD)
@@ -178,7 +178,7 @@ def classify_post(title: str, flair: str | None) -> str:
     """
     Derive post_type from the post's flair, falling back to its title.
 
-    A flair decides outright, and one that maps to no type is `other`
+    A flair decides outright, and one that maps to no type is `general`
     whatever the title says (the daily index post carries "Game Thread"
     mid-title). Only a post with no flair at all is classified by its
     title: an anchored thread prefix first (the mods strip the flair
@@ -195,15 +195,15 @@ def classify_post(title: str, flair: str | None) -> str:
         One of POST_TYPES.
     """
     if flair is not None:
-        return FLAIR_POST_TYPES.get(flair, OTHER)
+        return FLAIR_POST_TYPES.get(flair, GENERAL)
     for pattern, post_type in _TITLE_POST_TYPES:
         if pattern.match(title):
             return post_type
     tag = leading_tag(title)
     if tag is None or tag in CONVENTION_TAGS:
-        return OTHER
+        return GENERAL
     if _YEAR_TAG.match(tag) or not any(char.isalpha() for char in tag):
-        return OTHER
+        return GENERAL
     return TAG_POST_TYPES.get(tag, NEWS)
 
 

@@ -14,7 +14,7 @@ from pipeline.posts import (
     INJURY,
     LOWLIGHT,
     NEWS,
-    OTHER,
+    GENERAL,
     POST_GAME_THREAD,
     POSTS_BRIDGE_FILENAME,
     RAW_POSTS_SCHEMA,
@@ -145,8 +145,8 @@ class TestClassifyPost:
             ("Original Content", DISCUSSION),
             ("AMA", DISCUSSION),
             ("All-Access", DISCUSSION),
-            ("Index Thread", OTHER),
-            ("Misleading", OTHER),
+            ("Index Thread", GENERAL),
+            ("Misleading", GENERAL),
         ],
     )
     def test_flair_decides(self, flair, expected):
@@ -203,10 +203,10 @@ class TestClassifyPost:
             "The Bucks [per Charania] have traded ...",
         ],
     )
-    def test_conventions_and_dates_stay_other(self, title):
+    def test_conventions_and_dates_stay_general(self, title):
         """Verify a tag that names no source is not news: the
         subreddit's conventions, a date, a tag opening with a year."""
-        assert classify_post(title, None) == OTHER
+        assert classify_post(title, None) == GENERAL
 
     @pytest.mark.parametrize(
         "title,expected",
@@ -222,8 +222,8 @@ class TestClassifyPost:
                 "Post-Game Thread: Boston Celtics defeat New York Knicks",
                 POST_GAME_THREAD,
             ),
-            ("Daily Discussion Thread + Game Thread Index", OTHER),
-            ("Inside the NBA was great", OTHER),
+            ("Daily Discussion Thread + Game Thread Index", GENERAL),
+            ("Inside the NBA was great", GENERAL),
         ],
     )
     def test_unflaired_title_fallback_is_anchored(self, title, expected):
@@ -912,7 +912,7 @@ class TestBuildPostsBridge:
         assert by_id["t3_rm_pgt"]["post_type"] == POST_GAME_THREAD
         assert by_id["t3_rm_pgt"]["game_id"] == "0022500001"
         assert by_id["t3_rm_pgt"]["is_primary"] is False
-        assert by_id["t3_rm_other"]["post_type"] == OTHER
+        assert by_id["t3_rm_other"]["post_type"] == GENERAL
         assert by_id["t3_rm_other"]["game_id"] is None
         assert "game_thread: 3/4 linked" in caplog.text
         assert "post_game_thread: 2/2 linked" in caplog.text
@@ -1007,7 +1007,7 @@ class TestLoadPostsTable:
         },
         {
             **_post("t3_receipt", "Trade rumor", _EVENING_ET, None),
-            "post_type": OTHER,
+            "post_type": GENERAL,
             "source": None,
             "game_id": None,
             "is_primary": False,

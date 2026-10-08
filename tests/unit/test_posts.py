@@ -8,6 +8,7 @@ import polars as pl
 import pytest
 
 from pipeline.posts import (
+    DAILY,
     DISCUSSION,
     GAME_THREAD,
     HIGHLIGHT,
@@ -144,14 +145,14 @@ class TestClassifyPost:
             ("Discussion", DISCUSSION),
             ("Original Content", DISCUSSION),
             ("AMA", DISCUSSION),
-            ("All-Access", DISCUSSION),
-            ("Index Thread", GENERAL),
+            ("All-Access", HIGHLIGHT),
+            ("Index Thread", DAILY),
             ("Misleading", GENERAL),
         ],
     )
     def test_flair_decides(self, flair, expected):
         """Verify a flair classifies on flair alone, whatever the title
-        says, and an unmapped flair is `other`."""
+        says, and an unmapped flair is `general`."""
         title = "[Charania] GAME THREAD: Boston Celtics @ New York Knicks"
         assert classify_post(title, flair) == expected
 
@@ -191,8 +192,23 @@ class TestClassifyPost:
     @pytest.mark.parametrize(
         "title",
         [
-            "[OC] Playoff risers and fallers by game score",
             "[Serious] Do the Spurs have to move off of Fox?",
+            "[Serious Discussion] The Clippers are historically the worse franchise",
+            "[OC] Playoff risers and fallers by game score",
+            "[Discussion] Who is the best player to never win a title?",
+            "[Analysis] Why the Thunder's defense travels",
+            "[Question] Why do teams rest starters on the second night?",
+        ],
+    )
+    def test_unflaired_discussion_tag_is_discussion(self, title):
+        """Verify the tags a poster writes a post under classify it
+        as discussion, as the Discussion flair would."""
+        assert classify_post(title, None) == DISCUSSION
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "[Meta] Can we ban free-throw gifs?",
             "[ Removed by moderator ]",
             "[Highlight Request] The airball from last night",
             "[[Highlight Request] The airball from last night",
@@ -222,13 +238,16 @@ class TestClassifyPost:
                 "Post-Game Thread: Boston Celtics defeat New York Knicks",
                 POST_GAME_THREAD,
             ),
-            ("Daily Discussion Thread + Game Thread Index", GENERAL),
+            ("Daily Discussion Thread + Game Thread Index", DAILY),
+            ("Daily Discussion Thread + Game Thread Index | Playoffs", DAILY),
+            ("The daily discussion thread is a mess today", GENERAL),
             ("Inside the NBA was great", GENERAL),
         ],
     )
     def test_unflaired_title_fallback_is_anchored(self, title, expected):
         """Verify a flair-stripped post classifies by an anchored title
-        prefix only — "game thread" mid-title never matches."""
+        prefix only — "game thread" or "daily discussion thread"
+        mid-title never matches."""
         assert classify_post(title, None) == expected
 
 
@@ -253,8 +272,10 @@ class TestPostSource:
             ("[Charania] The Bucks have traded ...", "Highlight"),
             ("[Charania] The Bucks have traded ...", "Misleading"),
             ("[Lowlight] Airball to end the half", None),
+            ("[Serious] Do the Spurs have to move off of Fox?", None),
             ("[ Removed by moderator ]", None),
             ("[Game Thread] The Celtics VS the Knicks", None),
+            ("Daily Discussion Thread + Game Thread Index", "Index Thread"),
             ("Inside the NBA was great", None),
         ],
     )
@@ -827,6 +848,12 @@ class TestBuildPostsBridge:
                 _EVENING_ET,
                 None,
             ),
+            _post(
+                "t3_daily",
+                "Daily Discussion Thread + Game Thread Index | Boston Celtics vs New York Knicks",
+                _EVENING_ET,
+                None,
+            ),
         ]
 
         with caplog.at_level(logging.INFO, logger="pipeline.posts"):
@@ -837,9 +864,14 @@ class TestBuildPostsBridge:
         assert by_id["t3_hl"]["source"] is None
         assert by_id["t3_news"]["post_type"] == NEWS
         assert by_id["t3_news"]["source"] == "charania"
-        assert bridge["game_id"].null_count() == 2
+        assert by_id["t3_daily"]["post_type"] == DAILY
+        assert by_id["t3_daily"]["game_id"] is None
+        assert bridge["game_id"].null_count() == 3
         assert not bridge["is_primary"].any()
-        assert "highlight 1, lowlight 0, injury 0, news 1, discussion 0" in caplog.text
+        assert (
+            "posts bridge: 3 posts; game_thread 0, post_game_thread 0, highlight 1, "
+            "lowlight 0, injury 0, news 1, discussion 0, daily 1, general 0"
+        ) in caplog.text
         assert "news sources: 1 distinct; largest: charania 1\n" in caplog.text
 
     def test_no_news_logs_no_sources(self, caplog):

@@ -51,6 +51,7 @@ LOWLIGHT = "lowlight"
 INJURY = "injury"
 NEWS = "news"
 DISCUSSION = "discussion"
+DAILY = "daily"
 GENERAL = "general"
 POST_TYPES = (
     GAME_THREAD,
@@ -60,6 +61,7 @@ POST_TYPES = (
     INJURY,
     NEWS,
     DISCUSSION,
+    DAILY,
     GENERAL,
 )
 # The types resolved to a game and always published.
@@ -68,10 +70,11 @@ FLAIR_POST_TYPES = {
     "Game Thread": GAME_THREAD,
     "Post Game Thread": POST_GAME_THREAD,
     "Highlight": HIGHLIGHT,
+    "All-Access": HIGHLIGHT,  # the league's own video
     "Discussion": DISCUSSION,
     "Original Content": DISCUSSION,
     "AMA": DISCUSSION,
-    "All-Access": DISCUSSION,
+    "Index Thread": DAILY,
 }
 # Leading tags that are a type in themselves, misspellings included.
 TAG_POST_TYPES = {
@@ -84,37 +87,38 @@ TAG_POST_TYPES = {
     "lowlights": LOWLIGHT,
     "injury": INJURY,
     "injury update": INJURY,
+    "serious": DISCUSSION,
+    "serious discussion": DISCUSSION,
+    "oc": DISCUSSION,
+    "discussion": DISCUSSION,
+    "analysis": DISCUSSION,
+    "question": DISCUSSION,
 }
 # Leading tags that name no source: the subreddit's own conventions and
 # the placeholders left on a removed post. Any other tag is a source.
 CONVENTION_TAGS = frozenset(
     {
         "altercation",
-        "analysis",
         "breaking",
         "breaking news",
         "clip",
         "clip request",
-        "discussion",
         "foul",
         "highlight request",
         "image processing failed",
         "meta",
         "midlight",
         "news",
-        "oc",
         "official",
         "post game",
         "post game interview",
         "postgame",
-        "question",
         "reminder",
         "removed by moderator",
         "removed by reddit",
         "repost",
         "request",
         "satire",
-        "serious",
         "stat",
         "stat report",
         "stats",
@@ -133,11 +137,13 @@ GAME_DATE_WINDOW_DAYS = (-1, 0, 1)
 # three-letter codes are English words on a word boundary.
 TITLE_ALIAS_MIN_LENGTH = 4
 
-# Title fallback for flair-stripped (mod-removed) threads. Anchored, so
-# the daily "... + Game Thread Index" posts never match.
+# Title fallback for the unflaired threads: mod-removed game threads and
+# the daily thread. Anchored, so "... + Game Thread Index" never reads
+# as a game thread.
 _TITLE_POST_TYPES = (
     (re.compile(r"^\[?\s*game thread\b", re.IGNORECASE), GAME_THREAD),
     (re.compile(r"^\[?\s*post[- ]?game thread\b", re.IGNORECASE), POST_GAME_THREAD),
+    (re.compile(r"^\s*daily discussion thread\b", re.IGNORECASE), DAILY),
 )
 # A mod-removed thread keeps its flair and loses its whole title to this.
 _TITLE_REMOVED = re.compile(r"^\s*\[\s*removed by moderator\s*\]\s*$", re.IGNORECASE)
@@ -182,8 +188,9 @@ def classify_post(title: str, flair: str | None) -> str:
     whatever the title says (the daily index post carries "Game Thread"
     mid-title). Only a post with no flair at all is classified by its
     title: an anchored thread prefix first (the mods strip the flair
-    when they remove a duplicate), then its leading tag. A tag is a type
-    in itself, a convention that names no source, or a source, which
+    when they remove a duplicate; the daily thread is often unflaired),
+    then its leading tag. A tag is a type in itself (a clip, an injury,
+    a discussion), a convention that names no source, or a source, which
     makes the post news. A tag without a letter is a date, and one
     opening with a year is a convention.
 

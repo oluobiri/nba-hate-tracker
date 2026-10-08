@@ -228,7 +228,7 @@ def build_title_name_map(team_config: dict[str, dict]) -> dict[str, str]:
     Map the spellings a title may use for a team to its canonical name.
 
     Canonical names plus the teams.yaml aliases[] of
-    TITLE_ALIAS_MIN_LENGTH letters or more, lowercased: the multi-word
+    TITLE_ALIAS_MIN_LENGTH characters or more, lowercased: the multi-word
     spellings and the nicknames (Celtics, Mavs, Heat). The three-letter
     codes are left out: `was`, `den` and `ind` sit in the prose of a
     post-game title as ordinary words, and a thread title never
@@ -419,7 +419,9 @@ def match_game_by_day(
     Eastern creation day; only a single candidate links. Nothing narrows
     a tie: the title carries no date or score, and the creation day
     alone would hand a post-game thread posted after midnight the next
-    night's game.
+    night's game. The lone game is taken on faith: a thread about a game
+    the dimension lacks (a dropped preseason opponent, a postponement)
+    would take it, so the bridge logs every link made this way.
 
     Args:
         created_utc: The post's creation time, epoch seconds.
@@ -505,8 +507,9 @@ def build_posts_bridge(
     unparsed: list[str] = []
     unmatched: list[str] = []
     removed: list[str] = []
-    for title, flair, created_utc in posts.select(
-        "title", "link_flair_text", "created_utc"
+    removed_linked: list[str] = []
+    for post_id, title, flair, created_utc in posts.select(
+        "post_id", "title", "link_flair_text", "created_utc"
     ).iter_rows():
         title = title or ""
         post_type = classify_post(title, flair)
@@ -514,8 +517,11 @@ def build_posts_bridge(
         if post_type in THREAD_TYPES:
             if _TITLE_REMOVED.match(title):
                 game_id = match_game_by_day(created_utc, index)
+                night = str(local_date(created_utc))
                 if game_id is None:
-                    removed.append(str(local_date(created_utc)))
+                    removed.append(night)
+                else:
+                    removed_linked.append(f"{night} {post_id} -> {game_id}")
             else:
                 pair = extract_team_pair(title, name_map)
                 if pair is None:
@@ -565,7 +571,7 @@ def build_posts_bridge(
     logger.info(
         f"Unlinked threads: {len(unparsed)} name fewer than two teams, "
         f"{len(unmatched)} name a pair with no game within a day, "
-        f"{len(removed)} mod-removed on a night with more than one game"
+        f"{len(removed)} mod-removed without a lone game in the window"
     )
     for label, titles in (
         ("no team pair", unparsed),
@@ -574,6 +580,8 @@ def build_posts_bridge(
     ):
         if titles:
             logger.info(f"  {label} (head): {titles[:UNLINKED_TITLES_LOGGED]}")
+    if removed_linked:
+        logger.info(f"Mod-removed threads linked by day: {removed_linked}")
     type_counts = dict(bridge.group_by("post_type").len().iter_rows())
     logger.info(
         f"posts bridge: {bridge.height} posts; "

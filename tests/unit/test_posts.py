@@ -657,6 +657,20 @@ class TestMatchGameByDay:
         )
         assert match_game_by_day(_EVENING_ET, index) is None
 
+    def test_a_doubleheader_is_none(self):
+        """Verify two games of one pair on one day count as two candidates."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                ),
+                _game(
+                    "0022500002", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                ),
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) is None
+
     def test_no_game_in_window_is_none(self):
         """Verify a window with no game at all stays unlinked."""
         index = self._index(
@@ -924,9 +938,57 @@ class TestBuildPostsBridge:
 
         by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
         assert by_id["t3_rm_gt"]["game_id"] is None
-        assert "1 mod-removed on a night with more than one game" in caplog.text
+        assert "1 mod-removed without a lone game in the window" in caplog.text
         assert "removed, by night (head): ['2026-01-20']" in caplog.text
         assert "Removed by moderator" not in caplog.text
+
+    def test_a_larger_removed_thread_is_primary_and_its_link_is_logged(self, caplog):
+        """Verify the largest thread stays primary whatever its title: a
+        removed thread that outgrew the titled one is the room. Every link
+        made by day alone is logged in full for a hand check."""
+        rows = self.ROWS + [
+            _post(
+                "t3_rm_big",
+                "[ Removed by moderator ]",
+                _EVENING_ET,
+                "Game Thread",
+                num_comments=200,
+            )
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_rm_big"]["is_primary"] is True
+        assert by_id["t3_gt2"]["is_primary"] is False
+        assert (
+            "Mod-removed threads linked by day: ['2026-01-20 t3_rm_big -> 0022500001']"
+            in caplog.text
+        )
+
+    @pytest.mark.parametrize(
+        "title,linked",
+        [
+            ("[removed by moderator]", True),
+            ("  [ Removed By Moderator ]  ", True),
+            ("Removed by moderator", False),
+            ("[removed]", False),
+            ("[ Removed by moderator ] Boston Celtics @ New York Knicks", True),
+        ],
+    )
+    def test_removed_marker_is_the_whole_title(self, title, linked, caplog):
+        """Verify case and spacing variants of the marker link by day; a
+        near-miss or a marker with a tail falls to the title parser, which
+        links only when it reads a pair."""
+        rows = [_post("t3_rm", title, _EVENING_ET, "Game Thread")]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        assert (bridge["game_id"][0] == "0022500001") is linked
+        by_day = "Mod-removed threads linked by day" in caplog.text
+        assert by_day is (linked and title.strip().endswith("]"))
 
 
 class TestLoadPostsTable:

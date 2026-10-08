@@ -157,6 +157,18 @@ class TestClassifyPost:
         assert classify_post(title, flair) == expected
 
     @pytest.mark.parametrize(
+        "title",
+        [
+            "[Serious] Do the Spurs have to move off of Fox?",
+            "Daily Discussion Thread + Game Thread Index",
+        ],
+    )
+    def test_flair_outranks_a_title_that_would_type_the_post(self, title):
+        """Verify an unmapped flair stays `general` over a title the
+        unflaired rules would read as discussion or daily."""
+        assert classify_post(title, "Misleading") == GENERAL
+
+    @pytest.mark.parametrize(
         "title,expected",
         [
             ("[Highlight] Jaylen Brown dunks on two defenders", HIGHLIGHT),
@@ -240,6 +252,8 @@ class TestClassifyPost:
             ),
             ("Daily Discussion Thread + Game Thread Index", DAILY),
             ("Daily Discussion Thread + Game Thread Index | Playoffs", DAILY),
+            ("[Daily Discussion Thread] Game Thread Index", DAILY),
+            ("DAILY DISCUSSION THREAD + GAME THREAD INDEX", DAILY),
             ("The daily discussion thread is a mess today", GENERAL),
             ("Inside the NBA was great", GENERAL),
         ],

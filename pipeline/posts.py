@@ -143,7 +143,7 @@ TITLE_ALIAS_MIN_LENGTH = 4
 _TITLE_POST_TYPES = (
     (re.compile(r"^\[?\s*game thread\b", re.IGNORECASE), GAME_THREAD),
     (re.compile(r"^\[?\s*post[- ]?game thread\b", re.IGNORECASE), POST_GAME_THREAD),
-    (re.compile(r"^\s*daily discussion thread\b", re.IGNORECASE), DAILY),
+    (re.compile(r"^\[?\s*daily discussion thread\b", re.IGNORECASE), DAILY),
 )
 # A mod-removed thread keeps its flair and loses its whole title to this.
 _TITLE_REMOVED = re.compile(r"^\s*\[\s*removed by moderator\s*\]\s*$", re.IGNORECASE)
@@ -185,8 +185,8 @@ def classify_post(title: str, flair: str | None) -> str:
     Derive post_type from the post's flair, falling back to its title.
 
     A flair decides outright, and one that maps to no type is `general`
-    whatever the title says (the daily index post carries "Game Thread"
-    mid-title). Only a post with no flair at all is classified by its
+    whatever the title says (a post flaired Misleading may open with a
+    reporter's tag). Only a post with no flair at all is classified by its
     title: an anchored thread prefix first (the mods strip the flair
     when they remove a duplicate; the daily thread is often unflaired),
     then its leading tag. A tag is a type in itself (a clip, an injury,

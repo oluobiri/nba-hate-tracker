@@ -27,6 +27,7 @@ from pipeline.posts import (
     load_posts_table,
     local_date,
     match_game,
+    match_game_by_day,
     parse_score,
     parse_title_date,
     post_source,
@@ -608,6 +609,66 @@ class TestMatchGame:
         assert "Ambiguous" in caplog.text
 
 
+class TestMatchGameByDay:
+    """Tests for match_game_by_day (a titleless thread, the window's lone game)."""
+
+    def _index(self, rows):
+        return build_game_index(_games(rows))
+
+    def test_lone_game_in_window_links(self):
+        """Verify a thread created the evening of the night's only game links to it."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                )
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) == "0022500001"
+
+    def test_after_midnight_reaches_the_previous_day(self):
+        """Verify a thread posted after midnight ET still finds the game
+        of the night before."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                )
+            ]
+        )
+        assert match_game_by_day(_AFTER_MIDNIGHT_ET, index) == "0022500001"
+
+    def test_a_second_game_in_the_window_is_none(self):
+        """Verify two games within a day of creation stay unlinked: the
+        creation day does not narrow, or a post-game thread posted after
+        midnight would take the next night's lone game."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 20)
+                ),
+                _game(
+                    "0022500002",
+                    "Washington Wizards",
+                    "Toronto Raptors",
+                    date(2026, 1, 21),
+                ),
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) is None
+
+    def test_no_game_in_window_is_none(self):
+        """Verify a window with no game at all stays unlinked."""
+        index = self._index(
+            [
+                _game(
+                    "0022500001", "Boston Celtics", "New York Knicks", date(2026, 1, 10)
+                )
+            ]
+        )
+        assert match_game_by_day(_EVENING_ET, index) is None
+
+
 def _post(post_id, title, created_utc, flair, num_comments=10, score=5) -> dict:
     """One raw-projected post row (the read_raw_posts shape)."""
     return {
@@ -810,6 +871,62 @@ class TestBuildPostsBridge:
         assert bridge["game_id"].null_count() == bridge.height
         assert not bridge["is_primary"].any()
         assert bridge.filter(pl.col("post_type") == GAME_THREAD).height == 3
+
+    def test_removed_thread_links_by_day_on_a_one_game_night(self, caplog):
+        """Verify a mod-removed thread of either type links to the night's
+        lone game through its flair and day, never outranks a larger
+        thread for primary, and an unflaired removed post is not attempted."""
+        rows = self.ROWS + [
+            _post("t3_rm_gt", "[ Removed by moderator ]", _EVENING_ET, "Game Thread"),
+            _post(
+                "t3_rm_pgt",
+                "[ Removed by moderator ]",
+                _AFTER_MIDNIGHT_ET,
+                "Post Game Thread",
+                num_comments=9,
+            ),
+            _post("t3_rm_other", "[ Removed by moderator ]", _EVENING_ET, None),
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(self.GAMES), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_rm_gt"]["post_type"] == GAME_THREAD
+        assert by_id["t3_rm_gt"]["game_id"] == "0022500001"
+        assert by_id["t3_rm_gt"]["is_primary"] is False
+        assert by_id["t3_rm_pgt"]["post_type"] == POST_GAME_THREAD
+        assert by_id["t3_rm_pgt"]["game_id"] == "0022500001"
+        assert by_id["t3_rm_pgt"]["is_primary"] is False
+        assert by_id["t3_rm_other"]["post_type"] == OTHER
+        assert by_id["t3_rm_other"]["game_id"] is None
+        assert "game_thread: 3/4 linked" in caplog.text
+        assert "post_game_thread: 2/2 linked" in caplog.text
+
+    def test_removed_thread_on_a_multi_game_night_stays_unlinked_and_counted(
+        self, caplog
+    ):
+        """Verify a mod-removed thread on a night with two games in the
+        window keeps a null game_id, is counted by its night in the report,
+        and its marker never lands in the unparsed-title list."""
+        games = self.GAMES + [
+            _game(
+                "0022500002", "Washington Wizards", "Toronto Raptors", date(2026, 1, 21)
+            )
+        ]
+        rows = [
+            _post("t3_rm_gt", "[ Removed by moderator ]", _EVENING_ET, "Game Thread"),
+            self.ROWS[3],
+        ]
+
+        with caplog.at_level(logging.INFO, logger="pipeline.posts"):
+            bridge = build_posts_bridge(_posts(rows), _games(games), TEAM_CONFIG)
+
+        by_id = {row["post_id"]: row for row in bridge.iter_rows(named=True)}
+        assert by_id["t3_rm_gt"]["game_id"] is None
+        assert "1 mod-removed on a night with more than one game" in caplog.text
+        assert "removed, by night (head): ['2026-01-20']" in caplog.text
+        assert "Removed by moderator" not in caplog.text
 
 
 class TestLoadPostsTable:

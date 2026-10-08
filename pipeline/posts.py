@@ -5,8 +5,9 @@ Derives post_type, source and game_id for every r/NBA post from its
 flair and title under the active config: title spellings resolve to
 canonical Team names through teams.yaml, and the title's team pair plus
 the Eastern-time day of created_utc resolve to a game through the Game
-dimension. The raw posts file holds every post; this module decides
-what ships.
+dimension; a thread the mods retitled resolves by its day alone when
+the night has one game. The raw posts file holds every post; this
+module decides what ships.
 """
 
 import json
@@ -138,6 +139,8 @@ _TITLE_POST_TYPES = (
     (re.compile(r"^\[?\s*game thread\b", re.IGNORECASE), GAME_THREAD),
     (re.compile(r"^\[?\s*post[- ]?game thread\b", re.IGNORECASE), POST_GAME_THREAD),
 )
+# A mod-removed thread keeps its flair and loses its whole title to this.
+_TITLE_REMOVED = re.compile(r"^\s*\[\s*removed by moderator\s*\]\s*$", re.IGNORECASE)
 # "(October 04, 2025)" on the mods' threads, "| Apr 28, 2026" on the bots'.
 _TITLE_DATE = re.compile(r"\b([A-Z][a-z]{2,8} \d{1,2}, \d{4})\b")
 _TITLE_DATE_FORMATS = ("%B %d, %Y", "%b %d, %Y")
@@ -406,6 +409,35 @@ def match_game(
     return None
 
 
+def match_game_by_day(
+    created_utc: int, index: dict[tuple[frozenset[str], date], list[dict]]
+) -> str | None:
+    """
+    Resolve a thread whose title is gone to the lone game of its night.
+
+    Candidates are every game within a day either side of the thread's
+    Eastern creation day; only a single candidate links. Nothing narrows
+    a tie: the title carries no date or score, and the creation day
+    alone would hand a post-game thread posted after midnight the next
+    night's game.
+
+    Args:
+        created_utc: The post's creation time, epoch seconds.
+        index: From build_game_index().
+
+    Returns:
+        The game_id, or None unless exactly one game fits.
+    """
+    created_day = local_date(created_utc)
+    window = {created_day + timedelta(days=days) for days in GAME_DATE_WINDOW_DAYS}
+    candidates = [
+        game for (_, day), rows in index.items() if day in window for game in rows
+    ]
+    if len(candidates) == 1:
+        return candidates[0]["game_id"]
+    return None
+
+
 def read_raw_posts(path: Path) -> pl.DataFrame:
     """
     Stream the raw posts download, keeping the bridge's source fields.
@@ -437,12 +469,15 @@ def build_posts_bridge(
     """
     Derive post_type, source, game_id and is_primary for every post.
 
-    Only game and post-game threads are resolved to a game. Split,
-    second-half and repost threads share a game_id; is_primary marks the
-    largest by num_comments per (game_id, post_type), and is false on
-    every unlinked row. Coverage is logged: threads linked, games with
-    a thread, why the rest did not link, posts per type, and the
-    largest sources, where a convention read as a source would show.
+    Only game and post-game threads are resolved to a game: by the
+    title's team pair, or, when the mods have replaced the title with
+    the removal marker, by the day alone when one game sits within a
+    day of it. Split, second-half and repost threads share a game_id;
+    is_primary marks the largest by num_comments per (game_id,
+    post_type), and is false on every unlinked row. Coverage is logged:
+    threads linked, games with a thread, why the rest did not link,
+    posts per type, and the largest sources, where a convention read as
+    a source would show.
 
     Args:
         posts: Frame conforming to RAW_POSTS_SCHEMA.
@@ -469,6 +504,7 @@ def build_posts_bridge(
     game_ids: list[str | None] = []
     unparsed: list[str] = []
     unmatched: list[str] = []
+    removed: list[str] = []
     for title, flair, created_utc in posts.select(
         "title", "link_flair_text", "created_utc"
     ).iter_rows():
@@ -476,19 +512,24 @@ def build_posts_bridge(
         post_type = classify_post(title, flair)
         game_id = None
         if post_type in THREAD_TYPES:
-            pair = extract_team_pair(title, name_map)
-            if pair is None:
-                unparsed.append(title)
-            else:
-                game_id = match_game(
-                    pair,
-                    created_utc,
-                    parse_title_date(title),
-                    parse_score(title),
-                    index,
-                )
+            if _TITLE_REMOVED.match(title):
+                game_id = match_game_by_day(created_utc, index)
                 if game_id is None:
-                    unmatched.append(title)
+                    removed.append(str(local_date(created_utc)))
+            else:
+                pair = extract_team_pair(title, name_map)
+                if pair is None:
+                    unparsed.append(title)
+                else:
+                    game_id = match_game(
+                        pair,
+                        created_utc,
+                        parse_title_date(title),
+                        parse_score(title),
+                        index,
+                    )
+                    if game_id is None:
+                        unmatched.append(title)
         post_types.append(post_type)
         sources.append(post_source(title, flair))
         game_ids.append(game_id)
@@ -523,9 +564,14 @@ def build_posts_bridge(
         )
     logger.info(
         f"Unlinked threads: {len(unparsed)} name fewer than two teams, "
-        f"{len(unmatched)} name a pair with no game within a day"
+        f"{len(unmatched)} name a pair with no game within a day, "
+        f"{len(removed)} mod-removed on a night with more than one game"
     )
-    for label, titles in (("no team pair", unparsed), ("no game", unmatched)):
+    for label, titles in (
+        ("no team pair", unparsed),
+        ("no game", unmatched),
+        ("removed, by night", removed),
+    ):
         if titles:
             logger.info(f"  {label} (head): {titles[:UNLINKED_TITLES_LOGGED]}")
     type_counts = dict(bridge.group_by("post_type").len().iter_rows())

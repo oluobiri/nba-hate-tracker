@@ -25,6 +25,7 @@ from pipeline.posts import (
     classify_post,
     extract_team_pair,
     leading_tag,
+    load_posts_bridge,
     load_posts_table,
     local_date,
     match_game,
@@ -33,6 +34,7 @@ from pipeline.posts import (
     parse_title_date,
     post_source,
     read_raw_posts,
+    select_published_posts,
 )
 from pipeline.schemas import GAMES_SCHEMA, POSTS_SCHEMA
 from utils.season_config import get_active_season
@@ -1105,6 +1107,23 @@ class TestLoadPostsTable:
         assert posts.height == 0
         assert metadata == {"post_count": 0, "posts_processed_at": None}
         assert "scripts.process_posts" in caplog.text
+
+    def test_bridge_loads_whole_without_the_receipts(self, tmp_path):
+        """Verify the bridge loader returns every post, the frame the room
+        views read, and the subset is a pure selection over it."""
+        self._write_bridge(tmp_path)
+
+        bridge, metadata = load_posts_bridge(tmp_path, _games(self.GAMES), "2026-09-12")
+        posts = select_published_posts(bridge, self.RECEIPTS)
+
+        assert bridge["post_id"].to_list() == [
+            "t3_gt",
+            "t3_receipt",
+            "t3_noise",
+            "t3_news",
+        ]
+        assert metadata == {"posts_processed_at": "2026-09-13"}
+        assert posts["post_id"].to_list() == ["t3_gt", "t3_receipt"]
 
     def test_publishes_threads_and_receipt_posts(self, tmp_path):
         """Verify the subset is every thread plus each post a receipt

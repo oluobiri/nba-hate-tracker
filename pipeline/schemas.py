@@ -69,7 +69,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -365,6 +365,28 @@ GAME_SENTIMENT_SCHEMA = pl.Schema(
     }
 )
 
+# The fact by the room its post was written in. Fact rows reach a room
+# through the full bridge (link_id = post_id -> post_type), not the
+# published posts subset, so every room is populated; a row whose post
+# the bridge never saw is left out. The league-wide row per room is a
+# sum over player_room, a consumer's choice like the floors.
+PLAYER_ROOM_SCHEMA = pl.Schema(
+    {
+        "attributed_player": pl.String,  # FK -> players.parquet
+        "player_id": pl.Int64,
+        "post_type": pl.String,  # the bridge's vocabulary, as posts.post_type
+        **_METRIC_COLUMNS,
+    }
+)
+
+ROOM_TEMPORAL_SCHEMA = pl.Schema(
+    {
+        "post_type": pl.String,
+        "week": pl.Datetime("us"),  # as player_temporal
+        **_METRIC_COLUMNS,
+    }
+)
+
 # View name -> schema for the aggregate *views* (fact-table rollups).
 # Keys match aggregate_sentiment() return-dict keys and parquet filenames.
 # Deliberately fact-only: dimensions live in DASHBOARD_OUTPUT_SCHEMAS
@@ -375,6 +397,8 @@ AGGREGATE_VIEW_SCHEMAS: dict[str, pl.Schema] = {
     "player_fan_team": PLAYER_FAN_TEAM_SCHEMA,
     "fan_team_overall": FAN_TEAM_OVERALL_SCHEMA,
     "game_sentiment": GAME_SENTIMENT_SCHEMA,
+    "player_room": PLAYER_ROOM_SCHEMA,
+    "room_temporal": ROOM_TEMPORAL_SCHEMA,
 }
 
 # --- Player dimension (enforced in pipeline/aggregation.py) ------------------
@@ -659,6 +683,8 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "player_fan_team": frozenset(),
     "fan_team_overall": frozenset(),
     "game_sentiment": frozenset(),
+    "player_room": frozenset(),
+    "room_temporal": frozenset(),
     # A player off every roster at season end has no team, no conference
     # and no snapshot line: config and snapshot sides null together
     "players": frozenset({"roster_team", "conference", *PLAYERS_SNAPSHOT_COLUMNS}),
@@ -870,6 +896,7 @@ POPULATIONS: dict[str, str] = {
     "flaired": "usable comments whose author carries a team flair, attributed or not",
     "attributed_flaired": "attributed comments whose author carries a team flair",
     "in_thread": "attributed comments posted in a game or post-game thread",
+    "bridged": "attributed comments whose post the bridge holds",
     "live_thread": (
         "usable comments posted in a game's live game threads, primary and split"
     ),
@@ -894,6 +921,8 @@ TABLE_POPULATIONS: dict[str, str | None] = {
     "player_fan_team": "attributed_flaired",
     "fan_team_overall": "flaired",
     "game_sentiment": "in_thread",
+    "player_room": "bridged",
+    "room_temporal": "bridged",
     "players": None,
     "teams": None,
     "games": None,
@@ -1007,6 +1036,7 @@ class Floors(TypedDict):
     belt_min_n: int
     game_min_n: int
     race_entry_min_n: int  # season-to-date, not per cell
+    room_min_n: int  # player x room cell
 
 
 class ReactionLag(TypedDict):

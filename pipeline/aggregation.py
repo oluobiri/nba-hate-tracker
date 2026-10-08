@@ -9,6 +9,7 @@ the manifest that fronts them.
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from pipeline.games import load_box_scores, load_game_tables
 from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
 from pipeline.method_examples import build_method_examples
 from pipeline.nba_stats import check_snapshot_season, load_live_play_by_play
-from pipeline.posts import load_posts_table
+from pipeline.posts import load_posts_bridge, select_published_posts
 from pipeline.recaps import (
     RecapDocument,
     RecapStamps,
@@ -44,7 +45,9 @@ from pipeline.schemas import (
     PLAYERS_CONFIG_COLUMNS,
     PLAYERS_SCHEMA,
     PLAYERS_SNAPSHOT_COLUMNS,
+    PLAYER_ROOM_SCHEMA,
     POPULATIONS,
+    ROOM_TEMPORAL_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
     TABLE_POPULATIONS,
@@ -70,6 +73,7 @@ from utils.constants import (
     RECAP_ANCHOR_WINDOW_SECONDS,
     RECAP_ROOM_BODIES_PER_BUCKET,
     RECAP_ROOM_BUCKET_SECONDS,
+    ROOM_MIN_N,
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
@@ -174,6 +178,61 @@ def compute_game_sentiment(df: pl.DataFrame, posts: pl.DataFrame) -> pl.DataFram
         .join(room, on="game_id", how="left")
         .select(GAME_SENTIMENT_SCHEMA.names())
         .sort(["attributed_player", "game_id"])
+    )
+
+
+@dataclass(frozen=True)
+class RoomViews:
+    """The two room rollups and the population they sum to."""
+
+    player_room: pl.DataFrame
+    room_temporal: pl.DataFrame
+    bridged: int  # attributed comments whose post the bridge holds
+    unbridged: int  # attributed comments left out: post not on the bridge
+
+
+def compute_room_views(df_attributed: pl.DataFrame, bridge: pl.DataFrame) -> RoomViews:
+    """
+    Roll the attributed fact up by the room its post was written in.
+
+    A fact row reaches its room through the full bridge (link_id =
+    post_id -> post_type), not the published posts subset, so every
+    room is populated. Player x room is where a player's negativity
+    lives; room x week is the room mix over the season. A row whose
+    post the bridge never saw is left out and counted, as game_sentiment
+    counts only what reaches a game. No floor: the display floor is a
+    consumer choice.
+
+    Args:
+        df_attributed: Attributed fact frame (SENTIMENT_SCHEMA plus week
+            and player_id), attributed_player non-null on every row.
+        bridge: Frame conforming to POSTS_SCHEMA, the full bridge.
+
+    Returns:
+        RoomViews: player_room sorted by (attributed_player, post_type),
+        room_temporal by (post_type, week), both conforming.
+    """
+    roomed = df_attributed.join(
+        bridge.select("post_id", "post_type"),
+        left_on="link_id",
+        right_on="post_id",
+        how="inner",
+    )
+    player_room = (
+        compute_metrics(roomed, ["attributed_player", "player_id", "post_type"])
+        .select(PLAYER_ROOM_SCHEMA.names())
+        .sort(["attributed_player", "post_type"])
+    )
+    room_temporal = (
+        compute_metrics(roomed, ["post_type", "week"])
+        .select(ROOM_TEMPORAL_SCHEMA.names())
+        .sort(["post_type", "week"])
+    )
+    return RoomViews(
+        player_room=player_room,
+        room_temporal=room_temporal,
+        bridged=roomed.height,
+        unbridged=df_attributed.height - roomed.height,
     )
 
 
@@ -327,8 +386,9 @@ def aggregate_sentiment(
 
     Returns:
         Dict where player_overall, player_temporal, player_fan_team,
-        fan_team_overall, game_sentiment, players, teams, games, player_games,
-        posts, comment_samples, corpus_daily and method_examples hold
+        fan_team_overall, game_sentiment, player_room, room_temporal,
+        players, teams, games, player_games, posts, comment_samples,
+        corpus_daily and method_examples hold
         pl.DataFrames conforming to DASHBOARD_OUTPUT_SCHEMAS; recaps is the list of
         built RecapDocument in page order; manifest is the Manifest built
         from them; metadata is the build's internal block (the stamp
@@ -465,13 +525,28 @@ def aggregate_sentiment(
         sample=sample[0] if sample is not None else None,
     )
 
-    # Post bridge: the threads plus each receipt's post, from the bridge
-    # scripts.process_posts derived against the same game-log snapshot
+    # Post bridge, from scripts.process_posts against the same game-log
+    # snapshot: the room views read it whole, posts ships the threads
+    # plus each receipt's post
     logger.info("Selecting posts...")
-    posts, posts_metadata = load_posts_table(
-        get_reference_dir(), games, game_metadata["games_fetched_at"], comment_samples
+    bridge, posts_metadata = load_posts_bridge(
+        get_reference_dir(), games, game_metadata["games_fetched_at"]
     )
+    posts = select_published_posts(bridge, comment_samples)
     metadata.update(posts_metadata)
+    metadata["post_count"] = posts.height
+
+    # The fact by room: Player x post_type and post_type x week
+    logger.info("Computing player_room and room_temporal...")
+    rooms = compute_room_views(df_attributed, bridge)
+    metadata["bridged_comments"] = rooms.bridged
+    metadata["unbridged_comments"] = rooms.unbridged
+    logger.info(
+        f"player_room: {rooms.player_room.height:,} rows; room_temporal: "
+        f"{rooms.room_temporal.height:,} rows; bridged {rooms.bridged:,} of "
+        f"{attributed_count:,} attributed ({rooms.unbridged:,} left out, "
+        "post not on the bridge)"
+    )
 
     # The corpus at day grain: a snapshot of the raw download, exported
     # only if its totals agree with season.yaml's record
@@ -528,6 +603,8 @@ def aggregate_sentiment(
         "player_fan_team": player_fan_team,
         "fan_team_overall": fan_team_overall,
         "game_sentiment": game_sentiment,
+        "player_room": rooms.player_room,
+        "room_temporal": rooms.room_temporal,
         "players": players,
         "teams": teams,
         "games": games,
@@ -701,6 +778,7 @@ def build_manifest(
                 "belt_min_n": BELT_MIN_N,
                 "game_min_n": GAME_MIN_N,
                 "race_entry_min_n": RACE_ENTRY_MIN_N,
+                "room_min_n": ROOM_MIN_N,
             },
             "recaps": {
                 "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,

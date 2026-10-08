@@ -5,6 +5,7 @@ Tests cover compute_metrics, the dimension builders, the attributed
 frame loader, and aggregate_sentiment end to end.
 """
 
+import io
 import json
 import logging
 from datetime import date, datetime
@@ -24,6 +25,7 @@ from pipeline.aggregation import (
     compute_cumulative_metrics,
     compute_game_sentiment,
     compute_metrics,
+    compute_room_views,
     load_attributed_frame,
     load_fact_subset,
     mask_below_threshold,
@@ -58,7 +60,9 @@ from pipeline.schemas import (
     COMMENT_SAMPLES_SCHEMA,
     METHOD_EXAMPLES_SCHEMA,
     PLAYERS_SCHEMA,
+    PLAYER_ROOM_SCHEMA,
     POSTS_SCHEMA,
+    ROOM_TEMPORAL_SCHEMA,
     ROSTERS_SCHEMA,
     SCHEMA_VERSION,
     SENTIMENT_SCHEMA,
@@ -68,6 +72,7 @@ from pipeline.schemas import (
 from utils.constants import (
     BELT_MIN_N,
     RACE_ENTRY_MIN_N,
+    ROOM_MIN_N,
     COMMENT_SAMPLES_MAX_BODY_CHARS,
     COMMENT_SAMPLES_MIN_CONFIDENCE,
     COMMENT_SAMPLES_TOP_N,
@@ -1364,6 +1369,7 @@ class TestBuildManifest:
             "belt_min_n": BELT_MIN_N,
             "game_min_n": GAME_MIN_N,
             "race_entry_min_n": RACE_ENTRY_MIN_N,
+            "room_min_n": ROOM_MIN_N,
         }
         assert rules["recaps"] == {
             "room_bucket_seconds": RECAP_ROOM_BUCKET_SECONDS,
@@ -2199,6 +2205,220 @@ def _fact(rows: list[tuple[str, str | None, str]]) -> pl.DataFrame:
             "sentiment": pl.String,
         },
     )
+
+
+_WEEK_1 = datetime(2024, 1, 1)
+_WEEK_2 = datetime(2024, 1, 8)
+
+
+def _room_fact(rows: list[tuple[str, str, str, datetime]]) -> pl.DataFrame:
+    """An attributed fact frame from (link_id, attributed_player, sentiment,
+    week) — the columns compute_room_views reads."""
+    base = _fact([(r[0], r[1], r[2]) for r in rows])
+    return base.with_columns(
+        pl.Series("week", [r[3] for r in rows], dtype=pl.Datetime("us"))
+    )
+
+
+class TestComputeRoomViews:
+    """Tests for the two room rollups through the full bridge."""
+
+    @pytest.fixture
+    def bridge(self):
+        """Two game threads, a news post and a general post; the bridge
+        holds every post, linked or not."""
+        return pl.DataFrame(
+            [
+                _post_row("t3_gt1", "game_thread", "G1", True),
+                _post_row("t3_gt2", "game_thread", "G2", True),
+                _post_row("t3_news", "news", None, False),
+                _post_row("t3_front", "general", None, False),
+            ],
+            schema=POSTS_SCHEMA,
+        )
+
+    def test_a_row_reaches_its_room_through_the_bridge(self, bridge):
+        """A comment's room is its post's post_type: two game threads are
+        one room, the news post another."""
+        df = _room_fact(
+            [
+                ("t3_gt1", "LeBron James", "neg", _WEEK_1),
+                ("t3_gt2", "LeBron James", "neg", _WEEK_1),
+                ("t3_news", "LeBron James", "pos", _WEEK_1),
+            ]
+        )
+
+        views = compute_room_views(df, bridge)
+
+        rooms = {r["post_type"]: r for r in views.player_room.to_dicts()}
+        assert set(rooms) == {"game_thread", "news"}
+        assert rooms["game_thread"]["attributed_player"] == "LeBron James"
+        assert (
+            rooms["game_thread"]["neg_count"],
+            rooms["game_thread"]["comment_count"],
+        ) == (2, 2)
+        assert (rooms["news"]["pos_count"], rooms["news"]["comment_count"]) == (1, 1)
+
+    def test_a_row_off_the_bridge_is_left_out_and_counted(self, bridge):
+        """A comment in a post the bridge never saw reaches no room; the
+        build reports how many it left out."""
+        df = _room_fact(
+            [
+                ("t3_gt1", "LeBron James", "neg", _WEEK_1),
+                ("t3_unknown", "LeBron James", "neg", _WEEK_1),
+            ]
+        )
+
+        views = compute_room_views(df, bridge)
+
+        assert views.player_room["comment_count"].sum() == 1
+        assert views.room_temporal["comment_count"].sum() == 1
+        assert views.bridged == 1
+        assert views.unbridged == 1
+
+    def test_both_views_sum_to_the_bridged_population(self, bridge):
+        """Every bridged comment lands in exactly one player x room cell
+        and one room x week cell, whoever it mentions."""
+        df = _room_fact(
+            [
+                ("t3_gt1", "LeBron James", "neg", _WEEK_1),
+                ("t3_gt1", "Giannis Antetokounmpo", "neu", _WEEK_1),
+                ("t3_news", "LeBron James", "pos", _WEEK_2),
+                ("t3_front", "Giannis Antetokounmpo", "neg", _WEEK_2),
+                ("t3_front", "Giannis Antetokounmpo", "pos", _WEEK_2),
+                ("t3_unknown", "LeBron James", "neg", _WEEK_2),
+            ]
+        )
+
+        views = compute_room_views(df, bridge)
+
+        assert views.bridged == 5
+        assert views.player_room["comment_count"].sum() == 5
+        assert views.room_temporal["comment_count"].sum() == 5
+        by_week = {
+            (r["post_type"], r["week"]): r["comment_count"]
+            for r in views.room_temporal.to_dicts()
+        }
+        assert by_week == {
+            ("game_thread", _WEEK_1): 2,
+            ("news", _WEEK_2): 1,
+            ("general", _WEEK_2): 2,
+        }
+
+    def test_conforms_and_sorts(self, bridge):
+        """Both frames are their contracts, player_room ordered by
+        (attributed_player, post_type) and room_temporal by (post_type, week)."""
+        df = _room_fact(
+            [
+                ("t3_news", "LeBron James", "pos", _WEEK_2),
+                ("t3_gt1", "LeBron James", "neg", _WEEK_1),
+                ("t3_front", "Giannis Antetokounmpo", "neg", _WEEK_2),
+                ("t3_news", "LeBron James", "neg", _WEEK_1),
+            ]
+        )
+
+        views = compute_room_views(df, bridge)
+
+        assert views.player_room.schema == PLAYER_ROOM_SCHEMA
+        assert views.room_temporal.schema == ROOM_TEMPORAL_SCHEMA
+        assert views.player_room.select("attributed_player", "post_type").rows() == [
+            ("Giannis Antetokounmpo", "general"),
+            ("LeBron James", "game_thread"),
+            ("LeBron James", "news"),
+        ]
+        assert views.room_temporal.select("post_type", "week").rows() == [
+            ("game_thread", _WEEK_1),
+            ("general", _WEEK_2),
+            ("news", _WEEK_1),
+            ("news", _WEEK_2),
+        ]
+
+    def test_empty_bridge_gives_empty_conforming_views(self):
+        """Without a bridge the views are empty but keep their contracts,
+        and every comment counts as left out."""
+        df = _room_fact([("t3_gt1", "LeBron James", "neg", _WEEK_1)])
+
+        views = compute_room_views(df, pl.DataFrame(schema=POSTS_SCHEMA))
+
+        assert views.player_room.height == 0
+        assert views.player_room.schema == PLAYER_ROOM_SCHEMA
+        assert views.room_temporal.height == 0
+        assert views.room_temporal.schema == ROOM_TEMPORAL_SCHEMA
+        assert (views.bridged, views.unbridged) == (0, 1)
+
+    def test_two_runs_are_byte_identical(self, bridge):
+        """The same inputs write the same bytes: group_by order is pinned
+        by the sort."""
+        df = _room_fact(
+            [
+                ("t3_front", "Giannis Antetokounmpo", "neg", _WEEK_2),
+                ("t3_gt1", "LeBron James", "neg", _WEEK_1),
+                ("t3_news", "LeBron James", "pos", _WEEK_2),
+                ("t3_gt2", "Giannis Antetokounmpo", "pos", _WEEK_1),
+            ]
+        )
+
+        first = compute_room_views(df, bridge)
+        second = compute_room_views(
+            df.sample(fraction=1.0, shuffle=True, seed=7), bridge
+        )
+
+        for a, b in (
+            (first.player_room, second.player_room),
+            (first.room_temporal, second.room_temporal),
+        ):
+            buf_a, buf_b = io.BytesIO(), io.BytesIO()
+            a.write_parquet(buf_a)
+            b.write_parquet(buf_b)
+            assert buf_a.getvalue() == buf_b.getvalue()
+
+
+class TestAggregateRoomViews:
+    """Tests for the room views' passage through aggregate_sentiment."""
+
+    def test_no_bridge_ships_empty_views(self, tmp_path, pinned_snapshot):
+        """Without a bridge both views are empty but present and conforming,
+        and the whole attributed population is reported left out."""
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        assert result["player_room"].schema == PLAYER_ROOM_SCHEMA
+        assert result["player_room"].height == 0
+        assert result["room_temporal"].schema == ROOM_TEMPORAL_SCHEMA
+        assert result["room_temporal"].height == 0
+        assert result["metadata"]["bridged_comments"] == 0
+        assert (
+            result["metadata"]["unbridged_comments"]
+            == result["metadata"]["attributed_comments"]
+        )
+
+    def test_rolls_the_fact_up_through_the_full_bridge(self, tmp_path, pinned_snapshot):
+        """LeBron's comments land in their posts' rooms whether or not the
+        post is published: the general post is not in posts.parquet but
+        its room is in player_room."""
+        _write_game_logs(pinned_snapshot)
+        _write_posts_bridge(
+            pinned_snapshot,
+            [
+                _post_row("t3_gt", "game_thread", "0022500001", True),
+                _post_row("t3_post123", "general", None, False),
+            ],
+        )
+
+        result = aggregate_sentiment(_lebron_parquet(tmp_path))
+
+        rooms = result["player_room"]
+        assert set(rooms["post_type"].to_list()) <= {"game_thread", "general"}
+        assert rooms["comment_count"].sum() == result["metadata"]["bridged_comments"]
+        assert (
+            result["metadata"]["bridged_comments"]
+            + result["metadata"]["unbridged_comments"]
+            == result["metadata"]["attributed_comments"]
+        )
+        assert (
+            result["room_temporal"]["comment_count"].sum()
+            == result["metadata"]["bridged_comments"]
+        )
+        assert result["manifest"]["tables"]["player_room"]["rows"] == rooms.height
 
 
 class TestComputeGameSentiment:

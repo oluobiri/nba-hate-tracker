@@ -610,47 +610,42 @@ def build_posts_bridge(
     return bridge
 
 
-def load_posts_table(
+def load_posts_bridge(
     reference_dir: Path,
     games: pl.DataFrame,
     games_fetched_at: str | None,
-    comment_samples: pl.DataFrame,
 ) -> tuple[pl.DataFrame, dict]:
     """
-    Select the published posts from the season's bridge.
+    Read the season's full Post bridge for aggregation.
 
-    The published table is the game and post-game threads plus every
-    post a receipt points at (its title is the receipt's context). A
-    missing bridge degrades to an empty table with a warning, so
-    aggregation stays runnable before scripts.process_posts has run.
-    The bridge's season and teams-config stamps are checked, and a
-    bridge derived from a different game-log fetch than the game tables
-    is flagged; a game_id the dimension no longer carries fails the
-    build outright.
+    Every post with its room, the frame the room views roll the fact up
+    through; the published posts table is a subset of it. A missing
+    bridge degrades to an empty frame with a warning, so aggregation
+    stays runnable before scripts.process_posts has run. The bridge's
+    season and teams-config stamps are checked, and a bridge derived
+    from a different game-log fetch than the game tables is flagged; a
+    game_id the dimension no longer carries fails the build outright.
 
     Args:
         reference_dir: Season reference directory holding the bridge.
         games: Frame conforming to GAMES_SCHEMA, this run's dimension.
         games_fetched_at: The game tables' snapshot fetch date, or None.
-        comment_samples: Frame conforming to COMMENT_SAMPLES_SCHEMA.
 
     Returns:
-        (posts, metadata) where metadata carries post_count and
-        posts_processed_at (the bridge's stamp, or None when absent).
+        (bridge, metadata) where bridge conforms to POSTS_SCHEMA and
+        metadata carries posts_processed_at (the bridge's stamp, or None
+        when absent).
 
     Raises:
         ValueError: If the bridge links a post to a game_id absent from
-            games, or does not conform to POSTS_SCHEMA.
+            games, repeats a post_id, or does not conform to POSTS_SCHEMA.
     """
     path = reference_dir / POSTS_BRIDGE_FILENAME
     if not path.exists():
         logger.warning(
             f"{path} not found (run scripts.process_posts) - posts will be empty"
         )
-        return pl.DataFrame(schema=POSTS_SCHEMA), {
-            "post_count": 0,
-            "posts_processed_at": None,
-        }
+        return pl.DataFrame(schema=POSTS_SCHEMA), {"posts_processed_at": None}
 
     stamps = check_snapshot_season(path, subject="post bridge", log=logger)
     check_config_stamps(
@@ -685,7 +680,33 @@ def load_posts_table(
             f"{unknown['game_id'].unique().sort().head(10).to_list()}; re-run "
             "scripts.process_posts against the current snapshot"
         )
+    # Every consumer joins the fact to the bridge on post_id; a repeated
+    # id would fan the join out and inflate every count silently
+    duplicates = bridge.height - bridge["post_id"].n_unique()
+    if duplicates:
+        raise ValueError(
+            f"{path} repeats {duplicates} post_id(s); rebuild it with "
+            "scripts.process_posts --force"
+        )
+    return bridge, {"posts_processed_at": stamps.get("processed_at")}
 
+
+def select_published_posts(
+    bridge: pl.DataFrame, comment_samples: pl.DataFrame
+) -> pl.DataFrame:
+    """
+    Select the published posts from the bridge.
+
+    The game and post-game threads plus every post a receipt points at
+    (its title is the receipt's context).
+
+    Args:
+        bridge: Frame conforming to POSTS_SCHEMA, the full bridge.
+        comment_samples: Frame conforming to COMMENT_SAMPLES_SCHEMA.
+
+    Returns:
+        The subset, in bridge order, conforming to POSTS_SCHEMA.
+    """
     is_thread = pl.col("post_type").is_in(list(THREAD_TYPES))
     is_receipt_context = pl.col("post_id").is_in(
         comment_samples["link_id"].unique().to_list()
@@ -696,7 +717,4 @@ def load_posts_table(
         f"posts: {posts.height} published of {bridge.height} "
         f"({thread_count} threads, {posts.height - thread_count} receipt context)"
     )
-    return posts, {
-        "post_count": posts.height,
-        "posts_processed_at": stamps.get("processed_at"),
-    }
+    return posts

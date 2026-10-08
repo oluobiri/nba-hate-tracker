@@ -53,6 +53,7 @@ TEAM_CONFIG = {
     },
     "Washington Wizards": {"abbreviation": "WAS", "aliases": ["was", "wizards"]},
     "Toronto Raptors": {"abbreviation": "TOR", "aliases": ["tor", "raptors"]},
+    "Miami Heat": {"abbreviation": "MIA", "aliases": ["mia", "heat"]},
 }
 NAME_MAP = build_title_name_map(TEAM_CONFIG)
 
@@ -262,16 +263,23 @@ class TestPostSource:
 
 
 class TestBuildTitleNameMap:
-    """Tests for build_title_name_map (canonical names + multi-word aliases)."""
+    """Tests for build_title_name_map (canonical names + aliases of four letters or more)."""
 
-    def test_canonical_names_and_multiword_aliases_only(self):
-        """Verify single-token aliases stay out: `was` and `tor` would
-        match inside ordinary words of a post-game title."""
+    def test_names_multiword_aliases_and_nicknames_map(self):
+        """Verify the canonical name, the multi-word spellings and the
+        nicknames all resolve; `heat` sits exactly at the length floor."""
         assert NAME_MAP["boston celtics"] == "Boston Celtics"
         assert NAME_MAP["orland magic"] == "Orlando Magic"
         assert NAME_MAP["la clippers"] == "Los Angeles Clippers"
-        for single in ("was", "tor", "bos", "celtics", "wizards"):
-            assert single not in NAME_MAP
+        assert NAME_MAP["celtics"] == "Boston Celtics"
+        assert NAME_MAP["wizards"] == "Washington Wizards"
+        assert NAME_MAP["heat"] == "Miami Heat"
+
+    def test_three_letter_codes_stay_out(self):
+        """Verify the codes never become spellings: `was`, `den` and `ind`
+        are English words on a word boundary in a post-game title."""
+        for code in ("was", "tor", "bos", "por", "mia"):
+            assert code not in NAME_MAP
 
 
 class TestExtractTeamPair:
@@ -330,11 +338,41 @@ class TestExtractTeamPair:
             {"Orlando Magic", "Boston Celtics"}
         )
 
-    def test_single_token_aliases_never_fire(self):
-        """Verify prose containing `was` and `victory` names no third team."""
+    def test_three_letter_codes_never_fire(self):
+        """Verify prose containing `was` names no third team: a code is
+        not a spelling."""
         title = (
             "[Post Game Thread] The Boston Celtics (1-0) defeat the New York "
             "Knicks (0-1), 99-84. It was a victory for the ages."
+        )
+        assert extract_team_pair(title, NAME_MAP) == frozenset(
+            {"Boston Celtics", "New York Knicks"}
+        )
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "[Post Game Thread] The Celtics (1-0) defeat the Knicks (0-1), 99-84.",
+            "Post-Game Thread: Celtics defeat Knicks, 123-91 | NBA Playoffs | Apr 19, 2026",
+            "GAME THREAD: Celtics (47-17) vs Knicks (43-21)",
+            "Game Thread: Boston Celtics vs Knicks Live Score | NBA | Feb 9, 2026",
+            "[Post Game Thread] The Hospital Celtics (26-13) defeat the Knicks (17-22), 108-104.",
+        ],
+    )
+    def test_nicknames_yield_the_pair(self, title):
+        """Verify a title that names its teams by nickname alone, or mixes
+        a nickname with a full name, or prefixes a nickname with a joke,
+        still parses to the pair."""
+        assert extract_team_pair(title, NAME_MAP) == frozenset(
+            {"Boston Celtics", "New York Knicks"}
+        )
+
+    def test_a_nickname_in_trailing_prose_never_displaces_the_pair(self):
+        """Verify a nickname used as an ordinary word after the matchup
+        (`heat`, `magic`) never becomes a third team."""
+        title = (
+            "[Post Game Thread] The Boston Celtics (1-0) defeat the New York "
+            "Knicks (0-1), 99-84. The heat is on and it was magic."
         )
         assert extract_team_pair(title, NAME_MAP) == frozenset(
             {"Boston Celtics", "New York Knicks"}

@@ -128,6 +128,9 @@ CONVENTION_TAGS = frozenset(
 # sometimes carry the UTC day, one off either way.
 POST_LOCAL_TZ = ZoneInfo("America/New_York")
 GAME_DATE_WINDOW_DAYS = (-1, 0, 1)
+# An alias this long is a title spelling, nicknames included; the
+# three-letter codes are English words on a word boundary.
+TITLE_ALIAS_MIN_LENGTH = 4
 
 # Title fallback for flair-stripped (mod-removed) threads. Anchored, so
 # the daily "... + Game Thread Index" posts never match.
@@ -221,10 +224,12 @@ def build_title_name_map(team_config: dict[str, dict]) -> dict[str, str]:
     """
     Map the spellings a title may use for a team to its canonical name.
 
-    Canonical names plus the multi-word entries of teams.yaml aliases[]
-    (the flair fragments), lowercased. Single-token aliases are left
-    out: `was` and `tor` sit inside ordinary words of a post-game
-    title, and an abbreviation never appears in one.
+    Canonical names plus the teams.yaml aliases[] of
+    TITLE_ALIAS_MIN_LENGTH letters or more, lowercased: the multi-word
+    spellings and the nicknames (Celtics, Mavs, Heat). The three-letter
+    codes are left out: `was`, `den` and `ind` sit in the prose of a
+    post-game title as ordinary words, and a thread title never
+    abbreviates.
 
     Args:
         team_config: Team config dict from load_team_config().
@@ -235,7 +240,7 @@ def build_title_name_map(team_config: dict[str, dict]) -> dict[str, str]:
     name_map = {team.lower(): team for team in team_config}
     for team, info in team_config.items():
         for alias in info.get("aliases", []):
-            if " " in alias:
+            if " " in alias or len(alias) >= TITLE_ALIAS_MIN_LENGTH:
                 name_map[alias.lower()] = team
     return name_map
 

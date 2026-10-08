@@ -125,7 +125,7 @@ The distinction matters because the two layers age differently: frozen fields st
 |---|---|
 | `team` | canonical name (PK) |
 | `abbreviation`, `conference`, `team_id`, `logo_url` | descriptive attributes |
-| `aliases[]` | the flair fragments feeding `fan_team` resolution |
+| `aliases[]` | the flair fragments feeding `fan_team` resolution, and, at four letters or more, the title spellings the Post bridge reads |
 
 ### `Game` — dimension
 

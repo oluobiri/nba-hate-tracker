@@ -294,6 +294,24 @@
 .exhibit__meta a {
   margin-left: auto;
 }
+/* The finder's match in a body: method yellow, since the mark is about how the comment was read. */
+mark {
+  padding: 0 1px;
+  background: var(--hl-dim);
+  color: inherit;
+  border-bottom: 2px solid var(--hl);
+}
+/* Between body and footer: the answer and a line about it. */
+.exhibit__extra {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.exhibit__extra p {
+  margin: 0;
+  max-width: 60ch;
+}
 
 /* StatFigure: one number, its label, quiet detail. */
 .stat {
@@ -2695,5 +2713,664 @@ a.hero__who:hover {
   }
   .rrow__n {
     font-size: 10px;
+  }
+}
+
+/* Answer: the classifier's reply as one chip. s is the only sentiment value in it. */
+.ans {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: var(--bone);
+}
+.ans__p {
+  color: var(--mute-2);
+}
+.ans__k {
+  color: var(--mute);
+}
+.ans__null {
+  color: var(--mute);
+  font-style: italic;
+}
+.v-neg {
+  color: var(--heat);
+}
+.v-pos {
+  color: var(--ice);
+}
+.v-neu {
+  color: var(--neu);
+}
+.ledger .ans {
+  white-space: normal;
+}
+@media (max-width: 480px) {
+  .ans {
+    white-space: normal;
+  }
+}
+
+/* Fold: a native details, the summary a mono line with a marker. Headings never live inside one. */
+.fold {
+  border-top: 1px solid var(--line);
+}
+.fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-2);
+}
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.fold > summary::before {
+  content: '+';
+  width: 16px;
+  color: var(--mute);
+}
+.fold[open] > summary::before {
+  content: '−';
+}
+.fold > summary:hover {
+  color: var(--bone);
+}
+.fold__body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 16px;
+}
+
+/* JSON and code blocks: wrap, never scroll sideways. */
+.json,
+.code {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--bone-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.json__k {
+  color: var(--mute);
+}
+.json__s,
+.json__n {
+  color: var(--bone);
+}
+.json__p {
+  color: var(--mute-2);
+}
+.json__null,
+.json__note {
+  color: var(--mute);
+  font-style: italic;
+}
+
+/* Stage: one step of the walkthrough. Number and name down the side, the comment across;
+   the count is method yellow, since the funnel is the method's own line. */
+.trace {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 24px;
+  padding-bottom: 30px;
+}
+.stage:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 34px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-2);
+}
+.stage__id {
+  display: grid;
+  grid-template-columns: 29px 1fr;
+  column-gap: 12px;
+  align-content: start;
+}
+.stage__n {
+  grid-row: span 4;
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bone-2);
+  border-radius: 50%;
+  font: 600 12px var(--mono);
+  color: var(--bone);
+  background: var(--ink);
+}
+.stage__name {
+  padding-top: 5px;
+  font: 700 18px/1.1 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.stage__where {
+  margin-top: 3px;
+  font: 11.5px var(--mono);
+  color: var(--mute);
+}
+.stage__count {
+  display: block;
+  margin-top: 8px;
+  font: 500 13px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--hl);
+}
+.stage__bar {
+  display: block;
+  position: relative;
+  height: 3px;
+  margin-top: 6px;
+  background: var(--line);
+}
+.stage__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--hl);
+}
+.stage__body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.stage__body > p {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 15px;
+  color: var(--bone-2);
+}
+.stage__body b:not([class]) {
+  font-weight: 600;
+  color: var(--bone);
+}
+.stage__body b[class] {
+  font-weight: 600;
+}
+.stage__drop {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 1px dashed var(--mute-2);
+  font: 12px/1.5 var(--mono);
+  color: var(--mute);
+  max-width: 80ch;
+}
+.stage__drop b {
+  font-weight: 500;
+  color: var(--bone-2);
+}
+.stage .fold {
+  border-top: 0;
+}
+.stage .fold > summary {
+  min-height: 32px;
+  font-size: 11px;
+}
+.said {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  background: var(--surface);
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.said--neg {
+  border-left-color: var(--heat);
+}
+.said--pos {
+  border-left-color: var(--ice);
+}
+.said--neu {
+  border-left-color: var(--neu);
+}
+@media (max-width: 760px) {
+  .stage {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .stage::before {
+    display: none;
+  }
+}
+
+/* Ledger: a table of comments that becomes a stack of labeled blocks on a phone. */
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.ledger th,
+.ledger td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px 14px 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ledger thead th {
+  padding-top: 0;
+  font: 700 12px var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.ledger tbody th {
+  width: 150px;
+  font: 700 14px/1.2 var(--display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.ledger__body {
+  max-width: 44ch;
+}
+.ledger__q {
+  quotes: none;
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  color: var(--bone);
+}
+.ledger b {
+  font-weight: 600;
+}
+.src {
+  display: block;
+  margin-top: 6px;
+  font: 11px var(--mono);
+  color: var(--mute);
+}
+.src a {
+  color: var(--mute);
+}
+.why {
+  margin: 8px 0 0;
+  max-width: 44ch;
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.why--lead {
+  margin-top: 0;
+}
+.why:empty {
+  display: none;
+}
+.namechip {
+  display: inline-block;
+  margin: 0 6px 6px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  font: 12px var(--mono);
+  color: var(--bone);
+  white-space: nowrap;
+}
+.nobody {
+  font: 600 12px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.muted {
+  color: var(--mute);
+}
+.verdict {
+  font: 600 12px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hl);
+}
+.meant {
+  display: block;
+  font: 12.5px var(--mono);
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .ledger thead {
+    display: none;
+  }
+  .ledger,
+  .ledger tbody,
+  .ledger tr,
+  .ledger tbody th,
+  .ledger th,
+  .ledger td {
+    display: block;
+    width: auto;
+    max-width: none;
+  }
+  .ledger tr {
+    display: grid;
+    gap: 8px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .ledger th,
+  .ledger td {
+    padding: 0;
+    border: 0;
+  }
+  .ledger td[data-l]::before {
+    content: attr(data-l);
+    display: block;
+    margin-bottom: 3px;
+    font: 700 11px var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .meant {
+    white-space: normal;
+  }
+}
+
+/* GapChart: the hand check's Δ axis. Dots in sentiment colour; a call outside the margin is method yellow. */
+.gapchart {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.gapchart svg {
+  width: 100%;
+  height: auto;
+}
+.gapchart__narrow {
+  display: none;
+}
+.gapchart__axis {
+  font: 11px var(--mono);
+  fill: var(--mute);
+}
+.gapchart__lab {
+  font: 500 13px var(--body);
+  fill: var(--bone);
+}
+.gapchart__val {
+  font: 500 12px var(--mono);
+  fill: var(--bone);
+}
+.gapchart__call {
+  font: 11px var(--mono);
+  fill: var(--mute);
+}
+.gapchart__call--out {
+  fill: var(--hl);
+}
+.gapchart__zero {
+  stroke: var(--bone-2);
+  stroke-width: 1;
+}
+.gapchart__grid {
+  stroke: var(--line);
+}
+.gapchart__range {
+  stroke: var(--line-2);
+  stroke-width: 6;
+}
+.gapchart__mask {
+  fill: var(--ink);
+}
+.gapchart__dot--neg {
+  fill: var(--heat);
+}
+.gapchart__dot--neu {
+  fill: var(--neu);
+}
+.gapchart__dot--pos {
+  fill: var(--ice);
+}
+.gapchart__caption {
+  margin: 0;
+  font: 12px var(--mono);
+  color: var(--mute);
+}
+@media (max-width: 600px) {
+  .gapchart__wide {
+    display: none;
+  }
+  .gapchart__narrow {
+    display: block;
+  }
+}
+
+/* PipelineDiagram: the wide drawing where the column holds it, the stack below 1024.
+   The funnel's main flow is method yellow; the publish paths are the S3 green; AWS orange outlines its panel;
+   brand marks keep their own colours, since the drawing names the tools. */
+.pipe {
+  min-width: 0;
+}
+.pipe__wide {
+  display: none;
+  width: 100%;
+  height: auto;
+}
+.pipe__wide text {
+  font-family: var(--body);
+}
+.pipe-panel {
+  fill: none;
+  stroke: var(--mute);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+.pipe-panel--aws {
+  stroke: #ff9900;
+  stroke-opacity: 0.7;
+  stroke-dasharray: none;
+}
+.pipe-box {
+  fill: var(--surface);
+  stroke: var(--line-2);
+}
+.pipe-box--ext {
+  fill: var(--ink-2);
+  stroke: var(--mute-2);
+  stroke-dasharray: 3 3;
+}
+.pipe-box--key {
+  fill: var(--surface-2);
+  stroke: var(--bone-2);
+}
+.pipe-band {
+  fill: var(--ink-2);
+  stroke: var(--line);
+}
+.pipe-sep {
+  stroke: var(--line);
+  stroke-dasharray: 2 5;
+}
+.pipe-t {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--bone);
+}
+.pipe-m {
+  font: 10.5px var(--mono);
+  fill: var(--mute);
+}
+.pipe-n {
+  font: 500 11px var(--mono);
+  fill: var(--hl);
+}
+.pipe-ph {
+  font: 700 14px var(--display);
+  letter-spacing: 0.1em;
+  fill: var(--bone);
+}
+.pipe-pm {
+  font: 10.5px var(--mono);
+  fill: var(--mute);
+}
+.pipe-zh {
+  font: 700 12px var(--display);
+  letter-spacing: 0.12em;
+  fill: var(--bone-2);
+}
+.pipe-zm {
+  font: 10.5px var(--mono);
+  fill: var(--mute);
+}
+.pipe-l {
+  font: 10.5px var(--mono);
+  fill: var(--bone-2);
+}
+.pipe-l--sm {
+  fill: var(--mute);
+}
+.pipe-l--pub {
+  fill: var(--pub);
+}
+.pipe-bh {
+  font: 700 12px var(--display);
+  letter-spacing: 0.12em;
+  fill: var(--bone);
+}
+.pipe-bt {
+  font-size: 12px;
+  fill: var(--bone-2);
+}
+.pipe-a {
+  fill: none;
+  stroke: var(--bone-2);
+  stroke-width: 1.2;
+}
+.pipe-a--main {
+  stroke: var(--hl);
+  stroke-width: 1.8;
+}
+.pipe-a--pub {
+  stroke: var(--pub);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+.pipe-ah path {
+  fill: var(--bone-2);
+}
+.pipe-ah--main path {
+  fill: var(--hl);
+}
+.pipe-ah--pub path {
+  fill: var(--pub);
+}
+
+.pipe__stack {
+  display: grid;
+  max-width: 480px;
+}
+.pipe-sec {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-2);
+  background: var(--ink-2);
+}
+.pipe-sec--aws {
+  border-style: solid;
+  border-color: rgba(255, 153, 0, 0.7);
+}
+.pipe-sec--under {
+  margin-top: 14px;
+}
+.pipe-sec--under p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.pipe-sec--under b {
+  font-weight: 600;
+  color: var(--bone);
+}
+.pipe-sec__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.pipe-sec__name {
+  font: 700 13px var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pipe-sec__fold {
+  font: 11px var(--mono);
+  color: var(--mute);
+}
+.pipe-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.pipe-item__mark {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.pipe-item__title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.pipe-item__sub {
+  display: block;
+  font: 11px/1.35 var(--mono);
+  color: var(--mute);
+}
+.pipe-item__count {
+  font: 500 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--hl);
+}
+.pipe-hop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 6px 18px;
+  font: 11px var(--mono);
+  color: var(--mute);
+}
+.pipe-hop span {
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.pipe-hop--main,
+.pipe-hop--main span {
+  color: var(--hl);
+}
+.pipe-hop--pub,
+.pipe-hop--pub span {
+  color: var(--pub);
+}
+@media (min-width: 1024px) {
+  .pipe__wide {
+    display: block;
+  }
+  .pipe__stack {
+    display: none;
   }
 }

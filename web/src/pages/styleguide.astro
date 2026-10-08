@@ -2,16 +2,21 @@
 import { cardHref } from '../cards/model'
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
-import { Exhibit, commentUrl } from '../components/Exhibit'
+import { Answer } from '../components/Answer'
+import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
+import { Fold, JsonBlock } from '../components/Fold'
 import { FanGrid } from '../components/FanGrid'
 import { Games } from '../components/Games'
+import { GapChart } from '../components/GapChart'
 import { GameNetTimeline } from '../components/GameNetTimeline'
 import { GameScatter } from '../components/GameScatter'
 import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
+import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
+import { PipelineDiagram } from '../components/PipelineDiagram'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
 import { BoxScore } from '../components/replay/BoxScore'
@@ -25,6 +30,7 @@ import { RaceRow } from '../components/RaceRow'
 import { RankNumeral } from '../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../components/Receipts'
 import SectionRail from '../components/SectionRail.astro'
+import { Said, Stage } from '../components/Stage'
 import { SentimentBar } from '../components/SentimentBar'
 import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
@@ -44,6 +50,8 @@ import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
 import { groupBy } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
+import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
+import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
@@ -79,7 +87,7 @@ const abbrOf = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
 const noRoster = tables.players.find((p) => p.roster_team === null)!
 const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
 const gamesById = new Map(tables.games.map((g) => [g.game_id, g]))
-const exhibitProps = (r: (typeof tables.comment_samples)[number]) => {
+const exhibitProps = (r: Pick<(typeof tables.comment_samples)[number], 'body' | 'sentiment' | 'score' | 'link_id' | 'comment_id' | 'fan_team' | 'created_utc'>) => {
   const post = posts.get(r.link_id)
   return {
     body: r.body,
@@ -94,6 +102,41 @@ const exhibitProps = (r: (typeof tables.comment_samples)[number]) => {
 const receipt = tables.comment_samples.find((r) => r.sentiment === 'neg' && posts.has(r.link_id) && r.body.length < 240)!
 const orphan = tables.comment_samples.find((r) => !posts.has(r.link_id))
 const neutral = tables.comment_samples.find((r) => r.sentiment === 'neu' && posts.has(r.link_id) && r.body.length < 240)!
+// The walkthrough's comment: the finder's names marked, a line under the body.
+const trace = requireTrace(tables.method_examples)
+// The answer in each tone: one negative, one positive (the trace), one neutral with no player named.
+const negAnswer = tables.method_examples.find((r) => r.sentiment === 'neg')!
+const nullAnswer = tables.method_examples.find((r) => r.sentiment_player === null)!
+const corpus = manifest.corpus
+const drops = stageDrops(corpus)
+// The three ledgers on live rows; the copy join fails the build when the examples and their lines disagree.
+const exampleCopy = joinCopy(tables.method_examples.map((r) => r.comment_id), EXAMPLE_COPY, 'method_examples')
+const caseTitle = joinCopy([...new Set(tables.method_examples.map((r) => r.attribution_case))], CASE_COPY, 'attribution_case')
+const quoted = (r: (typeof tables.method_examples)[number]) => ({ row: r, note: exampleCopy.get(r.comment_id)! })
+const caseLines = caseRows(tables.method_examples).map((r) => ({ ...quoted(r), title: caseTitle.get(r.attribution_case)! }))
+const slipLines = bySlot(tables.method_examples, 'slip').map((r) => ({ ...quoted(r), label: slipLabel(r) }))
+const quoteLines = bySlot(tables.method_examples, 'quote_check').map((r) => ({ ...quoted(r), caseTitle: caseTitle.get(r.attribution_case)! }))
+// The hand check's gaps as published, then a made-up set: a range that touches zero (within, by the rule), one far outside.
+const liveGaps = classGaps(manifest.rules.accuracy.class_mix)
+const liveDomain = gapDomain(liveGaps)
+const edgeGaps = classGaps({
+  neg: { classifier: 0.35, manual: 0.3, gap: 0.05, gap_margin: 0.05 },
+  neu: { classifier: 0.3, manual: 0.3, gap: 0, gap_margin: 0.04 },
+  pos: { classifier: 0.2, manual: 0.4, gap: -0.2, gap_margin: 0.06 },
+})
+const edgeDomain = gapDomain(edgeGaps)
+// The pipeline drawing on the published figures.
+const diagram = {
+  season: manifest.season,
+  counts: { raw: corpus.raw_comments!, submitted: corpus.population_submitted!, usable: corpus.usable, attributed: corpus.attributed },
+  tracked: tables.players.length,
+  tables: Object.keys(manifest.tables).length,
+  recaps: Object.keys(manifest.recaps).length,
+  sentimentModel: shortModel(requireClassifier(manifest.classifiers, 'sentiment').model),
+  targetModel: shortModel(requireClassifier(manifest.classifiers, 'target').model),
+  drawn: manifest.rules.accuracy.drawn ?? 0,
+  scored: manifest.rules.accuracy.scored ?? 0,
+}
 
 // Share cards: the leaderboard's, then the player and fanbase cases a frame has to hold.
 const longestPlayerName = tables.players.toSorted((a, b) => b.attributed_player.length - a.attributed_player.length)[0]!
@@ -448,8 +491,71 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <Exhibit number={1} {...exhibitProps(receipt)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />
         <Exhibit number={2} {...exhibitProps(neutral)} />
         {orphan && <Exhibit number={3} {...exhibitProps(orphan)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />}
+        <Exhibit number={4} {...exhibitProps(trace)} marks={trace.mentioned_text}>
+          <Answer {...answerOf(trace)} />
+          <p>The names the finder matched, marked as the body spells them; the answer and a line about the comment sit here, between the body and its source.</p>
+        </Exhibit>
       </div>
-      <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge.</p>
+      <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge. The fourth is the walkthrough's comment, with the finder's marks and the extra slot.</p>
+    </section>
+
+    <section class="guide__section">
+      <h2>Answer</h2>
+      <p class="eyebrow">The classifier's whole reply as one chip. Only s takes a sentiment colour; a null p is italic gray. Wraps below 480.</p>
+      <div class="guide__row"><Answer {...answerOf(negAnswer)} /><Answer {...answerOf(trace)} /><Answer {...answerOf(nullAnswer)} /></div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Stage, Said, Fold</h2>
+      <p class="eyebrow">
+        One step of the walkthrough: number and name down the side, the season's count in method yellow with its share of the download as a bar, the comment's state across. A step with no population has no bar. What drops out is the dashed line under the body. The fold is a native details; a heading never lives inside one. Below 760 the side folds above the body.
+      </p>
+      <ol class="trace">
+        <Stage n={1} name="Download" where="Arctic Shift · r/NBA" count={`${fmtInt(corpus.raw_comments!)} comments`} share={1} drop={{ text: 'Deleted, removed and empty bodies drop out first.' }}>
+          <Said>{trace.body}</Said>
+          <p>One line per comment, the whole season.</p>
+          <Fold summary="The raw record">
+            <JsonBlock value={rawRecord(trace)} note="+ created_utc and the rest of what Reddit stores. The author's name never leaves the pipeline." />
+          </Fold>
+        </Stage>
+        <Stage n={2} name="Find names" where={`players.yaml · ${fmtInt(tables.players.length)} players`} count={`${fmtInt(corpus.population_submitted!)} kept`} share={stageShare(corpus.population_submitted!, corpus.raw_comments!)} drop={{ count: drops.find, text: 'comments name no tracked player and stop here.' }}>
+          <Said><MarkedBody body={trace.body} marks={trace.mentioned_text} /></Said>
+          <p>Every name r/NBA uses for a tracked player is matched against the body.</p>
+        </Stage>
+        <Stage n={3} name="Ask the classifier" where="Anthropic Batch API" count="100,000 per batch">
+          <p>A step with no population of its own: no bar, no drop.</p>
+        </Stage>
+      </ol>
+    </section>
+
+    <section class="guide__section">
+      <h2>CaseTable, SlipTable, QuoteCheckTable</h2>
+      <p class="eyebrow">
+        Three ledgers on one primitive: a table that becomes a stack of labeled blocks below 860, each cell carrying its column head. The case table opens with the comments that were never classified, then one row per attribution case, the trace among them. Names found are chips; the classifier's p is the chip's own JSON; a comment that counts for nobody says so in gray capitals.
+      </p>
+      <CaseTable rows={caseLines} neverClassified={drops.find} />
+      <p class="eyebrow">Where it slips: the answer beside the hand label. The hand label is a read under a rubric, never "the truth".</p>
+      <SlipTable rows={slipLines} />
+      <p class="eyebrow">The quote check: the verifier's answer in method yellow, the comment still counted.</p>
+      <QuoteCheckTable rows={quoteLines} />
+    </section>
+
+    <section class="guide__section">
+      <h2>GapChart</h2>
+      <p class="eyebrow">
+        A Δ axis: per class, the classifier's share of the hand-checked sample minus the hand labels' share, in points, with its margin as the bar. The zero line says what it stands for. Each row's call is chosen by whether its range crosses zero; outside is method yellow. Below 600 the figures move over the row. Negative → neutral → positive, as published.
+      </p>
+      <GapChart rows={liveGaps} domain={liveDomain} ticks={gapTicks(liveDomain)} zeroLabel="Same share as the hand labels" caption="Per class: the classifier's share minus the hand labels' share, in points, with its margin." />
+      <p class="eyebrow">Made-up rows: a range whose end touches zero reads within; a gap at zero; one far outside, the axis widened to hold it.</p>
+      <GapChart rows={edgeGaps} domain={edgeDomain} ticks={gapTicks(edgeDomain)} zeroLabel="Same share as the hand labels" caption="Made-up figures for the awkward cases." />
+    </section>
+
+    <section class="guide__section">
+      <h2>PipelineDiagram</h2>
+      <p class="eyebrow">
+        The pipeline in two forms. At 1024 and up, the wide drawing in two rows (the laptop, then AWS and its readers) at 1:1 in the column; below, the stack. The funnel's main flow and every count are method yellow; the two publish paths are the S3 green, dashed; AWS orange outlines its panel; brand marks keep their colours. Every count, model name and registry size is read at build. Resize to see the other form.
+      </p>
+      <PipelineDiagram {...diagram} />
     </section>
 
     <section class="guide__section">

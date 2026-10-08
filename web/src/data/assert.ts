@@ -111,6 +111,8 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
   assertRates('player_fan_team', tables.player_fan_team, (r) => `${r.attributed_player} × ${r.fan_team}`)
   assertRates('fan_team_overall', tables.fan_team_overall, (r) => r.fan_team)
   assertRates('game_sentiment', tables.game_sentiment, (r) => `${r.attributed_player} ${r.game_id}`)
+  assertRates('player_room', tables.player_room, (r) => `${r.attributed_player} × ${r.post_type}`)
+  assertRates('room_temporal', tables.room_temporal, (r) => `${r.post_type} ${r.week}`)
 
   // Weekly rows are keyed to a Monday at 00:00, and sum back to the season row.
   const weekly = new Map<string, { neg: number; neu: number; pos: number; total: number }>()
@@ -131,8 +133,23 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
       throw new ContractError(`player_temporal: weekly counts for ${o.attributed_player} do not sum to player_overall`)
   }
 
+  // The two room views are the same bridged population cut two ways: per room, the weekly rows sum to the player rows.
+  const roomWeekly = new Map<string, number>()
+  tables.room_temporal.forEach((r, i) => {
+    const d = new Date(`${r.week}Z`)
+    if (Number.isNaN(d.getTime()) || d.getUTCDay() !== 1 || !r.week.endsWith('T00:00:00'))
+      throw new ContractError(`room_temporal.week: ${r.week} at row ${i} is not a Monday at 00:00`)
+    roomWeekly.set(r.post_type, (roomWeekly.get(r.post_type) ?? 0) + r.comment_count)
+  })
+  const roomPlayers = new Map<string, number>()
+  for (const r of tables.player_room) roomPlayers.set(r.post_type, (roomPlayers.get(r.post_type) ?? 0) + r.comment_count)
+  for (const room of new Set([...roomWeekly.keys(), ...roomPlayers.keys()])) {
+    if (roomWeekly.get(room) !== roomPlayers.get(room))
+      throw new ContractError(`room_temporal: counts for ${room} do not sum to player_room`)
+  }
+
   // Every FK resolves to its dimension's canonical key.
-  for (const name of ['player_overall', 'player_temporal', 'player_fan_team', 'game_sentiment', 'player_games', 'comment_samples'] as const) {
+  for (const name of ['player_overall', 'player_temporal', 'player_fan_team', 'game_sentiment', 'player_room', 'player_games', 'comment_samples'] as const) {
     const rows: readonly { attributed_player: string; player_id: number }[] = tables[name]
     assertForeignKeys(name, 'attributed_player', rows, (r) => r.attributed_player, 'players.attributed_player', players)
     assertForeignKeys(name, 'player_id', rows, (r) => r.player_id, 'players.player_id', playerIds)

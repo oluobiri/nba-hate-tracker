@@ -43,6 +43,16 @@ function fixture(): Tables {
     player_fan_team: [{ attributed_player: 'A Player', player_id: 1, fan_team: 'Team Two', ...counts(3, 0, 0) }],
     fan_team_overall: [{ fan_team: 'Team Two', ...counts(3, 0, 0), abbreviation: 'TWO', conference: 'East', logo_url: '' }],
     game_sentiment: [{ attributed_player: 'A Player', player_id: 1, game_id: 'g1', ...counts(2, 0, 0), thread_comment_count: 5 }],
+    player_room: [
+      { attributed_player: 'A Player', player_id: 1, post_type: 'game_thread', ...counts(4, 2, 0) },
+      { attributed_player: 'A Player', player_id: 1, post_type: 'general', ...counts(2, 1, 1) },
+      { attributed_player: 'B Player', player_id: 2, post_type: 'general', ...counts(1, 1, 2) },
+    ],
+    room_temporal: [
+      { post_type: 'game_thread', week: '2025-10-20T00:00:00', ...counts(4, 2, 0) },
+      { post_type: 'general', week: '2025-10-20T00:00:00', ...counts(1, 1, 2) },
+      { post_type: 'general', week: '2025-10-27T00:00:00', ...counts(2, 1, 1) },
+    ],
     player_games: [{ game_id: 'g1', attributed_player: 'A Player', player_id: 1, roster_team: 'Team One', opponent: 'Team Two', is_home: true, wl: 'W', minutes: 30, fgm: 1, fga: 2, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 2, plus_minus: 1 }],
     posts: [{ post_id: 't3_x', title: 'Game Thread', created_utc: 1, score: 1, num_comments: 1, link_flair_text: null, post_type: 'game_thread', source: null, game_id: 'g1', is_primary: true }],
     comment_samples: [{ attributed_player: 'A Player', player_id: 1, sentiment: 'neg', rank: 1, comment_id: 'c1', link_id: 't3_x', body: 'nope', score: 3, created_utc: 1, fan_team: null }],
@@ -71,7 +81,7 @@ function manifestFor(tables: Tables): Manifest {
       samples: { top_n: 1, min_confidence: 0.9, max_body_chars: 500, requires_target: false, pool_k: 1, admission: 'verified' },
       receipts: { verified: true, coverage: null, precision: null, attribution_toward_share: null },
       accuracy: { labeled: false, drawn: null, scored: null, rejected: null, seed: null, drawn_at: null, rubric: null, groups: null, sentiment_agreement: null, sentiment_margin: null, target_agreement: null, target_margin: null, joint_agreement: null, joint_margin: null, by_class: null, class_mix: null, context_share: null, unsure_share: null, reject_share: null },
-      floors: { fanbase_min_n: 1, week_min_n: 1, belt_min_n: 1, game_min_n: 1, race_entry_min_n: 1 },
+      floors: { fanbase_min_n: 1, week_min_n: 1, belt_min_n: 1, game_min_n: 1, race_entry_min_n: 1, room_min_n: 1 },
       recaps: {
         room_bucket_seconds: 120,
         room_bodies_per_bucket: 2,
@@ -159,6 +169,12 @@ describe('assertTables', () => {
     const t = fixture()
     t.player_temporal[0]!.week = '2025-10-21T00:00:00'
     expect(() => assertTables(t, manifestFor(t))).toThrow('is not a Monday at 00:00')
+  })
+
+  it('refuses room weeks that do not sum to the player rows of the room', () => {
+    const t = fixture()
+    t.room_temporal.splice(0, 1, { ...t.room_temporal[0]!, ...counts(3, 2, 0) })
+    expect(() => assertTables(t, manifestFor(t))).toThrow('counts for game_thread do not sum to player_room')
   })
 
   it('refuses weekly counts that do not sum to the season row', () => {

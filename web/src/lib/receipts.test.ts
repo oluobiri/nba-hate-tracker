@@ -42,7 +42,7 @@ describe('receiptContext', () => {
   })
 
   it('reads any other post as its title, and a game thread without its game likewise', () => {
-    expect(receiptContext(post('other', null, 'Max Kellerman on Harden'), undefined, ABBR)).toEqual({ label: 'Post', text: 'Max Kellerman on Harden' })
+    expect(receiptContext(post('general', null, 'Max Kellerman on Harden'), undefined, ABBR)).toEqual({ label: 'Post', text: 'Max Kellerman on Harden' })
     expect(receiptContext(post('game_thread', null, 'Game Thread: X vs Y'), undefined, ABBR)).toEqual({ label: 'Game thread', text: 'Game Thread: X vs Y' })
   })
 

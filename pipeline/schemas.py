@@ -500,7 +500,7 @@ POSTS_SCHEMA = pl.Schema(
         "num_comments": pl.Int64,  # whole-room size; sum per game for a game's room
         "link_flair_text": pl.String,  # as the source
         # game_thread | post_game_thread | highlight | lowlight | injury |
-        # news | discussion | other
+        # news | discussion | daily | general
         "post_type": pl.String,
         "source": pl.String,  # reporter, outlet or person quoted; news only
         "game_id": pl.String,  # FK -> games.parquet; null when unlinked

@@ -54,6 +54,7 @@ CALENDAR_KEYS = (
     "playoffs_start",
     "finals_start",
     "finals_end",
+    "draft",
 )
 # The corpus funnel's recorded stages: what was downloaded and what was
 # submitted to the classifier. The later stages (classified, usable,

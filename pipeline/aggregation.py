@@ -468,24 +468,9 @@ def aggregate_sentiment(
         .sort("fan_team")
     )
 
-    # Metadata
     unique_players = df_attributed["attributed_player"].n_unique()
     unique_teams = df_team["fan_team"].n_unique()
     unique_weeks = df["week"].n_unique()
-
-    metadata = {
-        "schema_version": SCHEMA_VERSION,
-        "total_comments": total_rows,
-        "usable_comments": usable_rows,
-        "excluded_comments": excluded_rows,
-        "attributed_comments": attributed_count,
-        "player_count": unique_players,
-        "team_count": unique_teams,
-        "week_count": unique_weeks,
-        "season": get_active_season(),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        **classifier_stamps,
-    }
 
     # Game layer: the Game dimension and the attributed players' box-score
     # lines, derived from the season's game-log snapshots
@@ -493,14 +478,12 @@ def aggregate_sentiment(
     games, player_games, game_metadata = load_game_tables(
         get_reference_dir(), player_metadata, team_config, attributed_players
     )
-    metadata.update(game_metadata)
 
     logger.info("Selecting comment_samples...")
     alias_map = build_alias_to_player_map()
     verdicts, receipts_metadata = load_receipt_verdicts(
         df_attributed, targets_path, alias_map
     )
-    metadata.update(receipts_metadata)
     comment_samples = build_comment_samples(
         df_attributed, verdicts=verdicts, alias_map=alias_map
     )
@@ -510,9 +493,7 @@ def aggregate_sentiment(
     # scored against the classifier; absent, the manifest says unlabeled
     logger.info("Scoring the accuracy sample...")
     sample = read_accuracy_sample(accuracy_path, classifier_stamps)
-    metadata["accuracy"] = (
-        score_read_sample(*sample) if sample is not None else unlabeled_figures()
-    )
+    accuracy = score_read_sample(*sample) if sample is not None else unlabeled_figures()
 
     # The method examples: curated rows of the usable fact, including
     # the ones that count for nobody, checked against their slots
@@ -533,14 +514,10 @@ def aggregate_sentiment(
         get_reference_dir(), games, game_metadata["games_fetched_at"]
     )
     posts = select_published_posts(bridge, comment_samples)
-    metadata.update(posts_metadata)
-    metadata["post_count"] = posts.height
 
     # The fact by room: Player x post_type and post_type x week
     logger.info("Computing player_room and room_temporal...")
     rooms = compute_room_views(df_attributed, bridge)
-    metadata["bridged_comments"] = rooms.bridged
-    metadata["unbridged_comments"] = rooms.unbridged
     logger.info(
         f"player_room: {rooms.player_room.height:,} rows; room_temporal: "
         f"{rooms.room_temporal.height:,} rows; bridged {rooms.bridged:,} of "
@@ -555,7 +532,6 @@ def aggregate_sentiment(
     corpus_daily, corpus_metadata = load_corpus_daily(
         get_reference_dir(), season_config["corpus"]
     )
-    metadata.update(corpus_metadata)
 
     # Player x Game: the fact rolled up through the bridge
     logger.info("Computing game_sentiment...")
@@ -564,6 +540,10 @@ def aggregate_sentiment(
         f"game_sentiment: {game_sentiment.height:,} player-game rows over "
         f"{game_sentiment['game_id'].n_unique():,} games"
     )
+
+    # The build's identity, stamped into the recaps and the manifest alike
+    season = get_active_season()
+    generated_at = datetime.now(timezone.utc).isoformat()
 
     # The curated recaps: every input is a table built above or the
     # banked archive, so a recap can never disagree with the tables
@@ -575,27 +555,52 @@ def aggregate_sentiment(
         games=games,
         players=players,
         stamps=RecapStamps(
-            season=metadata["season"],
-            generated_at=metadata["generated_at"],
+            season=season,
+            generated_at=generated_at,
             config_versions={name: versions[name] for name in OUTPUT_CONFIGS["recaps"]},
-            classifiers=classifier_identities(metadata),
+            classifiers=classifier_identities(classifier_stamps),
         ),
     )
-    metadata["recap_count"] = len(documents)
     # The room's reaction lag is one figure for every game, so it is
     # measured once, season-wide, and only for a season that curates a recap
     if documents:
-        _, metadata["recap_reaction_lag"] = measure_reaction_lag(
+        _, reaction_lag = measure_reaction_lag(
             df, posts, players, get_live_play_by_play_dir()
         )
     else:
-        metadata["recap_reaction_lag"] = unmeasured_reaction_lag()
+        reaction_lag = unmeasured_reaction_lag()
 
     logger.info(
         f"Aggregation complete: {unique_players} players, "
         f"{unique_teams} teams, {unique_weeks} weeks, "
         f"{comment_samples.height:,} comment samples, {len(documents)} recaps"
     )
+
+    # The build's internal block: its counts, the stamps it read and the
+    # snapshot dates it carried, for the manifest and the write site
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "total_comments": total_rows,
+        "usable_comments": usable_rows,
+        "excluded_comments": excluded_rows,
+        "attributed_comments": attributed_count,
+        "player_count": unique_players,
+        "team_count": unique_teams,
+        "week_count": unique_weeks,
+        "season": season,
+        "generated_at": generated_at,
+        **classifier_stamps,
+        **game_metadata,
+        **receipts_metadata,
+        "accuracy": accuracy,
+        **posts_metadata,
+        "post_count": posts.height,
+        "bridged_comments": rooms.bridged,
+        "unbridged_comments": rooms.unbridged,
+        **corpus_metadata,
+        "recap_count": len(documents),
+        "recap_reaction_lag": reaction_lag,
+    }
 
     outputs = {
         "player_overall": player_overall,

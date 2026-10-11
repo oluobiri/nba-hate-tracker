@@ -1,5 +1,5 @@
 """
-Build the corpus_daily snapshot: the funnel's counts per UTC day.
+Build the corpus_daily snapshot: the funnel's counts per Eastern game night.
 
 Streams the raw comments download and the filtered mentions file for
 their created_utc, counts the fact's usable and attributed rows, and
@@ -62,7 +62,7 @@ SENTIMENT_FILENAME = "sentiment.parquet"
 def main() -> None:
     """Main entry point for building the corpus_daily snapshot."""
     parser = argparse.ArgumentParser(
-        description="Build corpus_daily (the funnel per UTC day) from the raw download"
+        description="Build corpus_daily (the funnel per game night) from the raw download"
     )
     parser.add_argument(
         "--season",

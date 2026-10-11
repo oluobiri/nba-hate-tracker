@@ -1,7 +1,7 @@
 """
 Tests for the corpus at day grain (pipeline/corpus.py).
 
-Cover the UTC day bucketing, the zero-filled grid over the download's
+Cover the game-night bucketing, the zero-filled grid over the download's
 extent, the one-owner totals check, and the snapshot loader's
 degrade-and-assert behavior.
 """
@@ -25,9 +25,9 @@ from pipeline.corpus import (
 from pipeline.schemas import CORPUS_DAILY_SCHEMA, SENTIMENT_SCHEMA
 from utils.season_config import get_active_season
 
-# 2024-01-01T00:00:00Z and the second before it: two UTC days.
-MIDNIGHT = 1704067200
-BEFORE_MIDNIGHT = MIDNIGHT - 1
+# 2024-01-01 06:00 New York (11:00Z) and the second before it: two game nights.
+SIX_AM = 1704106800
+BEFORE_SIX_AM = SIX_AM - 1
 
 
 def _epochs(*values: int) -> pl.DataFrame:
@@ -42,28 +42,44 @@ def _counts(name: str, rows: dict[date, int]) -> pl.DataFrame:
 
 
 class TestCountByDay:
-    """Tests for count_by_day (UTC bucketing)."""
+    """Tests for count_by_day (game-night bucketing)."""
 
-    def test_buckets_on_the_utc_day(self):
-        """A second before UTC midnight and midnight itself are two days,
+    def test_rolls_over_at_six_am_eastern(self):
+        """A second before 6 am New York and 6 am itself are two days,
         whatever the session timezone."""
-        counts = count_by_day(_epochs(BEFORE_MIDNIGHT, MIDNIGHT, MIDNIGHT), "n")
+        counts = count_by_day(_epochs(BEFORE_SIX_AM, SIX_AM, SIX_AM), "n")
 
         assert counts.to_dicts() == [
             {"day": date(2023, 12, 31), "n": 1},
             {"day": date(2024, 1, 1), "n": 2},
         ]
 
+    @pytest.mark.parametrize(
+        "epoch,expected",
+        [
+            (1741514340, date(2025, 3, 8)),  # 05:59 EDT, the morning clocks sprang
+            (1741514400, date(2025, 3, 9)),  # 06:00 EDT
+            (1762081140, date(2025, 11, 1)),  # 05:59 EST, the morning clocks fell
+            (1762081200, date(2025, 11, 2)),  # 06:00 EST
+        ],
+    )
+    def test_rollover_is_wall_clock_across_dst(self, epoch: int, expected: date):
+        """The boundary is 6 am on the clock on both transition days, not
+        six hours after the previous day's boundary."""
+        counts = count_by_day(_epochs(epoch), "n")
+
+        assert counts["day"].to_list() == [expected]
+
     def test_count_is_int64(self):
         """The count is Int64, never the UInt32 of pl.len()."""
-        counts = count_by_day(_epochs(MIDNIGHT), "n")
+        counts = count_by_day(_epochs(SIX_AM), "n")
 
         assert counts.schema == pl.Schema({"day": pl.Date, "n": pl.Int64})
 
     def test_missing_created_utc_raises(self):
         """A row with no created_utc fails loudly rather than vanishing from the sums."""
         epochs = pl.DataFrame(
-            {"created_utc": [MIDNIGHT, None]}, schema={"created_utc": pl.Int64}
+            {"created_utc": [SIX_AM, None]}, schema={"created_utc": pl.Int64}
         )
 
         with pytest.raises(ValueError, match="1 row\\(s\\) carry no created_utc"):
@@ -77,7 +93,7 @@ class TestCountSources:
         """A download line carries many fields; only created_utc is read."""
         path = tmp_path / "r_nba_comments.jsonl"
         with open(path, "w") as f:
-            for epoch in (BEFORE_MIDNIGHT, MIDNIGHT, MIDNIGHT):
+            for epoch in (BEFORE_SIX_AM, SIX_AM, SIX_AM):
                 f.write(json.dumps({"id": "x", "body": "hi", "created_utc": epoch}))
                 f.write("\n")
 
@@ -90,7 +106,7 @@ class TestCountSources:
         directory = tmp_path / "o'brien drive"
         directory.mkdir()
         path = directory / "r_nba_comments.jsonl"
-        path.write_text(json.dumps({"created_utc": MIDNIGHT}) + "\n")
+        path.write_text(json.dumps({"created_utc": SIX_AM}) + "\n")
 
         counts = count_ndjson_by_day(path, "raw_comments")
 
@@ -104,7 +120,7 @@ class TestCountSources:
             "author": ["u"] * 4,
             "author_flair_text": [None] * 4,
             "author_flair_css_class": [None] * 4,
-            "created_utc": [MIDNIGHT, MIDNIGHT, MIDNIGHT, MIDNIGHT + 86400],
+            "created_utc": [SIX_AM, SIX_AM, SIX_AM, SIX_AM + 86400],
             "score": [1] * 4,
             "link_id": ["t3_p"] * 4,
             "mentioned_players": [["LeBron James"]] * 4,
@@ -139,7 +155,7 @@ class TestCountFactWithoutAttribution:
             "author": ["u", "u"],
             "author_flair_text": [None, None],
             "author_flair_css_class": [None, None],
-            "created_utc": [MIDNIGHT, MIDNIGHT],
+            "created_utc": [SIX_AM, SIX_AM],
             "score": [1, 1],
             "link_id": ["t3_p", "t3_p"],
             "mentioned_players": [["LeBron James"], ["LeBron James"]],

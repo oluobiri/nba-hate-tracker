@@ -636,11 +636,12 @@ ACCURACY_SAMPLE_SCHEMA = pl.Schema(
 )
 
 # --- Corpus at day grain (built in pipeline/corpus.py) -----------------------
-# One row per UTC day of the download's extent, zero-filled: the funnel's
-# stages as counts, named exactly as the manifest's corpus block so each
-# column sums to the figure of the same name. Counts only; rolling means
-# are a display choice. The window is ET-midnight and the days are UTC,
-# so the last day is a stub; the grid follows the data, not the
+# One row per Eastern game night (6 am to 6 am New York) of the
+# download's extent, zero-filled: the funnel's stages as counts, named
+# exactly as the manifest's corpus block so each column sums to the
+# figure of the same name. Counts only; rolling means are a display
+# choice. The window is ET-midnight and the day rolls at 6 am, so the
+# first and last days are stubs; the grid follows the data, not the
 # calendar, so that the sums hold. attributed is null throughout until
 # the season's fact carries materialized attribution.
 CORPUS_DAILY_SCHEMA = pl.Schema(

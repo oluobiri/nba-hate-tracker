@@ -2,12 +2,17 @@
 The corpus at day grain: corpus_daily.parquet.
 
 Materializes the Date dimension at day grain as the funnel's counts
-per UTC day: raw comments downloaded, the filtered population
-submitted to the classifier, the usable fact rows, and the attributed
-rows. Built once from the raw download by scripts.build_corpus_daily,
-cached as a reference snapshot, and exported by aggregation, where each
-column's sum is asserted against the season's recorded corpus figure
-so the corpus numbers have one owner.
+per Eastern game night: raw comments downloaded, the filtered
+population submitted to the classifier, the usable fact rows, and the
+attributed rows. Built once from the raw download by
+scripts.build_corpus_daily, cached as a reference snapshot, and
+exported by aggregation, where each column's sum is asserted against
+the season's recorded corpus figure so the corpus numbers have one
+owner.
+
+The day is the game night, not the calendar date: a night's comments
+run past midnight on the US coasts and well past it in UTC, so a day
+begins at 6 am New York wall clock and runs to the next.
 """
 
 import logging
@@ -30,10 +35,37 @@ CORPUS_DAILY_FILENAME = "corpus_daily.parquet"
 # recorded stages, by the same name.
 OWNED_COLUMNS = ("raw_comments", "population_submitted")
 
+# The game night: a day begins at this wall-clock hour in this zone
+GAME_NIGHT_TZ = "America/New_York"
+GAME_NIGHT_ROLLOVER_HOURS = 6
+
+
+def game_night_day(created_utc: pl.Expr) -> pl.Expr:
+    """
+    The Eastern game night an epoch-seconds expression falls on.
+
+    The day that began at 6 am New York wall clock, in standard and
+    daylight time alike: the zone is dropped after the conversion so
+    the rollover is subtracted from the clock, not from the instant.
+
+    Args:
+        created_utc: Expression of epoch seconds (Int64).
+
+    Returns:
+        Date expression.
+    """
+    return (
+        pl.from_epoch(created_utc, time_unit="s")
+        .dt.replace_time_zone("UTC")
+        .dt.convert_time_zone(GAME_NIGHT_TZ)
+        .dt.replace_time_zone(None)
+        - pl.duration(hours=GAME_NIGHT_ROLLOVER_HOURS)
+    ).dt.date()
+
 
 def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
     """
-    Count rows per UTC day of their created_utc.
+    Count rows per game night of their created_utc.
 
     Args:
         epochs: Frame with a created_utc column (epoch seconds).
@@ -53,9 +85,7 @@ def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
             f"by day ({name})"
         )
     return (
-        epochs.select(
-            pl.from_epoch("created_utc", time_unit="s").dt.date().alias("day")
-        )
+        epochs.select(game_night_day(pl.col("created_utc")).alias("day"))
         .group_by("day")
         .agg(pl.len().cast(pl.Int64).alias(name))
         .sort("day")
@@ -64,7 +94,7 @@ def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
 
 def count_ndjson_by_day(path: Path, name: str) -> pl.DataFrame:
     """
-    Count an NDJSON download's rows per UTC day, projecting created_utc only.
+    Count an NDJSON download's rows per game night, projecting created_utc only.
 
     A streaming pass: DuckDB reads one column of each line, so the raw
     file never accumulates in memory.
@@ -87,7 +117,7 @@ def count_ndjson_by_day(path: Path, name: str) -> pl.DataFrame:
 
 def count_fact_by_day(path: Path) -> pl.DataFrame:
     """
-    Count the fact's usable and attributed rows per UTC day.
+    Count the fact's usable and attributed rows per game night.
 
     A fact assembled before attribution was materialized on it carries
     no attributed_player; its attributed count is unknowable until the
@@ -121,7 +151,7 @@ def build_corpus_daily(
     raw: pl.DataFrame, submitted: pl.DataFrame, fact: pl.DataFrame
 ) -> pl.DataFrame:
     """
-    Assemble the day-grain funnel over the download's UTC extent.
+    Assemble the day-grain funnel over the download's extent.
 
     The grid runs from the earliest to the latest day any source
     carries, so a day with nothing in one stage shows a zero rather than

@@ -1,4 +1,4 @@
-// GENERATED from src/data/schema.json (schema_version 12) by scripts/codegen.ts.
+// GENERATED from src/data/schema.json (schema_version 13) by scripts/codegen.ts.
 // Do not edit: run `npm run codegen`. The build fails when this file is stale.
 
 /** One row of player_overall.parquet. */
@@ -211,7 +211,10 @@ export interface CorpusDailyRow {
   raw_comments: number
   population_submitted: number
   usable: number
-  attributed: number | null
+  attributed: number
+  neg_count: number
+  neu_count: number
+  pos_count: number
 }
 
 /** One row of method_examples.parquet. */

@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 13,
   "tables": {
     "player_overall": {
       "columns": [
@@ -838,7 +838,22 @@
         {
           "name": "attributed",
           "dtype": "int64",
-          "nullable": true
+          "nullable": false
+        },
+        {
+          "name": "neg_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "neu_count",
+          "dtype": "int64",
+          "nullable": false
+        },
+        {
+          "name": "pos_count",
+          "dtype": "int64",
+          "nullable": false
         }
       ]
     },

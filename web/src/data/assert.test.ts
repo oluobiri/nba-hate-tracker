@@ -56,7 +56,10 @@ function fixture(): Tables {
     player_games: [{ game_id: 'g1', attributed_player: 'A Player', player_id: 1, roster_team: 'Team One', opponent: 'Team Two', is_home: true, wl: 'W', minutes: 30, fgm: 1, fga: 2, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 2, plus_minus: 1 }],
     posts: [{ post_id: 't3_x', title: 'Game Thread', created_utc: 1, score: 1, num_comments: 1, link_flair_text: null, post_type: 'game_thread', source: null, game_id: 'g1', is_primary: true }],
     comment_samples: [{ attributed_player: 'A Player', player_id: 1, sentiment: 'neg', rank: 1, comment_id: 'c1', link_id: 't3_x', body: 'nope', score: 3, created_utc: 1, fan_team: null }],
-    corpus_daily: [{ day: '2025-10-21', raw_comments: 10, population_submitted: 5, usable: 5, attributed: 4 }],
+    corpus_daily: [
+      { day: '2025-10-21', raw_comments: 10, population_submitted: 5, usable: 5, attributed: 4, neg_count: 3, neu_count: 1, pos_count: 0 },
+      { day: '2025-10-22', raw_comments: 20, population_submitted: 12, usable: 11, attributed: 10, neg_count: 4, neu_count: 3, pos_count: 3 },
+    ],
     method_examples: [
       { slot: 'trace', position: 0, comment_id: 'c1', link_id: 't3_x', body: 'nope', author_flair_text: null, score: 3, created_utc: 1, mentioned_players: ['A Player', 'B Player'], mentioned_text: ['A', 'B'], sentiment: 'neg', confidence: 0.8, sentiment_player: 'A', attributed_player: 'A Player', player_id: 1, fan_team: 'Team One', attribution_case: 'several_resolved', target_raw: null, verified_target: null, label_sentiment: null, label_target: null },
       { slot: 'case', position: 1, comment_id: 'c2', link_id: 't3_x', body: 'both', author_flair_text: null, score: 1, created_utc: 1, mentioned_players: ['A Player', 'B Player'], mentioned_text: ['A', 'B'], sentiment: 'neu', confidence: 0.5, sentiment_player: null, attributed_player: null, player_id: null, fan_team: null, attribution_case: 'several_no_pick', target_raw: null, verified_target: null, label_sentiment: null, label_target: null },
@@ -100,7 +103,7 @@ function manifestFor(tables: Tables): Manifest {
       metrics: {},
     },
     calendar: {},
-    corpus: { raw_comments: 10, population_submitted: 5, classified: 5, usable: 5, attributed: 4 },
+    corpus: { raw_comments: 30, population_submitted: 17, classified: 17, usable: 16, attributed: 14 },
     populations: { live_thread: 'the live threads' },
     tables: registry,
     recaps: {},
@@ -181,6 +184,18 @@ describe('assertTables', () => {
     const t = fixture()
     t.player_temporal.splice(1, 1, { ...t.player_temporal[1]!, ...counts(1, 1, 1) })
     expect(() => assertTables(t, manifestFor(t))).toThrow('weekly counts for A Player do not sum')
+  })
+
+  it('refuses a night whose counts do not sum to its attributed comments', () => {
+    const t = fixture()
+    t.corpus_daily[0]!.neu_count = 2
+    expect(() => assertTables(t, manifestFor(t))).toThrow('corpus_daily: counts do not sum to attributed at row 0 (2025-10-21)')
+  })
+
+  it('refuses nightly counts that do not sum to the season', () => {
+    const t = fixture()
+    t.corpus_daily.splice(1, 1, { ...t.corpus_daily[1]!, attributed: 9, neg_count: 3 })
+    expect(() => assertTables(t, manifestFor(t))).toThrow('corpus_daily: nightly counts do not sum to player_overall')
   })
 
   it('refuses a duplicate slug', () => {

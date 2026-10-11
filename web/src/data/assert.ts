@@ -148,6 +148,26 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
       throw new ContractError(`room_temporal: counts for ${room} do not sum to player_room`)
   }
 
+  // Each night splits its attributed comments three ways, and the nights sum back to the season's players.
+  const nightly = { neg: 0, neu: 0, pos: 0, attributed: 0 }
+  tables.corpus_daily.forEach((r, i) => {
+    if (r.neg_count + r.neu_count + r.pos_count !== r.attributed)
+      throw new ContractError(`corpus_daily: counts do not sum to attributed at row ${i} (${r.day})`)
+    nightly.neg += r.neg_count
+    nightly.neu += r.neu_count
+    nightly.pos += r.pos_count
+    nightly.attributed += r.attributed
+  })
+  const season = { neg: 0, neu: 0, pos: 0, attributed: 0 }
+  for (const o of tables.player_overall) {
+    season.neg += o.neg_count
+    season.neu += o.neu_count
+    season.pos += o.pos_count
+    season.attributed += o.comment_count
+  }
+  if (nightly.neg !== season.neg || nightly.neu !== season.neu || nightly.pos !== season.pos || nightly.attributed !== season.attributed)
+    throw new ContractError('corpus_daily: nightly counts do not sum to player_overall')
+
   // Every FK resolves to its dimension's canonical key.
   for (const name of ['player_overall', 'player_temporal', 'player_fan_team', 'game_sentiment', 'player_room', 'player_games', 'comment_samples'] as const) {
     const rows: readonly { attributed_player: string; player_id: number }[] = tables[name]

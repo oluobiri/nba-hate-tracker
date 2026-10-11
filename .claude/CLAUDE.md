@@ -22,7 +22,7 @@ data/             → Not committed
   │   ├── filtered/   → Player-mention filtered JSONL
   │   ├── batches/    → Batch API requests/responses, one subdir per classifier stage (sentiment/, target/)
   │   ├── processed/  → sentiment.parquet
-  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + the cdn.nba.com live feed (play_by_play_live/<game_id>.parquet) + posts_bridge.parquet + corpus_daily.parquet + the accuracy sample (accuracy_sample.xlsx, .passes.json, .parquet) + the curation scans (recap_candidates.csv, method_example_candidates_<slot>.csv), never published
+  │   ├── reference/  → stats.nba.com snapshots (rosters, team/player game logs) + the cdn.nba.com live feed (play_by_play_live/<game_id>.parquet) + posts_bridge.parquet + download_daily.parquet + the accuracy sample (accuracy_sample.xlsx, .passes.json, .parquet) + the curation scans (recap_candidates.csv, method_example_candidates_<slot>.csv), never published
   │   └── dashboard/  → per-table Parquet files + manifest.json + schema.json + recaps/<game_id>-<slug>.json
   ├── 2025-26/    → V2 season data (same structure)
   └── media/      → headshots/ (PNG + WebP variants) and logos/ (SVG); season-independent, never committed

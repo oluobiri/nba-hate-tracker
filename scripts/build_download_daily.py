@@ -1,15 +1,15 @@
 """
-Build the corpus_daily snapshot: the funnel's counts per UTC day.
+Build the download_daily snapshot: the download's counts per Eastern game night.
 
 Streams the raw comments download and the filtered mentions file for
-their created_utc, counts the fact's usable and attributed rows, and
-writes the zero-filled day grid to the season's reference directory,
-where aggregation exports it. The owned columns are checked against
-season.yaml's corpus record before the snapshot is written.
+their created_utc and writes the zero-filled day grid to the season's
+reference directory, where aggregation joins the fact's columns on to
+make corpus_daily. The owned columns are checked against season.yaml's
+corpus record before the snapshot is written.
 
 Usage:
-    uv run python -m scripts.build_corpus_daily
-    uv run python -m scripts.build_corpus_daily --season 2024-25
+    uv run python -m scripts.build_download_daily
+    uv run python -m scripts.build_download_daily --season 2024-25
 """
 
 import argparse
@@ -18,22 +18,16 @@ import sys
 from datetime import datetime, timezone
 
 from pipeline.corpus import (
-    CORPUS_DAILY_FILENAME,
+    DOWNLOAD_DAILY_FILENAME,
     FILTERED_COMMENTS_FILENAME,
     RAW_COMMENTS_FILENAME,
-    build_corpus_daily,
+    build_download_daily,
     check_corpus_totals,
-    count_fact_by_day,
     count_ndjson_by_day,
 )
 from pipeline.lineage import config_stamps
-from pipeline.schemas import CORPUS_DAILY_SCHEMA, SCHEMA_VERSION, validate_schema
-from utils.paths import (
-    get_filtered_dir,
-    get_processed_dir,
-    get_raw_dir,
-    get_reference_dir,
-)
+from pipeline.schemas import DOWNLOAD_DAILY_SCHEMA, SCHEMA_VERSION, validate_schema
+from utils.paths import get_filtered_dir, get_raw_dir, get_reference_dir
 from utils.season_config import (
     get_active_season,
     load_season_config,
@@ -51,8 +45,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SENTIMENT_FILENAME = "sentiment.parquet"
-
 
 # -----------------------------------------------------------------------------
 # CLI
@@ -60,9 +52,9 @@ SENTIMENT_FILENAME = "sentiment.parquet"
 
 
 def main() -> None:
-    """Main entry point for building the corpus_daily snapshot."""
+    """Main entry point for building the download_daily snapshot."""
     parser = argparse.ArgumentParser(
-        description="Build corpus_daily (the funnel per UTC day) from the raw download"
+        description="Build download_daily (the download per game night) from the raw files"
     )
     parser.add_argument(
         "--season",
@@ -84,13 +76,11 @@ def main() -> None:
     season = get_active_season()
     raw_path = get_raw_dir() / RAW_COMMENTS_FILENAME
     filtered_path = get_filtered_dir() / FILTERED_COMMENTS_FILENAME
-    fact_path = get_processed_dir() / SENTIMENT_FILENAME
-    output_path = get_reference_dir() / CORPUS_DAILY_FILENAME
+    output_path = get_reference_dir() / DOWNLOAD_DAILY_FILENAME
 
     for path, producer in (
         (raw_path, "scripts.download_comments"),
         (filtered_path, "scripts.filter_comments"),
-        (fact_path, "scripts.collect_results"),
     ):
         if not path.exists():
             logger.error(f"{path} not found - run {producer} first")
@@ -103,37 +93,32 @@ def main() -> None:
         sys.exit(1)
 
     logger.info("=" * 60)
-    logger.info(f"corpus_daily: {season}")
+    logger.info(f"download_daily: {season}")
     logger.info("=" * 60)
 
-    corpus_daily = build_corpus_daily(
+    download_daily = build_download_daily(
         count_ndjson_by_day(raw_path, "raw_comments"),
         count_ndjson_by_day(filtered_path, "population_submitted"),
-        count_fact_by_day(fact_path),
     )
-    validate_schema(corpus_daily, CORPUS_DAILY_SCHEMA, CORPUS_DAILY_FILENAME)
-    check_corpus_totals(corpus_daily, load_season_config()["corpus"])
+    validate_schema(download_daily, DOWNLOAD_DAILY_SCHEMA, DOWNLOAD_DAILY_FILENAME)
+    check_corpus_totals(download_daily, load_season_config()["corpus"])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    corpus_daily.write_parquet(
+    download_daily.write_parquet(
         output_path,
         metadata={
             "season": season,
             "processed_at": datetime.now(timezone.utc).date().isoformat(),
-            **config_stamps("corpus_daily"),
+            **config_stamps("download_daily"),
             "schema_version": str(SCHEMA_VERSION),
         },
     )
     logger.info(
-        f"Wrote {corpus_daily.height} days to {output_path} "
-        f"({corpus_daily['day'].min()} to {corpus_daily['day'].max()})"
+        f"Wrote {download_daily.height} days to {output_path} "
+        f"({download_daily['day'].min()} to {download_daily['day'].max()})"
     )
-    for column in CORPUS_DAILY_SCHEMA.names()[1:]:
-        series = corpus_daily[column]
-        total = (
-            "unknown" if series.null_count() == series.len() else f"{series.sum():,}"
-        )
-        logger.info(f"  {column:<22} {total:>12}")
+    for column in DOWNLOAD_DAILY_SCHEMA.names()[1:]:
+        logger.info(f"  {column:<22} {download_daily[column].sum():>12,}")
 
 
 if __name__ == "__main__":

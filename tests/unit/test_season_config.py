@@ -236,6 +236,7 @@ class TestLoadSeasonConfig:
                 "playoffs_start",
                 "finals_start",
                 "finals_end",
+                "draft",
             )
         ]
         if all(boundaries):

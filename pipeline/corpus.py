@@ -1,13 +1,20 @@
 """
-The corpus at day grain: corpus_daily.parquet.
+The corpus at day grain: the download's side of corpus_daily.parquet.
 
-Materializes the Date dimension at day grain as the funnel's counts
-per UTC day: raw comments downloaded, the filtered population
-submitted to the classifier, the usable fact rows, and the attributed
-rows. Built once from the raw download by scripts.build_corpus_daily,
-cached as a reference snapshot, and exported by aggregation, where each
-column's sum is asserted against the season's recorded corpus figure
-so the corpus numbers have one owner.
+The Date dimension at day grain is corpus_daily: the funnel's counts
+per Eastern game night (raw comments downloaded, the filtered
+population submitted to the classifier, the usable fact rows, the
+attributed rows) and the attributed rows' sentiment split. The table
+is split by cost. What only the raw and filtered downloads can count
+is built once here by scripts.build_download_daily and cached as the
+download_daily snapshot, each column's sum asserted against the
+season's recorded corpus figure so the corpus numbers have one owner.
+The fact's columns are computed at aggregation from the frames it
+already holds, so a fact reassembly never leaves them stale.
+
+The day is the game night, not the calendar date: a night's comments
+run past midnight on the US coasts and well past it in UTC, so a day
+begins at 6 am New York wall clock and runs to the next.
 """
 
 import logging
@@ -18,22 +25,49 @@ import duckdb
 import polars as pl
 
 from pipeline.nba_stats import check_snapshot_season
-from pipeline.schemas import CORPUS_DAILY_SCHEMA
+from pipeline.schemas import DOWNLOAD_DAILY_SCHEMA, validate_schema
 
 logger = logging.getLogger(__name__)
 
 RAW_COMMENTS_FILENAME = "r_nba_comments.jsonl"
 FILTERED_COMMENTS_FILENAME = "r_nba_player_mentions.jsonl"
-CORPUS_DAILY_FILENAME = "corpus_daily.parquet"
+DOWNLOAD_DAILY_FILENAME = "download_daily.parquet"
 
-# The columns the export asserts against season.yaml's corpus block: the
-# recorded stages, by the same name.
+# The columns the snapshot asserts against season.yaml's corpus block:
+# the recorded stages, by the same name.
 OWNED_COLUMNS = ("raw_comments", "population_submitted")
+
+# The game night: a day begins at this wall-clock hour in this zone
+GAME_NIGHT_TZ = "America/New_York"
+GAME_NIGHT_ROLLOVER_HOURS = 6
+
+
+def game_night_day(created_utc: pl.Expr) -> pl.Expr:
+    """
+    The Eastern game night an epoch-seconds expression falls on.
+
+    The day that began at 6 am New York wall clock, in standard and
+    daylight time alike: the zone is dropped after the conversion so
+    the rollover is subtracted from the clock, not from the instant.
+
+    Args:
+        created_utc: Expression of epoch seconds (Int64).
+
+    Returns:
+        Date expression.
+    """
+    return (
+        pl.from_epoch(created_utc, time_unit="s")
+        .dt.replace_time_zone("UTC")
+        .dt.convert_time_zone(GAME_NIGHT_TZ)
+        .dt.replace_time_zone(None)
+        - pl.duration(hours=GAME_NIGHT_ROLLOVER_HOURS)
+    ).dt.date()
 
 
 def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
     """
-    Count rows per UTC day of their created_utc.
+    Count rows per game night of their created_utc.
 
     Args:
         epochs: Frame with a created_utc column (epoch seconds).
@@ -53,9 +87,7 @@ def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
             f"by day ({name})"
         )
     return (
-        epochs.select(
-            pl.from_epoch("created_utc", time_unit="s").dt.date().alias("day")
-        )
+        epochs.select(game_night_day(pl.col("created_utc")).alias("day"))
         .group_by("day")
         .agg(pl.len().cast(pl.Int64).alias(name))
         .sort("day")
@@ -64,7 +96,7 @@ def count_by_day(epochs: pl.DataFrame, name: str) -> pl.DataFrame:
 
 def count_ndjson_by_day(path: Path, name: str) -> pl.DataFrame:
     """
-    Count an NDJSON download's rows per UTC day, projecting created_utc only.
+    Count an NDJSON download's rows per game night, projecting created_utc only.
 
     A streaming pass: DuckDB reads one column of each line, so the raw
     file never accumulates in memory.
@@ -85,93 +117,54 @@ def count_ndjson_by_day(path: Path, name: str) -> pl.DataFrame:
     return counts
 
 
-def count_fact_by_day(path: Path) -> pl.DataFrame:
+def build_download_daily(raw: pl.DataFrame, submitted: pl.DataFrame) -> pl.DataFrame:
     """
-    Count the fact's usable and attributed rows per UTC day.
+    Assemble the download's day grid over its extent.
 
-    A fact assembled before attribution was materialized on it carries
-    no attributed_player; its attributed count is unknowable until the
-    fact is reassembled, so the column is left out (the build carries
-    it as null) rather than guessed.
-
-    Args:
-        path: Path to sentiment.parquet.
-
-    Returns:
-        Frame (day, usable[, attributed]), one row per day present, sorted.
-    """
-    logger.info(f"Counting {path} by day...")
-    scan = pl.scan_parquet(path).filter(pl.col("sentiment") != "error")
-    has_attribution = "attributed_player" in scan.collect_schema()
-    if not has_attribution:
-        logger.warning(
-            f"{path} carries no attributed_player (assembled before attribution "
-            f"was materialized) - attributed is null until the fact is reassembled"
-        )
-        return count_by_day(scan.select("created_utc").collect(), "usable")
-    fact = scan.select("created_utc", "attributed_player").collect()
-    usable = count_by_day(fact, "usable")
-    attributed = count_by_day(
-        fact.filter(pl.col("attributed_player").is_not_null()), "attributed"
-    )
-    return usable.join(attributed, on="day", how="left").sort("day")
-
-
-def build_corpus_daily(
-    raw: pl.DataFrame, submitted: pl.DataFrame, fact: pl.DataFrame
-) -> pl.DataFrame:
-    """
-    Assemble the day-grain funnel over the download's UTC extent.
-
-    The grid runs from the earliest to the latest day any source
+    The grid runs from the earliest to the latest day either source
     carries, so a day with nothing in one stage shows a zero rather than
-    a gap and every column sums to its source. A stage no source can
-    count (attributed, before the fact carries attribution) is null
-    throughout: unknown, not zero.
+    a gap and every column sums to its source. The fact's days fall
+    inside this extent by construction (every submitted comment was
+    downloaded), which aggregation asserts when it joins its columns on.
 
     Args:
         raw: (day, raw_comments) from count_ndjson_by_day.
         submitted: (day, population_submitted) from count_ndjson_by_day.
-        fact: (day, usable[, attributed]) from count_fact_by_day.
 
     Returns:
-        Frame conforming to CORPUS_DAILY_SCHEMA, sorted by day.
+        Frame conforming to DOWNLOAD_DAILY_SCHEMA, sorted by day.
 
     Raises:
-        ValueError: If every source is empty (no extent to grid).
+        ValueError: If both sources are empty (no extent to grid).
     """
-    days = pl.concat([raw["day"], submitted["day"], fact["day"]])
+    days = pl.concat([raw["day"], submitted["day"]])
     if days.is_empty():
-        raise ValueError("corpus_daily: no days in any source; nothing to build")
+        raise ValueError("download_daily: no days in either source; nothing to build")
     grid = pl.date_range(days.min(), days.max(), interval="1d", eager=True).alias("day")
     table = pl.DataFrame({"day": grid})
-    for counts in (raw, submitted, fact):
+    for counts in (raw, submitted):
         table = table.join(counts, on="day", how="left")
-    table = table.fill_null(0)
-    unknown = [col for col in CORPUS_DAILY_SCHEMA.names() if col not in table.columns]
     return (
-        table.with_columns(
-            pl.lit(None, dtype=CORPUS_DAILY_SCHEMA[col]).alias(col) for col in unknown
-        )
-        .select(CORPUS_DAILY_SCHEMA.names())
-        .cast(dict(CORPUS_DAILY_SCHEMA))
+        table.fill_null(0)
+        .select(DOWNLOAD_DAILY_SCHEMA.names())
+        .cast(dict(DOWNLOAD_DAILY_SCHEMA))
         .sort("day")
     )
 
 
 def check_corpus_totals(
-    corpus_daily: pl.DataFrame, corpus_facts: MappingProxyType | dict
+    download_daily: pl.DataFrame, corpus_facts: MappingProxyType | dict
 ) -> None:
     """
     Assert the owned columns sum to the season's recorded corpus figures.
 
     season.yaml is the authoritative record of what was downloaded and
-    submitted; a table whose sums disagree is wrong, or the record is,
+    submitted; a snapshot whose sums disagree is wrong, or the record is,
     and either way the build must not ship it silently. An unrecorded
     figure (None) is skipped with a warning.
 
     Args:
-        corpus_daily: Frame conforming to CORPUS_DAILY_SCHEMA.
+        download_daily: Frame conforming to DOWNLOAD_DAILY_SCHEMA.
         corpus_facts: The season's corpus block (load_season_config()["corpus"]).
 
     Raises:
@@ -179,53 +172,63 @@ def check_corpus_totals(
     """
     for column in OWNED_COLUMNS:
         recorded = corpus_facts.get(column)
-        total = int(corpus_daily[column].sum())
+        total = int(download_daily[column].sum())
         if recorded is None:
             logger.warning(
-                f"season.yaml corpus.{column} is unrecorded - corpus_daily sums "
+                f"season.yaml corpus.{column} is unrecorded - download_daily sums "
                 f"{total:,}; cannot verify the corpus number's owner"
             )
         elif total != recorded:
             raise ValueError(
-                f"corpus_daily.{column} sums to {total:,} but season.yaml "
+                f"download_daily.{column} sums to {total:,} but season.yaml "
                 f"corpus.{column} records {recorded:,}; the corpus number has "
-                f"one owner - rebuild the table or correct the record"
+                f"one owner - rebuild the snapshot or correct the record"
             )
 
 
-def load_corpus_daily(
+def load_download_daily(
     reference_dir: Path, corpus_facts: MappingProxyType | dict
 ) -> tuple[pl.DataFrame, dict]:
     """
-    Read the corpus_daily snapshot for export, asserting its totals.
+    Read the download_daily snapshot for the build, asserting its shape and totals.
 
-    A missing snapshot degrades to an empty table with a warning, so
-    aggregation stays runnable before scripts.build_corpus_daily has
-    run for the season.
+    A missing snapshot degrades to an empty frame with a warning, so
+    aggregation stays runnable before scripts.build_download_daily has
+    run for the season. A snapshot of another shape fails: it was built
+    under an older contract and must be rebuilt.
 
     Args:
         reference_dir: Season reference directory holding the snapshot.
         corpus_facts: The season's corpus block, the totals' owner.
 
     Returns:
-        (corpus_daily, metadata) where metadata carries
-        corpus_daily_processed_at (the snapshot's stamp, or None).
+        (download_daily, metadata) where metadata carries
+        download_daily_processed_at (the snapshot's stamp, or None).
 
     Raises:
-        ValueError: If a snapshot column's sum disagrees with the record.
+        ValueError: If the snapshot does not conform to DOWNLOAD_DAILY_SCHEMA,
+            repeats a day (the fact's join onto it would double that day's
+            counts), or a column's sum disagrees with the record.
     """
-    path = reference_dir / CORPUS_DAILY_FILENAME
+    path = reference_dir / DOWNLOAD_DAILY_FILENAME
     if not path.exists():
         logger.warning(
-            f"{path} not found (run scripts.build_corpus_daily) - "
+            f"{path} not found (run scripts.build_download_daily) - "
             f"corpus_daily will be empty"
         )
-        return pl.DataFrame(schema=CORPUS_DAILY_SCHEMA), {
-            "corpus_daily_processed_at": None
+        return pl.DataFrame(schema=DOWNLOAD_DAILY_SCHEMA), {
+            "download_daily_processed_at": None
         }
 
     stamps = check_snapshot_season(path, subject="corpus volume", log=logger)
-    corpus_daily = pl.read_parquet(path)
-    check_corpus_totals(corpus_daily, corpus_facts)
-    logger.info(f"corpus_daily: {corpus_daily.height} days")
-    return corpus_daily, {"corpus_daily_processed_at": stamps.get("processed_at")}
+    download_daily = pl.read_parquet(path)
+    validate_schema(download_daily, DOWNLOAD_DAILY_SCHEMA, DOWNLOAD_DAILY_FILENAME)
+    repeated = download_daily.height - download_daily["day"].n_unique()
+    if repeated:
+        raise ValueError(
+            f"{path}: {repeated} repeated day(s); the grid must hold each day "
+            f"once - rebuild the snapshot"
+        )
+    check_corpus_totals(download_daily, corpus_facts)
+    logger.info(f"download_daily: {download_daily.height} days")
+    return download_daily, {"download_daily_processed_at": stamps.get("processed_at")}

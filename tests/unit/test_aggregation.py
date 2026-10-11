@@ -22,6 +22,7 @@ from pipeline.aggregation import (
     attach_player_id,
     build_manifest,
     build_teams_dimension,
+    compute_corpus_daily,
     compute_cumulative_metrics,
     compute_game_sentiment,
     compute_metrics,
@@ -31,7 +32,7 @@ from pipeline.aggregation import (
     mask_below_threshold,
     pivot_bar_race_wide,
 )
-from pipeline.corpus import CORPUS_DAILY_FILENAME
+from pipeline.corpus import DOWNLOAD_DAILY_FILENAME
 from pipeline.games import PLAYER_GAME_LOG_FILENAME, TEAM_GAME_LOG_FILENAME
 from pipeline.posts import POSTS_BRIDGE_FILENAME
 from pipeline.method_examples import MethodExamplesError
@@ -47,6 +48,7 @@ from pipeline.schemas import (
     CORPUS_DAILY_SCHEMA,
     CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
+    DOWNLOAD_DAILY_SCHEMA,
     METRIC_FORMULAS,
     NULLABLE_COLUMNS,
     POPULATIONS,
@@ -1244,7 +1246,7 @@ def _manifest_inputs() -> tuple[dict, dict, dict, dict, dict]:
         "classifier_target_prompt_version": "v1",
         "games_fetched_at": "2026-09-12",
         "posts_processed_at": "2026-09-13",
-        "corpus_daily_processed_at": "2026-09-16",
+        "download_daily_processed_at": "2026-09-16",
         "receipts_verified": True,
         "receipts_coverage": 0.999,
         "receipts_precision": 0.777,
@@ -1291,7 +1293,7 @@ class TestBuildManifest:
         assert manifest["snapshots"] == {
             "games_fetched_at": "2026-09-12",
             "posts_processed_at": "2026-09-13",
-            "corpus_daily_processed_at": "2026-09-16",
+            "download_daily_processed_at": "2026-09-16",
         }
 
     def test_classifiers_by_stage_from_the_stamps(self):
@@ -1561,8 +1563,134 @@ class TestNullabilityEnforcement:
         assert check.call_count == len(DASHBOARD_OUTPUT_SCHEMAS)
 
 
+def _download(days: dict[date, tuple[int, int]]) -> pl.DataFrame:
+    """A download_daily grid: day -> (raw_comments, population_submitted)."""
+    return pl.DataFrame(
+        {
+            "day": list(days),
+            "raw_comments": [raw for raw, _ in days.values()],
+            "population_submitted": [sub for _, sub in days.values()],
+        },
+        schema=DOWNLOAD_DAILY_SCHEMA,
+    )
+
+
+def _timed_fact(rows: list[tuple[int, str, str | None]]) -> pl.DataFrame:
+    """The fact columns compute_corpus_daily reads: (created_utc, sentiment, player)."""
+    return pl.DataFrame(
+        {
+            "created_utc": [epoch for epoch, _, _ in rows],
+            "sentiment": [sentiment for _, sentiment, _ in rows],
+            "attributed_player": [player for _, _, player in rows],
+        },
+        schema={
+            "created_utc": pl.Int64,
+            "sentiment": pl.String,
+            "attributed_player": pl.String,
+        },
+    )
+
+
+# 2024-01-01 06:00 New York (11:00Z): the first second of that game night
+JAN_1_SIX_AM = 1704106800
+DAY = 86400
+
+
+class TestComputeCorpusDaily:
+    """Tests for compute_corpus_daily (the fact's days on the download's grid)."""
+
+    def _compute(self, download, rows):
+        df = _timed_fact(rows)
+        return compute_corpus_daily(
+            download, df, df.filter(pl.col("attributed_player").is_not_null())
+        )
+
+    def test_counts_conform_and_sum_to_attributed(self):
+        """Each night carries usable, attributed and the split of the
+        attributed rows, under the views' names, in schema order."""
+        download = _download({date(2024, 1, 1): (10, 5)})
+        rows = [
+            (JAN_1_SIX_AM, "neg", "LeBron James"),
+            (JAN_1_SIX_AM + 1, "neg", "LeBron James"),
+            (JAN_1_SIX_AM + 2, "pos", "LeBron James"),
+            (JAN_1_SIX_AM + 3, "neu", None),
+        ]
+
+        table = self._compute(download, rows)
+
+        assert table.schema == CORPUS_DAILY_SCHEMA
+        assert table.to_dicts() == [
+            {
+                "day": date(2024, 1, 1),
+                "raw_comments": 10,
+                "population_submitted": 5,
+                "usable": 4,
+                "attributed": 3,
+                "neg_count": 2,
+                "neu_count": 0,
+                "pos_count": 1,
+            }
+        ]
+
+    def test_grid_days_without_fact_rows_are_zero(self):
+        """A night the download saw but the fact did not is a zero row,
+        so every column sums over the same grid."""
+        download = _download({date(2024, 1, 1): (3, 1), date(2024, 1, 2): (2, 0)})
+
+        table = self._compute(download, [(JAN_1_SIX_AM, "neu", "LeBron James")])
+
+        assert table["day"].to_list() == [date(2024, 1, 1), date(2024, 1, 2)]
+        assert table.row(1, named=True) == {
+            "day": date(2024, 1, 2),
+            "raw_comments": 2,
+            "population_submitted": 0,
+            "usable": 0,
+            "attributed": 0,
+            "neg_count": 0,
+            "neu_count": 0,
+            "pos_count": 0,
+        }
+
+    def test_rows_land_on_their_game_night(self):
+        """The fact is bucketed on the same 6 am Eastern day as the download."""
+        download = _download({date(2023, 12, 31): (1, 1), date(2024, 1, 1): (1, 1)})
+        rows = [
+            (JAN_1_SIX_AM - 1, "pos", "LeBron James"),
+            (JAN_1_SIX_AM, "neg", "LeBron James"),
+        ]
+
+        table = self._compute(download, rows)
+
+        assert table["pos_count"].to_list() == [1, 0]
+        assert table["neg_count"].to_list() == [0, 1]
+
+    def test_empty_download_yields_empty_table(self):
+        """With no snapshot there is no grid; the table is empty, not guessed."""
+        table = self._compute(
+            pl.DataFrame(schema=DOWNLOAD_DAILY_SCHEMA),
+            [(JAN_1_SIX_AM, "neg", "LeBron James")],
+        )
+
+        assert table.schema == CORPUS_DAILY_SCHEMA
+        assert table.height == 0
+
+    def test_fact_day_outside_the_grid_raises(self):
+        """A fact night the download never saw means two different
+        downloads; the build stops rather than drop the night."""
+        download = _download({date(2024, 1, 1): (1, 1)})
+
+        with pytest.raises(ValueError, match="2024-01-02.*build_download_daily"):
+            self._compute(download, [(JAN_1_SIX_AM + DAY, "neg", "LeBron James")])
+
+
 class TestAggregateCorpusDaily:
-    """Tests for the corpus snapshot's passage through aggregate_sentiment."""
+    """Tests for corpus_daily's passage through aggregate_sentiment."""
+
+    def _write_download(self, ref_dir, table):
+        table.write_parquet(
+            ref_dir / DOWNLOAD_DAILY_FILENAME,
+            metadata={"season": get_active_season(), "processed_at": "2026-09-16"},
+        )
 
     def test_no_snapshot_ships_empty_table(self, tmp_path, pinned_snapshot):
         """Without a snapshot the table is empty but present and conforming."""
@@ -1570,60 +1698,74 @@ class TestAggregateCorpusDaily:
 
         assert result["corpus_daily"].schema == CORPUS_DAILY_SCHEMA
         assert result["corpus_daily"].height == 0
-        assert result["metadata"]["corpus_daily_processed_at"] is None
-        assert result["manifest"]["snapshots"]["corpus_daily_processed_at"] is None
+        assert result["metadata"]["download_daily_processed_at"] is None
+        assert result["manifest"]["snapshots"]["download_daily_processed_at"] is None
         assert result["manifest"]["tables"]["corpus_daily"]["rows"] == 0
 
-    def test_snapshot_ships_when_its_totals_match_the_record(
+    def test_fact_joins_the_snapshot_when_its_totals_match_the_record(
         self, tmp_path, pinned_snapshot
     ):
-        """A snapshot whose owned sums equal season.yaml's figures is
-        exported as cached, its build date in the manifest."""
+        """A snapshot whose owned sums equal season.yaml's figures takes the
+        fact's nights; the two LeBron comments, posted at UTC midnight on
+        consecutive days, fall on the Eastern game nights before them."""
         corpus = load_season_config()["corpus"]
-        pl.DataFrame(
-            {
-                "day": [date(2025, 10, 1)],
-                "raw_comments": [corpus["raw_comments"]],
-                "population_submitted": [corpus["population_submitted"]],
-                "usable": [1],
-                "attributed": [1],
-            },
-            schema=CORPUS_DAILY_SCHEMA,
-        ).write_parquet(
-            pinned_snapshot / CORPUS_DAILY_FILENAME,
-            metadata={"season": get_active_season(), "processed_at": "2026-09-16"},
+        self._write_download(
+            pinned_snapshot,
+            _download(
+                {
+                    date(2023, 12, 31): (
+                        corpus["raw_comments"],
+                        corpus["population_submitted"],
+                    ),
+                    date(2024, 1, 1): (0, 0),
+                }
+            ),
         )
 
         result = aggregate_sentiment(_lebron_parquet(tmp_path))
 
-        assert result["corpus_daily"].height == 1
-        assert result["manifest"]["snapshots"]["corpus_daily_processed_at"] == (
+        table = result["corpus_daily"]
+        assert table["day"].to_list() == [date(2023, 12, 31), date(2024, 1, 1)]
+        assert table["usable"].to_list() == [1, 1]
+        assert table["attributed"].to_list() == [1, 1]
+        assert table["pos_count"].to_list() == [1, 0]
+        assert table["neg_count"].to_list() == [0, 1]
+        assert result["manifest"]["snapshots"]["download_daily_processed_at"] == (
             "2026-09-16"
         )
         assert result["manifest"]["tables"]["corpus_daily"] == {
             "file": "corpus_daily.parquet",
-            "rows": 1,
-            "population": None,
+            "rows": 2,
+            "population": "attributed",
         }
 
     def test_mismatched_snapshot_aborts_the_build(self, tmp_path, pinned_snapshot):
         """A snapshot that disagrees with season.yaml fails aggregation
         outright, before anything could be written."""
-        pl.DataFrame(
-            {
-                "day": [date(2025, 10, 1)],
-                "raw_comments": [1],
-                "population_submitted": [1],
-                "usable": [1],
-                "attributed": [1],
-            },
-            schema=CORPUS_DAILY_SCHEMA,
-        ).write_parquet(
-            pinned_snapshot / CORPUS_DAILY_FILENAME,
-            metadata={"season": get_active_season(), "processed_at": "2026-09-16"},
-        )
+        self._write_download(pinned_snapshot, _download({date(2023, 12, 31): (1, 1)}))
 
         with pytest.raises(ValueError, match="one owner"):
+            aggregate_sentiment(_lebron_parquet(tmp_path))
+
+    def test_fact_day_outside_the_snapshot_aborts_the_build(
+        self, tmp_path, pinned_snapshot
+    ):
+        """A snapshot whose grid misses the fact's nights is from another
+        download; the build stops rather than drop them."""
+        corpus = load_season_config()["corpus"]
+        self._write_download(
+            pinned_snapshot,
+            _download(
+                {
+                    date(2025, 10, 1): (
+                        corpus["raw_comments"],
+                        corpus["population_submitted"],
+                    )
+                }
+            ),
+        )
+
+        with pytest.raises(ValueError, match="outside the download snapshot"):
             aggregate_sentiment(_lebron_parquet(tmp_path))
 
 

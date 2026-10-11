@@ -36,9 +36,13 @@ pipeline produces. Data dictionary first, enforcement second:
 - COMMENT_SAMPLES_SCHEMA describes the comment-samples fact subset
   (comment_samples.parquet): verbatim rows of the fact, selected not
   aggregated; enforced via the same unified loop.
-- CORPUS_DAILY_SCHEMA describes the corpus funnel at day grain
-  (corpus_daily.parquet), built from the raw download by
-  pipeline/corpus.py and cached as a reference snapshot.
+- CORPUS_DAILY_SCHEMA describes the corpus at day grain
+  (corpus_daily.parquet): the funnel's counts and the attributed rows'
+  sentiment split per game night, computed at aggregation from the
+  fact beside the download's counts; enforced via the same unified loop.
+- DOWNLOAD_DAILY_SCHEMA describes the download's counts per game night
+  (reference/download_daily.parquet), the part of corpus_daily only the
+  raw download can give, built once by pipeline/corpus.py and cached.
 - ACCURACY_SAMPLE_SCHEMA describes the accuracy sample
   (reference/accuracy_sample.parquet): manual verdicts on a blind
   random draw of the attributed population beside the classifier's
@@ -69,7 +73,7 @@ import polars as pl
 from utils.constants import RECAPS_SUBDIR
 
 # Bump on any breaking change to a produced-file contract.
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # data/<season>/processed/sentiment.parquet — one row per classified comment.
 SENTIMENT_SCHEMA = pl.Schema(
@@ -635,15 +639,17 @@ ACCURACY_SAMPLE_SCHEMA = pl.Schema(
     }
 )
 
-# --- Corpus at day grain (built in pipeline/corpus.py) -----------------------
+# --- Corpus at day grain ------------------------------------------------------
 # One row per Eastern game night (6 am to 6 am New York) of the
-# download's extent, zero-filled: the funnel's stages as counts, named
+# download's extent, zero-filled. The funnel's stages as counts, named
 # exactly as the manifest's corpus block so each column sums to the
-# figure of the same name. Counts only; rolling means are a display
-# choice. The window is ET-midnight and the day rolls at 6 am, so the
-# first and last days are stubs; the grid follows the data, not the
-# calendar, so that the sums hold. attributed is null throughout until
-# the season's fact carries materialized attribution.
+# figure of the same name, then the attributed rows' sentiment split
+# under the views' names, summing to attributed on every row and to
+# player_overall over the season. Counts only: a stored daily rate
+# invites averaging, which no consumer may do. The window is
+# ET-midnight and the day rolls at 6 am, so the first and last days are
+# stubs; the grid follows the data, not the calendar, so that the sums
+# hold.
 CORPUS_DAILY_SCHEMA = pl.Schema(
     {
         "day": pl.Date,
@@ -651,6 +657,21 @@ CORPUS_DAILY_SCHEMA = pl.Schema(
         "population_submitted": pl.Int64,
         "usable": pl.Int64,
         "attributed": pl.Int64,
+        "neg_count": pl.Int64,
+        "neu_count": pl.Int64,
+        "pos_count": pl.Int64,
+    }
+)
+
+# data/<season>/reference/download_daily.parquet — the download's part of
+# corpus_daily: what only the raw and filtered files can count, cached
+# because the raw read is the expensive step. The fact's columns are
+# computed at aggregation, so a fact reassembly never leaves them stale.
+DOWNLOAD_DAILY_SCHEMA = pl.Schema(
+    {
+        "day": pl.Date,
+        "raw_comments": pl.Int64,
+        "population_submitted": pl.Int64,
     }
 )
 
@@ -694,7 +715,7 @@ NULLABLE_COLUMNS: dict[str, frozenset[str]] = {
     "player_games": frozenset({"is_home"}),  # neutral site: nobody hosted
     "posts": frozenset({"game_id", "link_flair_text", "source"}),
     "comment_samples": frozenset({"fan_team"}),  # unflaired commenter
-    "corpus_daily": frozenset({"attributed"}),
+    "corpus_daily": frozenset(),
     "method_examples": frozenset(
         {
             "author_flair_text",
@@ -914,8 +935,9 @@ CORPUS_STAGES = (
 )
 
 # Which population each produced table draws from. None for the
-# dimensions and reference tables, which hold no comments, and for
-# corpus_daily, whose columns are each their own population.
+# dimensions and reference tables, which hold no comments. corpus_daily
+# names the population its sentiment counts split; its funnel columns
+# are each their own stage.
 TABLE_POPULATIONS: dict[str, str | None] = {
     "player_overall": "attributed",
     "player_temporal": "attributed",
@@ -930,7 +952,7 @@ TABLE_POPULATIONS: dict[str, str | None] = {
     "player_games": None,
     "posts": None,
     "comment_samples": "attributed",
-    "corpus_daily": None,
+    "corpus_daily": "attributed",
     "method_examples": None,  # curated by hand, not drawn from a population
 }
 
@@ -1141,7 +1163,7 @@ class Manifest(TypedDict):
     classifiers: dict[str, ClassifierIdentity]  # by stage; absent until stamped
     snapshots: dict[
         str, str | None
-    ]  # games_fetched_at, posts/corpus_daily processed_at
+    ]  # games_fetched_at, posts/download_daily processed_at
     rules: Rules
     calendar: dict[str, str | None]  # season.yaml calendar, CALENDAR_KEYS
     corpus: Corpus

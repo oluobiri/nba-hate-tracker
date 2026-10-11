@@ -518,11 +518,11 @@ class TestNullableColumns:
             {"game_id", "link_flair_text", "source"}
         )
 
-    def test_fan_role_and_corpus_attribution_are_nullable(self):
-        """An unflaired commenter has no fan team; a season without
-        materialized attribution has no attributed count per day."""
+    def test_fan_role_is_nullable_and_the_corpus_is_not(self):
+        """An unflaired commenter has no fan team; every day's counts are
+        computed from the fact, so none is unknown."""
         assert NULLABLE_COLUMNS["comment_samples"] == frozenset({"fan_team"})
-        assert NULLABLE_COLUMNS["corpus_daily"] == frozenset({"attributed"})
+        assert NULLABLE_COLUMNS["corpus_daily"] == frozenset()
 
 
 class TestManifestContract:
@@ -576,7 +576,7 @@ class TestManifestContract:
     def test_fact_tables_draw_from_a_defined_population(self):
         """The fact rollups and the samples subset each name a population
         that POPULATIONS defines."""
-        for name in [*AGGREGATE_VIEW_SCHEMAS, "comment_samples"]:
+        for name in [*AGGREGATE_VIEW_SCHEMAS, "comment_samples", "corpus_daily"]:
             assert TABLE_POPULATIONS[name] in POPULATIONS, name
 
     def test_dimensions_hold_no_comments(self):
@@ -584,12 +584,16 @@ class TestManifestContract:
         for name in ("players", "teams", "games", "player_games", "posts"):
             assert TABLE_POPULATIONS[name] is None, name
 
-    def test_corpus_daily_columns_are_corpus_stages(self):
-        """Each count column is a funnel stage under the corpus block's own
-        key, so a column sums to the figure of the same name; the table
-        has no single population."""
-        assert TABLE_POPULATIONS["corpus_daily"] is None
-        assert set(CORPUS_DAILY_SCHEMA.names()[1:]) < set(CORPUS_STAGES)
+    def test_corpus_daily_columns_are_stages_then_the_attributed_split(self):
+        """The funnel columns are stages under the corpus block's own keys,
+        so each sums to the figure of the same name; the sentiment columns
+        are the views' own, splitting the attributed population."""
+        funnel = {"raw_comments", "population_submitted", "usable", "attributed"}
+        split = {"neg_count", "neu_count", "pos_count"}
+        assert set(CORPUS_DAILY_SCHEMA.names()[1:]) == funnel | split
+        assert funnel < set(CORPUS_STAGES)
+        assert split < set(PLAYER_OVERALL_SCHEMA.names())
+        assert TABLE_POPULATIONS["corpus_daily"] == "attributed"
 
     def test_the_three_universes_differ(self):
         """The populations the spike found disagreeing are three names."""
@@ -931,20 +935,13 @@ class TestValidateNullability:
         assert "playoff_round" not in message
 
     def test_all_null_declared_column_passes(self):
-        """An all-null declared column pinned by schema= is accepted (the
-        2024-25 corpus_daily.attributed case)."""
+        """An all-null declared column pinned by schema= is accepted."""
         df = pl.DataFrame(
-            {
-                "day": [date(2024, 10, 1)],
-                "raw_comments": [10],
-                "population_submitted": [4],
-                "usable": [4],
-                "attributed": [None],
-            },
-            schema=CORPUS_DAILY_SCHEMA,
+            {"day": [date(2024, 10, 1)], "attributed": [None]},
+            schema={"day": pl.Date, "attributed": pl.Int64},
         )
 
-        validate_nullability(df, NULLABLE_COLUMNS["corpus_daily"], "corpus_daily")
+        validate_nullability(df, frozenset({"attributed"}), "t")
 
     def test_empty_frame_passes(self):
         """An empty output has no nulls to report."""

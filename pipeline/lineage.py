@@ -38,6 +38,7 @@ OUTPUT_CONFIGS: dict[str, tuple[str, ...]] = {
     "target_pool": ("players",),
     "accuracy_sample": ("players",),  # the per-row target options
     "posts_bridge": ("teams",),
+    "download_daily": (),
     "player_overall": (),
     "player_temporal": (),
     "player_fan_team": (),

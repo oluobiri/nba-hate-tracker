@@ -16,7 +16,7 @@ from pathlib import Path
 import polars as pl
 
 from pipeline.accuracy import read_accuracy_sample, score_read_sample, unlabeled_figures
-from pipeline.corpus import load_corpus_daily
+from pipeline.corpus import count_by_day, game_night_day, load_download_daily
 from pipeline.games import load_box_scores, load_game_tables
 from pipeline.lineage import OUTPUT_CONFIGS, check_config_stamps, config_versions
 from pipeline.method_examples import build_method_examples
@@ -36,6 +36,7 @@ from pipeline.receipts import (
     log_comment_samples_diagnostics,
 )
 from pipeline.schemas import (
+    CORPUS_DAILY_SCHEMA,
     CORPUS_STAGES,
     DASHBOARD_OUTPUT_SCHEMAS,
     FAN_TEAM_OVERALL_SCHEMA,
@@ -233,6 +234,62 @@ def compute_room_views(df_attributed: pl.DataFrame, bridge: pl.DataFrame) -> Roo
         room_temporal=room_temporal,
         bridged=roomed.height,
         unbridged=df_attributed.height - roomed.height,
+    )
+
+
+def compute_corpus_daily(
+    download: pl.DataFrame, df: pl.DataFrame, df_attributed: pl.DataFrame
+) -> pl.DataFrame:
+    """
+    Join the fact's day counts onto the download's day grid.
+
+    The download snapshot gives the grid and the stages only the raw
+    files can count; the fact gives usable per game night and, over the
+    attributed rows, the same split compute_metrics gives every view, so
+    the daily counts sum to player_overall by construction. Every
+    submitted comment was downloaded, so a fact day outside the grid
+    means the snapshot and the fact come from different downloads, and
+    the build stops rather than drop the day in the join.
+
+    Args:
+        download: Frame conforming to DOWNLOAD_DAILY_SCHEMA; empty when
+            no snapshot is on disk, which yields an empty table.
+        df: Usable fact frame (SENTIMENT_SCHEMA plus week and player_id).
+        df_attributed: Its attributed rows.
+
+    Returns:
+        DataFrame conforming to CORPUS_DAILY_SCHEMA, sorted by day.
+
+    Raises:
+        ValueError: If a fact day falls outside the download's grid.
+    """
+    if download.is_empty():
+        return pl.DataFrame(schema=CORPUS_DAILY_SCHEMA)
+    usable = count_by_day(df, "usable")
+    attributed = compute_metrics(
+        df_attributed.with_columns(game_night_day(pl.col("created_utc")).alias("day")),
+        ["day"],
+    ).select(
+        "day",
+        pl.col("comment_count").alias("attributed"),
+        "neg_count",
+        "neu_count",
+        "pos_count",
+    )
+    stray = usable.join(download.select("day"), on="day", how="anti")["day"].to_list()
+    if stray:
+        raise ValueError(
+            f"corpus_daily: {len(stray)} fact day(s) outside the download snapshot's "
+            f"grid ({stray[0]} to {stray[-1]}); the snapshot and the fact come from "
+            f"different downloads - run scripts.build_download_daily"
+        )
+    return (
+        download.join(usable, on="day", how="left")
+        .join(attributed, on="day", how="left")
+        .fill_null(0)
+        .select(CORPUS_DAILY_SCHEMA.names())
+        .cast(dict(CORPUS_DAILY_SCHEMA))
+        .sort("day")
     )
 
 
@@ -525,13 +582,14 @@ def aggregate_sentiment(
         "post not on the bridge)"
     )
 
-    # The corpus at day grain: a snapshot of the raw download, exported
-    # only if its totals agree with season.yaml's record
-    logger.info("Loading corpus_daily...")
+    # The corpus at day grain: the download's snapshot, read only if its
+    # totals agree with season.yaml's record, with the fact's days joined on
+    logger.info("Computing corpus_daily...")
     season_config = load_season_config()
-    corpus_daily, corpus_metadata = load_corpus_daily(
+    download_daily, download_metadata = load_download_daily(
         get_reference_dir(), season_config["corpus"]
     )
+    corpus_daily = compute_corpus_daily(download_daily, df, df_attributed)
 
     # Player x Game: the fact rolled up through the bridge
     logger.info("Computing game_sentiment...")
@@ -597,7 +655,7 @@ def aggregate_sentiment(
         "post_count": posts.height,
         "bridged_comments": rooms.bridged,
         "unbridged_comments": rooms.unbridged,
-        **corpus_metadata,
+        **download_metadata,
         "recap_count": len(documents),
         "recap_reaction_lag": reaction_lag,
     }
@@ -758,7 +816,7 @@ def build_manifest(
         "snapshots": {
             "games_fetched_at": metadata["games_fetched_at"],
             "posts_processed_at": metadata["posts_processed_at"],
-            "corpus_daily_processed_at": metadata["corpus_daily_processed_at"],
+            "download_daily_processed_at": metadata["download_daily_processed_at"],
         },
         "rules": {
             "qualified_threshold": QUALIFIED_THRESHOLD,

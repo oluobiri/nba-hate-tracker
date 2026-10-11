@@ -207,7 +207,8 @@ def load_download_daily(
 
     Raises:
         ValueError: If the snapshot does not conform to DOWNLOAD_DAILY_SCHEMA,
-            or a column's sum disagrees with the record.
+            repeats a day (the fact's join onto it would double that day's
+            counts), or a column's sum disagrees with the record.
     """
     path = reference_dir / DOWNLOAD_DAILY_FILENAME
     if not path.exists():
@@ -222,6 +223,12 @@ def load_download_daily(
     stamps = check_snapshot_season(path, subject="corpus volume", log=logger)
     download_daily = pl.read_parquet(path)
     validate_schema(download_daily, DOWNLOAD_DAILY_SCHEMA, DOWNLOAD_DAILY_FILENAME)
+    repeated = download_daily.height - download_daily["day"].n_unique()
+    if repeated:
+        raise ValueError(
+            f"{path}: {repeated} repeated day(s); the grid must hold each day "
+            f"once - rebuild the snapshot"
+        )
     check_corpus_totals(download_daily, corpus_facts)
     logger.info(f"download_daily: {download_daily.height} days")
     return download_daily, {"download_daily_processed_at": stamps.get("processed_at")}

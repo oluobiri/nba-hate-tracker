@@ -232,6 +232,13 @@ class TestLoadDownloadDaily:
         with pytest.raises(ValueError, match="extra columns"):
             load_download_daily(tmp_path, self.FACTS)
 
+    def test_repeated_day_fails_the_load(self, tmp_path):
+        """A day present twice would double the fact's counts in the join."""
+        self._write(tmp_path, pl.concat([_table(5, 2), _table(5, 2)]))
+
+        with pytest.raises(ValueError, match="1 repeated day"):
+            load_download_daily(tmp_path, self.FACTS)
+
     def test_totals_mismatch_fails_the_load(self, tmp_path):
         """A snapshot that disagrees with season.yaml never reaches the build."""
         self._write(tmp_path, _table(11, 4))

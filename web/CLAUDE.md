@@ -24,7 +24,8 @@ src/
 ├── cards/        → the share cards: model.ts (pure, the page's sentence) → frame.tsx (the satori tree) →
 │                   render.ts (resvg); palette.ts pinned to tokens.css; media read once per build
 ├── lib/          → pure logic and sentences, each with a colocated .test.ts; *.fixture.ts holds
-│                   test-only row builders (replay.fixture.ts: one recap frame row each, defaulted)
+│                   test-only row builders (replay.fixture.ts: one recap frame row each, defaulted);
+│                   *-copy.ts holds curated words joined to the data at build (method-copy, season-copy)
 ├── data/         → the contract boundary: env → load → rows → assert; recap.ts asserts a recap
 │                   document against documents.recap and fetches it in the browser
 │                   schema.json + types.gen.ts are generated, never edited
@@ -135,9 +136,14 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   `useReducedMotion` sets the row's `travel` and `count` to zero. The dock (play, date,
   scrubber) sticks under the site header at every width; its button and date are fixed widths
   so the scale under it starts where the scrubber does.
-- **Net lives on the recap page only** (`lib/net.ts`): the numbers are net, the bars show the
-  mix, and the figure's colour is one linear curve from bone to heat or ice. The player page
-  ranks by the negative share and never prints net.
+- **Net lives on the recap page and the season's arcs** (`lib/net.ts`): the numbers are net, the
+  bars show the mix, and the figure's colour is one linear curve from bone to heat or ice. The
+  arcs speak net because a season moves both shares at once, and keep both shares beside it. The
+  player page ranks by the negative share and never prints net.
+- **The season page has no island** (`lib/season.ts`): every figure is composed once by
+  `buildSeason` for the page, the style guide and the card; the two charts' readouts are the
+  Timeline's focusable columns, and the volume key is a radio group read by `:has()`. The one
+  curated note (`lib/season-copy.ts`) is joined at build and fails it when the data moves.
 - **Every page has a share card.** `Base.astro` takes `image`; a page without one shows the
   leaderboard's card. A card is built from the page's own inputs (`lib/standings`, shared by the
   page and its endpoint) and says the header's sentence; the official view, never a receipt.

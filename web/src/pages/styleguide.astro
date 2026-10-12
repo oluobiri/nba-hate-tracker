@@ -10,10 +10,12 @@ import { Games } from '../components/Games'
 import { GapChart } from '../components/GapChart'
 import { GameNetTimeline } from '../components/GameNetTimeline'
 import { GameScatter } from '../components/GameScatter'
+import { GameNights } from '../components/GameNights'
 import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
+import { NightsChart } from '../components/NightsChart'
 import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { PipelineDiagram } from '../components/PipelineDiagram'
@@ -64,6 +66,8 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
+import { NIGHT_MIN_N, WINDOW, buildSeason } from '../lib/season'
+import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
@@ -126,6 +130,8 @@ const edgeGaps = classGaps({
   pos: { classifier: 0.2, manual: 0.4, gap: -0.2, gap_margin: 0.06 },
 })
 const edgeDomain = gapDomain(edgeGaps)
+// The season page's figures, composed once.
+const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
 // The pipeline drawing on the published figures.
 const diagram = {
   season: manifest.season,
@@ -868,6 +874,21 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <Timeline name={thinnestOfficial.attributed_player} {...tlThin} bands={bands} floor={weekFloor} k={ROLLING} />
       <p class="eyebrow">Nothing to draw: {fewestWeeks.attributed_player}, {weeksAtFloor(fewestWeeks.attributed_player)} weeks at the floor.</p>
       <Timeline name={fewestWeeks.attributed_player} {...tlNone} bands={bands} floor={weekFloor} k={ROLLING} />
+    </section>
+
+    <section class="guide__section">
+      <h2>NightsChart</h2>
+      <p class="eyebrow">
+        The season night by night: {WINDOW}-night lines pooled from counts over nightly dots sized by n, the regular-season levels as dashed rules, the stretch above
+        the level bracketed, two annotations on rings, the draft marked. Hover, focus or tap a night for its split and the line through it.
+      </p>
+      <NightsChart nights={season.nights} negLine={season.negLine} posLine={season.posLine} level={season.level} stretch={season.stretch} notes={season.notes} cal={season.cal} k={WINDOW} floor={NIGHT_MIN_N} />
+    </section>
+
+    <section class="guide__section">
+      <h2>GameNights</h2>
+      <p class="eyebrow">One dumbbell per phase: the negative share on game nights (filled) against nights with no game (hollow), the regular season's level as a rule, the no-game counts in the key.</p>
+      <GameNights rows={season.gameNights} level={season.level.neg} />
     </section>
 
     <section class="guide__section">

@@ -3386,3 +3386,568 @@ a.hero__who:hover {
     display: none;
   }
 }
+
+/* --- The season page's charts ------------------------------------------------------ */
+
+/* A figure on the season's axis: a head line, the chart, the month axis, a readout. */
+.fig {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  overflow: clip;
+}
+.fig__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+.fig__head h3 {
+  margin: 0;
+}
+.fig__quiet {
+  font-size: 12px;
+  color: var(--mute);
+}
+.narrow-only {
+  display: none;
+}
+@media (max-width: 640px) {
+  .wide-only {
+    display: none;
+  }
+  .narrow-only {
+    display: inline;
+  }
+}
+
+/* Key: swatches and words, one line each. */
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.key i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+}
+.key__line {
+  height: 0 !important;
+  width: 20px !important;
+  border-top: 2px solid var(--bone-2);
+}
+.key__line--neg {
+  border-top-color: var(--heat);
+}
+.key__line--pos {
+  border-top-color: var(--ice);
+}
+.key__line--rule {
+  border-top: 1px dashed var(--bone-2);
+}
+.key__dot {
+  width: 9px !important;
+  height: 9px !important;
+  border-radius: 50%;
+  background: var(--bone-2);
+  opacity: 0.6;
+}
+.key__dot--hollow {
+  background: var(--ink);
+  border: 2px solid var(--heat);
+  opacity: 1;
+}
+.key__dot--full {
+  background: var(--heat);
+  opacity: 1;
+}
+.key__dot--early {
+  background: var(--ink);
+  border: 2px solid var(--bone-2);
+  opacity: 1;
+}
+.key__dot--late {
+  background: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%);
+  opacity: 1;
+}
+
+/* The chart: layers stacked in one box; bands rise above it into the margin. */
+.ch {
+  --h: 220px;
+  position: relative;
+  height: var(--h);
+  margin-top: 22px;
+  border-bottom: 1px solid var(--line-2);
+}
+.ch > * {
+  position: absolute;
+  inset: 0;
+}
+.ch__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ch__bands {
+  pointer-events: none;
+}
+.ch__band {
+  position: absolute;
+  top: -22px;
+  bottom: 0;
+}
+/* Phase bands: neutral surfaces, never heat. */
+.ch__band--play_in,
+.ch__band--playoffs {
+  background: var(--ink-2);
+}
+.ch__band--finals {
+  background: var(--surface);
+}
+.ch__band-label {
+  display: none;
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--mute);
+}
+.ch__band--always .ch__band-label {
+  display: block;
+}
+@media (min-width: 900px) {
+  .ch__band--desk .ch__band-label {
+    display: block;
+  }
+}
+@media (min-width: 1160px) {
+  .ch__band--wide .ch__band-label {
+    display: block;
+  }
+}
+.ch__grid {
+  pointer-events: none;
+}
+.ch__tick-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--line);
+}
+.ch__tick-label {
+  position: absolute;
+  left: 4px;
+  transform: translateY(-115%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.ch__tick-label em,
+.ch__rule-label em {
+  font-style: normal;
+}
+@media (max-width: 640px) {
+  .ch__tick-label em,
+  .ch__rule-label em {
+    display: none;
+  }
+}
+.ch__layer {
+  pointer-events: none;
+}
+.ch__rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--bone-2);
+}
+.ch__rule--pos {
+  border-top-color: var(--ice);
+  opacity: 0.7;
+}
+.ch__rule-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--bone-2);
+  white-space: nowrap;
+  background: var(--ink);
+}
+.ch__rule-label--pos {
+  color: var(--ice);
+}
+.ch__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ch__line--neg {
+  stroke: var(--heat);
+}
+.ch__line--pos {
+  stroke: var(--ice);
+}
+.ch__fill {
+  position: absolute;
+  inset: 0;
+}
+.ch__fill--harsh {
+  background: var(--heat-dim);
+}
+.ch__dot {
+  position: absolute;
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  opacity: 0.28;
+}
+.ch__dot--neg {
+  background: var(--heat);
+}
+.ch__dot--pos {
+  background: var(--ice);
+}
+.ch__ring {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  border: 1.5px solid var(--heat);
+}
+.ch__ring--small {
+  width: 10px;
+  height: 10px;
+}
+.ch__ring--pos {
+  border-color: var(--ice);
+}
+.ch__note {
+  position: absolute;
+  display: grid;
+  gap: 2px;
+  max-width: min(300px, 46%);
+  margin: 0;
+  padding: 0 8px 0 0;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--bone-2);
+  border-right: 1px solid var(--heat);
+}
+.ch__note--pos {
+  border-right-color: var(--ice);
+}
+.ch__note b {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--heat);
+}
+.ch__note--pos b {
+  color: var(--ice);
+}
+@media (max-width: 640px) {
+  .ch__note {
+    max-width: 40%;
+    font-size: 12px;
+  }
+}
+.ch__mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--mute-2);
+}
+.ch__mark span {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.ch__brace {
+  position: absolute;
+  top: 2px;
+  height: 10px;
+  border: 1px dotted var(--bone);
+  border-bottom: 0;
+}
+.ch__brace-label {
+  position: absolute;
+  top: 9px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--bone);
+}
+/* Columns: one per night or week, focusable, each with a readout that lands under the axis. */
+.ch__cols {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ch__col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(100% / var(--n));
+  cursor: crosshair;
+}
+.ch__col:hover,
+.ch__col:focus {
+  background: rgba(237, 232, 220, 0.06);
+  outline: none;
+}
+.ch__col:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.ch__pt {
+  display: none;
+  position: absolute;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  background: var(--ink);
+  border: 2px solid var(--heat);
+}
+.ch__pt--pos {
+  border-color: var(--ice);
+}
+.ch__col:hover .ch__pt,
+.ch__col:focus .ch__pt {
+  display: block;
+}
+.ch__tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 26px);
+  left: calc(-100% * var(--i));
+  width: calc(100% * var(--n));
+  z-index: 2;
+}
+.ch__col:hover .ch__tip,
+.ch__col:focus .ch__tip,
+.ch__col:focus-within .ch__tip {
+  display: grid;
+}
+/* The month axis under a chart. */
+.months {
+  position: relative;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.months li {
+  position: absolute;
+  top: 3px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line-2);
+}
+/* The readout under a chart: one night, or one week. A reserved box holds the hint until a column's tip lands on it. */
+.ro {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.ro--reserve {
+  min-height: 152px;
+}
+.ro__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+}
+.ro__head b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--bone);
+}
+.ro__head span {
+  font-size: 12px;
+}
+.ro__quiet {
+  font-size: 12px;
+  color: var(--mute);
+}
+.ro__hint {
+  margin: 0;
+  color: var(--mute);
+}
+.ro__line b {
+  font-weight: 600;
+}
+.ro .neg,
+.rm .neg,
+.rt .neg,
+.th .neg,
+.sn .neg {
+  color: var(--heat);
+}
+.ro .pos,
+.rm .pos,
+.rt .pos,
+.th .pos,
+.sn .pos {
+  color: var(--ice);
+}
+.nc__chart {
+  --h: 380px;
+}
+@media (max-width: 640px) {
+  .nc__chart {
+    --h: 300px;
+  }
+  .ro--reserve {
+    min-height: 196px;
+  }
+}
+
+/* GameNights: one dumbbell per phase, hollow where no game was played, the level as a rule. */
+.gn {
+  display: grid;
+  gap: 0;
+}
+.gn__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) 1fr;
+  gap: 14px;
+  align-items: center;
+  min-height: 46px;
+  border-top: 1px solid var(--line);
+}
+.gn__row--head {
+  min-height: 0;
+  border: 0;
+}
+.gn__row b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.gn__track {
+  position: relative;
+  display: block;
+  height: 28px;
+}
+.gn__bar {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--heat);
+  opacity: 0.5;
+}
+.gn__dot {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--heat);
+}
+.gn__dot--off {
+  background: var(--ink);
+  border: 2px solid var(--heat);
+}
+.gn__label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 3px;
+  font-size: 12px;
+  color: var(--bone-2);
+  white-space: nowrap;
+  background: var(--ink);
+  z-index: 1;
+}
+.gn__label--off {
+  transform: translate(-100%, -50%);
+  margin-left: -10px;
+}
+.gn__label--on {
+  margin-left: 10px;
+}
+.gn__rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rule);
+  border-left: 1px dashed var(--bone-2);
+}
+.gn__rule-label {
+  position: relative;
+  display: block;
+  height: 16px;
+  font-size: 10px;
+  color: var(--mute);
+}
+.gn__rule-label span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.gn .key {
+  padding-top: 10px;
+}
+@media (max-width: 640px) {
+  .gn__row {
+    grid-template-columns: 92px 1fr;
+  }
+  .gn__row b {
+    font-size: 13px;
+  }
+}

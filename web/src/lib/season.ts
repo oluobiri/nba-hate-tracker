@@ -3,7 +3,7 @@
 // and games; the game-night split cuts the phases disjoint on the calendar.
 // Every rate is a ratio of summed counts; the thresholds here are page
 // choices, and the rules arrive as arguments from the manifest.
-import type { CorpusDailyRow, GameSentimentRow, GamesRow, PlayerGamesRow, PlayerRoomRow, PlayerTemporalRow, PlayersRow, PostsRow, RecapEntry, RoomTemporalRow, TeamsRow } from '../data/types.gen'
+import type { CorpusDailyRow, GameSentimentRow, GamesRow, Manifest, PlayerGamesRow, PlayerRoomRow, PlayerTemporalRow, PlayersRow, PostsRow, RecapEntry, RoomTemporalRow, Tables, TeamsRow } from '../data/types.gen'
 import { nickname } from './fans'
 import { fmtInt, fmtPct, fmtSigned } from './format'
 import { type GameLineParts, gameLine } from './games'
@@ -984,4 +984,98 @@ export function threadText(t: Thread): string {
   const second = t.second ? ` ${t.second.name} ${threadFigure(t.second)}.` : ''
   const score = `${t.line.away.abbr} ${t.line.away.score} @ ${t.line.home.abbr} ${t.line.home.score}`
   return `${t.stage} · ${score} · ${t.line.date}: ${about}, ${split}. Mostly about ${t.top.name}, ${threadFigure(t.top)}.${second}`
+}
+
+// --- The page's view -----------------------------------------------------------------------
+// Composed once per build and shared by the page, the style guide and the
+// share card, so a figure is never derived twice.
+
+export interface SeasonView {
+  cal: SeasonCalendar
+  official: number
+  roomFloor: number
+  /** The attributed population: every comment about a tracked player. */
+  attributed: number
+  tracked: number
+  nights: Night[]
+  negLine: (number | null)[]
+  posLine: (number | null)[]
+  /** The regular season's shares, the dashed baselines. */
+  level: { neg: number; pos: number }
+  /** The whole season's negative share, the leaderboard's own figure. */
+  season: number
+  extremes: NightExtremes
+  stretch: Stretch | null
+  notes: NightNote[]
+  lede: Lede
+  gameNights: GameNightRow[]
+  split: RoomSplit
+  weekly: Weekly
+  tiles: Tile[]
+  roomRows: RoomRow[]
+  maxShare: number
+  table: RoomSplitRow[]
+  angle: PlayerAngle
+  arcs: ArcLists
+  threads: { playoffs: Thread[]; regular: Thread[] }
+}
+
+export interface SeasonSource {
+  manifest: Pick<Manifest, 'calendar' | 'rules' | 'corpus' | 'recaps'>
+  tables: Pick<Tables, 'corpus_daily' | 'games' | 'room_temporal' | 'player_room' | 'player_temporal' | 'player_games' | 'game_sentiment' | 'posts' | 'players' | 'teams' | 'player_overall'>
+}
+
+/** Every figure on the season page, from the tables and the manifest's rules. */
+export function buildSeason({ manifest, tables }: SeasonSource, copy: NightNoteCopy): SeasonView {
+  const cal = seasonCalendar(manifest.calendar)
+  const official = manifest.rules.qualified_threshold
+  const roomFloor = manifest.rules.floors.room_min_n
+  const abbr = new Map(tables.teams.map((t) => [t.team, t.abbreviation]))
+  const slugOf = new Map(tables.players.map((p) => [p.attributed_player, p.slug]))
+  const qualified = new Set(tables.player_overall.filter((r) => r.comment_count >= official).map((r) => r.attributed_player))
+
+  const nights = nightRows(tables.corpus_daily, tables.games, cal)
+  const negLine = pooledLine(nights, WINDOW, 'neg')
+  const posLine = pooledLine(nights, WINDOW, 'pos')
+  const regular = phaseCounts(nights, 'regular')
+  const level = { neg: negRate(regular), pos: posRate(regular) }
+  const whole = sumCounts(nights.map((n) => n.counts))
+  if (whole.total !== manifest.corpus.attributed) throw new Error(`season: the nights hold ${whole.total} comments, the manifest's attributed population is ${manifest.corpus.attributed}`)
+  const extremes = extremeNights(nights, NIGHT_MIN_N)
+  const stretch = aboveStretch(nights, negLine, level.neg, cal.play_in_start)
+  const byGame = gameComments(tables.game_sentiment)
+  const notes = [harshestNote(nights, copy, extremes.harshest)]
+  if (extremes.warmest) notes.push(warmestNote(extremes.warmest, nightGameTitle(extremes.warmest.day, tables.games, byGame, abbr)))
+
+  const split = roomSplit(tables.room_temporal, cal)
+  const { rows: roomRowList, maxShare } = roomRows(split)
+  const field = arcField({ temporal: tables.player_temporal, playerGames: tables.player_games, games: tables.games, players: tables.players, teams: tables.teams, qualified }, cal)
+  const threadInputs: ThreadInputs = { sentiment: tables.game_sentiment, posts: tables.posts, games: tables.games, players: tables.players, teams: tables.teams, recaps: manifest.recaps }
+
+  return {
+    cal,
+    official,
+    roomFloor,
+    attributed: manifest.corpus.attributed,
+    tracked: tables.players.length,
+    nights,
+    negLine,
+    posLine,
+    level,
+    season: negRate(whole),
+    extremes,
+    stretch,
+    notes,
+    lede: nightsLede(stretch, level.neg, extremes.harshest, cal),
+    gameNights: gameNightSplit(nights, cal),
+    split,
+    weekly: bandWeekly(tables.room_temporal, cal),
+    tiles: roomTiles(split),
+    roomRows: roomRowList,
+    maxShare,
+    table: roomTable(split),
+    angle: playerAngle(tables.player_room, qualified, slugOf, roomFloor),
+    arcs: arcLists(field),
+    threads: { playoffs: loudestThreads(threadInputs, cal, true), regular: loudestThreads(threadInputs, cal, false) },
+  }
 }

@@ -6,9 +6,8 @@
 import type { CSSProperties } from 'react'
 
 import { fmtInt, fmtPct } from '../lib/format'
-import { negRate, posRate } from '../lib/metrics'
+import { negRate, neuRate, posRate } from '../lib/metrics'
 import { addDays, againstLevel, dayLabel, type Night, type NightNote, NIGHT_PHASE_LABELS, nightText, nightWhat, type SeasonCalendar, type Stretch } from '../lib/season'
-import { SentimentBar } from './SentimentBar'
 
 export interface NightsChartProps {
   nights: readonly Night[]
@@ -225,7 +224,17 @@ export function NightsChart({ nights, negLine, posLine, level, stretch, notes, c
                   {x.counts.total > 0 ? (
                     <>
                       <span className="ro__quiet mono">That night</span>
-                      <SentimentBar counts={x.counts} size="row" subject="That night" />
+                      <span className="ro__bar mono">
+                        <b className="ro__bar-neg" style={{ width: `${negRate(x.counts) * 100}%` }}>
+                          {fmtPct(negRate(x.counts), 1)}
+                        </b>
+                        <b className="ro__bar-neu" style={{ width: `${neuRate(x.counts) * 100}%` }}>
+                          {fmtPct(neuRate(x.counts), 1)}
+                        </b>
+                        <b className="ro__bar-pos" style={{ width: `${posRate(x.counts) * 100}%` }}>
+                          {fmtPct(posRate(x.counts), 1)}
+                        </b>
+                      </span>
                       <span className="ro__line">
                         {neg === null || pos === null ? (
                           'Too close to the edge of the season for the line.'

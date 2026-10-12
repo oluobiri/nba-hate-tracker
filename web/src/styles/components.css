@@ -3827,6 +3827,33 @@ a.hero__who:hover {
 .ro__line b {
   font-weight: 600;
 }
+/* The night's own split: a plain three-segment bar, ink labels inside, clipped where a segment is thin. */
+.ro__bar {
+  display: flex;
+  gap: 2px;
+  height: 20px;
+  font-size: 11px;
+  color: var(--ink);
+}
+.ro__bar b {
+  display: flex;
+  align-items: center;
+  padding-inline: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.ro__bar-neg {
+  background: var(--heat);
+}
+.ro__bar-neu {
+  justify-content: center;
+  background: var(--neu);
+}
+.ro__bar-pos {
+  justify-content: flex-end;
+  background: var(--ice);
+}
 .ro .neg,
 .rm .neg,
 .rt .neg,

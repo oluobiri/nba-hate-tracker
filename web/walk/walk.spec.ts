@@ -433,7 +433,7 @@ test("the Recap chip on a player page's game rows leads to a live recap page", a
   const slug = key.split('/')[2]!.replace(/^\d+-/, '')
   await page.goto(`/player/${slug}/?games=all&log=all#games`, { waitUntil: 'networkidle' })
   expect(await page.locator('.gt tbody tr').count()).toBeGreaterThan(10)
-  const chips = page.locator('.gt__recap')
+  const chips = page.locator('.gt .chip')
   expect(await chips.count()).toBeGreaterThan(0)
   for (const c of await chips.all()) {
     expect(ROUTES).toContain(await c.getAttribute('href'))

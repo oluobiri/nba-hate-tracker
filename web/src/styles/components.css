@@ -215,6 +215,31 @@
   border-color: var(--bone);
 }
 
+/* RecapChip: a mono link with a play glyph; the .btn look at a small size. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--bone);
+}
+.chip:hover {
+  border-color: var(--bone-2);
+}
+.chip__glyph {
+  width: 8px;
+  height: 8px;
+  fill: currentColor;
+}
+
 /* Exhibit: a numbered receipt. Verbatim body, its thread, its source; never a username.
    The sentiment is the left edge; the tab above already names it. */
 .exhibit {
@@ -1306,24 +1331,11 @@ mark {
 .gt__verdict {
   padding-block: 4px;
 }
-/* The Recap chip: the .btn look at the row's end; under the verdict on a phone. */
-.gt__recap {
-  display: inline-flex;
-  align-items: center;
+/* In the games table the chip floats to the row's end, touch-sized; under the verdict on a phone. */
+.gt .chip {
   float: right;
   min-height: 44px;
   margin-left: 12px;
-  padding: 0 10px;
-  border: 1px solid var(--line-2);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--bone);
-}
-.gt__recap:hover {
-  border-color: var(--bone-2);
 }
 @media (max-width: 640px) {
   .gt {
@@ -1367,7 +1379,7 @@ mark {
   .gt .vd__figure {
     font-size: 13px;
   }
-  .gt__recap {
+  .gt .chip {
     display: flex;
     float: none;
     width: max-content;

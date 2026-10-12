@@ -17,6 +17,7 @@ import { MethodNote } from '../components/MethodNote'
 import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { PipelineDiagram } from '../components/PipelineDiagram'
+import { RecapChip } from '../components/RecapChip'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
 import { BoxScore } from '../components/replay/BoxScore'
@@ -53,7 +54,7 @@ import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pi
 import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
+import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHref, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
 import { fmtNet } from '../lib/net'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
@@ -843,6 +844,10 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <>
           <p class="eyebrow">A game with a curated recap carries a Recap chip at the row's end: {recapLead.entry.attributed_player}'s log around his.</p>
           <GamesTable rows={chipRows} caption={`${recapLead.entry.attributed_player}'s game log around his recap, a sample`} />
+          <p class="eyebrow">RecapChip on its own, as the season's loudest threads carry it; a game with two recaps names the player.</p>
+          <p>
+            <RecapChip href={recapHref(recapLead.key)} /> <RecapChip href={recapHref(recapLead.key)} label={`Recap · ${lastName(recapLead.entry.attributed_player)}`} />
+          </p>
         </>
       )}
     </section>

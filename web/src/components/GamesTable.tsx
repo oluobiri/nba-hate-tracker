@@ -5,6 +5,7 @@
 import { fmtInt } from '../lib/format'
 import type { GameLine } from '../lib/games'
 import { weekLabel } from '../lib/weeks'
+import { RecapChip } from './RecapChip'
 import { VerdictDelta } from './VerdictDelta'
 
 export interface GamesTableProps {
@@ -77,11 +78,7 @@ export function GamesTable({ rows, caption }: GamesTableProps) {
               <td className="gt__verdict">
                 <VerdictDelta delta={g.delta} n={g.counts?.total ?? 0} />
                 {!g.talked && g.counts === null && <span className="visually-hidden">Nobody mentioned him: {fmtInt(0)} comments.</span>}
-                {g.recapHref && (
-                  <a className="gt__recap" href={g.recapHref}>
-                    Recap
-                  </a>
-                )}
+                {g.recapHref && <RecapChip href={g.recapHref} />}
               </td>
             </tr>
           )

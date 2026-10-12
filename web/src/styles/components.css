@@ -3951,3 +3951,342 @@ a.hero__who:hover {
     font-size: 13px;
   }
 }
+
+/* RoomTiles: the rise, and the two things that made it; the tone's tile takes heat. */
+.tiles {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 24px;
+}
+.tile {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding-left: 14px;
+  border-left: 1px solid var(--line-2);
+}
+.tile:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.tile__n {
+  font-weight: 500;
+  font-size: clamp(30px, 4.4vw, 48px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--bone);
+}
+.tile__n small {
+  font-size: 0.42em;
+  letter-spacing: 0;
+  color: var(--mute);
+}
+.tile--harsh .tile__n {
+  color: var(--heat);
+}
+.tile__t {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.tile__s {
+  font-size: 13px;
+  color: var(--mute);
+  text-wrap: pretty;
+}
+@media (max-width: 640px) {
+  .tiles {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .tile,
+  .tile:first-child {
+    padding-left: 12px;
+    border-left: 2px solid var(--line-2);
+  }
+}
+
+/* VolumeBands: stacked weekly bars in seven neutral tones; the key is a radio
+   group and the checked one lights its band. Volume is not sentiment. */
+.vb__chart {
+  --h: 300px;
+}
+.bands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.bands__key {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bone-2);
+  cursor: pointer;
+}
+.bands__key input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.bands__key i {
+  width: 11px;
+  height: 11px;
+}
+.bands__key:hover {
+  border-color: var(--line-2);
+}
+.bands__key:has(input:checked) {
+  border-color: var(--bone);
+  color: var(--bone);
+}
+.bands__key:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.vb__svg rect {
+  transition: fill 0.15s;
+}
+/* The seven tones, light to dark; the small rooms fold into the darkest. */
+.band-game_thread {
+  background: var(--bone);
+  fill: var(--bone);
+}
+.band-post_game_thread {
+  background: var(--bone-2);
+  fill: var(--bone-2);
+}
+.band-daily {
+  background: var(--mute);
+  fill: var(--mute);
+}
+.band-general {
+  background: var(--mute-2);
+  fill: var(--mute-2);
+}
+.band-highlight {
+  background: var(--line-2);
+  fill: var(--line-2);
+}
+.band-news {
+  background: var(--line);
+  fill: var(--line);
+}
+.band-rest {
+  background: var(--surface-2);
+  fill: var(--surface-2);
+}
+/* A checked room: every band dims, that one goes bone. */
+.vb:has(.bands input:not([value='']):checked) .vb__svg rect {
+  fill: var(--surface-2);
+}
+.vb:has(.bands input[value='game_thread']:checked) .vb__svg rect.band-game_thread,
+.vb:has(.bands input[value='post_game_thread']:checked) .vb__svg rect.band-post_game_thread,
+.vb:has(.bands input[value='daily']:checked) .vb__svg rect.band-daily,
+.vb:has(.bands input[value='general']:checked) .vb__svg rect.band-general,
+.vb:has(.bands input[value='highlight']:checked) .vb__svg rect.band-highlight,
+.vb:has(.bands input[value='news']:checked) .vb__svg rect.band-news,
+.vb:has(.bands input[value='rest']:checked) .vb__svg rect.band-rest {
+  fill: var(--bone);
+}
+.vb .ch__col {
+  cursor: default;
+}
+.vb .ch__tip {
+  top: calc(100% + 44px);
+}
+.phases {
+  position: relative;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.phases li {
+  position: absolute;
+  top: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.ro--week {
+  min-height: 96px;
+}
+@media (max-width: 640px) {
+  .vb__chart {
+    --h: 240px;
+  }
+  .ro--week {
+    min-height: 136px;
+  }
+}
+
+/* RoomRows: a label, the RS and PO share bars, the two figures; the name takes its own line on a phone. */
+.rm {
+  display: grid;
+  gap: 0;
+}
+.rm__head,
+.rm__row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 2.6fr 118px;
+  gap: 14px;
+}
+.rm__head {
+  padding-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.rm__fig-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  text-align: right;
+}
+.rm__row {
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.rm__name {
+  display: grid;
+  gap: 2px;
+}
+.rm__name b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.rm__name span {
+  font-size: 11.5px;
+  color: var(--mute);
+}
+.rm__bars {
+  display: grid;
+  gap: 5px;
+}
+.rm__bar {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.rm__bar > span {
+  font-size: 10px;
+  color: var(--mute);
+}
+.rm__bar i {
+  display: flex;
+  height: 12px;
+}
+.rm__bar i b {
+  display: block;
+  height: 100%;
+}
+.rm__bar i b.neg {
+  background: var(--heat);
+}
+.rm__bar i b.neu {
+  background: var(--neu);
+}
+.rm__bar i b.pos {
+  background: var(--ice);
+}
+.rm__fig {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  text-align: right;
+}
+.rm__fig > span {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .rm__head {
+    display: none;
+  }
+  .rm__row {
+    grid-template-columns: 1fr 100px;
+    grid-template-areas: 'name name' 'bars fig';
+  }
+  .rm__name {
+    grid-area: name;
+  }
+  .rm__bars {
+    grid-area: bars;
+  }
+  .rm__fig {
+    grid-area: fig;
+  }
+}
+
+/* RoomTable: every room, the whole season; scrolls inside its box on a phone, never the page. */
+.rt {
+  overflow-x: auto;
+}
+.rt table {
+  width: 100%;
+  min-width: 560px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.rt th,
+.rt td {
+  padding: 9px 8px;
+  text-align: right;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+.rt thead th {
+  padding-bottom: 6px;
+  border: 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.rt th:first-child,
+.rt td:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.rt tbody th {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.rt td:last-child {
+  padding-right: 0;
+  color: var(--bone);
+}

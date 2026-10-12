@@ -20,6 +20,9 @@ import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTable
 import { PeriodStrip } from '../components/PeriodStrip'
 import { PipelineDiagram } from '../components/PipelineDiagram'
 import { RecapChip } from '../components/RecapChip'
+import { RoomRows } from '../components/RoomRows'
+import { RoomTable } from '../components/RoomTable'
+import { RoomTiles } from '../components/RoomTiles'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
 import { BoxScore } from '../components/replay/BoxScore'
@@ -42,6 +45,7 @@ import { TeamPicker } from '../components/TeamPicker'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
+import { VolumeBands } from '../components/VolumeBands'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import { readJson, seasonLocation } from '../data/env'
@@ -889,6 +893,25 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <h2>GameNights</h2>
       <p class="eyebrow">One dumbbell per phase: the negative share on game nights (filled) against nights with no game (hollow), the regular season's level as a rule, the no-game counts in the key.</p>
       <GameNights rows={season.gameNights} level={season.level.neg} />
+    </section>
+
+    <section class="guide__section">
+      <h2>RoomTiles</h2>
+      <p class="eyebrow">The rise and the two things that made it, computed from room_temporal; the tone's tile takes heat.</p>
+      <RoomTiles tiles={season.tiles} />
+    </section>
+
+    <section class="guide__section">
+      <h2>VolumeBands</h2>
+      <p class="eyebrow">Comments about players by room, one stacked bar per week in seven neutral tones. The key is a radio group: pick a room and its band goes bone across the season. Hover, focus or tap a week for its mix.</p>
+      <VolumeBands weekly={season.weekly} lastDay={season.nights.at(-1)!.day} />
+    </section>
+
+    <section class="guide__section">
+      <h2>RoomRows and RoomTable</h2>
+      <p class="eyebrow">Each band's share of the regular season's comments against the playoffs', the bar the split; the smallest room keeps a floor width. Under it, every room over the whole season.</p>
+      <RoomRows rows={season.roomRows} maxShare={season.maxShare} />
+      <RoomTable rows={season.table} caption="Every room over the whole season, a sample" />
     </section>
 
     <section class="guide__section">

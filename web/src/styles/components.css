@@ -4290,3 +4290,261 @@ a.hero__who:hover {
   padding-right: 0;
   color: var(--bone);
 }
+
+/* ArcRows: a dumbbell per player on one net axis; the heading in a bone → ice or bone → heat gradient. */
+.arc {
+  --arc-cols: minmax(230px, 1.3fr) minmax(260px, 2.6fr) 150px;
+  display: grid;
+  gap: 0;
+}
+.arc h3 {
+  width: fit-content;
+  padding-bottom: 8px;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.arc--pos h3 {
+  background-image: linear-gradient(90deg, var(--bone), var(--ice));
+}
+.arc--neg h3 {
+  background-image: linear-gradient(90deg, var(--bone), var(--heat));
+}
+.arc__head,
+.arc__row {
+  display: grid;
+  grid-template-columns: var(--arc-cols);
+  gap: 18px;
+  align-items: center;
+}
+.arc__head {
+  padding-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.arc__head-right {
+  text-align: right;
+}
+.arc__ticks {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--mute);
+}
+.arc__ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.arc__ticks .arc__zero-tick {
+  color: var(--bone);
+}
+.arc__ticks--phone {
+  display: none;
+}
+.arc__row {
+  min-height: 60px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+.arc__row:hover .arc__name b {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.arc__name {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.arc__name b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.arc__name > span {
+  font-size: 11px;
+  color: var(--mute);
+}
+.arc__name .arc__when {
+  padding-top: 3px;
+  font-size: 12px;
+  color: var(--bone-2);
+  text-wrap: pretty;
+}
+.arc__track {
+  position: relative;
+  display: block;
+  height: 22px;
+}
+.arc__zero {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line-2);
+}
+.arc__line {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--line-2);
+}
+.arc__dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.arc__dot--early {
+  background: var(--ink);
+  border: 2px solid var(--c);
+}
+.arc__dot--late {
+  background: var(--c);
+}
+.arc__fig {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--bone-2);
+  text-align: right;
+}
+.arc__fig b {
+  font-weight: 600;
+}
+.arc__fig small {
+  font-size: 11px;
+}
+.arc__fig .neg {
+  color: var(--heat);
+}
+.arc__fig .pos {
+  color: var(--ice);
+}
+.arc__flat {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+.arc__flat a {
+  color: var(--bone-2);
+}
+@media (max-width: 900px) {
+  .arc__head {
+    display: none;
+  }
+  .arc__ticks--phone {
+    display: block;
+    height: 14px;
+    margin: 4px 0 2px;
+  }
+  .arc__row {
+    grid-template-columns: 1fr 150px;
+    grid-template-areas: 'name fig' 'track track';
+    gap: 6px 14px;
+    padding: 12px 0;
+  }
+  .arc__name {
+    grid-area: name;
+  }
+  .arc__track {
+    grid-area: track;
+  }
+  .arc__fig {
+    grid-area: fig;
+  }
+}
+
+/* ThreadList: numbered rows; the score with the winner bold, the stage, the chip, the volume bar, the split, the sentence. */
+.lt {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.lt__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lt__row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 6px 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.lt__rank {
+  grid-row: 1 / span 4;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--mute);
+}
+.lt__game {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+.lt__score {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--bone-2);
+}
+.lt__score b {
+  color: var(--bone);
+}
+.lt__when {
+  font-size: 11px;
+  color: var(--mute);
+}
+.lt__vol {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.lt__vol i {
+  display: block;
+  height: 8px;
+  background: var(--bone-2);
+}
+.lt__vol span {
+  font-size: 12px;
+  color: var(--bone);
+  white-space: nowrap;
+}
+.lt__vol small {
+  font-size: inherit;
+  color: var(--mute);
+}
+.lt .sb {
+  margin-top: 2px;
+}
+.lt__who {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+  text-wrap: pretty;
+}
+@media (max-width: 640px) {
+  .lt__vol span {
+    white-space: normal;
+  }
+}

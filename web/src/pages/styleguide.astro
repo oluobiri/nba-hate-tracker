@@ -3,6 +3,7 @@ import { cardHref } from '../cards/model'
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Answer } from '../components/Answer'
+import { ArcFlat, ArcKey, ArcRows } from '../components/ArcRows'
 import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
 import { Fold, JsonBlock } from '../components/Fold'
 import { FanGrid } from '../components/FanGrid'
@@ -42,6 +43,7 @@ import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { TalkList } from '../components/TalkList'
 import { TeamPicker } from '../components/TeamPicker'
+import { ThreadList } from '../components/ThreadList'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
@@ -70,7 +72,7 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
-import { NIGHT_MIN_N, WINDOW, buildSeason } from '../lib/season'
+import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
@@ -136,6 +138,8 @@ const edgeGaps = classGaps({
 const edgeDomain = gapDomain(edgeGaps)
 // The season page's figures, composed once.
 const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
+const arcAxis = arcDomain([...season.arcs.rose, ...season.arcs.fell])
+const threadMax = Math.max(0, ...[...season.threads.playoffs, ...season.threads.regular].map((t) => t.counts.total))
 // The pipeline drawing on the published figures.
 const diagram = {
   season: manifest.season,
@@ -912,6 +916,21 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <p class="eyebrow">Each band's share of the regular season's comments against the playoffs', the bar the split; the smallest room keeps a floor width. Under it, every room over the whole season.</p>
       <RoomRows rows={season.roomRows} maxShare={season.maxShare} />
       <RoomTable rows={season.table} caption="Every room over the whole season, a sample" />
+    </section>
+
+    <section class="guide__section">
+      <h2>ArcRows</h2>
+      <p class="eyebrow">A dumbbell per player on one net-sentiment axis: the first eight regular-season weeks hollow, the last eight he played filled, both on the net formula; the timing phrase under the name; the shares beside the figures. The risers' heading runs bone to ice, the fallers' bone to heat.</p>
+      <ArcKey />
+      <ArcRows heading="Rose the most" tone="pos" arcs={season.arcs.rose} domain={arcAxis} />
+      <ArcRows heading="Fell the most" tone="neg" arcs={season.arcs.fell.slice(0, 2)} domain={arcAxis} />
+      <ArcFlat arcs={season.arcs.flat} />
+    </section>
+
+    <section class="guide__section">
+      <h2>ThreadList</h2>
+      <p class="eyebrow">The loudest game threads: the score with the winner bold, the stage and date, the Recap chip where one exists, the volume bar on one scale across both lists, the split, and who the thread was about.</p>
+      <ThreadList title="In the playoffs" threads={season.threads.playoffs.slice(0, 3)} max={threadMax} />
     </section>
 
     <section class="guide__section">

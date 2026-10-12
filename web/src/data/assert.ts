@@ -9,6 +9,7 @@ import type { Manifest, Tables } from './types.gen'
 // Rates are rounded to 4 dp upstream: a half-unit tie is legitimate, so
 // allow it plus float noise.
 const RATE_TOLERANCE = 5e-5 + 1e-9
+const DAY_MS = 86_400_000
 
 export function assertManifest(manifest: Manifest, season: string): void {
   if (manifest.schema_version !== SCHEMA_VERSION)
@@ -148,9 +149,13 @@ export function assertTables(tables: Tables, manifest: Manifest): string[] {
       throw new ContractError(`room_temporal: counts for ${room} do not sum to player_room`)
   }
 
+  // One row per night, in order, with no gaps: a chart may lay the rows out by index.
   // Each night splits its attributed comments three ways, and the nights sum back to the season's players.
   const nightly = { neg: 0, neu: 0, pos: 0, attributed: 0 }
   tables.corpus_daily.forEach((r, i) => {
+    const prev = tables.corpus_daily[i - 1]
+    if (prev && Date.parse(r.day) - Date.parse(prev.day) !== DAY_MS)
+      throw new ContractError(`corpus_daily: ${r.day} at row ${i} does not follow ${prev.day}; the nights must be consecutive`)
     if (r.neg_count + r.neu_count + r.pos_count !== r.attributed)
       throw new ContractError(`corpus_daily: counts do not sum to attributed at row ${i} (${r.day})`)
     nightly.neg += r.neg_count

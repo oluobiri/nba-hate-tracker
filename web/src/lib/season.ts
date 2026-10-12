@@ -3,9 +3,10 @@
 // and games; the game-night split cuts the phases disjoint on the calendar.
 // Every rate is a ratio of summed counts; the thresholds here are page
 // choices, and the rules arrive as arguments from the manifest.
-import type { CorpusDailyRow, GameSentimentRow, GamesRow, PlayerGamesRow, PlayerRoomRow, PlayerTemporalRow, PlayersRow, RoomTemporalRow, TeamsRow } from '../data/types.gen'
+import type { CorpusDailyRow, GameSentimentRow, GamesRow, PlayerGamesRow, PlayerRoomRow, PlayerTemporalRow, PlayersRow, PostsRow, RecapEntry, RoomTemporalRow, TeamsRow } from '../data/types.gen'
 import { nickname } from './fans'
 import { fmtInt, fmtPct, fmtSigned } from './format'
+import { type GameLineParts, gameLine } from './games'
 import { countsOf, negRate, netSentiment, posRate, sumCounts } from './metrics'
 import { fmtNet } from './net'
 import type { NightNoteCopy } from './season-copy'
@@ -354,6 +355,7 @@ export const BANDS: readonly Band[] = [
 export const BIG_ROOMS: readonly string[] = ['game_thread', 'general', 'highlight', 'post_game_thread', 'news']
 
 const ZERO: Counts = { neg: 0, neu: 0, pos: 0, total: 0 }
+const addInto = (into: Map<string, Counts>, key: string, c: Counts): void => void into.set(key, sumCounts([into.get(key) ?? ZERO, c]))
 const weekDay = (key: string): string => key.slice(0, 10)
 
 /** The phase most of a week's nights fall in; a tie goes to the earlier phase. */
@@ -401,14 +403,13 @@ export interface RoomSplit {
 export function roomSplit(rows: readonly RoomTemporalRow[], cal: SeasonCalendar): RoomSplit {
   const phases = new Map<string, NightPhase>()
   const pooled = { regular: new Map<string, Counts>(), playoffs: new Map<string, Counts>(), whole: new Map<string, Counts>() }
-  const add = (into: Map<string, Counts>, key: string, c: Counts) => into.set(key, sumCounts([into.get(key) ?? ZERO, c]))
   for (const r of rows) {
     let phase = phases.get(r.week)
     if (!phase) phases.set(r.week, (phase = weekPhase(r.week, cal)))
     const c = countsOf(r)
-    add(pooled.whole, r.post_type, c)
-    if (phase === 'regular') add(pooled.regular, r.post_type, c)
-    if (phase === 'playoffs') add(pooled.playoffs, r.post_type, c)
+    addInto(pooled.whole, r.post_type, c)
+    if (phase === 'regular') addInto(pooled.regular, r.post_type, c)
+    if (phase === 'playoffs') addInto(pooled.playoffs, r.post_type, c)
   }
   const reg = sumCounts([...pooled.regular.values()])
   const po = sumCounts([...pooled.playoffs.values()])
@@ -862,3 +863,125 @@ export function arcDomain(arcs: readonly Arc[]): { lo: number; hi: number; ticks
 
 /** The row's spoken sentence. */
 export const arcText = (a: Arc): string => `${a.name}: net sentiment ${fmtNet(a.early.net)} in his first ${fmtInt(ARC_WEEKS)} weeks, ${fmtNet(a.late.net)} in his last ${fmtInt(ARC_WEEKS)}; ${a.timing.toLowerCase()}.`
+
+// --- The loudest threads ---------------------------------------------------------------
+// A game's threads are its game thread and its post-game thread together.
+// The figure counts the comments in them about a tracked player; the Reddit
+// count beside it is every comment the two posts carry. The play-in sits
+// with the playoffs, as the rooms count the week it falls in.
+
+/** Threads in each list. */
+export const THREADS = 5
+/** A second name in a thread's sentence needs this many comments in the thread… */
+export const THREAD_SECOND_MIN_N = 500
+/** …and this much more negative than the thread. */
+export const THREAD_SECOND_GAP = 0.2
+
+const THREAD_TYPES: ReadonlySet<string> = new Set(['game_thread', 'post_game_thread'])
+
+export interface ThreadPlayer {
+  name: string
+  slug: string
+  counts: Counts
+}
+
+export interface ThreadRecap {
+  key: string
+  name: string
+}
+
+export interface Thread {
+  gameId: string
+  /** "YYYY-MM-DD". */
+  date: string
+  /** "West Finals · Game 1", "Opening night", "Regular season". */
+  stage: string
+  line: GameLineParts
+  /** Every comment about a tracked player in the game's threads. */
+  counts: Counts
+  /** Every comment Reddit counts in the same threads; null when the posts are not bridged. */
+  reddit: number | null
+  top: ThreadPlayer
+  /** A player at the second-name floor who ran the gap or more harsher than the thread. */
+  second: ThreadPlayer | null
+  recaps: ThreadRecap[]
+}
+
+/** game_id → every curated recap of that game, in registry order. */
+export function recapsByGame(recaps: Record<string, RecapEntry>): Map<string, ThreadRecap[]> {
+  const out = new Map<string, ThreadRecap[]>()
+  for (const [key, e] of Object.entries(recaps)) out.set(e.game_id, [...(out.get(e.game_id) ?? []), { key, name: e.attributed_player }])
+  return out
+}
+
+/** What the game was: its round and game in the playoffs, else the calendar's name for the night, else the phase. */
+export function stageOf(game: GamesRow, line: GameLineParts, cal: SeasonCalendar): string {
+  if (game.season_type === 'playoffs') return [line.round, line.game].filter(Boolean).join(' · ')
+  if (game.nba_cup_final) return 'NBA Cup final'
+  const event = cal.events.get(game.game_date)
+  if (event === 'Opening night' || event === 'Christmas') return event
+  if (game.season_type === 'play_in') return 'Play-in'
+  return 'Regular season'
+}
+
+export interface ThreadInputs {
+  sentiment: readonly GameSentimentRow[]
+  posts: readonly PostsRow[]
+  games: readonly GamesRow[]
+  players: readonly PlayersRow[]
+  teams: readonly TeamsRow[]
+  recaps: Record<string, RecapEntry>
+}
+
+/** The games with the most comments about players in their threads, on one side of the play-in's start. */
+export function loudestThreads({ sentiment, posts, games, players, teams, recaps }: ThreadInputs, cal: SeasonCalendar, playoffs: boolean): Thread[] {
+  const abbr = new Map(teams.map((t) => [t.team, t.abbreviation]))
+  const conferenceOf = new Map(teams.map((t) => [t.team, t.conference]))
+  const slugOf = new Map(players.map((p) => [p.attributed_player, p.slug]))
+  const gameRows = new Map(games.map((g) => [g.game_id, g]))
+  const byGame = gameComments(sentiment)
+  const reddit = new Map<string, number>()
+  for (const p of posts) if (p.game_id && THREAD_TYPES.has(p.post_type)) reddit.set(p.game_id, (reddit.get(p.game_id) ?? 0) + p.num_comments)
+  const inGame = new Map<string, GameSentimentRow[]>()
+  for (const r of sentiment) inGame.set(r.game_id, [...(inGame.get(r.game_id) ?? []), r])
+  const recapsOf = recapsByGame(recaps)
+  const who = (r: GameSentimentRow): ThreadPlayer => ({ name: r.attributed_player, slug: slugOf.get(r.attributed_player) ?? r.attributed_player, counts: countsOf(r) })
+
+  return [...byGame.entries()]
+    .flatMap(([gameId, counts]) => {
+      const g = gameRows.get(gameId)
+      return g && g.game_date >= cal.play_in_start === playoffs ? [{ g, counts }] : []
+    })
+    .toSorted((a, b) => b.counts.total - a.counts.total || a.g.game_date.localeCompare(b.g.game_date) || a.g.game_id.localeCompare(b.g.game_id))
+    .slice(0, THREADS)
+    .map(({ g, counts }) => {
+      const rows = (inGame.get(g.game_id) ?? []).toSorted((a, b) => b.comment_count - a.comment_count || a.attributed_player.localeCompare(b.attributed_player))
+      const top = rows[0]!
+      const threadRate = negRate(counts)
+      const second = rows.find((r) => r !== top && r.comment_count >= THREAD_SECOND_MIN_N && negRate(countsOf(r)) - threadRate >= THREAD_SECOND_GAP)
+      const line = gameLine(g, abbr, conferenceOf)
+      return {
+        gameId: g.game_id,
+        date: g.game_date,
+        stage: stageOf(g, line, cal),
+        line,
+        counts,
+        reddit: reddit.get(g.game_id) ?? null,
+        top: who(top),
+        second: second ? who(second) : null,
+        recaps: recapsOf.get(g.game_id) ?? [],
+      }
+    })
+}
+
+/** "19.6% negative on 6,783": a player's figure in the thread. */
+export const threadFigure = (p: ThreadPlayer): string => `${fmtPct(negRate(p.counts), 1)} negative on ${fmtInt(p.counts.total)}`
+
+/** The thread's spoken line: the split, then who it was about. */
+export function threadText(t: Thread): string {
+  const about = `${fmtInt(t.counts.total)} comments about players${t.reddit === null ? '' : ` of ${fmtInt(t.reddit)} in the thread`}`
+  const split = `${fmtPct(negRate(t.counts), 1)} negative, ${fmtPct(posRate(t.counts), 1)} positive`
+  const second = t.second ? ` ${t.second.name} ${threadFigure(t.second)}.` : ''
+  const score = `${t.line.away.abbr} ${t.line.away.score} @ ${t.line.home.abbr} ${t.line.home.score}`
+  return `${t.stage} · ${score} · ${t.line.date}: ${about}, ${split}. Mostly about ${t.top.name}, ${threadFigure(t.top)}.${second}`
+}

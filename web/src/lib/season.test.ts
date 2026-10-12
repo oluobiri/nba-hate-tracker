@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { negRate } from './metrics'
+import type { RecapEntry } from '../data/types.gen'
 import {
   type ArcInputs,
   type ArcPoint,
+  type ThreadInputs,
   aboveStretch,
   addDays,
   againstLevel,
@@ -18,6 +20,7 @@ import {
   gameComments,
   gameNightSplit,
   harshestNote,
+  loudestThreads,
   ledeText,
   nightGameTitle,
   nightPhase,
@@ -37,16 +40,19 @@ import {
   fraction,
   playerAngle,
   playerAngleText,
+  recapsByGame,
   roomRows,
   roomSplit,
   roomTable,
   roomTiles,
   roomsLede,
+  threadFigure,
+  threadText,
   timing,
   warmestNote,
   weekPhase,
 } from './season'
-import { CAL, TEAMS, daily, game, nightsFrom, player, playerGame, playerRoom, plusDays, roomWeek, sentiment, temporal } from './season.fixture'
+import { CAL, TEAMS, daily, game, nightsFrom, player, playerGame, playerRoom, plusDays, post, roomWeek, sentiment, temporal } from './season.fixture'
 
 const cal = seasonCalendar(CAL)
 const ABBR = new Map(TEAMS.map((t) => [t.team, t.abbreviation]))
@@ -322,11 +328,11 @@ describe('roomSplit', () => {
   })
 
   it('gives a room missing from one phase the other phase’s rate, so it adds nothing to the tone', () => {
-    const daily = split.rooms.find((r) => r.key === 'daily')!
-    expect(daily.rateReg).toBeCloseTo(0.5, 12)
-    expect(daily.ratePo).toBeCloseTo(0.5, 12)
-    expect(daily.harsh).toBe(0)
-    expect(daily.mix).toBeGreaterThan(0)
+    const chat = split.rooms.find((r) => r.key === 'daily')!
+    expect(chat.rateReg).toBeCloseTo(0.5, 12)
+    expect(chat.ratePo).toBeCloseTo(0.5, 12)
+    expect(chat.harsh).toBe(0)
+    expect(chat.mix).toBeGreaterThan(0)
     const news = split.rooms.find((r) => r.key === 'news')!
     expect(news.ratePo).toBe(news.rateReg)
     expect(news.whole.total).toBe(3)
@@ -472,9 +478,9 @@ describe('timing', () => {
   })
 })
 
-describe('endedAs', () => {
-  const playoff = (round: number | null) => game('p', '2026-05-01', { season_type: 'playoffs', playoff_round: round })
+const playoff = (round: number | null) => game('p', '2026-05-01', { season_type: 'playoffs', playoff_round: round })
 
+describe('endedAs', () => {
   it('reads the calendar first, then the round of his last game', () => {
     expect(endedAs('2026-03-19', null, cal)).toBe('Cut short')
     expect(endedAs('2026-04-07', null, cal)).toBe('Season end')
@@ -489,9 +495,10 @@ describe('endedAs', () => {
   })
 })
 
+const mondays = (from: string, n: number) => Array.from({ length: n }, (_, i) => plusDays(from, 7 * i))
+const rows = (name: string, weeks: readonly string[], neg: number, neu: number, pos: number) => weeks.map((w) => temporal(name, w, neg, neu, pos))
+
 describe('arcField', () => {
-  const mondays = (from: string, n: number, step = 1) => Array.from({ length: n }, (_, i) => plusDays(from, 7 * i * step))
-  const rows = (name: string, weeks: readonly string[], neg: number, neu: number, pos: number) => weeks.map((w) => temporal(name, w, neg, neu, pos))
   const EARLY = mondays('2025-10-20', 8)
   const LATE_RS = mondays('2026-02-23', 8)
   const GAMES = [
@@ -584,5 +591,98 @@ describe('arcField', () => {
     expect(arcDomain(field)).toEqual({ lo: -0.3, hi: 0.3, ticks: [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] })
     expect(arcDomain([])).toMatchObject({ lo: -0.5, hi: 0.5 })
     expect(arcText(by('Finals Star'))).toBe('Finals Star: net sentiment −13 in his first 8 weeks, +27 in his last 8; turned in the playoffs.')
+  })
+})
+
+// --- The loudest threads ----------------------------------------------------------
+
+describe('loudestThreads', () => {
+  const GAMES = [
+    game('open', '2025-10-21', { home_team: 'Oklahoma City Thunder', away_team: 'Dallas Mavericks', winner: 'Oklahoma City Thunder', home_score: 120, away_score: 100 }),
+    game('xmas', '2025-12-25'),
+    game('cup', '2025-12-16', { nba_cup_final: true, home_team: 'San Antonio Spurs', away_team: 'New York Knicks', winner: 'San Antonio Spurs' }),
+    game('reg', '2026-01-10'),
+    game('pin', '2026-04-15', { season_type: 'play_in' }),
+    game('wcf1', '2026-05-18', { season_type: 'playoffs', playoff_round: 3, playoff_game: 1 }),
+    game('fin5', '2026-06-13', { season_type: 'playoffs', playoff_round: 4, playoff_game: 5, home_team: 'San Antonio Spurs', away_team: 'New York Knicks', winner: 'San Antonio Spurs', home_score: 101, away_score: 99 }),
+    game('r1', '2026-04-20', { season_type: 'playoffs', playoff_round: 1, playoff_game: 2 }),
+  ]
+  const inputs: ThreadInputs = {
+    sentiment: [
+      sentiment('Wemby', 'wcf1', 1330, 4000, 1453),
+      sentiment('Shai', 'wcf1', 1622, 800, 424),
+      sentiment('Castle', 'wcf1', 300, 150, 50),
+      sentiment('Fox', 'fin5', 3520, 1000, 487),
+      sentiment('Wemby', 'fin5', 1000, 2000, 1000),
+      sentiment('Wemby', 'r1', 100, 100, 100),
+      sentiment('Shai', 'pin', 200, 100, 100),
+      sentiment('Durant', 'open', 500, 700, 249),
+      sentiment('Sheppard', 'open', 500, 132, 100),
+      sentiment('Wemby', 'cup', 300, 400, 186),
+      sentiment('Wemby', 'xmas', 200, 200, 200),
+      sentiment('Wemby', 'reg', 50, 50, 50),
+    ],
+    posts: [post('wcf1', 'game_thread', 40000), post('wcf1', 'post_game_thread', 13003), post('fin5', 'game_thread', 56307), post('open', 'game_thread', 20023), post('open', 'discussion', 999), post(null, 'game_thread', 5)],
+    games: GAMES,
+    players: [player('Wemby'), player('Shai'), player('Castle'), player('Fox'), player('Durant'), player('Sheppard')],
+    teams: TEAMS,
+    recaps: {
+      '0042500311-wemby': { game_id: 'wcf1', attributed_player: 'Wemby' } as RecapEntry,
+      '0042500311-castle': { game_id: 'wcf1', attributed_player: 'Castle' } as RecapEntry,
+      '0022500001-durant': { game_id: 'open', attributed_player: 'Durant' } as RecapEntry,
+    },
+  }
+  const po = loudestThreads(inputs, cal, true)
+  const rs = loudestThreads(inputs, cal, false)
+
+  it('ranks each side of the play-in by comments about players, the play-in with the playoffs', () => {
+    expect(po.map((t) => t.gameId)).toEqual(['wcf1', 'fin5', 'pin', 'r1'])
+    expect(rs.map((t) => t.gameId)).toEqual(['open', 'cup', 'xmas', 'reg'])
+    expect(po[0]!.counts).toEqual({ neg: 3252, neu: 4950, pos: 1927, total: 10129 })
+  })
+
+  it('counts Reddit’s comments across both threads, null when the posts are not bridged', () => {
+    expect(po[0]!.reddit).toBe(53003)
+    expect(rs[0]!.reddit).toBe(20023)
+    expect(po[2]!.reddit).toBeNull()
+  })
+
+  it('names the thread’s player and a second only by the rule', () => {
+    const wcf = po[0]!
+    expect(wcf.top).toMatchObject({ name: 'Wemby', slug: 'wemby', counts: { total: 6783 } })
+    // Shai: 57.0% on 2,846 against the thread's 32.1%, over the gap; Castle is under the floor.
+    expect(wcf.second?.name).toBe('Shai')
+    expect(po[1]!.second).toBeNull()
+    expect(rs[0]!.second?.name).toBe('Sheppard')
+  })
+
+  const at = (n: number, neg: number) => loudestThreads({ ...inputs, sentiment: [sentiment('Lead', 'reg', 500, 500, 0), sentiment('Other', 'reg', neg, n - neg, 0)] }, cal, false)[0]!.second
+
+  it('holds the second name to its floor and its gap exactly', () => {
+    // The thread: (500 + neg) / (1000 + n). At n = 500, neg = 400: thread 60.0%, Other 80.0%: a gap of 20 exactly.
+    expect(at(500, 400)?.name).toBe('Other')
+    expect(at(499, 400)).toBeNull()
+    expect(at(500, 399)).toBeNull()
+  })
+
+  it('reads the stage from the round, the flag, the calendar or the phase', () => {
+    expect(po.map((t) => t.stage)).toEqual(['West Finals · Game 1', 'NBA Finals · Game 5', 'Play-in', 'First round · Game 2'])
+    expect(rs.map((t) => t.stage)).toEqual(['Opening night', 'NBA Cup final', 'Christmas', 'Regular season'])
+  })
+
+  it('carries the game line with the winner, and every recap of the game', () => {
+    expect(po[0]!.line).toMatchObject({ away: { abbr: 'SAS', score: 110, won: true }, home: { abbr: 'OKC', score: 100, won: false }, date: 'May 18' })
+    expect(po[0]!.recaps).toEqual([
+      { key: '0042500311-wemby', name: 'Wemby' },
+      { key: '0042500311-castle', name: 'Castle' },
+    ])
+    expect(po[1]!.recaps).toEqual([])
+    expect(recapsByGame(inputs.recaps).get('open')).toEqual([{ key: '0022500001-durant', name: 'Durant' }])
+  })
+
+  it('speaks a thread', () => {
+    expect(threadFigure(po[0]!.top)).toBe('19.6% negative on 6,783')
+    expect(threadText(po[0]!)).toBe('West Finals · Game 1 · SAS 110 @ OKC 100 · May 18: 10,129 comments about players of 53,003 in the thread, 32.1% negative, 19.0% positive. Mostly about Wemby, 19.6% negative on 6,783. Shai 57.0% negative on 2,846.')
+    expect(threadText(po[2]!)).toBe('Play-in · SAS 110 @ OKC 100 · Apr 15: 400 comments about players, 50.0% negative, 25.0% positive. Mostly about Shai, 50.0% negative on 400.')
   })
 })

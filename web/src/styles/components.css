@@ -3649,7 +3649,8 @@ a.hero__who:hover {
 .ch__ring--pos {
   border-color: var(--ice);
 }
-/* A note sits on a wash of ink, forward of the lines and dots. */
+/* A note sits forward of the lines and dots with an ink halo on its letters, so the words
+   read and the chart under them still shows. */
 .ch__note {
   position: absolute;
   z-index: 1;
@@ -3657,12 +3658,16 @@ a.hero__who:hover {
   gap: 2px;
   max-width: min(300px, 46%);
   margin: 0;
-  padding: 2px 8px 2px 4px;
+  padding: 0 8px 0 0;
   text-align: right;
   font-size: 13px;
   line-height: 1.3;
-  color: var(--bone-2);
-  background: rgba(11, 11, 13, 0.85);
+  color: var(--bone);
+  text-shadow:
+    0 0 2px var(--ink),
+    0 0 4px var(--ink),
+    0 0 8px var(--ink),
+    0 1px 3px var(--ink);
   border-right: 1px solid var(--heat);
 }
 .ch__note--pos {

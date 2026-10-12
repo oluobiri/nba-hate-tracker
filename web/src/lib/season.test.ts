@@ -2,10 +2,18 @@ import { describe, expect, it } from 'vitest'
 
 import { negRate } from './metrics'
 import {
+  type ArcInputs,
+  type ArcPoint,
   aboveStretch,
   addDays,
   againstLevel,
+  arcDomain,
+  arcField,
+  arcLists,
+  arcText,
+  arcsLede,
   dayLabel,
+  endedAs,
   extremeNights,
   gameComments,
   gameNightSplit,
@@ -34,10 +42,11 @@ import {
   roomTable,
   roomTiles,
   roomsLede,
+  timing,
   warmestNote,
   weekPhase,
 } from './season'
-import { CAL, TEAMS, daily, game, nightsFrom, playerRoom, plusDays, roomWeek, sentiment } from './season.fixture'
+import { CAL, TEAMS, daily, game, nightsFrom, player, playerGame, playerRoom, plusDays, roomWeek, sentiment, temporal } from './season.fixture'
 
 const cal = seasonCalendar(CAL)
 const ABBR = new Map(TEAMS.map((t) => [t.team, t.abbreviation]))
@@ -430,5 +439,150 @@ describe('playerAngle', () => {
     expect(text.tail).toBe('The exceptions are players whose season was a story more than a schedule: ')
     expect(playerAngleText({ ...wide, harsher: 5, exceptions: [] })).toEqual({ lead: expect.stringMatching(/^Nearly every player is/), exceptions: [], tail: null })
     expect(playerAngleText({ ...wide, compared: 0 }).lead).toBe('No player at the official minimum has both rooms at the floor.')
+  })
+})
+
+// --- Season arcs ----------------------------------------------------------------
+
+const pt = (net: number): ArcPoint => ({ counts: { neg: 0, neu: 0, pos: 0, total: 1000 }, net })
+const march = () => 'March'
+
+describe('timing', () => {
+  it('reads an arc with no playoff point off the regular season', () => {
+    expect(timing(pt(-0.2), pt(0.1), pt(0.1), null, march)).toBe('Rose through the regular season')
+    expect(timing(pt(0.2), pt(-0.1), null, null, march)).toBe('Fell through the regular season')
+  })
+
+  it('names the playoffs when the late regular season is under the floor', () => {
+    expect(timing(pt(-0.2), pt(0.2), null, pt(0.2), march)).toBe('Turned in the playoffs')
+  })
+
+  it('names the span that carried two thirds of the move', () => {
+    expect(timing(pt(-0.2), pt(0.2), pt(-0.15), pt(0.2), march)).toBe('Turned in the playoffs')
+    expect(timing(pt(-0.2), pt(0.15), pt(0.2), pt(0.18), march)).toBe('Turned in March, held through the playoffs')
+    expect(timing(pt(-0.2), pt(0.15), pt(0.2), pt(0.15), march)).toBe('Turned in March, slipped back in the playoffs')
+    expect(timing(pt(0.2), pt(-0.15), pt(-0.2), pt(-0.15), march)).toBe('Turned in March, recovered in the playoffs')
+  })
+
+  it('reads a steady move as all season, and a mixed one by its playoff half', () => {
+    expect(timing(pt(0), pt(0.3), pt(0.15), pt(0.3), march)).toBe('Rose all season')
+    expect(timing(pt(0.3), pt(0), pt(0.15), pt(0), march)).toBe('Fell all season')
+    expect(timing(pt(0), pt(0.1), pt(-0.1), pt(0.1), march)).toBe('Turned in the playoffs')
+    expect(timing(pt(0), pt(0.05), pt(0.03), pt(0.02), march)).toBe('Turned in March')
+  })
+})
+
+describe('endedAs', () => {
+  const playoff = (round: number | null) => game('p', '2026-05-01', { season_type: 'playoffs', playoff_round: round })
+
+  it('reads the calendar first, then the round of his last game', () => {
+    expect(endedAs('2026-03-19', null, cal)).toBe('Cut short')
+    expect(endedAs('2026-04-07', null, cal)).toBe('Season end')
+    expect(endedAs('2026-04-12', null, cal)).toBe('Season end')
+    expect(endedAs('2026-04-15', game('x', '2026-04-15', { season_type: 'play_in' }), cal)).toBe('Play-in')
+    expect(endedAs('2026-05-01', playoff(1), cal)).toBe('First round')
+    expect(endedAs('2026-05-01', playoff(2), cal)).toBe('Second round')
+    expect(endedAs('2026-05-01', playoff(3), cal)).toBe('Conference finals')
+    expect(endedAs('2026-06-13', playoff(4), cal)).toBe('Finals run')
+    expect(endedAs('2026-05-01', playoff(null), cal)).toBe('Playoffs')
+    expect(endedAs('2026-05-01', null, cal)).toBe('Playoffs')
+  })
+})
+
+describe('arcField', () => {
+  const mondays = (from: string, n: number, step = 1) => Array.from({ length: n }, (_, i) => plusDays(from, 7 * i * step))
+  const rows = (name: string, weeks: readonly string[], neg: number, neu: number, pos: number) => weeks.map((w) => temporal(name, w, neg, neu, pos))
+  const EARLY = mondays('2025-10-20', 8)
+  const LATE_RS = mondays('2026-02-23', 8)
+  const GAMES = [
+    game('open', '2025-10-21'),
+    game('nov', '2025-11-30'),
+    game('mar', '2026-03-19'),
+    game('apr', '2026-04-12'),
+    game('pin', '2026-04-15', { season_type: 'play_in' }),
+    game('fin', '2026-06-13', { season_type: 'playoffs', playoff_round: 4, playoff_game: 5 }),
+  ]
+  const PLAYERS = [player('Finals Star'), player('Faller', { roster_team: 'Dallas Mavericks' }), player('Cut'), player('Early Exit'), player('Thin'), player('Play-in Guy', { roster_team: null }), player('Nobody')]
+  const inputs: ArcInputs = {
+    temporal: [
+      ...rows('Finals Star', EARLY, 60, 50, 40),
+      ...rows('Finals Star', LATE_RS, 60, 50, 40),
+      ...rows('Finals Star', mondays('2026-04-20', 8), 30, 50, 70),
+      ...rows('Faller', EARLY, 30, 50, 70),
+      ...rows('Faller', mondays('2026-02-16', 8), 70, 50, 30),
+      ...rows('Cut', EARLY, 50, 50, 50),
+      ...rows('Cut', mondays('2026-01-26', 8), 49, 50, 51),
+      ...rows('Early Exit', EARLY, 50, 50, 50),
+      ...rows('Thin', EARLY, 50, 50, 50),
+      ...rows('Thin', mondays('2026-04-20', 8), 5, 5, 5),
+      ...rows('Play-in Guy', EARLY, 50, 50, 50),
+      ...rows('Play-in Guy', mondays('2026-02-23', 8), 50, 50, 50),
+      ...rows('Nobody', EARLY, 50, 50, 50),
+      ...rows('Nobody', mondays('2026-04-20', 8), 50, 50, 50),
+    ],
+    playerGames: [
+      playerGame('Finals Star', 'open'),
+      playerGame('Finals Star', 'fin'),
+      playerGame('Faller', 'apr'),
+      playerGame('Cut', 'mar'),
+      playerGame('Early Exit', 'nov'),
+      playerGame('Thin', 'fin'),
+      playerGame('Play-in Guy', 'pin'),
+      playerGame('Nobody', 'fin'),
+    ],
+    games: GAMES,
+    players: PLAYERS,
+    teams: TEAMS,
+    qualified: new Set(['Finals Star', 'Faller', 'Cut', 'Early Exit', 'Thin', 'Play-in Guy']),
+  }
+  const field = arcField(inputs, cal)
+  const by = (name: string) => field.find((a) => a.name === name)!
+
+  it('keeps the qualified players with both windows at the floor and no overlap', () => {
+    expect(field.map((a) => a.name)).toEqual(['Cut', 'Faller', 'Finals Star', 'Play-in Guy'])
+  })
+
+  it('ends the late window at his last game and reads the playoff weeks out of it', () => {
+    const star = by('Finals Star')
+    expect(star).toMatchObject({ team: 'SAS', ended: 'Finals run', to: '2026-06-13', timing: 'Turned in the playoffs' })
+    expect(star.early.counts.total).toBe(1200)
+    expect(star.early.net).toBeCloseTo(-20 / 150, 12)
+    expect(star.late.net).toBeCloseTo(40 / 150, 12)
+    expect(star.lateRs?.net).toBeCloseTo(-20 / 150, 12)
+    expect(star.po?.counts.total).toBe(1200)
+    expect(star.delta).toBeCloseTo(60 / 150, 12)
+  })
+
+  it('has no playoff point for a season that ended in April', () => {
+    expect(by('Faller')).toMatchObject({ team: 'DAL', ended: 'Season end', to: '2026-04-12', po: null, timing: 'Fell through the regular season' })
+    expect(by('Faller').late.counts.total).toBe(1200)
+    expect(by('Cut')).toMatchObject({ ended: 'Cut short', to: '2026-03-19', lateRs: null, po: null })
+    expect(by('Play-in Guy')).toMatchObject({ team: '', ended: 'Play-in', to: '2026-04-15' })
+  })
+
+  it('ranks the lists and writes the lede', () => {
+    const lists = arcLists(field)
+    expect(lists.rose.map((a) => a.name)).toEqual(['Finals Star', 'Cut', 'Play-in Guy', 'Faller'])
+    expect(lists.fell.map((a) => a.name)).toEqual(['Faller', 'Play-in Guy', 'Cut', 'Finals Star'])
+    expect(lists.flat.map((a) => a.name)).toEqual(['Play-in Guy', 'Cut', 'Finals Star', 'Faller'])
+    expect(lists.field).toBe(4)
+    expect(arcsLede(lists)).toBe(
+      'Finals Star won r/NBA over more than anyone: his net sentiment went from 13 points negative in his first 8 weeks to 27 positive in his last 8, among the 4 players measured. Faller fell the furthest, 53 points, and his last 8 weeks ended with the regular season.',
+    )
+    expect(arcsLede(arcLists([]))).toBe('Too few players clear both windows to measure an arc.')
+  })
+
+  it('phrases how a fall ended', () => {
+    const lists = arcLists(field)
+    const fell = (ended: string) => arcsLede({ ...lists, fell: [{ ...lists.fell[0]!, ended }] })
+    expect(fell('Finals run')).toContain('his last 8 weeks were a Finals run.')
+    expect(fell('Cut short')).toContain('his last 8 weeks ended early.')
+    expect(fell('Second round')).toContain('his last 8 weeks ended in the second round.')
+  })
+
+  it('rounds the axis out to ten points and speaks a row', () => {
+    expect(arcDomain(field)).toEqual({ lo: -0.3, hi: 0.3, ticks: [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] })
+    expect(arcDomain([])).toMatchObject({ lo: -0.5, hi: 0.5 })
+    expect(arcText(by('Finals Star'))).toBe('Finals Star: net sentiment −13 in his first 8 weeks, +27 in his last 8; turned in the playoffs.')
   })
 })

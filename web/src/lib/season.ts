@@ -3,13 +3,14 @@
 // and games; the game-night split cuts the phases disjoint on the calendar.
 // Every rate is a ratio of summed counts; the thresholds here are page
 // choices, and the rules arrive as arguments from the manifest.
-import type { CorpusDailyRow, GameSentimentRow, GamesRow, PlayerRoomRow, RoomTemporalRow } from '../data/types.gen'
+import type { CorpusDailyRow, GameSentimentRow, GamesRow, PlayerGamesRow, PlayerRoomRow, PlayerTemporalRow, PlayersRow, RoomTemporalRow, TeamsRow } from '../data/types.gen'
 import { nickname } from './fans'
 import { fmtInt, fmtPct, fmtSigned } from './format'
-import { countsOf, negRate, posRate, sumCounts } from './metrics'
+import { countsOf, negRate, netSentiment, posRate, sumCounts } from './metrics'
+import { fmtNet } from './net'
 import type { NightNoteCopy } from './season-copy'
 import type { Counts } from './types'
-import { type Calendar, weekLabel, weekSpine } from './weeks'
+import { type Calendar, weekLabel, weekOf, weekSpine } from './weeks'
 
 // Page choices, not rules.
 /** Nights in the centred window each point on a line pools. */
@@ -640,3 +641,224 @@ export function playerAngleText(angle: PlayerAngle): { lead: string; exceptions:
   if (angle.exceptions.length === 0) return { lead, exceptions: [], tail: null }
   return { lead, exceptions: angle.exceptions, tail: 'The exceptions are players whose season was a story more than a schedule: ' }
 }
+
+// --- Season arcs ----------------------------------------------------------------------
+// Each qualified player's first eight regular-season weeks against the eight
+// weeks ending at his last game played, so a Finals run, an April exit and a
+// season cut short are measured by one rule. Net sentiment is the metric; the
+// shape at three points (early, the late regular season, the playoffs) gives
+// the timing phrase.
+
+/** Weeks in each window. */
+export const ARC_WEEKS = 8
+/** Comments a window needs. */
+export const ARC_MIN_N = 1000
+/** Players shown each way. */
+export const ARCS = 6
+/** A playoff move this large, against the arc, is a slip or a recovery. */
+const ARC_COUNTER_MOVE = 0.04
+
+const addWeeks = (key: string, n: number): string => `${addDays(weekDay(key), 7 * n)}T00:00:00`
+const monthName = (key: string): string => new Date(Date.parse(weekDay(key))).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' })
+
+export interface ArcPoint {
+  counts: Counts
+  net: number
+}
+
+export interface Arc {
+  name: string
+  slug: string
+  /** His roster team's abbreviation, or empty. */
+  team: string
+  /** How his season ended: "Finals run", "Second round", "Cut short". */
+  ended: string
+  /** "YYYY-MM-DD", his last game. */
+  to: string
+  early: ArcPoint
+  late: ArcPoint
+  /** The last eight regular-season weeks; null under the floor. */
+  lateRs: ArcPoint | null
+  /** The playoff weeks of the late window; null when it has none, or under the floor. */
+  po: ArcPoint | null
+  /** Late net minus early net. */
+  delta: number
+  timing: string
+}
+
+const pooledPoint = (cells: readonly (Counts | undefined)[], floor: number): ArcPoint | null => {
+  const counts = sumCounts(cells.filter((c): c is Counts => c !== undefined))
+  return counts.total >= floor ? { counts, net: netSentiment(counts) } : null
+}
+
+const ROUND_ENDINGS: Record<number, string> = { 1: 'First round', 2: 'Second round', 3: 'Conference finals', 4: 'Finals run' }
+
+/** How a season ended, from his last game's date and row. */
+export function endedAs(last: string, lastGame: GamesRow | null, cal: SeasonCalendar): string {
+  if (last < addDays(cal.play_in_start, -7)) return 'Cut short'
+  if (last < cal.play_in_start) return 'Season end'
+  if (last < cal.playoffs_start) return 'Play-in'
+  const round = lastGame?.playoff_round === null || lastGame?.playoff_round === undefined ? null : Math.trunc(lastGame.playoff_round)
+  return (round !== null && ROUND_ENDINGS[round]) || 'Playoffs'
+}
+
+/** When the arc moved, from its three points; `month` names the regular season's turn when one is needed. */
+export function timing(early: ArcPoint, late: ArcPoint, lateRs: ArcPoint | null, po: ArcPoint | null, month: () => string): string {
+  const total = late.net - early.net
+  const up = total > 0
+  if (po === null) return `${up ? 'Rose' : 'Fell'} through the regular season`
+  if (lateRs === null) return 'Turned in the playoffs'
+  const regMove = lateRs.net - early.net
+  const poMove = po.net - lateRs.net
+  const sameReg = regMove > 0 === up
+  const samePo = poMove > 0 === up
+  if (Math.abs(poMove) >= (2 / 3) * Math.abs(total) && samePo && Math.abs(regMove) < 0.5 * Math.abs(total)) return 'Turned in the playoffs'
+  if (Math.abs(regMove) >= (2 / 3) * Math.abs(total) && sameReg) {
+    if (!samePo && Math.abs(poMove) >= ARC_COUNTER_MOVE) return `Turned in ${month()}, ${up ? 'slipped back in the playoffs' : 'recovered in the playoffs'}`
+    return `Turned in ${month()}, held through the playoffs`
+  }
+  if (sameReg && samePo) return up ? 'Rose all season' : 'Fell all season'
+  return samePo ? 'Turned in the playoffs' : `Turned in ${month()}`
+}
+
+export interface ArcInputs {
+  temporal: readonly PlayerTemporalRow[]
+  playerGames: readonly PlayerGamesRow[]
+  games: readonly GamesRow[]
+  players: readonly PlayersRow[]
+  teams: readonly TeamsRow[]
+  qualified: ReadonlySet<string>
+}
+
+/** Every qualified player with both windows at the floor and no overlap between them, unsorted. */
+export function arcField({ temporal, playerGames, games, players, teams, qualified }: ArcInputs, cal: SeasonCalendar): Arc[] {
+  const abbr = new Map(teams.map((t) => [t.team, t.abbreviation]))
+  const dim = new Map(players.map((p) => [p.attributed_player, p]))
+  const gameRows = new Map(games.map((g) => [g.game_id, g]))
+  const byWeek = new Map<string, Map<string, Counts>>()
+  for (const r of temporal) {
+    const weeks = byWeek.get(r.attributed_player) ?? new Map<string, Counts>()
+    weeks.set(r.week, countsOf(r))
+    byWeek.set(r.attributed_player, weeks)
+  }
+  // His last game, and the row for it.
+  const last = new Map<string, { day: string; game: GamesRow }>()
+  for (const pg of playerGames) {
+    const g = gameRows.get(pg.game_id)
+    if (!g) continue
+    const cur = last.get(pg.attributed_player)
+    if (!cur || g.game_date > cur.day) last.set(pg.attributed_player, { day: g.game_date, game: g })
+  }
+  const firstWeek = weekOf(cal.opening_night)
+  const early = Array.from({ length: ARC_WEEKS }, (_, i) => addWeeks(firstWeek, i))
+  const lastRsWeek = weekOf(addDays(cal.play_in_start, -1))
+  const lateRsWeeks = Array.from({ length: ARC_WEEKS }, (_, i) => addWeeks(lastRsWeek, -i))
+  const poFirstWeek = weekOf(cal.play_in_start)
+  const earlyEnd = Date.parse(weekDay(early.at(-1)!))
+
+  const out: Arc[] = []
+  for (const name of [...qualified].toSorted()) {
+    const end = last.get(name)
+    const weeks = byWeek.get(name)
+    if (!end || !weeks) continue
+    const lateWeeks = Array.from({ length: ARC_WEEKS }, (_, i) => addWeeks(weekOf(end.day), -i))
+    if (Date.parse(weekDay(lateWeeks.at(-1)!)) <= earlyEnd) continue
+    const window = (keys: readonly string[]) => pooledPoint(keys.map((w) => weeks.get(w)), ARC_MIN_N)
+    const e = window(early)
+    const l = window(lateWeeks)
+    if (!e || !l) continue
+    const lateRs = window(lateRsWeeks)
+    const poWeeks = lateWeeks.filter((w) => w >= poFirstWeek)
+    const po = poWeeks.length ? window(poWeeks) : null
+    const up = l.net > e.net
+    // The month at the middle of the regular season's biggest four-week move in the arc's direction.
+    const month = (): string => {
+      let best: number | null = null
+      let bestWeek: string | null = null
+      for (let w = addWeeks(early.at(-1)!, 1); Date.parse(weekDay(addWeeks(w, 3))) <= Date.parse(weekDay(lastRsWeek)); w = addWeeks(w, 1)) {
+        const block = window(Array.from({ length: 4 }, (_, i) => addWeeks(w, i)))
+        if (!block) continue
+        const move = (block.net - e.net) * (up ? 1 : -1)
+        if (best === null || move > best) {
+          best = move
+          bestWeek = w
+        }
+      }
+      return monthName(addWeeks(bestWeek ?? early.at(-1)!, 2))
+    }
+    const p = dim.get(name)
+    out.push({
+      name,
+      slug: p?.slug ?? name,
+      team: (p?.roster_team && abbr.get(p.roster_team)) || '',
+      ended: endedAs(end.day, end.game, cal),
+      to: end.day,
+      early: e,
+      late: l,
+      lateRs,
+      po,
+      delta: l.net - e.net,
+      timing: timing(e, l, lateRs, po, month),
+    })
+  }
+  return out
+}
+
+export interface ArcLists {
+  rose: Arc[]
+  fell: Arc[]
+  flat: Arc[]
+  field: number
+}
+
+/** The biggest climbs, the biggest falls, the stillest arcs. */
+export function arcLists(field: readonly Arc[]): ArcLists {
+  const byDelta = field.toSorted((a, b) => b.delta - a.delta || a.name.localeCompare(b.name))
+  return {
+    rose: byDelta.slice(0, ARCS),
+    fell: byDelta.slice(-ARCS).toReversed(),
+    flat: field.toSorted((a, b) => Math.abs(a.delta) - Math.abs(b.delta) || a.name.localeCompare(b.name)).slice(0, ARCS),
+    field: field.length,
+  }
+}
+
+const netPoints = (v: number): number => Math.abs(Math.round(100 * v))
+const netWord = (v: number): string => (v < 0 ? 'negative' : 'positive')
+
+/** How his last eight weeks ended, as a clause. */
+function endedClause(a: Arc): string {
+  switch (a.ended) {
+    case 'Finals run':
+      return 'were a Finals run'
+    case 'Cut short':
+      return 'ended early'
+    case 'Season end':
+      return 'ended with the regular season'
+    default:
+      return `ended in the ${a.ended.toLowerCase()}`
+  }
+}
+
+/** The arcs' lede: the biggest climb and the biggest fall. */
+export function arcsLede(lists: ArcLists): string {
+  const climb = lists.rose[0]
+  const fall = lists.fell[0]
+  if (!climb || !fall || lists.field < 2) return `Too few players clear both windows to measure an arc.`
+  return (
+    `${climb.name} won r/NBA over more than anyone: his net sentiment went from ${fmtInt(netPoints(climb.early.net))} points ${netWord(climb.early.net)} in his first ${fmtInt(ARC_WEEKS)} weeks to ${fmtInt(netPoints(climb.late.net))} ${netWord(climb.late.net)} in his last ${fmtInt(ARC_WEEKS)}, among the ${fmtInt(lists.field)} players measured. ` +
+    `${fall.name} fell the furthest, ${fmtInt(netPoints(fall.delta))} points, and his last ${fmtInt(ARC_WEEKS)} weeks ${endedClause(fall)}.`
+  )
+}
+
+/** The dumbbell axis: the shown arcs' range rounded out to the nearest ten points, with a tick every ten. */
+export function arcDomain(arcs: readonly Arc[]): { lo: number; hi: number; ticks: number[] } {
+  const values = arcs.flatMap((a) => [a.early.net, a.late.net])
+  const lo = values.length ? Math.floor(Math.min(...values) * 10) / 10 : -0.5
+  const hi = values.length ? Math.ceil(Math.max(...values) * 10) / 10 : 0.5
+  const ticks: number[] = []
+  for (let t = lo; t <= hi + 1e-9; t += 0.1) ticks.push(Math.round(t * 10) / 10)
+  return { lo, hi, ticks }
+}
+
+/** The row's spoken sentence. */
+export const arcText = (a: Arc): string => `${a.name}: net sentiment ${fmtNet(a.early.net)} in his first ${fmtInt(ARC_WEEKS)} weeks, ${fmtNet(a.late.net)} in his last ${fmtInt(ARC_WEEKS)}; ${a.timing.toLowerCase()}.`

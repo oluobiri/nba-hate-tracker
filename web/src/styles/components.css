@@ -3754,12 +3754,15 @@ a.hero__who:hover {
 .ch__col:focus .ch__pt {
   display: block;
 }
+/* The tip lands exactly on the reserved box under the axis (--below is the axis's height
+   plus the gaps), and is the box's size, so a hover changes nothing but the words. */
 .ch__col .ch__tip {
   display: none;
   position: absolute;
-  top: calc(100% + 26px);
+  top: calc(100% + var(--below, 30px));
   left: calc(-100% * var(--i));
   width: calc(100% * var(--n));
+  min-height: var(--ro-h);
   z-index: 2;
 }
 .ch__col:hover .ch__tip,
@@ -3797,7 +3800,7 @@ a.hero__who:hover {
   color: var(--bone-2);
 }
 .ro--reserve {
-  min-height: 152px;
+  min-height: var(--ro-h);
 }
 .ro__head {
   display: flex;
@@ -3868,15 +3871,19 @@ a.hero__who:hover {
 .sn .pos {
   color: var(--ice);
 }
+.nc {
+  --ro-h: 126px;
+}
 .nc__chart {
   --h: 380px;
+  --below: 31px;
 }
 @media (max-width: 640px) {
+  .nc {
+    --ro-h: 168px;
+  }
   .nc__chart {
     --h: 300px;
-  }
-  .ro--reserve {
-    min-height: 196px;
   }
 }
 
@@ -4038,8 +4045,12 @@ a.hero__who:hover {
 
 /* VolumeBands: stacked weekly bars in seven neutral tones; the key is a radio
    group and the checked one lights its band. Volume is not sentiment. */
+.vb {
+  --ro-h: 78px;
+}
 .vb__chart {
   --h: 300px;
+  --below: 53px;
 }
 .bands {
   display: flex;
@@ -4133,9 +4144,7 @@ a.hero__who:hover {
 .vb .ch__col {
   cursor: default;
 }
-.vb .ch__tip {
-  top: calc(100% + 44px);
-}
+
 .phases {
   position: relative;
   height: 16px;
@@ -4157,15 +4166,12 @@ a.hero__who:hover {
   overflow: hidden;
   text-overflow: clip;
 }
-.ro--week {
-  min-height: 96px;
-}
 @media (max-width: 640px) {
+  .vb {
+    --ro-h: 136px;
+  }
   .vb__chart {
     --h: 240px;
-  }
-  .ro--week {
-    min-height: 136px;
   }
 }
 

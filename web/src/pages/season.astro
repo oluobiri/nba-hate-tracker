@@ -59,7 +59,7 @@ const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].m
     <section class="sn__section" id="rooms" aria-labelledby="rooms-h">
       <header>
         <p class="eyebrow">The rooms · regular season vs. playoffs</p>
-        <h2 id="rooms-h">Where did the playoffs <span class="neg">turn negative</span>?</h2>
+        <h2 id="rooms-h">Where did the playoffs <span class="neg">turn negative?</span></h2>
         <p class="copy">{roomsLede(s.split)}</p>
       </header>
       <RoomTiles tiles={s.tiles} />
@@ -135,7 +135,7 @@ const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].m
         <p class="eyebrow">Game threads · by comments about players</p>
         <h2 id="threads-h">The loudest game threads</h2>
       </header>
-      <div class="sn__threads">
+      <div class="sn__threads" style={`--rows: ${Math.max(s.threads.playoffs.length, s.threads.regular.length) + 1}`}>
         <ThreadList title="In the playoffs" threads={s.threads.playoffs} max={threadMax} />
         <ThreadList title="Regular season" threads={s.threads.regular} max={threadMax} />
       </div>
@@ -172,6 +172,10 @@ const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].m
   .copy b {
     font-weight: 600;
     color: var(--bone);
+  }
+  /* The level in heat: it is the negative share the whole page measures against. */
+  .sn__lede b {
+    color: var(--heat);
   }
   .sn__section {
     display: grid;
@@ -223,14 +227,34 @@ const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].m
     font-size: 12px;
     color: var(--mute);
   }
+  /* Side by side, the two lists share row tracks (subgrid), so the nth thread sits level with the nth. */
   .sn__threads {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 28px 48px;
+    grid-template-rows: repeat(var(--rows), auto);
+    gap: 0 48px;
+  }
+  .sn__threads :global(.lt) {
+    display: grid;
+    grid-row: 1 / span var(--rows);
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+  .sn__threads :global(.lt__list) {
+    display: contents;
+  }
+  .sn__threads :global(.lt h3) {
+    padding-bottom: 12px;
   }
   @media (max-width: 900px) {
     .sn__threads {
       grid-template-columns: 1fr;
+      grid-template-rows: none;
+      gap: 28px;
+    }
+    .sn__threads :global(.lt) {
+      grid-row: auto;
+      grid-template-rows: none;
     }
   }
 </style>

@@ -19,6 +19,8 @@ const BAR = 0.84
 const STEP = 25_000
 // The phase runs under the axis are short: the ends are narrow.
 const RUN_LABELS: Record<string, string> = { ...NIGHT_PHASE_LABELS, pre: 'Pre', off: 'Off' }
+// A month label this close to the right edge would clip, so it goes.
+const MONTH_EDGE = 96
 
 export function VolumeBands({ weekly, lastDay }: VolumeBandsProps) {
   const { spine, bands, totals, phases, runs } = weekly
@@ -32,7 +34,7 @@ export function VolumeBands({ weekly, lastDay }: VolumeBandsProps) {
   const months = spine.flatMap((w, k) => {
     for (let j = 0; j < 7; j++) {
       const d = addDays(w.slice(0, 10), j)
-      if (d.endsWith('-01') && k > 0) return [{ k, label: new Date(Date.parse(d)).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) }]
+      if (d.endsWith('-01') && k > 0 && k * colW < MONTH_EDGE) return [{ k, label: new Date(Date.parse(d)).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) }]
     }
     return []
   })
@@ -112,7 +114,7 @@ export function VolumeBands({ weekly, lastDay }: VolumeBandsProps) {
           </li>
         ))}
       </ol>
-      <div className="ro ro--reserve ro--week" aria-hidden="true">
+      <div className="ro ro--reserve" aria-hidden="true">
         <p className="ro__hint">Tap a room in the key to light it up across the season. Hover or tap a week for its mix.</p>
       </div>
       <figcaption className="visually-hidden">Comments about players by the kind of post they sit under, one bar per week; the key lights one room.</figcaption>

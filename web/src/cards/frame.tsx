@@ -16,7 +16,7 @@ const HEADSHOT = { width: 420, height: 307 }
 const LOGO = 300
 // Type sizes, stepped by length so a long name or the unofficial note still fits.
 const TITLE_SIZE = (chars: number): number => (chars <= 16 ? 104 : chars <= 20 ? 84 : 64)
-const SENTENCE_SIZE = (chars: number): number => (chars <= 60 ? 32 : 26)
+const SENTENCE_SIZE = (chars: number): number => (chars <= 60 ? 32 : chars <= 160 ? 26 : 24)
 const BAR_HEIGHT = 44
 const BAR_LABEL = 15
 const UNDER_LABEL = 16
@@ -92,15 +92,17 @@ interface FrameProps {
   card: Card
   /** The favicon as a data URI. */
   mark: string
-  /** The headshot or logo as a data URI. */
-  image: string
+  /** The headshot or logo as a data URI; null for a card without one. */
+  image: string | null
 }
 
 function Subject({ card }: { card: Card }) {
   const eyebrow = card.kind === 'board' ? card.kicker : card.eyebrow
-  const title = card.kind === 'team' ? card.title : card.name
+  const title = card.kind === 'team' || card.kind === 'season' ? card.title : card.name
+  // Without a picture the words take the whole width.
+  const width = card.image === null ? CARD_WIDTH - 2 * CARD_PAD : COLUMN
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: COLUMN, gap: 18 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width, gap: 18 }}>
       <span style={{ ...mono(20), letterSpacing: '0.04em' }}>{eyebrow}</span>
       <span style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: TITLE_SIZE(title.length), lineHeight: 0.95, letterSpacing: '-0.01em', textTransform: 'uppercase', color: PALETTE.bone }}>
         {title}
@@ -110,7 +112,8 @@ function Subject({ card }: { card: Card }) {
   )
 }
 
-function Picture({ card, image }: { card: Card; image: string }) {
+function Picture({ card, image }: { card: Card; image: string | null }) {
+  if (image === null) return null
   if (card.kind === 'team') {
     return <img src={image} width={LOGO} height={LOGO} style={{ position: 'absolute', right: 40, top: '50%', transform: 'translateY(-50%)', objectFit: 'contain' }} />
   }

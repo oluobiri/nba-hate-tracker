@@ -3,6 +3,7 @@
 // arcs and the loudest threads. Every figure is composed once in lib/season
 // and arrives here as data; the charts are HTML and SVG at build, their
 // readouts CSS-only, so the page has no island.
+import { cardHref } from '../cards/model'
 import { ArcFlat, ArcKey, ArcRows } from '../components/ArcRows'
 import { GameNights } from '../components/GameNights'
 import { MethodNote } from '../components/MethodNote'
@@ -29,7 +30,7 @@ const arcAxis = arcDomain([...s.arcs.rose, ...s.arcs.fell])
 const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].map((t) => t.counts.total))
 ---
 
-<Base title="Season" description={lede}>
+<Base title="Season" description={lede} image={cardHref.season}>
   <main id="main" class="wrap page sn">
     <header class="sn__head">
       <p class="eyebrow">{manifest.season} · Season</p>

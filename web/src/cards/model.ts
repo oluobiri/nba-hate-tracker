@@ -38,8 +38,8 @@ interface CardBase {
   segments: Segment[]
   nLine: string
   stamp: Stamp
-  /** First-party media, fetched at build. */
-  image: string
+  /** First-party media, fetched at build; null for a card drawn without a picture. */
+  image: string | null
 }
 
 export interface PlayerCard extends CardBase {
@@ -71,7 +71,16 @@ export interface RecapCard extends CardBase {
   eyebrow: string
 }
 
-export type Card = PlayerCard | TeamCard | BoardCard | RecapCard
+export interface SeasonCard extends CardBase {
+  kind: 'season'
+  /** "Season". */
+  title: string
+  /** "2025-26 · night by night". */
+  eyebrow: string
+  image: null
+}
+
+export type Card = PlayerCard | TeamCard | BoardCard | RecapCard | SeasonCard
 
 /** The hero bar's segments, negative → neutral → positive, labels placed by the same width rule as the CSS. */
 export function barSegments(counts: Counts, width: number = BAR_WIDTH): Segment[] {
@@ -152,10 +161,26 @@ export function recapCard(recap: Recap, season: string): RecapCard {
   }
 }
 
+/** The season's card: the page's lede over the whole population's split; no picture, the words take the width. */
+export function seasonCard(lede: string, counts: Counts, headline: Headline, season: string): SeasonCard {
+  return {
+    kind: 'season',
+    season,
+    title: 'Season',
+    eyebrow: `${season} · night by night`,
+    sentence: lede,
+    segments: barSegments(counts),
+    nLine: `n=${fmtInt(headline.count)} comments about ${fmtInt(headline.players)} players`,
+    stamp: null,
+    image: null,
+  }
+}
+
 /** Where each card lives, so pages and endpoints agree. */
 export const cardHref = {
   player: (slug: string): string => `/player/${slug}/card.png`,
   team: (abbreviation: string): string => `/fanbases/${abbreviation.toLowerCase()}/card.png`,
   recap: (key: string): string => `/recaps/${key}/card.png`,
   board: '/card.png',
+  season: '/season/card.png',
 } as const

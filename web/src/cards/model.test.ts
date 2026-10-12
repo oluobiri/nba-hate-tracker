@@ -6,7 +6,7 @@ import { fanbaseVerdict } from '../lib/fanbase'
 import { rankBy } from '../lib/metrics'
 import type { Standing } from '../lib/standings'
 import type { Counts } from '../lib/types'
-import { BAR_WIDTH, barSegments, boardCard, cardHref, idLine, playerCard, teamCard } from './model'
+import { BAR_WIDTH, barSegments, boardCard, cardHref, idLine, playerCard, seasonCard, teamCard } from './model'
 
 const c = (neg: number, neu: number, pos: number): Counts => ({ neg, neu, pos, total: neg + neu + pos })
 
@@ -132,5 +132,14 @@ describe('cardHref', () => {
     expect(cardHref.player('draymond-green')).toBe('/player/draymond-green/card.png')
     expect(cardHref.team('LAL')).toBe('/fanbases/lal/card.png')
     expect(cardHref.board).toBe('/card.png')
+  })
+})
+
+describe('seasonCard', () => {
+  it('says the page’s lede over the whole population, with no picture', () => {
+    const card = seasonCard('The lede.', c(51, 43, 6), { count: 1234567, players: 223 }, '2025-26')
+    expect(card).toMatchObject({ kind: 'season', title: 'Season', eyebrow: '2025-26 · night by night', sentence: 'The lede.', nLine: 'n=1,234,567 comments about 223 players', stamp: null, image: null })
+    expect(card.segments.map((s) => s.label)).toEqual(['51.0%', '43.0%', '6.0%'])
+    expect(cardHref.season).toBe('/season/card.png')
   })
 })

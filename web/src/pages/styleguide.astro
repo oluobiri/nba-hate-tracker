@@ -162,6 +162,7 @@ const kindestFans = fanRanked.at(-1)!.row.team
 const slugOf = (name: string): string => players.get(name)!.slug
 const cards = [
   { src: cardHref.board, why: 'the leaderboard: the official #1 with the hero sentence; every page without a card of its own falls back to this one' },
+  { src: cardHref.season, why: 'the season: its lede over the whole population’s split, no picture, the words at full width' },
   { src: cardHref.player(slugOf(top.attributed_player)), why: `${top.attributed_player} · #1 by negative rate` },
   { src: cardHref.player(longestPlayerName.slug), why: `${longestPlayerName.attributed_player} · the longest name` },
   { src: cardHref.player(slugOf(leastPositive.attributed_player)), why: `${leastPositive.attributed_player} · the smallest positive segment among official players` },

@@ -3,13 +3,13 @@
 // and games; the game-night split cuts the phases disjoint on the calendar.
 // Every rate is a ratio of summed counts; the thresholds here are page
 // choices, and the rules arrive as arguments from the manifest.
-import type { CorpusDailyRow, GameSentimentRow, GamesRow } from '../data/types.gen'
+import type { CorpusDailyRow, GameSentimentRow, GamesRow, PlayerRoomRow, RoomTemporalRow } from '../data/types.gen'
 import { nickname } from './fans'
-import { fmtInt, fmtPct } from './format'
+import { fmtInt, fmtPct, fmtSigned } from './format'
 import { countsOf, negRate, posRate, sumCounts } from './metrics'
 import type { NightNoteCopy } from './season-copy'
 import type { Counts } from './types'
-import { type Calendar, weekLabel } from './weeks'
+import { type Calendar, weekLabel, weekSpine } from './weeks'
 
 // Page choices, not rules.
 /** Nights in the centred window each point on a line pools. */
@@ -307,4 +307,336 @@ export function warmestNote(night: Night, title: string | null): NightNote {
     rate: posRate(night.counts),
     also: null,
   }
+}
+
+// --- The rooms ------------------------------------------------------------------------
+// A room is the kind of post a comment was written under. room_temporal is
+// weekly; a week takes the phase most of its nights fall in, so the play-in
+// week is a playoff week. The split between the phases is a shift-share on
+// symmetric midpoint weights: hold each room's tone and move the crowd, then
+// hold the crowd and move the tone; the two add up to the rise exactly.
+
+/** Comments a player's gap between two rooms needs, in points, to be named an exception. */
+export const EXCEPTION_GAP = 0.05
+
+export const ROOM_LABELS: Record<string, string> = {
+  game_thread: 'Game threads',
+  post_game_thread: 'Post-game threads',
+  daily: 'Daily chat thread',
+  general: 'Front page',
+  highlight: 'Highlights',
+  news: 'News',
+  lowlight: 'Lowlights',
+  injury: 'Injury posts',
+  discussion: 'Discussion posts',
+}
+
+export interface Band {
+  key: string
+  label: string
+  /** The rooms the band folds. */
+  members: readonly string[]
+}
+
+/** The volume panel's seven bands in stacking order; the last folds the small rooms. */
+export const BANDS: readonly Band[] = [
+  { key: 'game_thread', label: 'Game threads', members: ['game_thread'] },
+  { key: 'post_game_thread', label: 'Post-game threads', members: ['post_game_thread'] },
+  { key: 'daily', label: 'Daily chat thread', members: ['daily'] },
+  { key: 'general', label: 'Front page', members: ['general'] },
+  { key: 'highlight', label: 'Highlights', members: ['highlight'] },
+  { key: 'news', label: 'News', members: ['news'] },
+  { key: 'rest', label: 'Everything else', members: ['lowlight', 'injury', 'discussion'] },
+]
+
+/** The rooms large enough to speak for in the lede. */
+export const BIG_ROOMS: readonly string[] = ['game_thread', 'general', 'highlight', 'post_game_thread', 'news']
+
+const ZERO: Counts = { neg: 0, neu: 0, pos: 0, total: 0 }
+const weekDay = (key: string): string => key.slice(0, 10)
+
+/** The phase most of a week's nights fall in; a tie goes to the earlier phase. */
+export function weekPhase(monday: string, cal: SeasonCalendar): NightPhase {
+  const seen: NightPhase[] = []
+  const tally = new Map<NightPhase, number>()
+  for (let i = 0; i < 7; i++) {
+    const p = nightPhase(addDays(weekDay(monday), i), cal)
+    if (!tally.has(p)) seen.push(p)
+    tally.set(p, (tally.get(p) ?? 0) + 1)
+  }
+  return seen.reduce((best, p) => (tally.get(p)! > tally.get(best)! ? p : best))
+}
+
+export interface RoomSplitRow {
+  key: string
+  label: string
+  big: boolean
+  reg: Counts
+  po: Counts
+  whole: Counts
+  shareReg: number
+  sharePo: number
+  shareWhole: number
+  /** The negative share in each phase; a room missing from one phase takes the other's. */
+  rateReg: number
+  ratePo: number
+  /** Points of the rise from the crowd moving into or out of this room. */
+  mix: number
+  /** Points of the rise from this room's own tone moving. */
+  harsh: number
+}
+
+export interface RoomSplit {
+  reg: Counts
+  po: Counts
+  /** The playoffs' negative share minus the regular season's. */
+  lift: number
+  mix: number
+  harsh: number
+  rooms: RoomSplitRow[]
+}
+
+/** Every room pooled over the regular season and the playoffs, and the rise split two ways. */
+export function roomSplit(rows: readonly RoomTemporalRow[], cal: SeasonCalendar): RoomSplit {
+  const phases = new Map<string, NightPhase>()
+  const pooled = { regular: new Map<string, Counts>(), playoffs: new Map<string, Counts>(), whole: new Map<string, Counts>() }
+  const add = (into: Map<string, Counts>, key: string, c: Counts) => into.set(key, sumCounts([into.get(key) ?? ZERO, c]))
+  for (const r of rows) {
+    let phase = phases.get(r.week)
+    if (!phase) phases.set(r.week, (phase = weekPhase(r.week, cal)))
+    const c = countsOf(r)
+    add(pooled.whole, r.post_type, c)
+    if (phase === 'regular') add(pooled.regular, r.post_type, c)
+    if (phase === 'playoffs') add(pooled.playoffs, r.post_type, c)
+  }
+  const reg = sumCounts([...pooled.regular.values()])
+  const po = sumCounts([...pooled.playoffs.values()])
+  const whole = sumCounts([...pooled.whole.values()])
+  const lift = negRate(po) - negRate(reg)
+  const rooms = [...pooled.whole.keys()].toSorted().map((key) => {
+    const c0 = pooled.regular.get(key) ?? ZERO
+    const c1 = pooled.playoffs.get(key) ?? ZERO
+    const s0 = reg.total ? c0.total / reg.total : 0
+    const s1 = po.total ? c1.total / po.total : 0
+    const r0 = c0.total ? negRate(c0) : negRate(c1)
+    const r1 = c1.total ? negRate(c1) : r0
+    const w = pooled.whole.get(key)!
+    return {
+      key,
+      label: ROOM_LABELS[key] ?? key,
+      big: BIG_ROOMS.includes(key),
+      reg: c0,
+      po: c1,
+      whole: w,
+      shareReg: s0,
+      sharePo: s1,
+      shareWhole: whole.total ? w.total / whole.total : 0,
+      rateReg: r0,
+      ratePo: r1,
+      mix: ((s1 - s0) * (r0 + r1)) / 2,
+      harsh: ((r1 - r0) * (s0 + s1)) / 2,
+    }
+  })
+  const mix = rooms.reduce((a, r) => a + r.mix, 0)
+  const harsh = rooms.reduce((a, r) => a + r.harsh, 0)
+  if (Math.abs(lift - (mix + harsh)) > 1e-9) throw new Error(`room split: the mix (${mix}) and the tone (${harsh}) do not add up to the rise (${lift})`)
+  return { reg, po, lift, mix, harsh, rooms }
+}
+
+export interface BandSeries {
+  key: string
+  label: string
+  /** Comments per week on the spine. */
+  n: number[]
+}
+
+export interface PhaseRun {
+  phase: NightPhase
+  /** Spine indices, inclusive. */
+  from: number
+  to: number
+}
+
+export interface Weekly {
+  /** Week keys, as the rows carry them. */
+  spine: string[]
+  phases: NightPhase[]
+  runs: PhaseRun[]
+  totals: number[]
+  bands: BandSeries[]
+}
+
+/** The seven bands week by week on the season's spine, with each week's phase and total. */
+export function bandWeekly(rows: readonly RoomTemporalRow[], cal: SeasonCalendar): Weekly {
+  const spine = weekSpine(rows.map((r) => r.week))
+  const cell = new Map<string, number>()
+  for (const r of rows) cell.set(`${r.post_type} ${r.week}`, (cell.get(`${r.post_type} ${r.week}`) ?? 0) + r.comment_count)
+  const bands = BANDS.map((b) => ({ key: b.key, label: b.label, n: spine.map((w) => b.members.reduce((a, m) => a + (cell.get(`${m} ${w}`) ?? 0), 0)) }))
+  const totals = spine.map((_, i) => bands.reduce((a, b) => a + b.n[i]!, 0))
+  const phases = spine.map((w) => weekPhase(w, cal))
+  const runs: PhaseRun[] = []
+  phases.forEach((p, i) => {
+    const last = runs.at(-1)
+    if (last && last.phase === p) last.to = i
+    else runs.push({ phase: p, from: i, to: i })
+  })
+  return { spine, phases, runs, totals, bands }
+}
+
+export interface RoomRow {
+  key: string
+  label: string
+  reg: Counts
+  po: Counts
+  shareReg: number
+  sharePo: number
+}
+
+/** One row per band with its counts in each phase, and the largest share for the bar scale. */
+export function roomRows(split: RoomSplit): { rows: RoomRow[]; maxShare: number } {
+  const byKey = new Map(split.rooms.map((r) => [r.key, r]))
+  const rows = BANDS.map((b) => {
+    const members = b.members.map((m) => byKey.get(m)).filter((r): r is RoomSplitRow => r !== undefined)
+    const reg = sumCounts(members.map((r) => r.reg))
+    const po = sumCounts(members.map((r) => r.po))
+    return { key: b.key, label: b.label, reg, po, shareReg: split.reg.total ? reg.total / split.reg.total : 0, sharePo: split.po.total ? po.total / split.po.total : 0 }
+  })
+  const maxShare = Math.max(0, ...rows.flatMap((r) => [r.shareReg, r.sharePo]))
+  return { rows, maxShare }
+}
+
+/** Every room over the whole season, the biggest first. */
+export const roomTable = (split: RoomSplit): RoomSplitRow[] => split.rooms.toSorted((a, b) => b.whole.total - a.whole.total)
+
+/** A share of the comments with the precision a small room needs: "46%", "1.0%", "0.13%". */
+export function fmtShare(s: number): string {
+  return s < 0.005 ? fmtPct(s, 2) : s < 0.015 ? fmtPct(s, 1) : fmtPct(s, 0)
+}
+
+/** "a third", "half": the nearest common fraction. */
+const FRACTIONS: readonly [number, string][] = [
+  [0.2, 'a fifth'],
+  [0.25, 'a quarter'],
+  [1 / 3, 'a third'],
+  [0.4, 'two fifths'],
+  [0.5, 'half'],
+  [0.6, 'three fifths'],
+  [2 / 3, 'two thirds'],
+  [0.75, 'three quarters'],
+]
+export const fraction = (v: number): string => FRACTIONS.reduce((a, b) => (Math.abs(b[0] - v) < Math.abs(a[0] - v) ? b : a))[1]
+
+/** "+1.9", "−3.9": points, one decimal, a real minus. */
+export const fmtPts = (v: number, dp = 1): string => fmtSigned(v, dp).replace('-', '−')
+/** "35.2": a share in points without the sign. */
+export const fmtPoints = (v: number, dp = 1): string => (100 * v).toFixed(dp)
+
+/** How the big rooms moved, in words: every one harsher, all but one, or most. */
+export function bigRoomsMoved(split: RoomSplit): string {
+  const kinder = split.rooms.filter((r) => r.big && r.harsh < 0)
+  if (kinder.length === 0) return 'Every big room got more negative.'
+  if (kinder.length === 1) return `Every big room got more negative except ${kinder[0]!.label.toLowerCase()}.`
+  return 'Most big rooms got more negative.'
+}
+
+/** The rooms' lede: the rise, and how much of it the crowd moving explains. */
+export function roomsLede(split: RoomSplit): string {
+  const from = `In the playoffs, comments about players went from ${fmtPct(negRate(split.reg), 1)} to ${fmtPct(negRate(split.po), 1)} negative.`
+  if (split.lift <= 0 || split.mix <= 0) return `${from} The crowd's move between rooms does not explain it.`
+  const kinder = split.rooms.filter((r) => r.big && r.harsh < 0).length
+  const rooms = kinder === 0 ? 'every big room' : kinder === 1 ? 'nearly every big room' : 'most big rooms'
+  return `${from} About ${fraction(split.mix / split.lift)} of that is game threads taking over the conversation; the rest is ${rooms} getting more negative.`
+}
+
+export interface Tile {
+  key: 'rise' | 'mix' | 'harsh'
+  figure: string
+  /** After the figure, small: "of the 5.8 pts". */
+  unit: string | null
+  title: string
+  sub: string
+}
+
+/** The three tiles: the rise, and the two things that made it. */
+export function roomTiles(split: RoomSplit): Tile[] {
+  const gt = split.rooms.find((r) => r.key === 'game_thread')
+  const lift = fmtPoints(split.lift)
+  return [
+    {
+      key: 'rise',
+      figure: `${fmtPoints(negRate(split.reg))} → ${fmtPoints(negRate(split.po))}`,
+      unit: null,
+      title: '% negative, regular season → playoffs',
+      sub: `${fmtInt(split.reg.total)} and ${fmtInt(split.po.total)} comments about players under a post whose room is known.`,
+    },
+    {
+      key: 'mix',
+      figure: fmtPts(split.mix),
+      unit: `of the ${lift} pts`,
+      title: 'Because the crowd moved',
+      sub: gt ? `Into harsher rooms: game threads went from ${fmtPct(gt.shareReg, 0)} of the comments to ${fmtPct(gt.sharePo, 0)}. Each room held at its regular-season tone.` : 'Each room held at its regular-season tone.',
+    },
+    {
+      key: 'harsh',
+      figure: fmtPts(split.harsh),
+      unit: `of the ${lift} pts`,
+      title: 'Because each room got harsher',
+      sub: `${bigRoomsMoved(split)} The crowd held at its regular-season spread.`,
+    },
+  ]
+}
+
+export interface RoomGap {
+  name: string
+  slug: string
+  gameThread: Counts
+  frontPage: Counts
+  /** The game thread's negative share minus the front page's. */
+  gap: number
+}
+
+export interface PlayerAngle {
+  qualified: number
+  /** Qualified players with both rooms at the room floor. */
+  compared: number
+  harsher: number
+  median: number
+  /** Players kinder in the game thread by at least the exception gap, the biggest gap first. */
+  exceptions: RoomGap[]
+}
+
+/** The room gap at player grain: the game thread against the front page, for the qualified players with both rooms at the floor. */
+export function playerAngle(rows: readonly PlayerRoomRow[], qualified: ReadonlySet<string>, slugOf: ReadonlyMap<string, string>, roomFloor: number): PlayerAngle {
+  const cells = new Map<string, { gt?: Counts; fp?: Counts }>()
+  for (const r of rows) {
+    if (r.comment_count < roomFloor || !qualified.has(r.attributed_player)) continue
+    if (r.post_type !== 'game_thread' && r.post_type !== 'general') continue
+    const cell = cells.get(r.attributed_player) ?? {}
+    cell[r.post_type === 'game_thread' ? 'gt' : 'fp'] = countsOf(r)
+    cells.set(r.attributed_player, cell)
+  }
+  const gaps: RoomGap[] = [...cells.entries()]
+    .filter(([, c]) => c.gt && c.fp)
+    .map(([name, c]) => ({ name, slug: slugOf.get(name) ?? name, gameThread: c.gt!, frontPage: c.fp!, gap: negRate(c.gt!) - negRate(c.fp!) }))
+    .toSorted((a, b) => b.gap - a.gap || a.name.localeCompare(b.name))
+  const sorted = gaps.map((g) => g.gap).toSorted((a, b) => a - b)
+  const mid = sorted.length >> 1
+  const median = sorted.length === 0 ? 0 : sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+  return {
+    qualified: qualified.size,
+    compared: gaps.length,
+    harsher: gaps.filter((g) => g.gap > 0).length,
+    median,
+    exceptions: gaps.filter((g) => g.gap <= -EXCEPTION_GAP).toReversed(),
+  }
+}
+
+/** The sentence under the rows, in two parts: the finding, then the named exceptions (linked on the page). */
+export function playerAngleText(angle: PlayerAngle): { lead: string; exceptions: RoomGap[]; tail: string | null } {
+  if (angle.compared === 0) return { lead: 'No player at the official minimum has both rooms at the floor.', exceptions: [], tail: null }
+  const share = angle.harsher / angle.compared
+  const who = share >= 0.8 ? 'Nearly every player is' : share >= 0.5 ? 'Most players are' : 'Fewer than half the players are'
+  const lead = `${who} talked about more harshly in the game thread than on the front page: ${fmtInt(angle.harsher)} of the ${fmtInt(angle.compared)} at the official minimum, by a median of ${fmtInt(Math.round(Math.abs(angle.median) * 100))} points.`
+  if (angle.exceptions.length === 0) return { lead, exceptions: [], tail: null }
+  return { lead, exceptions: angle.exceptions, tail: 'The exceptions are players whose season was a story more than a schedule: ' }
 }

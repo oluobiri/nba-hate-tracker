@@ -20,9 +20,24 @@ import {
   phaseCounts,
   pooledLine,
   seasonCalendar,
+  BANDS,
+  bandWeekly,
+  bigRoomsMoved,
+  fmtPoints,
+  fmtPts,
+  fmtShare,
+  fraction,
+  playerAngle,
+  playerAngleText,
+  roomRows,
+  roomSplit,
+  roomTable,
+  roomTiles,
+  roomsLede,
   warmestNote,
+  weekPhase,
 } from './season'
-import { CAL, TEAMS, daily, game, nightsFrom, sentiment } from './season.fixture'
+import { CAL, TEAMS, daily, game, nightsFrom, playerRoom, plusDays, roomWeek, sentiment } from './season.fixture'
 
 const cal = seasonCalendar(CAL)
 const ABBR = new Map(TEAMS.map((t) => [t.team, t.abbreviation]))
@@ -252,5 +267,168 @@ describe('the readout words', () => {
     expect(addDays('2026-02-28', 1)).toBe('2026-03-01')
     expect(addDays('2026-04-14', -1)).toBe('2026-04-13')
     expect(dayLabel('2026-02-27')).toBe('Fri, Feb 27')
+  })
+})
+
+// --- The rooms ------------------------------------------------------------------
+
+describe('weekPhase', () => {
+  it('gives a week the phase most of its nights fall in, so the play-in week is a playoff week', () => {
+    // Mon Apr 13 is the last regular-season night; the six after it are play-in and playoffs.
+    expect(weekPhase('2026-04-13T00:00:00', cal)).toBe('playoffs')
+    expect(weekPhase('2026-04-06T00:00:00', cal)).toBe('regular')
+    // Mon Jun 8: Jun 8–13 are Finals nights, Jun 14 is offseason.
+    expect(weekPhase('2026-06-08T00:00:00', cal)).toBe('playoffs')
+    expect(weekPhase('2026-06-15T00:00:00', cal)).toBe('off')
+    expect(weekPhase('2025-10-13T00:00:00', cal)).toBe('pre')
+  })
+
+  it('breaks a tie toward the earlier phase', () => {
+    // Opening night Tue Oct 21 (toy): Mon Oct 20 is preseason, the other six regular. No tie; shift to make one:
+    const tie = seasonCalendar({ ...CAL, opening_night: '2025-10-24' })
+    // Mon Oct 20–Thu Oct 23 pre (4), Fri–Sun regular (3).
+    expect(weekPhase('2025-10-20T00:00:00', tie)).toBe('pre')
+  })
+})
+
+describe('roomSplit', () => {
+  // One regular-season week and one playoff week; the daily room exists only in the playoffs.
+  const RS = '2026-03-02'
+  const PO = '2026-04-20'
+  const rows = [
+    roomWeek('general', RS, 30, 50, 20),
+    roomWeek('game_thread', RS, 40, 40, 20),
+    roomWeek('general', PO, 20, 20, 10),
+    roomWeek('game_thread', PO, 60, 20, 20),
+    roomWeek('daily', PO, 5, 5, 0),
+    roomWeek('news', '2025-10-06', 1, 1, 1),
+  ]
+  const split = roomSplit(rows, cal)
+
+  it('pools each phase and adds the two parts of the split up to the rise', () => {
+    expect(split.reg).toEqual({ neg: 70, neu: 90, pos: 40, total: 200 })
+    expect(split.po).toEqual({ neg: 85, neu: 45, pos: 30, total: 160 })
+    expect(split.lift).toBeCloseTo(85 / 160 - 70 / 200, 12)
+    expect(split.mix + split.harsh).toBeCloseTo(split.lift, 12)
+  })
+
+  it('gives a room missing from one phase the other phase’s rate, so it adds nothing to the tone', () => {
+    const daily = split.rooms.find((r) => r.key === 'daily')!
+    expect(daily.rateReg).toBeCloseTo(0.5, 12)
+    expect(daily.ratePo).toBeCloseTo(0.5, 12)
+    expect(daily.harsh).toBe(0)
+    expect(daily.mix).toBeGreaterThan(0)
+    const news = split.rooms.find((r) => r.key === 'news')!
+    expect(news.ratePo).toBe(news.rateReg)
+    expect(news.whole.total).toBe(3)
+  })
+
+  it('reads the shares and names the rooms', () => {
+    const gt = split.rooms.find((r) => r.key === 'game_thread')!
+    expect(gt).toMatchObject({ label: 'Game threads', big: true, shareReg: 0.5, sharePo: 100 / 160 })
+    expect(gt.shareWhole).toBeCloseTo(200 / 363, 12)
+    expect(split.rooms.map((r) => r.key)).toEqual(['daily', 'game_thread', 'general', 'news'])
+  })
+
+  it('folds the bands into rows and keeps the largest share for the scale', () => {
+    const { rows: bandRows, maxShare } = roomRows(split)
+    expect(bandRows.map((r) => r.key)).toEqual(BANDS.map((b) => b.key))
+    expect(bandRows[0]).toMatchObject({ key: 'game_thread', reg: { total: 100 }, po: { total: 100 }, shareReg: 0.5 })
+    expect(bandRows.at(-1)).toMatchObject({ key: 'rest', reg: { total: 0 }, po: { total: 0 }, shareReg: 0, sharePo: 0 })
+    expect(maxShare).toBeCloseTo(100 / 160, 12)
+    expect(roomTable(split).map((r) => r.key)).toEqual(['game_thread', 'general', 'daily', 'news'])
+  })
+
+  it('lays the bands on the week spine with each week’s phase and total', () => {
+    // A consecutive spine: a front-page row every Monday from Oct 6 to Apr 27, the phase rows on top.
+    const mondays = Array.from({ length: 30 }, (_, i) => plusDays('2025-10-06', 7 * i))
+    const spine = mondays.filter((m) => m !== RS && m !== PO).map((m) => roomWeek('general', m, 1, 1, 1))
+    const weekly = bandWeekly([...rows.filter((r) => !r.week.startsWith('2025-10-06')), ...spine, roomWeek('lowlight', PO, 1, 0, 0)], seasonCalendar({ ...CAL, opening_night: '2025-10-06' }))
+    expect(weekly.spine.length).toBe(30)
+    expect(weekly.spine[0]).toBe('2025-10-06T00:00:00')
+    expect(weekly.bands.map((b) => b.key)).toEqual(BANDS.map((b) => b.key))
+    const po = weekly.spine.indexOf(`${PO}T00:00:00`)
+    expect(weekly.bands.find((b) => b.key === 'rest')!.n[po]).toBe(1)
+    expect(weekly.totals[po]).toBe(161)
+    expect(weekly.totals[0]).toBe(3)
+    expect(weekly.phases[po]).toBe('playoffs')
+    expect(weekly.runs.map((r) => r.phase)).toEqual(['regular', 'playoffs'])
+    expect(weekly.runs[1]).toEqual({ phase: 'playoffs', from: weekly.spine.indexOf('2026-04-13T00:00:00'), to: 29 })
+  })
+
+  it('writes the lede, the tiles and the big-room sentence from the split', () => {
+    expect(roomsLede(split)).toMatch(/^In the playoffs, comments about players went from 35\.0% to 53\.1% negative\. About .* of that is game threads taking over the conversation; the rest is every big room getting more negative\.$/)
+    const tiles = roomTiles(split)
+    expect(tiles.map((t) => t.key)).toEqual(['rise', 'mix', 'harsh'])
+    expect(tiles[0]).toMatchObject({ figure: '35.0 → 53.1', unit: null, sub: '200 and 160 comments about players under a post whose room is known.' })
+    expect(tiles[1]!.unit).toBe(`of the ${(split.lift * 100).toFixed(1)} pts`)
+    expect(tiles[1]!.sub).toBe('Into harsher rooms: game threads went from 50% of the comments to 63%. Each room held at its regular-season tone.')
+    expect(tiles[2]!.sub).toBe('Every big room got more negative. The crowd held at its regular-season spread.')
+    expect(bigRoomsMoved({ ...split, rooms: split.rooms.map((r) => (r.key === 'general' ? { ...r, harsh: -0.01 } : r)) })).toBe('Every big room got more negative except front page.')
+  })
+
+  it('does not credit the crowd when the rise is nothing', () => {
+    const flat = roomSplit([roomWeek('general', RS, 30, 50, 20), roomWeek('general', PO, 30, 50, 20)], cal)
+    expect(roomsLede(flat)).toBe("In the playoffs, comments about players went from 30.0% to 30.0% negative. The crowd's move between rooms does not explain it.")
+  })
+})
+
+describe('fraction, fmtShare, fmtPts', () => {
+  it('names the nearest common fraction', () => {
+    expect(fraction(0.33)).toBe('a third')
+    expect(fraction(0.48)).toBe('half')
+    expect(fraction(0.7)).toBe('two thirds')
+  })
+
+  it('gives a small share the precision it needs', () => {
+    expect(fmtShare(0.462)).toBe('46%')
+    expect(fmtShare(0.0101)).toBe('1.0%')
+    expect(fmtShare(0.0013)).toBe('0.13%')
+  })
+
+  it('prints signed points with a real minus', () => {
+    expect(fmtPts(0.019)).toBe('+1.9')
+    expect(fmtPts(-0.0387)).toBe('−3.9')
+    expect(fmtPoints(0.352)).toBe('35.2')
+  })
+})
+
+describe('playerAngle', () => {
+  const qualified = new Set(['Harsh One', 'Harsh Two', 'Kind One', 'Thin', 'Flat'])
+  const slug = new Map([...qualified].map((n) => [n, n.toLowerCase().replace(' ', '-')]))
+  const rows = [
+    playerRoom('Harsh One', 'game_thread', 60, 20, 20),
+    playerRoom('Harsh One', 'general', 40, 30, 30),
+    playerRoom('Harsh Two', 'game_thread', 50, 30, 20),
+    playerRoom('Harsh Two', 'general', 45, 30, 25),
+    playerRoom('Kind One', 'game_thread', 30, 40, 30),
+    playerRoom('Kind One', 'general', 50, 30, 20),
+    playerRoom('Flat', 'game_thread', 40, 30, 30),
+    playerRoom('Flat', 'general', 38, 30, 32),
+    // Under the room floor in the game thread.
+    playerRoom('Thin', 'game_thread', 5, 2, 2),
+    playerRoom('Thin', 'general', 50, 30, 20),
+    // Not qualified.
+    playerRoom('Nobody', 'game_thread', 90, 5, 5),
+    playerRoom('Nobody', 'general', 10, 45, 45),
+    playerRoom('Harsh One', 'news', 90, 5, 5),
+  ]
+  const angle = playerAngle(rows, qualified, slug, 20)
+
+  it('compares the qualified players with both rooms at the floor', () => {
+    expect(angle).toMatchObject({ qualified: 5, compared: 4, harsher: 3 })
+    expect(angle.median).toBeCloseTo((0.02 + 0.05) / 2, 12)
+    expect(angle.exceptions.map((g) => g.name)).toEqual(['Kind One'])
+    expect(angle.exceptions[0]!.gap).toBeCloseTo(-0.2, 12)
+  })
+
+  it('names the exceptions only beyond the gap, the biggest first', () => {
+    const wide = playerAngle([...rows, playerRoom('Kind Two', 'game_thread', 10, 45, 45), playerRoom('Kind Two', 'general', 50, 25, 25)], new Set([...qualified, 'Kind Two']), slug, 20)
+    expect(wide.exceptions.map((g) => g.name)).toEqual(['Kind Two', 'Kind One'])
+    const text = playerAngleText(wide)
+    expect(text.lead).toBe('Most players are talked about more harshly in the game thread than on the front page: 3 of the 5 at the official minimum, by a median of 2 points.')
+    expect(text.tail).toBe('The exceptions are players whose season was a story more than a schedule: ')
+    expect(playerAngleText({ ...wide, harsher: 5, exceptions: [] })).toEqual({ lead: expect.stringMatching(/^Nearly every player is/), exceptions: [], tail: null })
+    expect(playerAngleText({ ...wide, compared: 0 }).lead).toBe('No player at the official minimum has both rooms at the floor.')
   })
 })

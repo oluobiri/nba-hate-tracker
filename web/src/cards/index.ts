@@ -10,6 +10,7 @@ const MARK = `data:image/svg+xml;base64,${Buffer.from(mark).toString('base64')}`
 
 /** Render one card to PNG bytes. */
 export async function buildCard(card: Card): Promise<Uint8Array<ArrayBuffer>> {
-  const image = await readMedia(card.image)
-  return new Uint8Array(await renderCard(Frame({ card, mark: MARK, image }), card.kind === 'team' ? [] : [image]))
+  const image = card.image === null ? null : await readMedia(card.image)
+  const gray = image === null || card.kind === 'team' ? [] : [image]
+  return new Uint8Array(await renderCard(Frame({ card, mark: MARK, image }), gray))
 }

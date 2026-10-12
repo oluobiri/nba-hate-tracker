@@ -1,12 +1,260 @@
 ---
+// Page 4. The season in time: the nights first, then the rooms, the season
+// arcs and the loudest threads. Every figure is composed once in lib/season
+// and arrives here as data; the charts are HTML and SVG at build, their
+// readouts CSS-only, so the page has no island.
+import { cardHref } from '../cards/model'
+import { ArcFlat, ArcKey, ArcRows } from '../components/ArcRows'
+import { GameNights } from '../components/GameNights'
+import { MethodNote } from '../components/MethodNote'
+import { NightsChart } from '../components/NightsChart'
+import { RoomRows } from '../components/RoomRows'
+import { RoomTable } from '../components/RoomTable'
+import { RoomTiles } from '../components/RoomTiles'
+import { ThreadList } from '../components/ThreadList'
+import { VolumeBands } from '../components/VolumeBands'
+import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
+import { fmtInt, fmtPct } from '../lib/format'
+import { ARC_MIN_N, ARC_WEEKS, NIGHT_MIN_N, THREAD_SECOND_GAP, THREAD_SECOND_MIN_N, WINDOW, arcDomain, arcsLede, buildSeason, fmtPts, gameNightsLede, ledeText, playerAngleText, roomsLede } from '../lib/season'
+import { HARSHEST_NOTE } from '../lib/season-copy'
+import { weekLabel } from '../lib/weeks'
+
+const { manifest, tables } = await getSeason()
+const s = buildSeason({ manifest, tables }, HARSHEST_NOTE)
+const lede = ledeText(s.lede)
+const loudest = s.extremes.loudest!
+const bridged = s.weekly.totals.reduce((a, b) => a + b, 0)
+const angle = playerAngleText(s.angle)
+const arcAxis = arcDomain([...s.arcs.rose, ...s.arcs.fell])
+const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].map((t) => t.counts.total))
 ---
 
-<Base title="Season" description="The season, week by week.">
-  <main id="main" class="wrap page">
-    <header>
+<Base title="Season" description={lede} image={cardHref.season}>
+  <main id="main" class="wrap page sn">
+    <header class="sn__head">
+      <p class="eyebrow">{manifest.season} · Season</p>
       <h1>Season</h1>
-      <p class="page__lede">The season, week by week. This page is on its way.</p>
+      <p class="sn__lede">{s.lede.opening}<b>{s.lede.level}</b>{s.lede.closing}</p>
     </header>
+
+    <section class="sn__section sn__section--first" id="nights" aria-labelledby="nights-h">
+      <h2 id="nights-h" class="visually-hidden">The nights</h2>
+      <NightsChart nights={s.nights} negLine={s.negLine} posLine={s.posLine} level={s.level} stretch={s.stretch} notes={s.notes} cal={s.cal} k={WINDOW} floor={NIGHT_MIN_N} />
+      <MethodNote kind="method">
+        Every comment about a tracked player, {fmtInt(s.attributed)} of them. A night runs 6 am to 6 am Eastern, so a late West Coast game stays on its own date. Each
+        point on a line is the {fmtInt(WINDOW)} nights around it with all their comments added up, then the share taken, so the season's loudest night ({fmtInt(loudest.counts.total)}{' '}
+        comments on {weekLabel(loudest.day)}) counts for more than a quiet Tuesday. Rates are never averaged. Over the whole season the negative share is {fmtPct(s.season, 1)},
+        the leaderboard's own figure. The All-Star Game is not in the game log, so {weekLabel(s.cal.all_star)} counts as a night with no game.
+      </MethodNote>
+      <div class="sub">
+        <header>
+          <h3>The turn came with the games</h3>
+          <p class="copy">{gameNightsLede(s.gameNights, s.level.neg)}</p>
+        </header>
+        <GameNights rows={s.gameNights} level={s.level.neg} />
+      </div>
+    </section>
+
+    <section class="sn__section" id="rooms" aria-labelledby="rooms-h">
+      <header>
+        <p class="eyebrow">The rooms · regular season vs. playoffs</p>
+        <h2 id="rooms-h">Where did the playoffs <span class="neg">turn negative?</span></h2>
+        <p class="copy">{roomsLede(s.split)}</p>
+      </header>
+      <RoomTiles tiles={s.tiles} />
+      <div class="sub">
+        <header class="sub__head">
+          <h3>Where people talked, week by week</h3>
+          <span class="sub__quiet mono">Comments about players</span>
+        </header>
+        <VolumeBands weekly={s.weekly} lastDay={s.nights.at(-1)!.day} />
+      </div>
+      <div class="sub">
+        <header>
+          <h3>How each room talked</h3>
+          <p class="copy">
+            Bar length is the room's share of the comments, regular season (RS) against playoffs (PO). In most rooms the positive share barely moves between the two; the
+            playoffs took neutral talk and made it negative.
+          </p>
+        </header>
+        <RoomRows rows={s.roomRows} maxShare={s.maxShare} />
+      </div>
+      <div class="sub">
+        <header>
+          <h3>Every room, the whole season</h3>
+        </header>
+        <RoomTable rows={s.table} caption="Every room over the whole season: comments, share, the split, and the negative share regular season against playoffs" />
+      </div>
+      <p class="copy">
+        {angle.lead}
+        {angle.tail && (
+          <>
+            {' '}
+            {angle.tail}
+            {angle.exceptions.map((g, i) => (
+              <>
+                {i > 0 && (i === angle.exceptions.length - 1 ? ' and ' : ', ')}
+                <a href={`/player/${g.slug}/`}>{g.name}</a>
+              </>
+            ))}
+            .
+          </>
+        )}
+      </p>
+      <MethodNote kind="method">
+        A room is the kind of post a comment was written under; {fmtInt(bridged)} of the {fmtInt(s.attributed)} comments sit under a post whose room is known. The split
+        holds each room's tone at its regular-season level and moves only the crowd ({fmtPts(s.split.mix)}), then holds the crowd and moves the tone ({fmtPts(s.split.harsh)});
+        the two add up to the rise exactly. Weeks start Monday; a week counts as playoffs when most of its nights fall on or after the first play-in night, the Finals
+        included. Lowlights, injury and discussion posts are folded into Everything else in the charts; the table lists every room. The player comparison counts a room
+        only when it holds at least {fmtInt(s.roomFloor)} comments about that player.
+      </MethodNote>
+    </section>
+
+    <section class="sn__section" id="arcs" aria-labelledby="arcs-h">
+      <header>
+        <p class="eyebrow">Season arcs · how r/NBA's view of a player moved, his first {ARC_WEEKS} weeks vs. his last {ARC_WEEKS}</p>
+        <h2 id="arcs-h"><span class="pos">Redemptions</span> and <span class="neg">heel turns</span></h2>
+        <p class="copy">{arcsLede(s.arcs)}</p>
+      </header>
+      <ArcKey />
+      <ArcRows heading="Rose the most" tone="pos" arcs={s.arcs.rose} domain={arcAxis} />
+      <ArcRows heading="Fell the most" tone="neg" arcs={s.arcs.fell} domain={arcAxis} />
+      <ArcFlat arcs={s.arcs.flat} />
+      <MethodNote kind="method">
+        Net sentiment is the positive share minus the negative share. Each player's first {fmtInt(ARC_WEEKS)} regular-season weeks are set against the {fmtInt(ARC_WEEKS)}{' '}
+        weeks ending at his last game played, so a Finals run, an April exit and a season cut short by injury are measured by one rule. Each window needs{' '}
+        {fmtInt(ARC_MIN_N)} comments, and the two may not overlap; {fmtInt(s.arcs.field)} of the {fmtInt(s.angle.qualified)} players at the official minimum of{' '}
+        {fmtInt(s.official)} comments clear both. The line under each row reads the arc at three points, early, the last {fmtInt(ARC_WEEKS)} regular-season weeks and the
+        playoffs, and names where it moved. Net sentiment alone can hide a split room, so both shares sit beside it.
+      </MethodNote>
+    </section>
+
+    <section class="sn__section" id="threads" aria-labelledby="threads-h">
+      <header>
+        <p class="eyebrow">Game threads · by comments about players</p>
+        <h2 id="threads-h">The loudest game threads</h2>
+      </header>
+      <div class="sn__threads" style={`--rows: ${Math.max(s.threads.playoffs.length, s.threads.regular.length) + 1}`}>
+        <ThreadList title="In the playoffs" threads={s.threads.playoffs} max={threadMax} />
+        <ThreadList title="Regular season" threads={s.threads.regular} max={threadMax} />
+      </div>
+      <MethodNote kind="method">
+        A game's threads are its game thread and its post-game thread together. The first figure counts the comments in them about a tracked player, not every comment in
+        the thread, and the bars are drawn from those on one scale across both lists; the second is every comment Reddit counts in the same threads. The play-in counts
+        with the playoffs. A second name appears when a player with at least {fmtInt(THREAD_SECOND_MIN_N)} comments in the thread ran {fmtInt(Math.round(THREAD_SECOND_GAP * 100))}{' '}
+        or more points harsher than the thread.
+      </MethodNote>
+    </section>
   </main>
 </Base>
+
+<style>
+  .sn {
+    gap: 0;
+  }
+  .sn__head {
+    display: grid;
+    gap: 14px;
+    padding-bottom: 28px;
+  }
+  .sn__head .eyebrow {
+    margin: 0;
+  }
+  .sn__lede {
+    margin: 0;
+    max-width: 66ch;
+    font-size: 17px;
+    color: var(--bone-2);
+    text-wrap: pretty;
+  }
+  .sn__lede b,
+  .copy b {
+    font-weight: 600;
+    color: var(--bone);
+  }
+  /* The level in heat: it is the negative share the whole page measures against. */
+  .sn__lede b {
+    color: var(--heat);
+  }
+  .sn__section {
+    display: grid;
+    gap: 22px;
+    min-width: 0;
+    padding: 44px 0;
+    border-top: 1px solid var(--line);
+  }
+  .sn__section--first {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .sn__section > header {
+    display: grid;
+    gap: 8px;
+  }
+  .sn__section .eyebrow {
+    margin: 0;
+  }
+  .sn__section h3 {
+    font-size: clamp(18px, 2.2vw, 22px);
+    letter-spacing: 0.02em;
+  }
+  .copy {
+    margin: 0;
+    max-width: 70ch;
+    font-size: 16px;
+    color: var(--bone-2);
+    text-wrap: pretty;
+  }
+  .sub {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding-top: 10px;
+  }
+  .sub > header {
+    display: grid;
+    gap: 6px;
+  }
+  .sub__head {
+    display: flex !important;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 18px;
+    align-items: baseline;
+  }
+  .sub__quiet {
+    font-size: 12px;
+    color: var(--mute);
+  }
+  /* Side by side, the two lists share row tracks (subgrid), so the nth thread sits level with the nth. */
+  .sn__threads {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(var(--rows), auto);
+    gap: 0 48px;
+  }
+  .sn__threads :global(.lt) {
+    display: grid;
+    grid-row: 1 / span var(--rows);
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+  .sn__threads :global(.lt__list) {
+    display: contents;
+  }
+  .sn__threads :global(.lt h3) {
+    padding-bottom: 12px;
+  }
+  @media (max-width: 900px) {
+    .sn__threads {
+      grid-template-columns: 1fr;
+      grid-template-rows: none;
+      gap: 28px;
+    }
+    .sn__threads :global(.lt) {
+      grid-row: auto;
+      grid-template-rows: none;
+    }
+  }
+</style>

@@ -3,6 +3,7 @@ import { cardHref } from '../cards/model'
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Answer } from '../components/Answer'
+import { ArcFlat, ArcKey, ArcRows } from '../components/ArcRows'
 import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
 import { Fold, JsonBlock } from '../components/Fold'
 import { FanGrid } from '../components/FanGrid'
@@ -10,13 +11,19 @@ import { Games } from '../components/Games'
 import { GapChart } from '../components/GapChart'
 import { GameNetTimeline } from '../components/GameNetTimeline'
 import { GameScatter } from '../components/GameScatter'
+import { GameNights } from '../components/GameNights'
 import { GamesTable } from '../components/GamesTable'
 import { GapTable } from '../components/GapTable'
 import { LensTabs } from '../components/LensTabs'
 import { MethodNote } from '../components/MethodNote'
+import { NightsChart } from '../components/NightsChart'
 import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { PipelineDiagram } from '../components/PipelineDiagram'
+import { RecapChip } from '../components/RecapChip'
+import { RoomRows } from '../components/RoomRows'
+import { RoomTable } from '../components/RoomTable'
+import { RoomTiles } from '../components/RoomTiles'
 import { RecapLead } from '../components/RecapLead'
 import { RecapRows } from '../components/RecapRows'
 import { BoxScore } from '../components/replay/BoxScore'
@@ -36,9 +43,11 @@ import { Stamp } from '../components/Stamp'
 import { StatFigure } from '../components/StatFigure'
 import { TalkList } from '../components/TalkList'
 import { TeamPicker } from '../components/TeamPicker'
+import { ThreadList } from '../components/ThreadList'
 import { ThresholdControl } from '../components/ThresholdControl'
 import { Timeline, type TimelineWeek } from '../components/Timeline'
 import { VerdictDelta } from '../components/VerdictDelta'
+import { VolumeBands } from '../components/VolumeBands'
 import { WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import { readJson, seasonLocation } from '../data/env'
@@ -53,7 +62,7 @@ import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pi
 import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHrefs, recapNetDelta } from '../lib/recaps'
+import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHref, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
 import { fmtNet } from '../lib/net'
 import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
@@ -63,6 +72,8 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
+import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
+import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
@@ -125,6 +136,10 @@ const edgeGaps = classGaps({
   pos: { classifier: 0.2, manual: 0.4, gap: -0.2, gap_margin: 0.06 },
 })
 const edgeDomain = gapDomain(edgeGaps)
+// The season page's figures, composed once.
+const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
+const arcAxis = arcDomain([...season.arcs.rose, ...season.arcs.fell])
+const threadMax = Math.max(0, ...[...season.threads.playoffs, ...season.threads.regular].map((t) => t.counts.total))
 // The pipeline drawing on the published figures.
 const diagram = {
   season: manifest.season,
@@ -147,6 +162,7 @@ const kindestFans = fanRanked.at(-1)!.row.team
 const slugOf = (name: string): string => players.get(name)!.slug
 const cards = [
   { src: cardHref.board, why: 'the leaderboard: the official #1 with the hero sentence; every page without a card of its own falls back to this one' },
+  { src: cardHref.season, why: 'the season: its lede over the whole population’s split, no picture, the words at full width' },
   { src: cardHref.player(slugOf(top.attributed_player)), why: `${top.attributed_player} · #1 by negative rate` },
   { src: cardHref.player(longestPlayerName.slug), why: `${longestPlayerName.attributed_player} · the longest name` },
   { src: cardHref.player(slugOf(leastPositive.attributed_player)), why: `${leastPositive.attributed_player} · the smallest positive segment among official players` },
@@ -843,6 +859,10 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <>
           <p class="eyebrow">A game with a curated recap carries a Recap chip at the row's end: {recapLead.entry.attributed_player}'s log around his.</p>
           <GamesTable rows={chipRows} caption={`${recapLead.entry.attributed_player}'s game log around his recap, a sample`} />
+          <p class="eyebrow">RecapChip on its own, as the season's loudest threads carry it; a game with two recaps names the player.</p>
+          <p>
+            <RecapChip href={recapHref(recapLead.key)} /> <RecapChip href={recapHref(recapLead.key)} label={`Recap · ${lastName(recapLead.entry.attributed_player)}`} />
+          </p>
         </>
       )}
     </section>
@@ -863,6 +883,55 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <Timeline name={thinnestOfficial.attributed_player} {...tlThin} bands={bands} floor={weekFloor} k={ROLLING} />
       <p class="eyebrow">Nothing to draw: {fewestWeeks.attributed_player}, {weeksAtFloor(fewestWeeks.attributed_player)} weeks at the floor.</p>
       <Timeline name={fewestWeeks.attributed_player} {...tlNone} bands={bands} floor={weekFloor} k={ROLLING} />
+    </section>
+
+    <section class="guide__section">
+      <h2>NightsChart</h2>
+      <p class="eyebrow">
+        The season night by night: {WINDOW}-night lines pooled from counts over nightly dots sized by n, the regular-season levels as dashed rules, the stretch above
+        the level bracketed, two annotations on rings, the draft marked. Hover, focus or tap a night for its split and the line through it.
+      </p>
+      <NightsChart nights={season.nights} negLine={season.negLine} posLine={season.posLine} level={season.level} stretch={season.stretch} notes={season.notes} cal={season.cal} k={WINDOW} floor={NIGHT_MIN_N} />
+    </section>
+
+    <section class="guide__section">
+      <h2>GameNights</h2>
+      <p class="eyebrow">One dumbbell per phase: the negative share on game nights (filled) against nights with no game (hollow), the regular season's level as a rule, the no-game counts in the key.</p>
+      <GameNights rows={season.gameNights} level={season.level.neg} />
+    </section>
+
+    <section class="guide__section">
+      <h2>RoomTiles</h2>
+      <p class="eyebrow">The rise and the two things that made it, computed from room_temporal; the tone's tile takes heat.</p>
+      <RoomTiles tiles={season.tiles} />
+    </section>
+
+    <section class="guide__section">
+      <h2>VolumeBands</h2>
+      <p class="eyebrow">Comments about players by room, one stacked bar per week in seven neutral tones. The key is a radio group: pick a room and its band goes bone across the season. Hover, focus or tap a week for its mix.</p>
+      <VolumeBands weekly={season.weekly} lastDay={season.nights.at(-1)!.day} />
+    </section>
+
+    <section class="guide__section">
+      <h2>RoomRows and RoomTable</h2>
+      <p class="eyebrow">Each band's share of the regular season's comments against the playoffs', the bar the split; the smallest room keeps a floor width. Under it, every room over the whole season.</p>
+      <RoomRows rows={season.roomRows} maxShare={season.maxShare} />
+      <RoomTable rows={season.table} caption="Every room over the whole season, a sample" />
+    </section>
+
+    <section class="guide__section">
+      <h2>ArcRows</h2>
+      <p class="eyebrow">A dumbbell per player on one net-sentiment axis: the first eight regular-season weeks hollow, the last eight he played filled, both on the net formula; the timing phrase under the name; the shares beside the figures. The risers' heading runs bone to ice, the fallers' bone to heat.</p>
+      <ArcKey />
+      <ArcRows heading="Rose the most" tone="pos" arcs={season.arcs.rose} domain={arcAxis} />
+      <ArcRows heading="Fell the most" tone="neg" arcs={season.arcs.fell.slice(0, 2)} domain={arcAxis} />
+      <ArcFlat arcs={season.arcs.flat} />
+    </section>
+
+    <section class="guide__section">
+      <h2>ThreadList</h2>
+      <p class="eyebrow">The loudest game threads: the score with the winner bold, the stage and date, the Recap chip where one exists, the volume bar on one scale across both lists, the split, and who the thread was about.</p>
+      <ThreadList title="In the playoffs" threads={season.threads.playoffs.slice(0, 3)} max={threadMax} />
     </section>
 
     <section class="guide__section">

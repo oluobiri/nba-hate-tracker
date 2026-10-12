@@ -87,6 +87,9 @@ const fans: FanRow[] = tables.fan_team_overall
           <TitleTally holders={flowers} />
         </div>
       </div>
+      <p class="titles__link">
+        <a href="/season/#arcs">Who gained or lost favour over the season →</a>
+      </p>
       <MethodNote kind="rule">
         Each week's title goes to the highest rate among players with at least {fmtInt(beltFloor)} comments that
         week; ties go to the larger n. One rule, both titles. Cell colour follows the rate, so a weak win looks
@@ -132,6 +135,11 @@ const fans: FanRow[] = tables.fan_team_overall
   }
   .titles__tally .eyebrow {
     margin: 0;
+  }
+  .titles__link {
+    margin: 0;
+    font-size: 14px;
+    color: var(--bone-2);
   }
   .wk-scroller__label {
     position: sticky;

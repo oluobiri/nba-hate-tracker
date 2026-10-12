@@ -433,7 +433,7 @@ test("the Recap chip on a player page's game rows leads to a live recap page", a
   const slug = key.split('/')[2]!.replace(/^\d+-/, '')
   await page.goto(`/player/${slug}/?games=all&log=all#games`, { waitUntil: 'networkidle' })
   expect(await page.locator('.gt tbody tr').count()).toBeGreaterThan(10)
-  const chips = page.locator('.gt__recap')
+  const chips = page.locator('.gt .chip')
   expect(await chips.count()).toBeGreaterThan(0)
   for (const c of await chips.all()) {
     expect(ROUTES).toContain(await c.getAttribute('href'))
@@ -682,7 +682,7 @@ test('the dock stays with the board: the tenth row, the first row and the play b
 // Share cards: every route names one, its own or the leaderboard's, and
 // every card serves as a 1200 × 630 PNG at the address the meta gives.
 const SITE = 'https://courtsentiment.com'
-const OWN_CARD = /^\/(player\/[^/]+|fanbases\/[a-z]{3}|recaps\/[^/]+)\/$/
+const OWN_CARD = /^\/(player\/[^/]+|fanbases\/[a-z]{3}|recaps\/[^/]+|season)\/$/
 const meta = (html: string, key: string): string | null => html.match(new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`))?.[1] ?? null
 
 test('every route names a share card, and every card is a 1200 × 630 PNG', async ({ request }, info) => {

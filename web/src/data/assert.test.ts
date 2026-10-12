@@ -192,6 +192,12 @@ describe('assertTables', () => {
     expect(() => assertTables(t, manifestFor(t))).toThrow('corpus_daily: counts do not sum to attributed at row 0 (2025-10-21)')
   })
 
+  it('refuses a gap between nights', () => {
+    const t = fixture()
+    t.corpus_daily[1]!.day = '2025-10-24'
+    expect(() => assertTables(t, manifestFor(t))).toThrow('corpus_daily: 2025-10-24 at row 1 does not follow 2025-10-21; the nights must be consecutive')
+  })
+
   it('refuses nightly counts that do not sum to the season', () => {
     const t = fixture()
     t.corpus_daily.splice(1, 1, { ...t.corpus_daily[1]!, attributed: 9, neg_count: 3 })

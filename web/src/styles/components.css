@@ -215,6 +215,31 @@
   border-color: var(--bone);
 }
 
+/* RecapChip: a mono link with a play glyph; the .btn look at a small size. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--bone);
+}
+.chip:hover {
+  border-color: var(--bone-2);
+}
+.chip__glyph {
+  width: 8px;
+  height: 8px;
+  fill: currentColor;
+}
+
 /* Exhibit: a numbered receipt. Verbatim body, its thread, its source; never a username.
    The sentiment is the left edge; the tab above already names it. */
 .exhibit {
@@ -1306,24 +1331,11 @@ mark {
 .gt__verdict {
   padding-block: 4px;
 }
-/* The Recap chip: the .btn look at the row's end; under the verdict on a phone. */
-.gt__recap {
-  display: inline-flex;
-  align-items: center;
+/* In the games table the chip floats to the row's end, touch-sized; under the verdict on a phone. */
+.gt .chip {
   float: right;
   min-height: 44px;
   margin-left: 12px;
-  padding: 0 10px;
-  border: 1px solid var(--line-2);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--bone);
-}
-.gt__recap:hover {
-  border-color: var(--bone-2);
 }
 @media (max-width: 640px) {
   .gt {
@@ -1367,7 +1379,7 @@ mark {
   .gt .vd__figure {
     font-size: 13px;
   }
-  .gt__recap {
+  .gt .chip {
     display: flex;
     float: none;
     width: max-content;
@@ -3372,5 +3384,1212 @@ a.hero__who:hover {
   }
   .pipe__stack {
     display: none;
+  }
+}
+
+/* --- The season page's charts ------------------------------------------------------ */
+
+/* A figure on the season's axis: a head line, the chart, the month axis, a readout. */
+.fig {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  overflow: clip;
+}
+.fig__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+.fig__head h3 {
+  margin: 0;
+}
+.fig__quiet {
+  font-size: 12px;
+  color: var(--mute);
+}
+.narrow-only {
+  display: none;
+}
+@media (max-width: 640px) {
+  .wide-only {
+    display: none;
+  }
+  .narrow-only {
+    display: inline;
+  }
+}
+
+/* Key: swatches and words, one line each. */
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bone-2);
+}
+.key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.key i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+}
+.key__line {
+  height: 0 !important;
+  width: 20px !important;
+  border-top: 2px solid var(--bone-2);
+}
+.key__line--neg {
+  border-top-color: var(--heat);
+}
+.key__line--pos {
+  border-top-color: var(--ice);
+}
+.key__line--rule {
+  border-top: 1px dashed var(--bone-2);
+}
+.key__dot {
+  width: 9px !important;
+  height: 9px !important;
+  border-radius: 50%;
+  background: var(--bone-2);
+  opacity: 0.6;
+}
+.key__dot--hollow {
+  background: var(--ink);
+  border: 2px solid var(--heat);
+  opacity: 1;
+}
+.key__dot--full {
+  background: var(--heat);
+  opacity: 1;
+}
+.key__dot--early {
+  background: var(--ink);
+  border: 2px solid var(--bone-2);
+  opacity: 1;
+}
+.key__dot--late {
+  background: linear-gradient(90deg, var(--heat) 50%, var(--ice) 50%);
+  opacity: 1;
+}
+
+/* The chart: layers stacked in one box; bands rise above it into the margin. */
+.ch {
+  --h: 220px;
+  position: relative;
+  height: var(--h);
+  margin-top: 22px;
+  border-bottom: 1px solid var(--line-2);
+}
+.ch > * {
+  position: absolute;
+  inset: 0;
+}
+.ch__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ch__bands {
+  pointer-events: none;
+}
+.ch__band {
+  position: absolute;
+  top: -22px;
+  bottom: 0;
+}
+/* Phase bands: neutral surfaces, never heat. */
+.ch__band--play_in,
+.ch__band--playoffs {
+  background: var(--ink-2);
+}
+.ch__band--finals {
+  background: var(--surface);
+}
+.ch__band-label {
+  display: none;
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--mute);
+}
+.ch__band--always .ch__band-label {
+  display: block;
+}
+@media (min-width: 900px) {
+  .ch__band--desk .ch__band-label {
+    display: block;
+  }
+}
+@media (min-width: 1160px) {
+  .ch__band--wide .ch__band-label {
+    display: block;
+  }
+}
+.ch__grid {
+  pointer-events: none;
+}
+.ch__tick-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--line);
+}
+/* The tick labels sit on ink, forward of the lines and dots, so they read through a busy chart. */
+.ch__tick-label {
+  position: absolute;
+  left: 4px;
+  z-index: 1;
+  padding: 0 3px;
+  transform: translateY(-115%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+  white-space: nowrap;
+  background: var(--ink);
+}
+.ch__tick-label em,
+.ch__rule-label em {
+  font-style: normal;
+}
+@media (max-width: 640px) {
+  .ch__tick-label em,
+  .ch__rule-label em {
+    display: none;
+  }
+}
+.ch__layer {
+  pointer-events: none;
+}
+.ch__rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--bone-2);
+}
+.ch__rule--pos {
+  border-top-color: var(--ice);
+  opacity: 0.7;
+}
+.ch__rule-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--bone-2);
+  white-space: nowrap;
+  background: var(--ink);
+}
+.ch__rule-label--pos {
+  color: var(--ice);
+}
+.ch__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ch__line--neg {
+  stroke: var(--heat);
+}
+.ch__line--pos {
+  stroke: var(--ice);
+}
+.ch__fill {
+  position: absolute;
+  inset: 0;
+}
+.ch__fill--harsh {
+  background: var(--heat-dim);
+}
+.ch__dot {
+  position: absolute;
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  opacity: 0.28;
+}
+.ch__dot--neg {
+  background: var(--heat);
+}
+.ch__dot--pos {
+  background: var(--ice);
+}
+.ch__ring {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  border: 1.5px solid var(--heat);
+}
+.ch__ring--small {
+  width: 10px;
+  height: 10px;
+}
+.ch__ring--pos {
+  border-color: var(--ice);
+}
+/* A note sits forward of the lines and dots with an ink halo on its letters, so the words
+   read and the chart under them still shows. */
+.ch__note {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  max-width: min(300px, 46%);
+  margin: 0;
+  padding: 0 8px 0 0;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--bone);
+  text-shadow:
+    0 0 2px var(--ink),
+    0 0 4px var(--ink),
+    0 0 8px var(--ink),
+    0 1px 3px var(--ink);
+  border-right: 1px solid var(--heat);
+}
+.ch__note--pos {
+  border-right-color: var(--ice);
+}
+.ch__note b {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--heat);
+}
+.ch__note--pos b {
+  color: var(--ice);
+}
+@media (max-width: 640px) {
+  .ch__note {
+    max-width: 40%;
+    font-size: 12px;
+  }
+}
+.ch__mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--mute-2);
+}
+.ch__mark span {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.ch__brace {
+  position: absolute;
+  top: 2px;
+  height: 10px;
+  border: 1px dotted var(--bone);
+  border-bottom: 0;
+}
+.ch__brace-label {
+  position: absolute;
+  top: 9px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--bone);
+}
+/* Columns: one per night or week, focusable, each with a readout that lands under the axis. */
+.ch__cols {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ch__col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(100% / var(--n));
+  cursor: crosshair;
+}
+.ch__col:hover,
+.ch__col:focus {
+  background: rgba(237, 232, 220, 0.06);
+  outline: none;
+}
+.ch__col:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.ch__pt {
+  display: none;
+  position: absolute;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  background: var(--ink);
+  border: 2px solid var(--heat);
+}
+.ch__pt--pos {
+  border-color: var(--ice);
+}
+.ch__col:hover .ch__pt,
+.ch__col:focus .ch__pt {
+  display: block;
+}
+/* The tip lands exactly on the reserved box under the axis (--below is the axis's height
+   plus the gaps), and is the box's size, so a hover changes nothing but the words. */
+.ch__col .ch__tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--below, 30px));
+  left: calc(-100% * var(--i));
+  width: calc(100% * var(--n));
+  min-height: var(--ro-h);
+  z-index: 2;
+}
+.ch__col:hover .ch__tip,
+.ch__col:focus .ch__tip,
+.ch__col:focus-within .ch__tip {
+  display: grid;
+}
+/* The month axis under a chart. */
+.months {
+  position: relative;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.months li {
+  position: absolute;
+  top: 3px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line-2);
+}
+/* The readout under a chart: one night, or one week. A reserved box holds the hint until a column's tip lands on it. */
+.ro {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  font-size: 14px;
+  color: var(--bone-2);
+}
+.ro--reserve {
+  min-height: var(--ro-h);
+}
+.ro__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+}
+.ro__head b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--bone);
+}
+.ro__head span {
+  font-size: 12px;
+}
+.ro__quiet {
+  font-size: 12px;
+  color: var(--mute);
+}
+.ro__hint {
+  margin: 0;
+  color: var(--mute);
+}
+.ro__line b {
+  font-weight: 600;
+}
+/* The night's own split: a plain three-segment bar, ink labels inside, clipped where a segment is thin. */
+.ro__bar {
+  display: flex;
+  gap: 2px;
+  height: 20px;
+  font-size: 11px;
+  color: var(--ink);
+}
+.ro__bar b {
+  display: flex;
+  align-items: center;
+  padding-inline: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.ro__bar-neg {
+  background: var(--heat);
+}
+.ro__bar-neu {
+  justify-content: center;
+  background: var(--neu);
+}
+.ro__bar-pos {
+  justify-content: flex-end;
+  background: var(--ice);
+}
+.ro .neg,
+.rm .neg,
+.rt .neg,
+.th .neg,
+.sn .neg {
+  color: var(--heat);
+}
+.ro .pos,
+.rm .pos,
+.rt .pos,
+.th .pos,
+.sn .pos {
+  color: var(--ice);
+}
+.nc {
+  --ro-h: 126px;
+}
+.nc__chart {
+  --h: 380px;
+  --below: 31px;
+}
+@media (max-width: 640px) {
+  .nc {
+    --ro-h: 168px;
+  }
+  .nc__chart {
+    --h: 300px;
+  }
+}
+
+/* GameNights: one dumbbell per phase, hollow where no game was played, the level as a rule. */
+.gn {
+  display: grid;
+  gap: 0;
+}
+.gn__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) 1fr;
+  gap: 14px;
+  align-items: center;
+  min-height: 46px;
+  border-top: 1px solid var(--line);
+}
+.gn__row--head {
+  min-height: 0;
+  border: 0;
+}
+.gn__row b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.gn__track {
+  position: relative;
+  display: block;
+  height: 28px;
+}
+.gn__bar {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--heat);
+  opacity: 0.5;
+}
+.gn__dot {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--heat);
+}
+.gn__dot--off {
+  background: var(--ink);
+  border: 2px solid var(--heat);
+}
+.gn__label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 3px;
+  font-size: 12px;
+  color: var(--bone-2);
+  white-space: nowrap;
+  background: var(--ink);
+  z-index: 1;
+}
+.gn__label--off {
+  transform: translate(-100%, -50%);
+  margin-left: -10px;
+}
+.gn__label--on {
+  margin-left: 10px;
+}
+.gn__rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rule);
+  border-left: 1px dashed var(--bone-2);
+}
+.gn__rule-label {
+  position: relative;
+  display: block;
+  height: 16px;
+  font-size: 10px;
+  color: var(--mute);
+}
+.gn__rule-label span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.gn .key {
+  padding-top: 10px;
+}
+@media (max-width: 640px) {
+  .gn__row {
+    grid-template-columns: 92px 1fr;
+  }
+  .gn__row b {
+    font-size: 13px;
+  }
+}
+
+/* RoomTiles: the rise, and the two things that made it; the tone's tile takes heat. */
+.tiles {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 24px;
+}
+.tile {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding-left: 14px;
+  border-left: 1px solid var(--line-2);
+}
+.tile:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.tile__n {
+  font-weight: 500;
+  font-size: clamp(30px, 4.4vw, 48px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--bone);
+}
+.tile__n small {
+  font-size: 0.42em;
+  letter-spacing: 0;
+  color: var(--mute);
+}
+.tile--harsh .tile__n {
+  color: var(--heat);
+}
+.tile__t {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.tile__s {
+  font-size: 13px;
+  color: var(--mute);
+  text-wrap: pretty;
+}
+@media (max-width: 640px) {
+  .tiles {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .tile,
+  .tile:first-child {
+    padding-left: 12px;
+    border-left: 2px solid var(--line-2);
+  }
+}
+
+/* VolumeBands: stacked weekly bars in seven neutral tones; the key is a radio
+   group and the checked one lights its band. Volume is not sentiment. */
+.vb {
+  --ro-h: 78px;
+}
+.vb__chart {
+  --h: 300px;
+  --below: 53px;
+}
+.bands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.bands__key {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bone-2);
+  cursor: pointer;
+}
+.bands__key input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.bands__key i {
+  width: 11px;
+  height: 11px;
+}
+.bands__key:hover {
+  border-color: var(--line-2);
+}
+.bands__key:has(input:checked) {
+  border-color: var(--bone);
+  color: var(--bone);
+}
+.bands__key:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.vb__svg rect {
+  transition: fill 0.15s;
+}
+/* The seven tones, light to dark; the small rooms fold into the darkest. */
+.band-game_thread {
+  background: var(--bone);
+  fill: var(--bone);
+}
+.band-post_game_thread {
+  background: var(--bone-2);
+  fill: var(--bone-2);
+}
+.band-daily {
+  background: var(--mute);
+  fill: var(--mute);
+}
+.band-general {
+  background: var(--mute-2);
+  fill: var(--mute-2);
+}
+.band-highlight {
+  background: var(--line-2);
+  fill: var(--line-2);
+}
+.band-news {
+  background: var(--line);
+  fill: var(--line);
+}
+.band-rest {
+  background: var(--surface-2);
+  fill: var(--surface-2);
+}
+/* A checked room: every band dims, that one goes bone. */
+.vb:has(.bands input:not([value='']):checked) .vb__svg rect {
+  fill: var(--surface-2);
+}
+.vb:has(.bands input[value='game_thread']:checked) .vb__svg rect.band-game_thread,
+.vb:has(.bands input[value='post_game_thread']:checked) .vb__svg rect.band-post_game_thread,
+.vb:has(.bands input[value='daily']:checked) .vb__svg rect.band-daily,
+.vb:has(.bands input[value='general']:checked) .vb__svg rect.band-general,
+.vb:has(.bands input[value='highlight']:checked) .vb__svg rect.band-highlight,
+.vb:has(.bands input[value='news']:checked) .vb__svg rect.band-news,
+.vb:has(.bands input[value='rest']:checked) .vb__svg rect.band-rest {
+  fill: var(--bone);
+}
+.vb .ch__col {
+  cursor: default;
+}
+
+.phases {
+  position: relative;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.phases li {
+  position: absolute;
+  top: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+@media (max-width: 640px) {
+  .vb {
+    --ro-h: 136px;
+  }
+  .vb__chart {
+    --h: 240px;
+  }
+}
+
+/* RoomRows: a label, the RS and PO share bars, the two figures; the name takes its own line on a phone. */
+.rm {
+  display: grid;
+  gap: 0;
+}
+.rm__head,
+.rm__row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 2.6fr 118px;
+  gap: 14px;
+}
+.rm__head {
+  padding-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.rm__fig-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  text-align: right;
+}
+.rm__row {
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.rm__name {
+  display: grid;
+  gap: 2px;
+}
+.rm__name b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.rm__name span {
+  font-size: 11.5px;
+  color: var(--mute);
+}
+.rm__bars {
+  display: grid;
+  gap: 5px;
+}
+.rm__bar {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.rm__bar > span {
+  font-size: 10px;
+  color: var(--mute);
+}
+.rm__bar i {
+  display: flex;
+  height: 12px;
+}
+.rm__bar i b {
+  display: block;
+  height: 100%;
+}
+.rm__bar i b.neg {
+  background: var(--heat);
+}
+.rm__bar i b.neu {
+  background: var(--neu);
+}
+.rm__bar i b.pos {
+  background: var(--ice);
+}
+.rm__fig {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  text-align: right;
+}
+.rm__fig > span {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .rm__head {
+    display: none;
+  }
+  .rm__row {
+    grid-template-columns: 1fr 100px;
+    grid-template-areas: 'name name' 'bars fig';
+  }
+  .rm__name {
+    grid-area: name;
+  }
+  .rm__bars {
+    grid-area: bars;
+  }
+  .rm__fig {
+    grid-area: fig;
+  }
+}
+
+/* RoomTable: every room, the whole season; scrolls inside its box on a phone, never the page. */
+.rt {
+  overflow-x: auto;
+}
+.rt table {
+  width: 100%;
+  min-width: 560px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--bone-2);
+}
+.rt th,
+.rt td {
+  padding: 9px 8px;
+  text-align: right;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+.rt thead th {
+  padding-bottom: 6px;
+  border: 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.rt th:first-child,
+.rt td:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.rt tbody th {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.rt td:last-child {
+  padding-right: 0;
+  color: var(--bone);
+}
+
+/* ArcRows: a dumbbell per player on one net axis; the heading in a bone → ice or bone → heat gradient. */
+.arc {
+  --arc-cols: minmax(230px, 1.3fr) minmax(260px, 2.6fr) 150px;
+  display: grid;
+  gap: 0;
+}
+.arc h3 {
+  width: fit-content;
+  padding-bottom: 8px;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.arc--pos h3 {
+  background-image: linear-gradient(90deg, var(--bone), var(--ice));
+}
+.arc--neg h3 {
+  background-image: linear-gradient(90deg, var(--bone), var(--heat));
+}
+.arc__head,
+.arc__row {
+  display: grid;
+  grid-template-columns: var(--arc-cols);
+  gap: 18px;
+  align-items: center;
+}
+.arc__head {
+  padding-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.arc__head-right {
+  text-align: right;
+}
+.arc__ticks {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--mute);
+}
+.arc__ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.arc__ticks .arc__zero-tick {
+  color: var(--bone);
+}
+.arc__ticks--phone {
+  display: none;
+}
+.arc__row {
+  min-height: 60px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+.arc__row:hover .arc__name b {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.arc__name {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.arc__name b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.arc__name > span {
+  font-size: 11px;
+  color: var(--mute);
+}
+.arc__name .arc__when {
+  padding-top: 3px;
+  font-size: 12px;
+  color: var(--bone-2);
+  text-wrap: pretty;
+}
+.arc__track {
+  position: relative;
+  display: block;
+  height: 22px;
+}
+.arc__zero {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line-2);
+}
+.arc__line {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--line-2);
+}
+.arc__dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.arc__dot--early {
+  background: var(--ink);
+  border: 2px solid var(--c);
+}
+.arc__dot--late {
+  background: var(--c);
+}
+.arc__fig {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--bone-2);
+  text-align: right;
+}
+.arc__fig b {
+  font-weight: 600;
+}
+.arc__fig small {
+  font-size: 11px;
+}
+.arc__fig .neg {
+  color: var(--heat);
+}
+.arc__fig .pos {
+  color: var(--ice);
+}
+.arc__flat {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+.arc__flat a {
+  color: var(--bone-2);
+}
+@media (max-width: 900px) {
+  .arc__head {
+    display: none;
+  }
+  .arc__ticks--phone {
+    display: block;
+    height: 14px;
+    margin: 4px 0 2px;
+  }
+  .arc__row {
+    grid-template-columns: 1fr 150px;
+    grid-template-areas: 'name fig' 'track track';
+    gap: 6px 14px;
+    padding: 12px 0;
+  }
+  .arc__name {
+    grid-area: name;
+  }
+  .arc__track {
+    grid-area: track;
+  }
+  .arc__fig {
+    grid-area: fig;
+  }
+}
+
+/* ThreadList: numbered rows; the score with the winner bold, the stage, the chip, the volume bar, the split, the sentence. */
+.lt {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.lt__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lt__row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 6px 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.lt__rank {
+  grid-row: 1 / span 4;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--mute);
+}
+.lt__game {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+.lt__score {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--bone-2);
+}
+.lt__score b {
+  color: var(--bone);
+}
+.lt__when {
+  font-size: 11px;
+  color: var(--mute);
+}
+.lt__vol {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.lt__vol i {
+  display: block;
+  height: 8px;
+  background: var(--bone-2);
+}
+.lt__vol span {
+  font-size: 12px;
+  color: var(--bone);
+  white-space: nowrap;
+}
+.lt__vol small {
+  font-size: inherit;
+  color: var(--mute);
+}
+.lt .sb {
+  margin-top: 2px;
+}
+.lt__who {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+  text-wrap: pretty;
+}
+@media (max-width: 640px) {
+  .lt__vol span {
+    white-space: normal;
   }
 }

@@ -2,7 +2,7 @@ import { Resvg } from '@resvg/resvg-js'
 import { describe, expect, it } from 'vitest'
 
 import { Frame } from './frame'
-import { barSegments, type BoardCard, type PlayerCard, type TeamCard } from './model'
+import { barSegments, type BoardCard, type PlayerCard, type SeasonCard, type TeamCard } from './model'
 import { CARD_HEIGHT, CARD_WIDTH, pngSize, renderCard } from './render'
 
 // Fixture images made by resvg: a red square and a red SVG logo.
@@ -29,6 +29,16 @@ const TEAM: TeamCard = {
   nLine: 'n=100 comments by Trail Blazers fans about tracked players',
 }
 const BOARD: BoardCard = { ...base, kind: 'board', name: 'Draymond Green', kicker: '1,234,567 comments about 223 players', sentence: "r/NBA's most hated player is Draymond Green.", nLine: 'n=100 comments about Draymond Green' }
+const SEASON: SeasonCard = {
+  ...base,
+  kind: 'season',
+  image: null,
+  title: 'Season',
+  eyebrow: '2025-26 · night by night',
+  sentence:
+    'From the first play-in night on Apr 14 to the last night of the Finals, comments about players never cooled to their regular-season level of 35.2% negative. The single most negative night of the season still came in February.',
+  nLine: 'n=1,234,567 comments about 223 players',
+}
 
 describe('Frame', () => {
   it.each([
@@ -36,8 +46,9 @@ describe('Frame', () => {
     ['unofficial player', UNOFFICIAL],
     ['team', TEAM],
     ['board', BOARD],
+    ['season', SEASON],
   ])('renders a %s card at 1200 × 630', async (_kind, card) => {
-    const png = await renderCard(Frame({ card, mark: RED_SVG, image: card.image }), card.kind === 'team' ? [] : [card.image])
+    const png = await renderCard(Frame({ card, mark: RED_SVG, image: card.image }), card.kind === 'team' || card.image === null ? [] : [card.image])
     expect(pngSize(png)).toEqual({ width: CARD_WIDTH, height: CARD_HEIGHT })
   })
 })

@@ -220,6 +220,20 @@ export function gameNightSplit(nights: readonly Night[], cal: SeasonCalendar): G
   })
 }
 
+/** A no-game night within this many points of the regular season reads as level with it. */
+const LEVEL_WITH = 0.02
+
+/** The sentence under the dumbbells: where the playoffs' rise lived. */
+export function gameNightsLede(rows: readonly GameNightRow[], level: number): string {
+  const po = rows.find((r) => r.key === 'playoffs')
+  if (!po || !po.on.total || !po.off.total) return 'Game nights against nights with no game, phase by phase.'
+  const on = negRate(po.on)
+  const off = negRate(po.off)
+  if (Math.abs(off - level) < LEVEL_WITH && on > off) return 'On a playoff night with no game, r/NBA was about as negative as on an ordinary regular-season night. The rise came on game nights.'
+  if (on > off) return `The rise came on game nights: ${fmtPct(on, 1)} negative on playoff game nights against ${fmtPct(off, 1)} on playoff nights with no game.`
+  return `The playoffs ran harsh on every night: ${fmtPct(off, 1)} negative on playoff nights with no game, ${fmtPct(on, 1)} on game nights.`
+}
+
 // --- The lede and the annotations ----------------------------------------------------
 
 export interface Lede {

@@ -3754,7 +3754,7 @@ a.hero__who:hover {
 .ch__col:focus .ch__pt {
   display: block;
 }
-.ch__tip {
+.ch__col .ch__tip {
   display: none;
   position: absolute;
   top: calc(100% + 26px);

@@ -19,6 +19,7 @@ import {
   extremeNights,
   gameComments,
   gameNightSplit,
+  gameNightsLede,
   harshestNote,
   loudestThreads,
   ledeText,
@@ -184,6 +185,23 @@ describe('gameNightSplit', () => {
     expect(rows[1]).toMatchObject({ on: { total: 0 }, onNights: 0, off: { total: 50 }, offNights: 2 })
     expect(rows[2]).toMatchObject({ on: { total: 90 }, onNights: 2, off: { total: 0 }, offNights: 0 })
     expect(rows.reduce((n, r) => n + r.onNights + r.offNights, 0)).toBe(6)
+  })
+})
+
+const c = (neg: number, total: number) => ({ neg, neu: total - neg, pos: 0, total })
+
+describe('gameNightsLede', () => {
+  const rows = (on: number, off: number) => [
+    { key: 'regular' as const, label: 'Regular season', on: c(35, 100), onNights: 1, off: c(32, 100), offNights: 1 },
+    { key: 'playoffs' as const, label: 'Playoffs', on: c(on, 100), onNights: 1, off: c(off, 100), offNights: 1 },
+    { key: 'finals' as const, label: 'Finals', on: c(44, 100), onNights: 1, off: c(34, 100), offNights: 1 },
+  ]
+
+  it('says the rise came with the games when a no-game playoff night sat at the regular season', () => {
+    expect(gameNightsLede(rows(41, 36), 0.352)).toBe('On a playoff night with no game, r/NBA was about as negative as on an ordinary regular-season night. The rise came on game nights.')
+    expect(gameNightsLede(rows(41, 39), 0.352)).toBe('The rise came on game nights: 41.0% negative on playoff game nights against 39.0% on playoff nights with no game.')
+    expect(gameNightsLede(rows(38, 40), 0.352)).toBe('The playoffs ran harsh on every night: 40.0% negative on playoff nights with no game, 38.0% on game nights.')
+    expect(gameNightsLede(rows(41, 36).slice(0, 1), 0.352)).toBe('Game nights against nights with no game, phase by phase.')
   })
 })
 

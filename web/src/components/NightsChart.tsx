@@ -41,9 +41,11 @@ const firstOfNextMonth = (t: number): number => new Date(t).setUTCMonth(new Date
 
 type Band = { key: string; label: string; from: string; to: string }
 
+/** The phases clipped to the nights on the chart: a season in progress ends mid-band. */
 function phaseBands(nights: readonly Night[], cal: SeasonCalendar): Band[] {
   const first = nights[0]!.day
   const end = addDays(nights.at(-1)!.day, 1)
+  const clip = (d: string): string => (d < first ? first : d > end ? end : d)
   return [
     { key: 'pre', label: NIGHT_PHASE_LABELS.pre, from: first, to: cal.opening_night },
     { key: 'regular', label: NIGHT_PHASE_LABELS.regular, from: cal.opening_night, to: cal.play_in_start },
@@ -52,6 +54,8 @@ function phaseBands(nights: readonly Night[], cal: SeasonCalendar): Band[] {
     { key: 'finals', label: 'Finals', from: cal.finals_start, to: addDays(cal.finals_end, 1) },
     { key: 'off', label: NIGHT_PHASE_LABELS.off, from: addDays(cal.finals_end, 1), to: end },
   ]
+    .map((b) => ({ ...b, from: clip(b.from), to: clip(b.to) }))
+    .filter((b) => b.to > b.from)
 }
 
 /** Path segments through the non-null points; a gap breaks the line. */
@@ -149,9 +153,11 @@ export function NightsChart({ nights, negLine, posLine, level, stretch, notes, c
           <span className="ch__fill ch__fill--harsh" style={{ clipPath: clip }} />
           <span className="ch__rule" style={{ bottom: `${y(level.neg)}%` }} />
           <span className="ch__rule ch__rule--pos" style={{ bottom: `${y(level.pos)}%` }} />
-          <span className="ch__mark" style={{ left: `${xDay(cal.draft)}%` }}>
-            <span>Draft</span>
-          </span>
+          {cal.draft >= nights[0]!.day && cal.draft <= nights.at(-1)!.day && (
+            <span className="ch__mark" style={{ left: `${xDay(cal.draft)}%` }}>
+              <span>Draft</span>
+            </span>
+          )}
           {nights.map((x, i) =>
             x.counts.total ? (
               <span key={x.day}>

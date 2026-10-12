@@ -802,10 +802,11 @@ export function arcField({ temporal, playerGames, games, players, teams, qualifi
       return monthName(addWeeks(bestWeek ?? early.at(-1)!, 2))
     }
     const p = dim.get(name)
+    if (!p) throw new Error(`season arcs: ${name} has no players row`)
     out.push({
       name,
-      slug: p?.slug ?? name,
-      team: (p?.roster_team && abbr.get(p.roster_team)) || '',
+      slug: p.slug,
+      team: (p.roster_team && abbr.get(p.roster_team)) || '',
       ended: endedAs(end.day, end.game, cal),
       to: end.day,
       early: e,
@@ -831,7 +832,7 @@ export function arcLists(field: readonly Arc[]): ArcLists {
   const byDelta = field.toSorted((a, b) => b.delta - a.delta || a.name.localeCompare(b.name))
   return {
     rose: byDelta.slice(0, ARCS),
-    fell: byDelta.slice(-ARCS).toReversed(),
+    fell: byDelta.slice(Math.max(ARCS, byDelta.length - ARCS)).toReversed(),
     flat: field.toSorted((a, b) => Math.abs(a.delta) - Math.abs(b.delta) || a.name.localeCompare(b.name)).slice(0, ARCS),
     field: field.length,
   }
@@ -865,11 +866,15 @@ export function arcsLede(lists: ArcLists): string {
   )
 }
 
-/** The dumbbell axis: the shown arcs' range rounded out to the nearest ten points, with a tick every ten. */
+/** The dumbbell axis: the shown arcs' range and zero, rounded out to the nearest ten points, a tick every ten. */
 export function arcDomain(arcs: readonly Arc[]): { lo: number; hi: number; ticks: number[] } {
-  const values = arcs.flatMap((a) => [a.early.net, a.late.net])
-  const lo = values.length ? Math.floor(Math.min(...values) * 10) / 10 : -0.5
-  const hi = values.length ? Math.ceil(Math.max(...values) * 10) / 10 : 0.5
+  const values = [0, ...arcs.flatMap((a) => [a.early.net, a.late.net])]
+  let lo = Math.floor(Math.min(...values) * 10) / 10
+  let hi = Math.ceil(Math.max(...values) * 10) / 10
+  if (hi - lo < 0.2) {
+    lo = Math.min(lo, -0.1)
+    hi = Math.max(hi, 0.1)
+  }
   const ticks: number[] = []
   for (let t = lo; t <= hi + 1e-9; t += 0.1) ticks.push(Math.round(t * 10) / 10)
   return { lo, hi, ticks }
@@ -913,7 +918,7 @@ export interface Thread {
   line: GameLineParts
   /** Every comment about a tracked player in the game's threads. */
   counts: Counts
-  /** Every comment Reddit counts in the same threads; null when the posts are not bridged. */
+  /** Every comment Reddit counts in the same threads; null unless both threads are bridged. */
   reddit: number | null
   top: ThreadPlayer
   /** A player at the second-name floor who ran the gap or more harsher than the thread. */
@@ -952,19 +957,34 @@ export function loudestThreads({ sentiment, posts, games, players, teams, recaps
   const abbr = new Map(teams.map((t) => [t.team, t.abbreviation]))
   const conferenceOf = new Map(teams.map((t) => [t.team, t.conference]))
   const slugOf = new Map(players.map((p) => [p.attributed_player, p.slug]))
+  const slug = (name: string): string => {
+    const v = slugOf.get(name)
+    if (!v) throw new Error(`season threads: ${name} has no players row`)
+    return v
+  }
   const gameRows = new Map(games.map((g) => [g.game_id, g]))
   const byGame = gameComments(sentiment)
-  const reddit = new Map<string, number>()
-  for (const p of posts) if (p.game_id && THREAD_TYPES.has(p.post_type)) reddit.set(p.game_id, (reddit.get(p.game_id) ?? 0) + p.num_comments)
+  // Reddit's count needs both threads bridged; a lone post would print a partial figure as the whole.
+  const bridged = new Map<string, { n: number; types: Set<string> }>()
+  for (const p of posts) {
+    if (!p.game_id || !THREAD_TYPES.has(p.post_type)) continue
+    const b = bridged.get(p.game_id) ?? { n: 0, types: new Set<string>() }
+    b.n += p.num_comments
+    b.types.add(p.post_type)
+    bridged.set(p.game_id, b)
+  }
+  const reddit = new Map([...bridged].flatMap(([id, b]) => (b.types.size === THREAD_TYPES.size ? [[id, b.n] as const] : [])))
   const inGame = new Map<string, GameSentimentRow[]>()
   for (const r of sentiment) inGame.set(r.game_id, [...(inGame.get(r.game_id) ?? []), r])
   const recapsOf = recapsByGame(recaps)
-  const who = (r: GameSentimentRow): ThreadPlayer => ({ name: r.attributed_player, slug: slugOf.get(r.attributed_player) ?? r.attributed_player, counts: countsOf(r) })
+  const who = (r: GameSentimentRow): ThreadPlayer => ({ name: r.attributed_player, slug: slug(r.attributed_player), counts: countsOf(r) })
 
   return [...byGame.entries()]
     .flatMap(([gameId, counts]) => {
       const g = gameRows.get(gameId)
-      return g && g.game_date >= cal.play_in_start === playoffs ? [{ g, counts }] : []
+      if (!g) return []
+      const inPlayoffs = g.game_date >= cal.play_in_start
+      return inPlayoffs === playoffs ? [{ g, counts }] : []
     })
     .toSorted((a, b) => b.counts.total - a.counts.total || a.g.game_date.localeCompare(b.g.game_date) || a.g.game_id.localeCompare(b.g.game_id))
     .slice(0, THREADS)
@@ -1039,8 +1059,18 @@ export interface SeasonSource {
   tables: Pick<Tables, 'corpus_daily' | 'games' | 'room_temporal' | 'player_room' | 'player_temporal' | 'player_games' | 'game_sentiment' | 'posts' | 'players' | 'teams' | 'player_overall'>
 }
 
-/** Every figure on the season page, from the tables and the manifest's rules. */
-export function buildSeason({ manifest, tables }: SeasonSource, copy: NightNoteCopy): SeasonView {
+const built = new WeakMap<object, SeasonView>()
+
+/** Every figure on the season page, from the tables and the manifest's rules; built once per manifest. */
+export function buildSeason(source: SeasonSource, copy: NightNoteCopy): SeasonView {
+  const cached = built.get(source.manifest)
+  if (cached) return cached
+  const view = composeSeason(source, copy)
+  built.set(source.manifest, view)
+  return view
+}
+
+function composeSeason({ manifest, tables }: SeasonSource, copy: NightNoteCopy): SeasonView {
   const cal = seasonCalendar(manifest.calendar)
   const official = manifest.rules.qualified_threshold
   const roomFloor = manifest.rules.floors.room_min_n

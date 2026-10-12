@@ -567,6 +567,10 @@ describe('arcField', () => {
     expect(field.map((a) => a.name)).toEqual(['Cut', 'Faller', 'Finals Star', 'Play-in Guy'])
   })
 
+  it('fails the build on a qualified player with no players row', () => {
+    expect(() => arcField({ ...inputs, players: inputs.players.filter((p) => p.attributed_player !== 'Cut') }, cal)).toThrow('season arcs: Cut has no players row')
+  })
+
   it('ends the late window at his last game and reads the playoff weeks out of it', () => {
     const star = by('Finals Star')
     expect(star).toMatchObject({ team: 'SAS', ended: 'Finals run', to: '2026-06-13', timing: 'Turned in the playoffs' })
@@ -585,29 +589,41 @@ describe('arcField', () => {
     expect(by('Play-in Guy')).toMatchObject({ team: '', ended: 'Play-in', to: '2026-04-15' })
   })
 
-  it('ranks the lists and writes the lede', () => {
+  it('ranks the lists, never the same player in both, and writes the lede', () => {
     const lists = arcLists(field)
     expect(lists.rose.map((a) => a.name)).toEqual(['Finals Star', 'Cut', 'Play-in Guy', 'Faller'])
-    expect(lists.fell.map((a) => a.name)).toEqual(['Faller', 'Play-in Guy', 'Cut', 'Finals Star'])
+    expect(lists.fell).toEqual([])
     expect(lists.flat.map((a) => a.name)).toEqual(['Play-in Guy', 'Cut', 'Finals Star', 'Faller'])
     expect(lists.field).toBe(4)
-    expect(arcsLede(lists)).toBe(
-      'Finals Star won r/NBA over more than anyone: his net sentiment went from 13 points negative in his first 8 weeks to 27 positive in his last 8, among the 4 players measured. Faller fell the furthest, 53 points, and his last 8 weeks ended with the regular season.',
-    )
+    expect(arcsLede(lists)).toBe('Too few players clear both windows to measure an arc.')
     expect(arcsLede(arcLists([]))).toBe('Too few players clear both windows to measure an arc.')
+    // Twelve arcs fill both lists; the fallers come from the bottom six.
+    const wide = arcLists(Array.from({ length: 12 }, (_, i) => ({ ...by('Cut'), name: `P${i}`, delta: i / 100 })))
+    expect(wide.rose.map((a) => a.name)).toEqual(['P11', 'P10', 'P9', 'P8', 'P7', 'P6'])
+    expect(wide.fell.map((a) => a.name)).toEqual(['P0', 'P1', 'P2', 'P3', 'P4', 'P5'])
+  })
+
+  it('writes the lede from the biggest climb and the biggest fall', () => {
+    const twelve = arcLists([...field, ...Array.from({ length: 8 }, (_, i) => ({ ...by('Cut'), name: `Mid ${i}`, delta: 0 }))])
+    expect(arcsLede(twelve)).toBe(
+      'Finals Star won r/NBA over more than anyone: his net sentiment went from 13 points negative in his first 8 weeks to 27 positive in his last 8, among the 12 players measured. Faller fell the furthest, 53 points, and his last 8 weeks ended with the regular season.',
+    )
   })
 
   it('phrases how a fall ended', () => {
-    const lists = arcLists(field)
+    const lists = arcLists([...field, ...Array.from({ length: 8 }, (_, i) => ({ ...by('Cut'), name: `Mid ${i}`, delta: 0 }))])
     const fell = (ended: string) => arcsLede({ ...lists, fell: [{ ...lists.fell[0]!, ended }] })
     expect(fell('Finals run')).toContain('his last 8 weeks were a Finals run.')
     expect(fell('Cut short')).toContain('his last 8 weeks ended early.')
     expect(fell('Second round')).toContain('his last 8 weeks ended in the second round.')
   })
 
-  it('rounds the axis out to ten points and speaks a row', () => {
+  it('rounds the axis out to ten points around zero and speaks a row', () => {
     expect(arcDomain(field)).toEqual({ lo: -0.3, hi: 0.3, ticks: [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] })
-    expect(arcDomain([])).toMatchObject({ lo: -0.5, hi: 0.5 })
+    expect(arcDomain([])).toMatchObject({ lo: -0.1, hi: 0.1 })
+    // Every value on one tenth, all positive: the axis still holds zero and has width.
+    const flat = { ...by('Cut'), early: pt(0.3), late: pt(0.3) }
+    expect(arcDomain([flat])).toMatchObject({ lo: 0, hi: 0.3 })
     expect(arcText(by('Finals Star'))).toBe('Finals Star: net sentiment −13 in his first 8 weeks, +27 in his last 8; turned in the playoffs.')
   })
 })
@@ -659,10 +675,15 @@ describe('loudestThreads', () => {
     expect(po[0]!.counts).toEqual({ neg: 3252, neu: 4950, pos: 1927, total: 10129 })
   })
 
-  it('counts Reddit’s comments across both threads, null when the posts are not bridged', () => {
+  it('counts Reddit’s comments only when both threads are bridged', () => {
     expect(po[0]!.reddit).toBe(53003)
-    expect(rs[0]!.reddit).toBe(20023)
+    // Opening night has its game thread only: a partial figure would read as the whole, so none.
+    expect(rs[0]!.reddit).toBeNull()
     expect(po[2]!.reddit).toBeNull()
+  })
+
+  it('fails the build on a player with no players row', () => {
+    expect(() => loudestThreads({ ...inputs, players: inputs.players.filter((p) => p.attributed_player !== 'Fox') }, cal, true)).toThrow('season threads: Fox has no players row')
   })
 
   it('names the thread’s player and a second only by the rule', () => {
@@ -674,7 +695,8 @@ describe('loudestThreads', () => {
     expect(rs[0]!.second?.name).toBe('Sheppard')
   })
 
-  const at = (n: number, neg: number) => loudestThreads({ ...inputs, sentiment: [sentiment('Lead', 'reg', 500, 500, 0), sentiment('Other', 'reg', neg, n - neg, 0)] }, cal, false)[0]!.second
+  const at = (n: number, neg: number) =>
+    loudestThreads({ ...inputs, players: [...inputs.players, player('Lead'), player('Other')], sentiment: [sentiment('Lead', 'reg', 500, 500, 0), sentiment('Other', 'reg', neg, n - neg, 0)] }, cal, false)[0]!.second
 
   it('holds the second name to its floor and its gap exactly', () => {
     // The thread: (500 + neg) / (1000 + n). At n = 500, neg = 400: thread 60.0%, Other 80.0%: a gap of 20 exactly.
@@ -702,5 +724,6 @@ describe('loudestThreads', () => {
     expect(threadFigure(po[0]!.top)).toBe('19.6% negative on 6,783')
     expect(threadText(po[0]!)).toBe('West Finals · Game 1 · SAS 110 @ OKC 100 · May 18: 10,129 comments about players of 53,003 in the thread, 32.1% negative, 19.0% positive. Mostly about Wemby, 19.6% negative on 6,783. Shai 57.0% negative on 2,846.')
     expect(threadText(po[2]!)).toBe('Play-in · SAS 110 @ OKC 100 · Apr 15: 400 comments about players, 50.0% negative, 25.0% positive. Mostly about Shai, 50.0% negative on 400.')
+    expect(threadText(rs[0]!)).toContain(': 2,181 comments about players, 45.9% negative')
   })
 })

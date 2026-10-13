@@ -634,7 +634,9 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <p class="eyebrow">
         Belt above, Flowers below, one axis, one scroller. Intensity follows the rate: {strongest.row.name}'s{' '}
         {fmtPct(strongest.rate)} week is the strongest Belt win; {weakest.row.name}'s {fmtPct(weakest.rate)} the weakest Flowers win.
+        The heading carries the two titles in their own colours, heat and ice.
       </p>
+      <h3 class="titles__h"><span class="neg">The Belt</span> and <span class="pos">the Flowers</span></h3>
       <div class="wk-scroller">
         <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" />
         <WeekAxis weeks={weeks} />

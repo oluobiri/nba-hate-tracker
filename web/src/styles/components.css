@@ -3905,14 +3905,16 @@ a.hero__who:hover {
 .rm .neg,
 .rt .neg,
 .th .neg,
-.sn .neg {
+.sn .neg,
+.titles__h .neg {
   color: var(--heat);
 }
 .ro .pos,
 .rm .pos,
 .rt .pos,
 .th .pos,
-.sn .pos {
+.sn .pos,
+.titles__h .pos {
   color: var(--ice);
 }
 .nc {

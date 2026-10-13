@@ -139,7 +139,7 @@ export function gridSummary(lists: DeltaLists, teams: number, total: number, flo
   if (!harsh || !kind) return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters: no pair has ${fmtInt(floor)} comments yet.`
   const hp = pair(harsh.key)
   const kp = pair(kind.key)
-  return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters, each cell the fanbase's negative rate against the roster's usual: ${fmtInt(lists.eligible)} of ${fmtInt(total)} pairs have at least ${fmtInt(floor)} comments. Harshest: ${hp.fans} on ${hp.roster} players (${pts(harsh.delta)}); kindest: ${kp.fans} on ${kp.roster} players (${pts(kind.delta)}).`
+  return `${fmtInt(teams)} fanbases on ${fmtInt(teams)} rosters, each cell the fanbase's negative rate against the roster's usual: ${fmtInt(lists.eligible)} of ${fmtInt(total)} pairs have at least ${fmtInt(floor)} comments. Harshest: ${hp.fans} on ${hp.roster} players (${pts(harsh.delta)}); least negative: ${kp.fans} on ${kp.roster} players (${pts(kind.delta)}).`
 }
 
 export type Tone = 'heat' | 'ice'

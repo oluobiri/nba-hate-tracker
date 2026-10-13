@@ -1726,7 +1726,7 @@ mark {
   }
 }
 
-/* GapTable: own fans against every other fanbase, per roster player. Ice kinder, heat harsher; the sign is printed. */
+/* GapTable: own fans against every other fanbase, per roster player. Ice less negative, heat harsher; the sign is printed. */
 .gap {
   width: 100%;
   font-size: 13px;

@@ -15,7 +15,6 @@ import {
   nightNetSentence,
   nightPoints,
   nightRankSentence,
-  nightSentence,
   periodCells,
   periodsText,
   quarterTurnSentence,
@@ -174,7 +173,7 @@ describe('the verdict against his usual', () => {
     expect(recapDelta(null, usual, 20)).toBeNull()
   })
 
-  it('tones heat harsher, ice kinder, bone otherwise', () => {
+  it('tones heat harsher, ice less negative, bone otherwise', () => {
     expect(recapTone(0.2)).toBe('neg')
     expect(recapTone(-0.05)).toBe('pos')
     expect(recapTone(0)).toBe('neu')
@@ -356,15 +355,6 @@ describe('the page sentences', () => {
     expect(indexLede(null)).toBe('Every comment, as it landed. No recap is curated this season.')
   })
 
-  it('states the night against his usual, and says when it cannot', () => {
-    const usual = c(50, 30, 20)
-    expect(nightSentence('One Player', c(60, 20, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 60% negative of 100 comments, 10 points harsher than his usual 50%.')
-    expect(nightSentence('One Player', c(40, 40, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 40% negative of 100 comments, 10 points kinder than his usual 50%.')
-    expect(nightSentence('One Player', c(50, 50, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 50% negative of 100 comments, at his usual.')
-    expect(nightSentence('One Player', c(51, 49, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 51% negative of 100 comments, 1 point harsher than his usual 50%.')
-    expect(nightSentence('One Player', c(3, 1, 1), usual, 20)).toBe('Too few comments about One Player that night to judge: 5.')
-    expect(nightSentence('One Player', null, usual, 20)).toBe("Nobody mentioned One Player in the game's threads that night.")
-  })
 })
 
 describe('recapHrefs', () => {

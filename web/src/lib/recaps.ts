@@ -131,7 +131,7 @@ export function recapDelta(night: Counts | null, usual: Counts, floor: number): 
   return night && night.total >= floor ? negRate(night) - negRate(usual) : null
 }
 
-/** Heat where the night was harsher than his usual, ice where kinder, bone otherwise. */
+/** Heat where the night was harsher than his usual, ice where less negative, bone otherwise. */
 export function recapTone(delta: number | null): Tone {
   if (delta === null || delta === 0) return 'neu'
   return delta > 0 ? 'neg' : 'pos'
@@ -219,16 +219,6 @@ export function indexLede(lead: Recap | null): string {
   const tagline = 'Every comment, as it landed.'
   if (!lead) return `${tagline} No recap is curated this season.`
   return `${tagline} The room on ${lead.entry.attributed_player}, ${gamePhrase(lead.line)}: ${lead.hook}`
-}
-
-/** The final verdict's sentence: every thread about him that night against his usual. */
-export function nightSentence(name: string, night: Counts | null, usual: Counts, floor: number): string {
-  if (!night) return `Nobody mentioned ${name} in the game's threads that night.`
-  if (night.total < floor) return `Too few comments about ${name} that night to judge: ${fmtInt(night.total)}.`
-  const delta = negRate(night) - negRate(usual)
-  const points = Math.abs(Math.round(100 * delta))
-  const against = points === 0 ? 'at his usual' : `${fmtInt(points)} ${plural(points, 'point', 'points')} ${delta > 0 ? 'harsher' : 'kinder'} than his usual ${fmtPct(negRate(usual), 0)}`
-  return `Every thread about ${name} that night, post-game included: ${fmtPct(negRate(night), 0)} negative of ${fmtInt(night.total)} comments, ${against}.`
 }
 
 // --- The sections after the buzzer, in net ------------------------------------

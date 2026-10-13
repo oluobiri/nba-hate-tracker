@@ -1,6 +1,6 @@
 // Their own players: one row per tracked roster player, own fans' negative
 // rate against every other fanbase summed, the gap in points. Tint follows
-// direction, ice where own fans are kinder and heat where harsher, and the
+// direction, ice where own fans are less negative and heat where harsher, and the
 // sign is printed; a row under the floor keeps its rates in gray and no Δ.
 import type { CSSProperties } from 'react'
 
@@ -48,7 +48,7 @@ export function GapTable({ rows, caption, floor }: GapTableProps) {
               ? `under the floor of ${fmtInt(floor)} of their own comments, so no gap is read`
               : dir === 'even'
                 ? 'no different from rival fans'
-                : `${(100 * Math.abs(r.delta)).toFixed(0)} points ${dir} than rival fans`
+                : `${(100 * Math.abs(r.delta)).toFixed(0)} points ${dir === 'kinder' ? 'less negative' : 'harsher'} than rival fans`
           return (
             <tr key={r.slug} className={`gap__row gap__row--${dir}`} style={{ '--gap-mix': `${mix}%` } as CSSProperties}>
               <th scope="row" className="gap__player">

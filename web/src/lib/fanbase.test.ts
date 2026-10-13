@@ -167,8 +167,11 @@ describe('the ledes', () => {
   })
 })
 
+// A player's page facts as the page joins them: slug, headshot, roster abbreviation (none for the free agent).
+const meta = (player: string) => ({ slug: player.toLowerCase().replace(' ', '-'), headshot: `${player}.png`, abbr: player === 'Chris Paul' ? null : 'XXX' })
+const bareMeta = (player: string) => ({ slug: player, headshot: '', abbr: null })
+
 describe('talkRows', () => {
-  const meta = (player: string) => ({ slug: player.toLowerCase().replace(' ', '-'), headshot: `${player}.png`, abbr: player === 'Chris Paul' ? null : 'XXX' })
   const rows = talkRows(PLAYER_ROWS, LAL, meta, 3)
 
   it('ranks the fanbase\'s players by its comment count, ties by name, own roster included', () => {
@@ -185,8 +188,7 @@ describe('talkRows', () => {
 })
 
 describe('talkSummary', () => {
-  const meta = (player: string) => ({ slug: player, headshot: '', abbr: null })
-  const all = talkRows(PLAYER_ROWS, LAL, meta, 10) // Lakers fans: 320 comments in the fixture
+  const all = talkRows(PLAYER_ROWS, LAL, bareMeta, 10) // Lakers fans: 320 comments in the fixture
 
   it('names the main character\'s share and counts their own', () => {
     expect(talkSummary(LAL, all, 320)).toBe('Austin Reaves alone is 31% of what Lakers fans say about players; 2 of their 5 most-discussed are Lakers.')

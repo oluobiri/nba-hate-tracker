@@ -70,6 +70,10 @@ export const clockOf = (p: RecapPeriodsRow, g: number): string => {
   return `PT${String(Math.floor(left / 60)).padStart(2, '0')}M${String(left % 60).padStart(2, '0')}.00S`
 }
 
+/** A play in a period: its clock from the game seconds, the wall clock given. */
+const row = (p: RecapPeriodsRow, g: number, wall: number, o: Partial<RecapPlaysRow>): RecapPlaysRow =>
+  play({ period: p.period, game_seconds: g, clock: clockOf(p, g), wall_clock: wall, ...o })
+
 /**
  * A two-period game with the tip at wall 1000. Period 1: a shot at 10 s, a timeout at
  * 20 s that holds the clock for 60 wall seconds, a free throw, then 700 game seconds in
@@ -80,8 +84,6 @@ export function smallGame(): { periods: RecapPeriodsRow[]; plays: RecapPlaysRow[
   const p1 = period(1, 1000, 1800)
   const p2 = period(2, 2000, 2800)
   const periods = [p1, p2]
-  const row = (p: RecapPeriodsRow, g: number, wall: number, o: Partial<RecapPlaysRow>): RecapPlaysRow =>
-    play({ period: p.period, game_seconds: g, clock: clockOf(p, g), wall_clock: wall, ...o })
   const plays: RecapPlaysRow[] = [
     row(p1, 0, 1000, { action_number: 2, kind: 'period_start', action_type: 'period', sub_type: 'start', description: 'Period Start' }),
     row(p1, 10, 1010, { action_number: 4, kind: 'shot', action_type: '2pt', made: true, shot_value: 2, score_home: 2, person_id: 1, team_tricode: 'AAA', x: 90, y: 50 }),

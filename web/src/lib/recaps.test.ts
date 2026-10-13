@@ -47,6 +47,30 @@ describe('periodCells', () => {
   })
 })
 
+/** A game line for the night charts: graded when counts reach the floor of 20. */
+const night = (gameId: string, date: string, counts: Counts | null, win: boolean, playoffs = false, dnp = false): GameLine => ({
+  gameId,
+  date,
+  opponent: 'Other',
+  opponentAbbr: 'OTH',
+  home: true,
+  win,
+  score: '100–99',
+  seasonType: playoffs ? 'playoffs' : 'regular_season',
+  minutes: dnp ? 0 : 30,
+  pts: 10,
+  reb: 5,
+  ast: 2,
+  plusMinus: 0,
+  gameScore: 8.5,
+  line: '10 pts',
+  dnp,
+  counts,
+  talked: counts !== null && counts.total >= 20,
+  delta: null,
+  recapHref: null,
+})
+
 describe('the sections after the buzzer, in net', () => {
   const usual = c(30, 40, 30)
 
@@ -66,29 +90,6 @@ describe('the sections after the buzzer, in net', () => {
     const held = periodCells({ '1': { neg: 30, pos: 30, neu: 40 }, '2': { neg: 0, pos: 0, neu: 0 }, '3': { neg: 35, pos: 30, neu: 35 }, '4': { neg: 0, pos: 0, neu: 0 } })
     expect(quarterTurnSentence(held)).toBe('The room held its line all night: net 0 in the 1st, −5 by the 3rd. His comments in the live thread, quarter by quarter.')
     expect(quarterTurnSentence(periodCells({ '1': { neg: 1, pos: 0, neu: 0 }, '2': { neg: 0, pos: 0, neu: 0 } }))).toBe('His comments in the live thread, quarter by quarter.')
-  })
-
-  const night = (gameId: string, date: string, counts: Counts | null, win: boolean, playoffs = false, dnp = false): GameLine => ({
-    gameId,
-    date,
-    opponent: 'Other',
-    opponentAbbr: 'OTH',
-    home: true,
-    win,
-    score: '100–99',
-    seasonType: playoffs ? 'playoffs' : 'regular_season',
-    minutes: dnp ? 0 : 30,
-    pts: 10,
-    reb: 5,
-    ast: 2,
-    plusMinus: 0,
-    gameScore: 8.5,
-    line: '10 pts',
-    dnp,
-    counts,
-    talked: counts !== null && counts.total >= 20,
-    delta: null,
-    recapHref: null,
   })
 
   it('points every graded game by date with the room\'s net, and ranks the night worst-first', () => {

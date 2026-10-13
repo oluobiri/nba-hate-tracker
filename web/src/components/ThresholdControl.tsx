@@ -20,6 +20,9 @@ export interface ThresholdControlProps {
   defaultOpen?: boolean
 }
 
+/** A stop's label on the scale: "5k", "500". */
+const short = (v: number): string => (v >= 1000 ? `${v / 1000}k` : String(v))
+
 /** Collapsed: "Official · min. N comments · X of Y ranked · Adjust". Open: the slider. */
 export function ThresholdControl({ value, official, stops, ranked, total, onChange, defaultOpen = false }: ThresholdControlProps) {
   const id = useId()
@@ -28,7 +31,6 @@ export function ThresholdControl({ value, official, stops, ranked, total, onChan
   const open = opened || custom
   const index = Math.max(0, stops.indexOf(value))
   const ticks = thresholdTicks(stops, official)
-  const short = (v: number): string => (v >= 1000 ? `${v / 1000}k` : String(v))
   const status = `${custom ? 'Custom' : 'Official'} · min. ${fmtInt(value)} comments · ${ranked} of ${total} ranked`
 
   if (!open) {

@@ -394,12 +394,12 @@ const playerNameOf = new Map(tables.players.map((p) => [p.player_id, p.attribute
 const feedCases = replay
   ? (() => {
       const cs = replay.room.comments.filter((c) => c.body !== null)
-      const top = (pick: (c: (typeof cs)[number]) => boolean) => cs.filter(pick).toSorted((a, b) => b.score - a.score)[0]
+      const topVoted = (pick: (c: (typeof cs)[number]) => boolean) => cs.filter(pick).toSorted((a, b) => b.score - a.score)[0]
       return [
-        { name: 'his, top-voted negative', c: top((c) => c.isFocus && c.sentiment === 'neg' && c.body!.length < 240), about: null },
-        { name: 'the room’s, top-voted positive about someone else', c: top((c) => !c.isFocus && c.sentiment === 'pos' && c.playerId !== null && c.body!.length < 240), about: 'other' },
-        { name: 'unflaired, neutral', c: top((c) => c.isFocus && c.sentiment === 'neu' && c.fanTeam === null && c.body!.length < 240), about: null },
-        { name: 'post-game', c: top((c) => c.isFocus && c.phase === 'post' && c.body!.length < 240), about: null },
+        { name: 'his, top-voted negative', c: topVoted((c) => c.isFocus && c.sentiment === 'neg' && c.body!.length < 240), about: null },
+        { name: 'the room’s, top-voted positive about someone else', c: topVoted((c) => !c.isFocus && c.sentiment === 'pos' && c.playerId !== null && c.body!.length < 240), about: 'other' },
+        { name: 'unflaired, neutral', c: topVoted((c) => c.isFocus && c.sentiment === 'neu' && c.fanTeam === null && c.body!.length < 240), about: null },
+        { name: 'post-game', c: topVoted((c) => c.isFocus && c.phase === 'post' && c.body!.length < 240), about: null },
       ].filter((x) => x.c !== undefined)
     })()
   : []

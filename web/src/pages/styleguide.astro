@@ -478,7 +478,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>MethodNote</h2>
-      <p class="eyebrow">The one place yellow appears.</p>
+      <p class="eyebrow">The one place yellow appears. A method note folds to its eyebrow, closed by default; the rest stay open.</p>
       <div class="guide__stack">
         <MethodNote kind="read-first">
           A rate, not a count. #1 {top.attributed_player} is on n={fmtInt(top.total)}. Read n before you post the
@@ -491,6 +491,10 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <MethodNote kind="caveat">Sentiment is not hate. A negative comment can be criticism of one game.</MethodNote>
         <MethodNote kind="method">
           Negative rate = {manifest.rules.metrics.neg_rate}. Rates are re-derived from counts, never averaged.
+        </MethodNote>
+        <MethodNote kind="method" open>
+          The same note open. A method note is provenance, so it folds to its eyebrow and the reader opens it; a rule, a
+          caveat and a read-first are claims the reader needs, so they never fold.
         </MethodNote>
       </div>
     </section>

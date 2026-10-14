@@ -98,15 +98,13 @@ const fans: FanRow[] = tables.fan_team_overall
     </section>
 
     <section class="fans" aria-labelledby="fans-h">
-      <header class="titles__head">
-        <p class="eyebrow">Fanbase index · {fans.length} flairs</p>
-        <h2 id="fans-h">Which fans are the harshest?</h2>
-      </header>
       <FanbaseIndex client:visible fans={fans} />
+      <p class="titles__link">
+        <a href="/fanbases/">Every fanbase, and who they hold a grudge against →</a>
+      </p>
       <MethodNote kind="method">
         A fanbase is the flair its commenters wear, over every player they talked about. The tick is the league
-        average from summed counts, never a mean of rates. Flairs with fewer than {fmtInt(fanFloor)} comments
-        are left out.
+        average from summed counts, never a mean of rates.
       </MethodNote>
     </section>
   </main>

@@ -1,6 +1,7 @@
-// The fanbase index: thirty flairs on one zoomed axis, a league-average
-// tick from summed counts. The toggle is local state; nothing about it
-// belongs in a shared link.
+// The fanbases on the leaderboard: thirty flairs on one zoomed axis, a
+// league-average tick from summed counts. The toggle is local state;
+// nothing about it belongs in a shared link. The heading asks the lens's
+// question, so it lives here with the toggle.
 import { useMemo, useState } from 'react'
 
 import { fmtInt, fmtPct } from '../lib/format'
@@ -20,10 +21,10 @@ export interface FanbaseIndexProps {
 
 type Metric = 'neg' | 'pos' | 'volume'
 
-const METRICS: { key: Metric; label: string; tone: 'neg' | 'pos' | 'neu' }[] = [
-  { key: 'neg', label: 'Most negative', tone: 'neg' },
-  { key: 'pos', label: 'Most positive', tone: 'pos' },
-  { key: 'volume', label: 'Loudest', tone: 'neu' },
+const METRICS: { key: Metric; label: string; heading: string; tone: 'neg' | 'pos' | 'neu' }[] = [
+  { key: 'neg', label: 'Most negative', heading: 'Which fans are the harshest?', tone: 'neg' },
+  { key: 'pos', label: 'Most positive', heading: 'Which fans are the kindest?', tone: 'pos' },
+  { key: 'volume', label: 'Loudest', heading: 'Which fans are the loudest?', tone: 'neu' },
 ]
 
 const VALUE: Record<Metric, (c: Counts) => number> = { neg: negRate, pos: posRate, volume: (c) => c.total }
@@ -40,12 +41,16 @@ export function FanbaseIndex({ fans }: FanbaseIndexProps) {
     [fans, value],
   )
   // The tick: a rate of the summed counts, or the mean volume per fanbase.
-  const average = metric === 'volume' ? sumCounts(fans).total / fans.length : value(sumCounts(fans))
+  const average = metric === 'volume' ? Math.round(sumCounts(fans).total / fans.length) : value(sumCounts(fans))
   const domain = [Math.min(...rows.map((r) => r.value)), Math.max(...rows.map((r) => r.value))] as const
-  const tone = METRICS.find((m) => m.key === metric)!.tone
+  const { tone, heading } = METRICS.find((m) => m.key === metric)!
 
   return (
     <div className="fi">
+      <header className="fi__head">
+        <p className="eyebrow">Fanbases · {fmtInt(fans.length)} flairs</p>
+        <h2 id="fans-h">{heading}</h2>
+      </header>
       <div className="fi__toggle" role="group" aria-label="Rank fanbases by">
         {METRICS.map((m) => (
           <button key={m.key} type="button" className="fi__btn mono" aria-pressed={m.key === metric} onClick={() => setMetric(m.key)}>

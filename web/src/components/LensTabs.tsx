@@ -69,7 +69,7 @@ export function LensTabs({ lens, onChange, id = 'lens' }: LensTabsProps) {
           </button>
         ))}
       </div>
-      <p className="tabs__unit mono">{LENS_META[lens].unit}</p>
+      <p className="tabs__unit mono">{LENS_META[lens].kind === 'rate' ? `% ${LENS_META[lens].unit}` : LENS_META[lens].unit}</p>
     </div>
   )
 }

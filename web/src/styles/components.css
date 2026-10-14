@@ -1071,10 +1071,14 @@ mark {
   }
 }
 
-/* FanbaseIndex: the toggle above a DeltaDot. */
+/* FanbaseIndex: the lens's question, the toggle, a DeltaDot. */
 .fi {
   display: grid;
   gap: 16px;
+}
+.fi__head {
+  display: grid;
+  gap: 6px;
 }
 .fi__toggle {
   display: flex;

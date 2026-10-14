@@ -28,6 +28,7 @@ export function countsOf(row: {
 export interface LensMeta {
   label: string
   short: string
+  /** After the figure, which carries its own sign: "of comments negative". The tabs put the % back. */
   unit: string
   hero: string
   value: (c: Counts) => number
@@ -35,10 +36,10 @@ export interface LensMeta {
 }
 
 export const LENS_META: Record<Lens, LensMeta> = {
-  neg: { label: 'Most hated', short: 'NEG%', unit: '% of comments negative', hero: 'most hated', value: negRate, kind: 'rate' },
-  pos: { label: 'Most loved', short: 'POS%', unit: '% of comments positive', hero: 'most loved', value: posRate, kind: 'rate' },
+  neg: { label: 'Most hated', short: 'NEG%', unit: 'of comments negative', hero: 'most hated', value: negRate, kind: 'rate' },
+  pos: { label: 'Most loved', short: 'POS%', unit: 'of comments positive', hero: 'most loved', value: posRate, kind: 'rate' },
   volume: { label: 'Volume', short: 'N', unit: 'comments attributed', hero: 'most discussed', value: (c) => c.total, kind: 'count' },
-  polar: { label: 'Polarization', short: 'POLAR', unit: '% of comments that take a side', hero: 'most argued about', value: polarization, kind: 'rate' },
+  polar: { label: 'Polarization', short: 'POLAR', unit: 'of comments that take a side', hero: 'most argued about', value: polarization, kind: 'rate' },
 }
 
 export interface Ranked<T extends Counts> {

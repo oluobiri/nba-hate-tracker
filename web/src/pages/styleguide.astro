@@ -720,7 +720,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <div class="guide__stack guide__replay">
         {replay && bugTeams && replayMoments.map((m) => (
           <figure class="guide__fig">
-            <ScoreBug away={bugTeams.away} home={bugTeams.home} score={m.scene.score} clock={m.scene.clock} line={m.scene.line} his={{ name: recapLead!.entry.attributed_player, short: lastName(replay.focusName), line: m.scene.his.line, onFloor: m.scene.his.onFloor }} playing={m.name === 'the tip'} speed={1} onToggle={noop} onSpeed={noop} onStep={noop} />
+            <ScoreBug away={bugTeams.away} home={bugTeams.home} score={m.scene.score} clock={m.scene.clock} line={m.scene.line} his={{ name: recapLead!.entry.attributed_player, short: lastName(replay.focusName), line: m.scene.his.line, onFloor: m.scene.his.onFloor }} playing={m.name === 'the tip'} speed={1} onToggle={noop} onSpeed={noop} />
             <figcaption>{m.name} · {m.scene.clock.label} {m.scene.clock.time}{m.scene.card ? ` · card: ${m.scene.card.label}` : ''}</figcaption>
           </figure>
         ))}

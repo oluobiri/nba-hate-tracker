@@ -566,23 +566,21 @@ test('a phone gets the two tabs, the room capped, and the box in one column', as
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
-test('a phone steps the clock a game minute from the bug; a desktop keeps the speed buttons instead', async ({ page }, info) => {
+test('the strip seeks on a drag, tall enough for a thumb on a phone, the knob on the playhead', async ({ page }, info) => {
   await page.goto(RECAP, { waitUntil: 'networkidle' })
   await ready(page)
-  const forward = page.getByTestId('bug-forward')
-  if (info.project.name !== 'phone') {
-    await expect(forward).toBeHidden()
-    await expect(page.getByRole('group', { name: 'Speed' })).toBeVisible()
-    return
-  }
-  await expect(page.getByRole('group', { name: 'Speed' })).toBeHidden()
-  for (const b of [forward, page.getByTestId('bug-back')]) expect((await b.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  const flow = page.getByTestId('flow')
+  const box = (await flow.boundingBox())!
+  if (info.project.name === 'phone') expect(box.height).toBeGreaterThanOrEqual(44)
   expect(await clock(page)).toBe('12:00')
-  await forward.click()
-  expect(await clock(page)).toBe('11:00')
-  await forward.click()
-  await page.getByTestId('bug-back').click()
-  expect(await clock(page)).toBe('11:00')
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width * 0.3, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.5, y, { steps: 5 })
+  await page.mouse.up()
+  expect(await clock(page)).not.toBe('12:00')
+  const knob = await page.locator('.flow__knob').boundingBox()
+  expect(Math.abs(knob!.x + knob!.width / 2 - (box.x + box.width * 0.5))).toBeLessThanOrEqual(3)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 

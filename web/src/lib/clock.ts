@@ -200,35 +200,6 @@ export function clockAt(tl: Timeline, u: number): ClockReading {
   return { label: periodLabel(a.period), time: mmss(p.end_seconds - g), period: a.period }
 }
 
-/** Game seconds at replay time `u`, counting up across periods; held through a card and after the buzzer. */
-export function gameAt(tl: Timeline, u: number): number {
-  const a = tl.anchors
-  const i = idxAt(tl.anchorU, u)
-  if (i < 0) return a[0]?.g ?? 0
-  const x = a[i]!
-  const y = a[Math.min(i + 1, a.length - 1)]!
-  return y.u > x.u ? x.g + ((y.g - x.g) * (u - x.u)) / (y.u - x.u) : x.g
-}
-
-/** The replay time the game clock first reaches `g`: a step on the game clock lands here, before any stoppage at that second. */
-export function uOfGame(tl: Timeline, g: number): number {
-  const a = tl.anchors
-  if (a.length === 0) return 0
-  if (g <= a[0]!.g) return a[0]!.u
-  if (g >= a[a.length - 1]!.g) return a[a.length - 1]!.u
-  let lo = 0
-  let hi = a.length - 1
-  // the last anchor still under g, then the first at or past it
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1
-    if (a[mid]!.g < g) lo = mid
-    else hi = mid
-  }
-  const x = a[lo]!
-  const y = a[hi]!
-  return x.u + ((y.u - x.u) * (g - x.g)) / (y.g - x.g)
-}
-
 /** The replay time each period starts at, in period order, for the strip's bands. */
 export function periodStartsU(tl: Timeline): { period: number; u: number }[] {
   const out: { period: number; u: number }[] = []

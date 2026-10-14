@@ -886,8 +886,8 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>GameScatter</h2>
-      <p class="eyebrow">Game Score across, the negative share up; wins filled bone, losses hollow; his usual as a dashed rule. The table is the accessible equivalent.</p>
-      <GameScatter points={topPoints} baseline={negRate(top)} lead={scatterLead(top.attributed_player, topPoints.length, topR)} r={topR} />
+      <p class="eyebrow">Game Score across, the room's net up; wins filled bone, losses hollow; zero as the axis, his season's net as a dashed rule. The table is the accessible equivalent.</p>
+      <GameScatter points={topPoints} baseline={netSentiment(top)} lead={scatterLead(top.attributed_player, topPoints.length, topR)} r={topR} />
     </section>
 
     <section class="guide__section">

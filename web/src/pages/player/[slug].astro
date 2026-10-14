@@ -28,7 +28,7 @@ import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
 import { recapHrefs } from '../../lib/recaps'
-import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
+import { countsOf, neighbours, negRate, netSentiment, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
 import { playerStandings, rankIn, type Standing } from '../../lib/standings'
 import type { Counts, Sentiment } from '../../lib/types'
 import { GAME_KEYS, RECEIPT_KEYS } from '../../lib/url'
@@ -357,7 +357,7 @@ const tiles = [
                   <StatFigure figure={fmtPct(negRate(counts))} label="His usual" detail="the season, every comment" tone="neg" />
                 </div>
                 <Games client:visible name={name} log={logDesc} floor={floors.game_min_n} top={LOG_TOP} official={official} />
-                {points.length >= SCATTER_MIN && <GameScatter points={points} baseline={negRate(counts)} lead={scatterLead(name, points.length, r)} r={r} />}
+                {points.length >= SCATTER_MIN && <GameScatter points={points} baseline={netSentiment(counts)} lead={scatterLead(name, points.length, r)} r={r} />}
                 <MethodNote kind="rule">
                   A game counts when at least {fmtInt(floors.game_min_n)} comments about {name} were posted in its threads. The verdict is that game's negative
                   share against his season share of {fmtPct(negRate(counts), 0)}; wins and losses are split from summed counts.

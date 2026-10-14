@@ -7,6 +7,7 @@ import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt } from '../lib/format'
 import { countsOf } from '../lib/metrics'
+import { teamLine } from '../lib/status'
 import { weeklyHolders } from '../lib/titles'
 import { HEADLINE_POPULATION, SITE_NAME } from '../site'
 
@@ -21,7 +22,7 @@ const players: BoardPlayer[] = tables.player_overall.map((r) => {
     ...countsOf(r),
     name: r.attributed_player,
     slug: p.slug,
-    abbr: p.roster_team ? (abbr.get(p.roster_team) ?? null) : null,
+    team: teamLine(p, abbr),
     position: p.position,
     headshot: p.headshot_url,
   }

@@ -9,6 +9,7 @@ import { fmtInt, fmtPct } from '../lib/format'
 import { negRate, neuRate, posRate, type Ranked } from '../lib/metrics'
 import type { Recap } from '../lib/recaps'
 import type { Standing } from '../lib/standings'
+import { playerStatus } from '../lib/status'
 import { type Counts, SENTIMENTS, type Sentiment } from '../lib/types'
 
 // The card's inner width, and the narrowest hero segment that holds its own label.
@@ -45,7 +46,7 @@ interface CardBase {
 export interface PlayerCard extends CardBase {
   kind: 'player'
   name: string
-  /** "GSW · F · #23", or "Free agent". */
+  /** "GSW · F · #23", or his status without a roster team. */
   eyebrow: string
 }
 
@@ -90,9 +91,9 @@ export function barSegments(counts: Counts, width: number = BAR_WIDTH): Segment[
   })
 }
 
-/** Under the name: team · position · number, as a sports page reads; "Free agent" without a roster team. */
-export const idLine = (player: Pick<PlayersRow, 'roster_team' | 'position' | 'jersey_number'>, rosterAbbr: string | null): string =>
-  player.roster_team ? [rosterAbbr, player.position, player.jersey_number ? `#${player.jersey_number}` : null].filter(Boolean).join(' · ') : 'Free agent'
+/** Under the name: team · position · number, as a sports page reads; his curated status without a roster team. */
+export const idLine = (player: Pick<PlayersRow, 'attributed_player' | 'slug' | 'roster_team' | 'position' | 'jersey_number'>, rosterAbbr: string | null): string =>
+  player.roster_team ? [rosterAbbr, player.position, player.jersey_number ? `#${player.jersey_number}` : null].filter(Boolean).join(' · ') : playerStatus(player)!.status
 
 export function playerCard(input: VerdictInput, player: PlayersRow, rosterAbbr: string | null, season: string): PlayerCard {
   return {

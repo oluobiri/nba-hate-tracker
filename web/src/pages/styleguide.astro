@@ -76,6 +76,7 @@ import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/r
 import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
+import { teamLine } from '../lib/status'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
 import type { Sentiment } from '../lib/types'
@@ -181,7 +182,7 @@ const customN = stops.find((s) => s < threshold) ?? threshold
 const customRanked = overall.filter((r) => r.total >= customN).length
 const rowProps = (name: string) => {
   const p = players.get(name)!
-  return { name, slug: p.slug, abbr: p.roster_team ? (abbrOf.get(p.roster_team) ?? null) : null, position: p.position, headshot: p.headshot_url }
+  return { name, slug: p.slug, team: teamLine(p, abbrOf), position: p.position, headshot: p.headshot_url }
 }
 // Race rows by rule: the final leader, the last bar of the first week's count race (the
 // minimum width holds the face), the first NEW chip, the longest name, the loved leader, a count.

@@ -1945,7 +1945,7 @@ mark {
 }
 .tk__link {
   display: grid;
-  grid-template-columns: 28px 44px minmax(120px, 1.2fr) minmax(100px, 2fr) 72px;
+  grid-template-columns: 28px 44px minmax(120px, 1.2fr) minmax(100px, 2fr) 84px;
   align-items: center;
   gap: 12px;
   min-height: 56px;
@@ -2011,6 +2011,8 @@ mark {
   min-width: 0;
 }
 .tk__n {
+  /* Off the row's edge, so an own-roster row's outline never sits on the unit. */
+  padding-right: 6px;
   font-size: 13px;
   text-align: right;
   color: var(--bone-2);

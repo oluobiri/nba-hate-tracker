@@ -14,7 +14,8 @@ export interface RaceRowProps {
   rank: number
   name: string
   slug: string
-  abbr: string | null
+  /** The roster abbreviation, or his status without one. */
+  team: string
   headshot: string
   mode: RaceMode
   by: RaceBy
@@ -51,7 +52,7 @@ function Figure({ value, by, seconds }: { value: number; by: RaceBy; seconds: nu
   return <motion.span>{text}</motion.span>
 }
 
-export function RaceRow({ rank, name, slug, abbr, headshot, mode, by, value, n, share, move = null, travel = 0, count = 0, presence = false, ref }: RaceRowProps) {
+export function RaceRow({ rank, name, slug, team, headshot, mode, by, value, n, share, move = null, travel = 0, count = 0, presence = false, ref }: RaceRowProps) {
   const fade = presence ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0, transition: { duration: 0.2 } } } : {}
   return (
     <motion.li ref={ref} className="rrow" layout="position" transition={{ layout: { duration: 0.7, ease: [0.45, 0.05, 0.3, 1] }, opacity: { duration: 0.35 } }} {...fade}>
@@ -62,7 +63,7 @@ export function RaceRow({ rank, name, slug, abbr, headshot, mode, by, value, n, 
         <span className="rrow__who">
           <span className="rrow__name">{name}</span>
           <span className="rrow__team mono">
-            <span>{abbr ?? 'Free agent'}</span>
+            <span>{team}</span>
             {move !== null && (
               <span className="row__chip">
                 <span aria-hidden="true">{moveLabel(move)}</span>

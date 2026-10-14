@@ -53,10 +53,11 @@ describe('barSegments', () => {
 })
 
 describe('idLine', () => {
-  it('reads team · position · number, and Free agent without a roster team', () => {
+  it('reads team · position · number, and his curated status without a roster team', () => {
     expect(idLine(PLAYER, 'GSW')).toBe('GSW · F · #23')
     expect(idLine({ ...PLAYER, jersey_number: null }, 'GSW')).toBe('GSW · F')
-    expect(idLine({ ...PLAYER, roster_team: null }, null)).toBe('Free agent')
+    expect(idLine({ ...PLAYER, slug: 'chris-paul', roster_team: null }, null)).toBe('Retired')
+    expect(() => idLine({ ...PLAYER, roster_team: null }, null)).toThrow(/no entry in player-status-copy/)
   })
 })
 
@@ -70,7 +71,7 @@ describe('playerCard', () => {
 
   it('stamps an unofficial player and keeps his unofficial note', () => {
     const i = input(c(9, 1, 0), null, 31)
-    const card = playerCard(i, { ...PLAYER, roster_team: null }, null, '2025-26')
+    const card = playerCard(i, { ...PLAYER, slug: 'ben-simmons', roster_team: null }, null, '2025-26')
     expect(card.sentence).toBe(playerVerdict(i).sentence)
     expect(card.sentence).toMatch(/^Unofficial:/)
     expect(card).toMatchObject({ stamp: 'unofficial', eyebrow: 'Free agent' })

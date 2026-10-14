@@ -1,6 +1,6 @@
 // The receipts: one island. Three tabs in sentiment order, the tab and the
-// expansion in the URL, so a link opens on the same receipts. Verified
-// stamps on negative and positive only; never a username.
+// expansion in the URL, so a link opens on the same receipts. Never a
+// username.
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 'react'
 
@@ -23,8 +23,6 @@ export interface ReceiptItem {
 export interface ReceiptsProps {
   name: string
   cells: Record<Sentiment, ReceiptItem[]>
-  /** rules.receipts.verified: the stamp on negative and positive receipts. */
-  verified: boolean
   /** How many show before "Show all": a page choice. */
   top: number
   /** rules.qualified_threshold, the view state's one default. */
@@ -34,7 +32,7 @@ export interface ReceiptsProps {
 const LABEL: Record<Sentiment, string> = { neg: 'Negative', neu: 'Neutral', pos: 'Positive' }
 const WORD: Record<Sentiment, string> = { neg: 'negative', neu: 'neutral', pos: 'positive' }
 
-export function Receipts({ name, cells, verified, top, official }: ReceiptsProps) {
+export function Receipts({ name, cells, top, official }: ReceiptsProps) {
   const defaults = useMemo(() => ({ threshold: official }), [official])
   const [view, update, ready] = useViewState(defaults)
   const { tab, all } = view
@@ -112,7 +110,6 @@ export function Receipts({ name, cells, verified, top, official }: ReceiptsProps
                       context={r.context}
                       flair={r.flair}
                       date={r.date}
-                      stamp={verified && tab !== 'neu' ? 'verified' : undefined}
                     />
                   </li>
                 ))}

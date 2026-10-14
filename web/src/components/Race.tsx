@@ -18,7 +18,8 @@ import { RaceRow } from './RaceRow'
 export interface RacePlayer {
   name: string
   slug: string
-  abbr: string | null
+  /** The roster abbreviation, or his status without one. */
+  team: string
   headshot: string
 }
 
@@ -291,7 +292,7 @@ export function Race({ players, weeks, counts, bands, marks, entry, official }: 
                   rank={k + 1}
                   name={p.name}
                   slug={p.slug}
-                  abbr={p.abbr}
+                  team={p.team}
                   headshot={p.headshot}
                   mode={mode}
                   by={by}

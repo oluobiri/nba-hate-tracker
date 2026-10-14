@@ -1,9 +1,12 @@
 // The room over the game, and the scrubber: his negative and positive shares
 // over a rolling window, drawn as far as the replay has played; his season's
 // negative share dashed; the room's volume faint behind; the period bands at
-// their replay widths. Pointer and arrow keys seek.
+// their replay widths. Pointer, touch and arrow keys seek: the playhead
+// follows a drag from wherever it starts. A finger is read from the touch
+// events themselves, attached non-passive so the page neither scrolls nor
+// selects; the pointer handlers leave a touch alone.
 import '../../styles/replay.css'
-import { type KeyboardEvent, type PointerEvent, useMemo, useRef } from 'react'
+import { type KeyboardEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { fmtPct } from '../../lib/format'
 import { periodLabel } from '../../lib/recaps'
@@ -51,6 +54,28 @@ function path(values: readonly (number | null)[], upTo: number): string {
 
 export function FlowStrip({ series, periodStarts, endU, totalU, usual, u, onSeek, subject, valueText }: FlowStripProps) {
   const svg = useRef<SVGSVGElement>(null)
+  const dragging = useRef(false)
+  const seekRef = useRef(onSeek)
+  useLayoutEffect(() => {
+    seekRef.current = onSeek
+  })
+  useEffect(() => {
+    const el = svg.current
+    if (!el) return
+    const at = (e: TouchEvent) => {
+      const t = e.touches[0]
+      if (!t) return
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      seekRef.current(((t.clientX - r.left) / r.width) * totalU)
+    }
+    el.addEventListener('touchstart', at, { passive: false })
+    el.addEventListener('touchmove', at, { passive: false })
+    return () => {
+      el.removeEventListener('touchstart', at)
+      el.removeEventListener('touchmove', at)
+    }
+  }, [totalU])
   const fx = (t: number): number => (t / totalU) * W
   const k = Math.min(FLOW_SAMPLES, Math.floor((u / totalU) * FLOW_SAMPLES))
   const neg = useMemo(() => path(series.neg, k), [series, k])
@@ -90,11 +115,19 @@ export function FlowStrip({ series, periodStarts, endU, totalU, usual, u, onSeek
         aria-valuenow={Math.round(u)}
         aria-valuetext={valueText}
         onPointerDown={(e) => {
+          if (e.button !== 0 || e.pointerType === 'touch') return
+          dragging.current = true
           svg.current!.setPointerCapture(e.pointerId)
           seekAt(e)
         }}
         onPointerMove={(e) => {
-          if (e.buttons & 1) seekAt(e)
+          if (dragging.current) seekAt(e)
+        }}
+        onPointerUp={() => {
+          dragging.current = false
+        }}
+        onPointerCancel={() => {
+          dragging.current = false
         }}
         onKeyDown={onKey}
         data-testid="flow"

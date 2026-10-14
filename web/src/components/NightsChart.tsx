@@ -154,7 +154,7 @@ export function NightsChart({ nights, negLine, posLine, level, stretch, notes, c
           <span className="ch__rule" style={{ bottom: `${y(level.neg)}%` }} />
           <span className="ch__rule ch__rule--pos" style={{ bottom: `${y(level.pos)}%` }} />
           {cal.draft >= nights[0]!.day && cal.draft <= nights.at(-1)!.day && (
-            <span className="ch__mark" style={{ left: `${xDay(cal.draft)}%` }}>
+            <span className="ch__mark" style={{ left: `${xDay(cal.draft)}%`, height: `${y(ticks.at(-1)!)}%` }}>
               <span>Draft</span>
             </span>
           )}

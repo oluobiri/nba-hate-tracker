@@ -255,10 +255,18 @@ test('the team rail marks the section in view', async ({ page }) => {
 })
 
 // Edge states, one route each. The names are the data's, not a rule's.
-test('a free agent has no roster line and still gets fans', async ({ page }) => {
+test('a player without a roster team carries his status, what happened in the Games lede, and still gets fans', async ({ page }) => {
   await page.goto('/player/chris-paul/', { waitUntil: 'networkidle' })
-  await expect(page.locator('.pp__id')).toContainText('Free agent')
+  await expect(page.locator('.pp__id')).toHaveText('Retired')
+  await expect(page.locator('#games .pp__lede')).toContainText('announced his retirement')
   await expect(page.locator('#fans .pp__tile')).toHaveCount(2)
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a player who never dressed reads what happened as the whole Games lede', async ({ page }) => {
+  await page.goto('/player/ben-simmons/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.pp__id')).toHaveText('Free agent')
+  await expect(page.locator('#games .pp__lede')).toHaveText(/^Ben Simmons sat out the whole season/)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
@@ -556,6 +564,43 @@ test('a phone gets the two tabs, the room capped, and the box in one column', as
   await expect(page.locator('.box')).toBeVisible()
   await expect(page.locator('.room')).toBeHidden()
   expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('the strip seeks on a mouse drag, tall enough for a thumb on a phone', async ({ page }, info) => {
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await ready(page)
+  const flow = page.getByTestId('flow')
+  const box = (await flow.boundingBox())!
+  if (info.project.name === 'phone') expect(box.height).toBeGreaterThanOrEqual(44)
+  expect(await clock(page)).toBe('12:00')
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width * 0.3, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.5, y, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(() => clock(page)).not.toBe('12:00')
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a finger drags the strip without scrolling the page', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'phone', 'a touch context, phone-sized')
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 800 }, hasTouch: true, isMobile: true, baseURL: 'http://localhost:4321/' })
+  const page = await ctx.newPage()
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await ready(page)
+  const flow = page.getByTestId('flow')
+  await flow.scrollIntoViewIfNeeded()
+  const box = (await flow.boundingBox())!
+  const scrollY = await page.evaluate(() => window.scrollY)
+  const cdp = await ctx.newCDPSession(page)
+  const y = box.y + box.height / 2
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
+  await touch('touchStart', box.x + box.width * 0.3)
+  for (let i = 1; i <= 6; i++) await touch('touchMove', box.x + box.width * (0.3 + 0.05 * i))
+  await touch('touchEnd', 0)
+  await expect.poll(() => clock(page)).not.toBe('12:00')
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollY)
+  await ctx.close()
 })
 
 test('every recap page links a live next recap', async ({ page }) => {

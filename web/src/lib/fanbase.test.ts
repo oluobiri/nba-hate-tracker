@@ -211,6 +211,12 @@ describe('talkSummary', () => {
     expect(talkSummary(LAL, all, 320)).toBe('Austin Reaves alone is 31% of what Lakers fans say about players; 2 of their 5 most-discussed are Lakers.')
   })
 
+  it('says the talk is spread when the lead is under a tenth of the fanbase, at the floor he is named alone', () => {
+    expect(talkSummary(LAL, all, 5000)).toBe('No one player dominates what Lakers fans say: Austin Reaves leads at 2%, and 2 of their 5 most-discussed are Lakers.')
+    expect(talkSummary(LAL, all, 1001)).toMatch(/^Austin Reaves alone is 10% of what Lakers fans say/)
+    expect(talkSummary(LAL, all, 1053)).toMatch(/^No one player dominates what Lakers fans say: Austin Reaves leads at 9%/)
+  })
+
   it('words none, one and all', () => {
     expect(talkSummary(LAL, all.filter((r) => !r.own), 320)).toMatch(/; none most-discussed are Lakers\.$/)
     expect(talkSummary(LAL, all.filter((r) => r.own).slice(0, 1), 320)).toMatch(/; all 1 most-discussed is Lakers\.$/)

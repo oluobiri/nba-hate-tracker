@@ -24,6 +24,7 @@ import { type FanRow, fanLists, fanSplit, fansSummary } from '../../lib/fans'
 import { bioFacts } from '../../lib/bio'
 import { fmtInt, fmtPct, ordinal } from '../../lib/format'
 import { buildGameLog, gamesSummary, neverDressedSentence, scatterLead, scatterPoints, seasonAverages, talkedThreads, weekGames, winLossSplit } from '../../lib/games'
+import { checkStatusCopy, gamesLede, playerStatus } from '../../lib/status'
 import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
@@ -46,6 +47,7 @@ const SCATTER_MIN = 15
 
 export async function getStaticPaths() {
   const { manifest, tables } = await getSeason()
+  checkStatusCopy(tables.players)
   const official = manifest.rules.qualified_threshold
   const { overall, rankings, allRankings, inputs } = playerStandings(tables, official)
   // Below the minimum, prev/next walk the unofficial players by rate.
@@ -151,7 +153,7 @@ const r = pearson(
   points.map((p) => p.x),
   points.map((p) => p.y),
 )
-const gamesText = dressed ? gamesSummary(name, log, counts, floors.game_min_n) : neverDressedSentence(name, talkedThreads(sentiment, floors.game_min_n), floors.game_min_n)
+const gamesText = gamesLede(dressed ? gamesSummary(name, log, counts, floors.game_min_n) : null, playerStatus(player), () => neverDressedSentence(name, talkedThreads(sentiment, floors.game_min_n), floors.game_min_n))
 const logDesc = log.toSorted((a, b) => b.date.localeCompare(a.date))
 // A net figure's detail: both shares beside it, since net alone can hide a split room.
 const shares = (c: Counts): string => `${fmtPct(negRate(c), 0)} neg · ${fmtPct(posRate(c), 0)} pos · ${fmtInt(c.total)} comments`
@@ -303,11 +305,10 @@ const tiles = [
         <section id="receipts" class="pp__section" aria-labelledby="receipts-h">
           <h2 id="receipts-h">Receipts</h2>
           <p class="pp__lede">What the room said about {name}, verbatim: the highest-scoring comments in each class.</p>
-          <Receipts client:load name={name} cells={cells} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={official} />
+          <Receipts client:load name={name} cells={cells} top={RECEIPTS_TOP} official={official} />
           <MethodNote kind="method">
             A receipt is a top-scoring comment about {name} that cleared the classifier's confidence bar
-            {manifest.rules.receipts.verified && ' and a second pass confirming it is about him'}. Neutral receipts carry no stamp. No usernames: the site judges
-            players, not commenters.
+            {manifest.rules.receipts.verified && ' and a second pass confirming it is about him'}. No usernames: the site judges players, not commenters.
           </MethodNote>
         </section>
 

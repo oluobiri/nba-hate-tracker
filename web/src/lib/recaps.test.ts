@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
+import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayerTemporalRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
 import type { GameLine } from './games'
 import {
   boxLine,
@@ -17,11 +17,14 @@ import {
   nightRankSentence,
   periodCells,
   periodsText,
+  phaseSplit,
   quarterTurnSentence,
   recapDelta,
   recapHrefs,
   recapNetDelta,
   recapTone,
+  seasonContext,
+  weekPhase,
 } from './recaps'
 import type { Counts } from './types'
 
@@ -361,6 +364,49 @@ describe('the page sentences', () => {
     expect(indexLede(null)).toBe('Every comment, as it landed. No recap is curated this season.')
   })
 
+})
+
+const week = (monday: string, neg: number, neu: number, pos: number): PlayerTemporalRow => ({ attributed_player: 'One Player', player_id: 1, week: `${monday}T00:00:00`, ...rates(neg, neu, pos) })
+
+describe('the season context', () => {
+  const CAL = { opening_night: '2025-10-21', play_in_start: '2026-04-14', finals_start: '2026-06-03', finals_end: '2026-06-13' }
+  const WEEKS = [
+    week('2025-10-13', 5, 5, 0), // preseason
+    week('2025-10-20', 20, 70, 10), // opening week: regular
+    week('2026-04-06', 20, 70, 10), // the last regular week
+    week('2026-04-13', 30, 60, 10), // the play-in week: playoffs
+    week('2026-05-25', 30, 60, 10), // the conference finals' last week
+    week('2026-06-01', 60, 30, 10), // Finals Game 1 on the Wednesday: the Finals
+    week('2026-06-08', 60, 30, 10), // the last night of the Finals
+    week('2026-06-15', 1, 4, 0), // off-season
+  ]
+
+  it('gives a week to the phase that starts in it, whole', () => {
+    expect(WEEKS.map((w) => weekPhase(w.week, CAL))).toEqual(['pre', 'regular', 'regular', 'playoffs', 'playoffs', 'finals', 'finals', 'off'])
+  })
+
+  it('sums his comments inside the phase and outside it', () => {
+    const { inside, outside } = phaseSplit(WEEKS, 'finals', CAL)
+    expect(inside).toEqual(c(120, 60, 20))
+    expect(outside).toEqual(c(106, 269, 40))
+  })
+
+  it("says how much of his season the lead game's phase holds, and the negative share in and out of it", () => {
+    const [finals, opener] = buildRecaps({ ...MANIFEST, recaps: { 'g7-one-player': entry('gF', 'One Player', 1, 'one-player', periods(83)), 'g1-two-player': MANIFEST.recaps['g1-two-player']! } } as Manifest, { ...TABLES, games: [game('gF', '2026-06-13'), ...TABLES.games], player_games: [box('gF', 'One Player', 1), ...TABLES.player_games] } as Tables)
+    expect(seasonContext(finals!, WEEKS, CAL)).toBe('The Finals hold 33% of his 615 comments this season, at 60% negative against 26% outside it.')
+    expect(seasonContext(opener!, WEEKS, CAL)).toBe('The regular season holds 33% of his 615 comments this season, at 20% negative against 45% outside it.')
+  })
+
+  it("gives the lead the phase of its week, so a game on the Monday before the Finals open counts inside the Finals", () => {
+    const [lead] = buildRecaps({ ...MANIFEST, recaps: { 'gM-one-player': entry('gM', 'One Player', 1, 'one-player', periods(83)) } } as Manifest, { ...TABLES, games: [game('gM', '2026-06-01')], player_games: [box('gM', 'One Player', 1)] } as Tables)
+    expect(seasonContext(lead!, WEEKS, CAL)).toMatch(/^The Finals hold 33%/)
+  })
+
+  it('reads a phase with none of his comments, and one with all of them', () => {
+    const [lead] = buildRecaps(MANIFEST, TABLES)
+    expect(seasonContext(lead!, [], CAL)).toBe('The playoffs hold none of his comments this season.')
+    expect(seasonContext(lead!, [week('2026-04-20', 10, 0, 0)], CAL)).toBe('The playoffs hold 100% of his 10 comments this season, every one of them, at 100% negative.')
+  })
 })
 
 describe('recapHrefs', () => {

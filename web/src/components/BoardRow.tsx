@@ -19,7 +19,8 @@ export interface BoardRowProps {
   official: boolean
   name: string
   slug: string
-  abbr: string | null
+  /** The roster abbreviation, or his status without one. */
+  team: string
   position: string | null
   headshot: string
   counts: Counts
@@ -32,7 +33,7 @@ export interface BoardRowProps {
 
 const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
 
-export function BoardRow({ rank, official, name, slug, abbr, position, headshot, counts, lens, scale = 1, delta = null }: BoardRowProps) {
+export function BoardRow({ rank, official, name, slug, team, position, headshot, counts, lens, scale = 1, delta = null }: BoardRowProps) {
   const meta = LENS_META[lens]
   const value = meta.value(counts)
   const ghost = rank === null
@@ -43,7 +44,7 @@ export function BoardRow({ rank, official, name, slug, abbr, position, headshot,
         <img className="row__mug" src={headshot} srcSet={headshotSrcSet(headshot)} sizes="44px" width="44" height="44" alt="" loading="lazy" decoding="async" />
         <span className="row__who">
           <span className="row__name">{name}</span>
-          <span className="row__team mono">{[abbr ?? 'Free agent', position].filter(Boolean).join(' · ')}</span>
+          <span className="row__team mono">{[team, position].filter(Boolean).join(' · ')}</span>
           {!official && rank !== null && <span className="row__chip row__chip--unofficial mono">Unofficial</span>}
           {delta !== null && delta !== 0 && (
             <span className="row__chip mono" title="Rank change against the official view">

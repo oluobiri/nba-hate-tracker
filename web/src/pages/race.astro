@@ -6,6 +6,7 @@ import Base from '../layouts/Base.astro'
 import { fmtInt } from '../lib/format'
 import { countsOf } from '../lib/metrics'
 import { packCounts, raceField, weeklyCounts } from '../lib/race'
+import { teamLine } from '../lib/status'
 import { RACE_KEYS } from '../lib/url'
 import { PHASE_LABELS, phaseBands, phaseOf, weekLabel, weekOf, weekSpine } from '../lib/weeks'
 
@@ -24,7 +25,7 @@ const field = raceField(
 )
 const players: RacePlayer[] = field.map(({ name }) => {
   const p = dim.get(name)!
-  return { name, slug: p.slug, abbr: p.roster_team ? (abbr.get(p.roster_team) ?? null) : null, headshot: p.headshot_url }
+  return { name, slug: p.slug, team: teamLine(p, abbr), headshot: p.headshot_url }
 })
 
 const spine = weekSpine(tables.player_temporal.map((r) => r.week))

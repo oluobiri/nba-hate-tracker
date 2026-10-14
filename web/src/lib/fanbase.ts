@@ -7,6 +7,9 @@ import { fmtInt, fmtPct, fmtSigned, ordinal } from './format'
 import { negRate, posRate, sumCounts } from './metrics'
 import type { Counts } from './types'
 
+// A main character: the lead's share of the fanbase's comments, in the whole points the lede prints, before it names him alone. A page choice.
+const LEAD_SHARE_MIN = 10
+
 export interface MatrixRow extends Counts {
   fan: string
   /** The commented player's roster team; null for a free agent, who belongs to no column. */
@@ -72,14 +75,18 @@ export function talkRows(rows: readonly PlayerRow[], team: string, describe: (pl
     .map(({ player, roster, neg, neu, pos, total }) => ({ name: player, ...describe(player), own: roster === team, neg, neu, pos, total }))
 }
 
-/** The Who they talk about lede: the main character's share, and how many of the list are their own. */
+/** The Who they talk about lede: the main character's share, or that the talk is spread when no one clears the floor; then how many of the list are their own. */
 export function talkSummary(team: string, rows: readonly TalkRow[], fanTotal: number): string {
   const fans = possessive(team)
   if (rows.length === 0 || fanTotal === 0) return `${fans} have no comments about tracked players.`
   const lead = rows[0]!
+  const share = lead.total / fanTotal
   const own = rows.filter((r) => r.own).length
   const ownWord = own === 0 ? 'none' : own === rows.length ? `all ${fmtInt(rows.length)}` : `${fmtInt(own)} of their ${fmtInt(rows.length)}`
-  return `${lead.name} alone is ${fmtPct(lead.total / fanTotal, 0)} of what ${fans} say about players; ${ownWord} most-discussed ${own === 1 ? 'is' : 'are'} ${nickname(team)}.`
+  const ownClause = `${ownWord} most-discussed ${own === 1 ? 'is' : 'are'} ${nickname(team)}.`
+  // Read by the printed figure, so a lead that prints at the floor is never called spread.
+  if (Math.round(100 * share) < LEAD_SHARE_MIN) return `No one player dominates what ${fans} say: ${lead.name} leads at ${fmtPct(share, 0)}, and ${ownClause}`
+  return `${lead.name} alone is ${fmtPct(share, 0)} of what ${fans} say about players; ${ownClause}`
 }
 
 /** The whole matrix from player-grain rows, once per build. */

@@ -2,12 +2,13 @@
 // to the dimensions once per build and shared by the index, the route and
 // its card; the hook is one sentence computed from the per-period counts;
 // every figure goes through format.ts. Nothing here opens a recap file.
-import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
+import type { GamesRow, Manifest, PeriodCounts, PlayerGamesRow, PlayerTemporalRow, PlayersRow, RecapEntry, Tables } from '../data/types.gen'
 import { fmtInt, fmtPct, ordinal } from './format'
 import { type GameLine, gameLine, type GameLineParts } from './games'
 import { countsOf, negRate, netSentiment, sumCounts } from './metrics'
 import { fmtNet } from './net'
 import type { Counts } from './types'
+import { weekOf } from './weeks'
 
 export const recapHref = (key: string): string => `/recaps/${key}/`
 
@@ -213,6 +214,49 @@ export function buildRecaps(manifest: Manifest, tables: Tables): Recap[] {
 
 /** "Game 7, West Finals" or "Regular season, Oct 21": the game as a phrase. */
 export const gamePhrase = (line: GameLineParts): string => (line.game ? `${line.game}, ${line.round}` : `${line.round}, ${line.date}`)
+
+// --- The lead's season context ------------------------------------------------
+
+export type RecapPhase = 'pre' | 'regular' | 'playoffs' | 'finals' | 'off'
+
+const PHASE_NAMES: Record<RecapPhase, string> = { pre: 'The preseason', regular: 'The regular season', playoffs: 'The playoffs', finals: 'The Finals', off: 'The off-season' }
+
+/** The dates the context line cuts on; the manifest names them, lib/season requires them. */
+export interface RecapCalendar {
+  opening_night: string
+  play_in_start: string
+  finals_start: string
+  finals_end: string
+}
+
+/** The phase of a weekly row by the season calendar: the Finals cut out of the playoffs, the play-in folded in, the week a phase starts in belonging to it whole. */
+export function weekPhase(week: string, cal: RecapCalendar): RecapPhase {
+  if (week < weekOf(cal.opening_night)) return 'pre'
+  if (week > weekOf(cal.finals_end)) return 'off'
+  if (week >= weekOf(cal.finals_start)) return 'finals'
+  if (week >= weekOf(cal.play_in_start)) return 'playoffs'
+  return 'regular'
+}
+
+/** His comments inside the lead game's phase and outside it, from his weekly rows. */
+export function phaseSplit(weeks: readonly PlayerTemporalRow[], phase: RecapPhase, cal: RecapCalendar): { inside: Counts; outside: Counts } {
+  const inside = sumCounts(weeks.filter((w) => weekPhase(w.week, cal) === phase).map(countsOf))
+  const outside = sumCounts(weeks.filter((w) => weekPhase(w.week, cal) !== phase).map(countsOf))
+  return { inside, outside }
+}
+
+/** The index hero's season line: how much of his season the phase holds, and how negative the room was in it against the rest. */
+export function seasonContext(lead: Recap, weeks: readonly PlayerTemporalRow[], cal: RecapCalendar): string {
+  // The lead's phase on the same weekly cut as the split, so its own night is always inside.
+  const phase = weekPhase(weekOf(lead.game.game_date), cal)
+  const { inside, outside } = phaseSplit(weeks, phase, cal)
+  const season = inside.total + outside.total
+  const holds = `${PHASE_NAMES[phase]} ${phase === 'playoffs' || phase === 'finals' ? 'hold' : 'holds'}`
+  if (season === 0 || inside.total === 0) return `${holds} none of his comments this season.`
+  const hold = `${holds} ${fmtPct(inside.total / season, 0)} of his ${fmtInt(season)} comments this season`
+  if (outside.total === 0) return `${hold}, every one of them, at ${fmtPct(negRate(inside), 0)} negative.`
+  return `${hold}, at ${fmtPct(negRate(inside), 0)} negative against ${fmtPct(negRate(outside), 0)} outside it.`
+}
 
 /** The index's description: the tagline, then the lead's night. */
 export function indexLede(lead: Recap | null): string {

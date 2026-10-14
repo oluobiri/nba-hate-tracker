@@ -22,7 +22,8 @@ import { ThresholdControl } from './ThresholdControl'
 export interface BoardPlayer extends Counts {
   name: string
   slug: string
-  abbr: string | null
+  /** The roster abbreviation, or his status without one. */
+  team: string
   position: string | null
   headshot: string
 }
@@ -166,7 +167,7 @@ export function Leaderboard({ players, official, floor, season, headline }: Lead
             official={r.row.total >= official}
             name={r.row.name}
             slug={r.row.slug}
-            abbr={r.row.abbr}
+            team={r.row.team}
             position={r.row.position}
             headshot={r.row.headshot}
             counts={r.row}

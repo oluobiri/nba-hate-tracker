@@ -136,10 +136,12 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   `useReducedMotion` sets the row's `travel` and `count` to zero. The dock (play, date,
   scrubber) sticks under the site header at every width; its button and date are fixed widths
   so the scale under it starts where the scrubber does.
-- **Net lives on the recap page and the season's arcs** (`lib/net.ts`): the numbers are net, the
-  bars show the mix, and the figure's colour is one linear curve from bone to heat or ice. The
-  arcs speak net because a season moves both shares at once, and keep both shares beside it. The
-  player page ranks by the negative share and never prints net.
+- **Net lives on the recap page, the season's arcs and the player page's Verdict and Games**
+  (`lib/net.ts`): the numbers are net, the bars show the mix, and the figure's colour is one
+  linear curve from bone to heat or ice. A net figure keeps both shares beside it, since a season
+  moves both at once and net alone can hide a split room. "Harsher" is the word for a lower net,
+  "warmer" for a higher one; "less negative" belongs to the share. The player page ranks by the
+  negative share; its net sits beside the shares, never in a chip or a lens.
 - **The season page has no island** (`lib/season.ts`): every figure is composed once by
   `buildSeason` for the page, the style guide and the card; the two charts' readouts are the
   Timeline's focusable columns, and the volume key is a radio group read by `:has()`. The one

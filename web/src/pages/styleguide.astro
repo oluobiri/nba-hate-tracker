@@ -64,7 +64,7 @@ import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, type Recap, recapHref, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
-import { fmtNet } from '../lib/net'
+import { fmtNet, netColor } from '../lib/net'
 import { buildGameLog, loudestThread, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { redditCounts } from '../lib/threads'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
@@ -633,6 +633,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <StatFigure figure={fmtPct(negRate(top))} label="Negative" detail={`of ${fmtInt(top.total)} comments`} tone="neg" />
         <StatFigure figure={fmtPct(posRate(top))} label="Positive" tone="pos" />
         <StatFigure figure={fmtInt(top.total)} label="Comments" detail="attributed to one player" />
+        <StatFigure figure={fmtNet(netSentiment(top))} label="Net" detail="positive minus negative, on the net curve" color={netColor(netSentiment(top))} />
         <StatFigure figure={String(qualified.length)} label="Ranked" detail={`of ${overall.length} tracked`} />
       </div>
     </section>

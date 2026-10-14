@@ -633,7 +633,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <StatFigure figure={fmtPct(negRate(top))} label="Negative" detail={`of ${fmtInt(top.total)} comments`} tone="neg" />
         <StatFigure figure={fmtPct(posRate(top))} label="Positive" tone="pos" />
         <StatFigure figure={fmtInt(top.total)} label="Comments" detail="attributed to one player" />
-        <StatFigure figure={fmtNet(netSentiment(top))} label="Net" detail="positive minus negative, on the net curve" color={netColor(netSentiment(top))} />
+        <StatFigure figure={fmtNet(netSentiment(top))} label="Net sentiment" detail="positive minus negative, on the net curve" color={netColor(netSentiment(top))} />
         <StatFigure figure={String(qualified.length)} label="Ranked" detail={`of ${overall.length} tracked`} />
       </div>
     </section>

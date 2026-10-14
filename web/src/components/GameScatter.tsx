@@ -40,7 +40,7 @@ export function GameScatter({ points, baseline, lead, r }: GameScatterProps) {
       <p className="sc__lead">{lead}</p>
       <div className="sc__plot">
         <span className="sc__y mono" aria-hidden="true">
-          net
+          net sentiment
         </span>
         <svg
           className="sc__svg"

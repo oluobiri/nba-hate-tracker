@@ -30,13 +30,13 @@ export function GamesTable({ rows, caption, loudest }: GamesTableProps) {
           <th scope="col" className="gt__date-h">
             Date
           </th>
-          <th scope="col" className="gt__wide gt__left">
+          <th scope="col" className="gt__wide">
             Phase
           </th>
           <th scope="col" className="gt__opp-h">
             Opp
           </th>
-          <th scope="col" className="gt__wide gt__left">
+          <th scope="col" className="gt__wide">
             Result
           </th>
           <th scope="col" className="gt__wide">

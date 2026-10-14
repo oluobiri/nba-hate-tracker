@@ -255,7 +255,7 @@ const tiles = [
             <StatFigure figure={fmtPct(negRate(counts))} label="Negative" detail={`${fmtInt(counts.neg)} comments`} tone="neg" />
             <StatFigure figure={fmtPct(neuRate(counts))} label="Neutral" detail={`${fmtInt(counts.neu)} comments`} tone="neu" />
             <StatFigure figure={fmtPct(posRate(counts))} label="Positive" detail={`${fmtInt(counts.pos)} comments`} tone="pos" />
-            <StatFigure figure={fmtNet(net)} label="Net" detail="positive minus negative" color={netColor(net)} />
+            <StatFigure figure={fmtNet(net)} label="Net sentiment" detail="positive minus negative" color={netColor(net)} />
           </div>
           <p class="pp__n mono">
             n={fmtInt(counts.total)} comments about {name}
@@ -370,6 +370,13 @@ const tiles = [
                   A game counts when at least {fmtInt(floors.game_min_n)} comments about {name} were posted in its threads. The verdict is that game's net
                   sentiment, positive minus negative in points, against his season net of {fmtNet(net)}; wins and losses are split from summed counts. The
                   comment count is Reddit's, both of the game's threads bridged.
+                  {points.length >= SCATTER_MIN && (
+                    <>
+                      {' '}
+                      Game Score is Hollinger's one number for a box line: points, shooting, rebounds, assists, steals and blocks, less misses, turnovers and fouls. An average night
+                      scores about 10, a great one 40.
+                    </>
+                  )}
                 </MethodNote>
               </>
             ) : (

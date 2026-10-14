@@ -1310,6 +1310,7 @@ mark {
 }
 .gt thead th {
   padding-block: 6px;
+  text-align: center;
   font-family: var(--mono);
   font-weight: 500;
   font-size: 11px;
@@ -1321,14 +1322,10 @@ mark {
   text-decoration: none;
 }
 .gt .gt__date,
-.gt .gt__date-h,
 .gt .gt__opp,
-.gt .gt__opp-h,
 .gt .gt__res,
-.gt .gt__left,
 .gt .gt__phase-col,
-.gt .gt__verdict,
-.gt .gt__verdict-h {
+.gt .gt__verdict {
   text-align: left;
 }
 /* The verdict takes the slack; every other column hugs its content. */
@@ -1389,15 +1386,18 @@ mark {
 .gt .gt__verdict {
   padding-block: 4px;
 }
+/* The verdict cluster, the figure and bar with a slot for the chip, centred under its heading;
+   the slot is the same on every row so the figures line up. */
 .gt__vc {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 84px;
+  justify-content: center;
   align-items: center;
   gap: 12px;
 }
 .gt__vc .vd {
-  flex: 1;
   display: grid;
-  grid-template-columns: 40px minmax(48px, 160px);
+  grid-template-columns: 40px 160px;
 }
 /* The chip inline, shorter than the row's text; the tap target reaches 44px through a hit area that takes no room. */
 .gt .chip {
@@ -1443,11 +1443,12 @@ mark {
     width: auto;
   }
   .gt__vc {
+    grid-template-columns: auto auto;
+    justify-content: start;
     gap: 8px;
   }
   .gt__vc .vd {
-    flex: 0 0 auto;
-    grid-template-columns: 32px minmax(36px, 40px);
+    grid-template-columns: 32px 40px;
     column-gap: 6px;
   }
   .gt .vd__figure {

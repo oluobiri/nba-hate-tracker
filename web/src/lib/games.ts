@@ -198,7 +198,7 @@ export function scatterPoints(log: readonly GameLine[]): ScatterPoint[] {
     x: g.gameScore,
     y: g.net!,
     win: g.win,
-    label: `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}: Game Score ${g.gameScore.toFixed(1)}, net ${fmtNet(g.net)} from ${fmtInt(g.counts!.total)} comments`,
+    label: `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}: Game Score ${g.gameScore.toFixed(1)}, net sentiment ${fmtNet(g.net)} from ${fmtInt(g.counts!.total)} comments`,
   }))
 }
 
@@ -219,6 +219,7 @@ export function scatterLead(name: string, n: number, r: number | null): string {
 
 /** For a player with no box line all season. */
 export function neverDressedSentence(name: string, threadCount: number, floor: number): string {
+  if (threadCount === 0) return `${name} never dressed this season, and no game thread reached ${fmtInt(floor)} comments about him.`
   const threads = threadCount === 1 ? 'game thread' : 'game threads'
   return `${name} never dressed this season; the room still talked about him in ${fmtInt(threadCount)} ${threads} with at least ${fmtInt(floor)} comments each.`
 }
@@ -241,7 +242,7 @@ export function gamesSummary(name: string, log: readonly GameLine[], baseline: C
   const w = Number((100 * netSentiment(wins)).toFixed(0))
   const l = Number((100 * netSentiment(losses)).toFixed(0))
   const verb = l < w ? 'harsher' : l > w ? 'warmer' : 'no different'
-  return `${first} It was ${verb} after losses: net ${netSide(losses, 'losses')} against ${netSide(wins, 'wins')}, on a season net of ${fmtNet(netSentiment(baseline))}.`
+  return `${first} It was ${verb} after losses: net sentiment ${netSide(losses, 'losses')} against ${netSide(wins, 'wins')}, on a season net sentiment of ${fmtNet(netSentiment(baseline))}.`
 }
 
 /** The log bucketed by spine week, for the timeline's week tooltips. */

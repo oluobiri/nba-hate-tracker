@@ -164,7 +164,7 @@ describe('scatterPoints', () => {
     expect(pts[0]!.win).toBe(true)
     expect(pts[0]!.y).toBeCloseTo(-0.4)
     expect(pts[0]!.x).toBeCloseTo(24.8)
-    expect(pts[1]!.label).toBe('L @ MIA 101–105: Game Score 24.8, net 0 from 25 comments')
+    expect(pts[1]!.label).toBe('L @ MIA 101–105: Game Score 24.8, net sentiment 0 from 25 comments')
   })
 })
 
@@ -185,6 +185,7 @@ describe('never dressed', () => {
     expect(neverDressedSentence('Ghost', 4, FLOOR)).toBe(
       'Ghost never dressed this season; the room still talked about him in 4 game threads with at least 10 comments each.',
     )
+    expect(neverDressedSentence('Ghost', 0, FLOOR)).toBe('Ghost never dressed this season, and no game thread reached 10 comments about him.')
   })
 })
 
@@ -193,13 +194,13 @@ describe('gamesSummary', () => {
 
   it('states the graded count and the loss/win split in net, both shares beside it, against his season', () => {
     expect(gamesSummary('Leader', log, BASELINE, FLOOR)).toBe(
-      'The room talked about Leader in 3 of his 4 games, at least 10 comments each. It was warmer after losses: net 0 in losses (20% negative, 20% positive) against −40 in wins (60% negative, 20% positive), on a season net of −20.',
+      'The room talked about Leader in 3 of his 4 games, at least 10 comments each. It was warmer after losses: net sentiment 0 in losses (20% negative, 20% positive) against −40 in wins (60% negative, 20% positive), on a season net sentiment of −20.',
     )
   })
 
   it('reads harsher when losses sit below wins, and no different when the gap rounds to nothing', () => {
     const harsh = buildGameLog(LINES, [room('g1', 10, 20, 20), room('g2', 30, 10, 10)], GAMES, ABBR, BASELINE, FLOOR)
-    expect(gamesSummary('Leader', harsh, BASELINE, FLOOR)).toMatch(/It was harsher after losses: net −40 in losses/)
+    expect(gamesSummary('Leader', harsh, BASELINE, FLOOR)).toMatch(/It was harsher after losses: net sentiment −40 in losses/)
     const flat = buildGameLog(LINES, [room('g1', 30, 10, 10), room('g2', 300, 101, 100)], GAMES, ABBR, BASELINE, FLOOR)
     expect(gamesSummary('Leader', flat, BASELINE, FLOOR)).toMatch(/It was no different after losses/)
   })

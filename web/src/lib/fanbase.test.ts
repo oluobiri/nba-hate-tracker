@@ -100,18 +100,35 @@ const gap = (name: string, delta: number | null, ownN = 100): GapRow => ({ name,
 
 describe('gapSummary', () => {
 
-  it('counts the players own fans are kinder to and names both extremes', () => {
+  it('counts the players own fans are less negative on, the widest gap and the one row above', () => {
     const rows = [gap('A', -0.19), gap('B', -0.12), gap('C', 0.02)]
-    expect(gapSummary(LAL, rows, FLOOR)).toBe('Lakers fans are kinder than rival fans to 2 of their 3 players: softest on A (-19 pts), hardest on C (+2 pts).')
+    expect(gapSummary(LAL, rows, FLOOR)).toBe('Lakers fans are less negative than rival fans on 2 of their 3 players: the widest gap on A (-19 pts), and more negative only on C (+2 pts).')
   })
 
-  it('says all when every judged player is treated kinder, and counts the thin rows', () => {
+  it('counts the rows above when there are several, naming the furthest; one row below is named, not a widest gap', () => {
+    const rows = [gap('A', -0.19), gap('B', 0.01), gap('C', 0.02)]
+    expect(gapSummary(LAL, rows, FLOOR)).toBe('Lakers fans are less negative than rival fans on 1 of their 3 players: A (-19 pts), and more negative on 2 of them, most on C (+2 pts).')
+  })
+
+  it('reads a gap that prints as 0 points as no different, and says so', () => {
+    expect(gapSummary(LAL, [gap('A', 0), gap('B', 0.004)], FLOOR)).toBe('Lakers fans are no different from rival fans on all 2 players.')
+    expect(gapSummary(LAL, [gap('A', 0), gap('B', 0.03)], FLOOR)).toBe('Lakers fans are more negative than rival fans on 1 of their 2 players: B (+3 pts), and no different on A.')
+    expect(gapSummary(LAL, [gap('A', -0.05), gap('B', 0)], FLOOR)).toBe('Lakers fans are less negative than rival fans on 1 of their 2 players: A (-5 pts), and no different on B.')
+    expect(gapSummary(LAL, [gap('A', -0.05), gap('B', 0), gap('C', 0.004)], FLOOR)).toBe('Lakers fans are less negative than rival fans on 1 of their 3 players: A (-5 pts), and no different on the other 2.')
+  })
+
+  it('says all and names the narrowest gap when every judged player is below, and counts the thin rows', () => {
     const rows = [gap('A', -0.19), gap('B', -0.12), gap('C', null, 5), gap('D', null, 3)]
-    expect(gapSummary(LAL, rows, FLOOR)).toBe('Lakers fans are kinder than rival fans to all 2 players: softest on A (-19 pts), hardest on B (-12 pts). 2 more sit under the floor of 10 of their own comments.')
+    expect(gapSummary(LAL, rows, FLOOR)).toBe('Lakers fans are less negative than rival fans on all 2 players: the widest gap on A (-19 pts), the narrowest on B (-12 pts). 2 more sit under the floor of 10 of their own comments.')
+  })
+
+  it('turns the sentence around when own fans are more negative on every judged player', () => {
+    const rows = [gap('A', 0.03), gap('B', 0.11)]
+    expect(gapSummary(LAL, rows, FLOOR)).toBe('Lakers fans are more negative than rival fans on all 2 players: the widest gap on B (+11 pts), the narrowest on A (+3 pts).')
   })
 
   it('has a one-player wording', () => {
-    expect(gapSummary(LAL, gapRows(LAL, ROSTER, BY_PLAYER, FLOOR), FLOOR)).toBe('Lakers fans are 25 points kinder than rival fans to Austin Reaves, their one tracked player with enough of their own comments. 1 more sits under the floor of 10 of their own comments.')
+    expect(gapSummary(LAL, gapRows(LAL, ROSTER, BY_PLAYER, FLOOR), FLOOR)).toBe('Lakers fans are 25 points less negative than rival fans on Austin Reaves, their one tracked player with enough of their own comments. 1 more sits under the floor of 10 of their own comments.')
   })
 
   it('has wordings for no judged row and no roster', () => {
@@ -167,8 +184,11 @@ describe('the ledes', () => {
   })
 })
 
+// A player's page facts as the page joins them: slug, headshot, roster abbreviation (none for the free agent).
+const meta = (player: string) => ({ slug: player.toLowerCase().replace(' ', '-'), headshot: `${player}.png`, abbr: player === 'Chris Paul' ? null : 'XXX' })
+const bareMeta = (player: string) => ({ slug: player, headshot: '', abbr: null })
+
 describe('talkRows', () => {
-  const meta = (player: string) => ({ slug: player.toLowerCase().replace(' ', '-'), headshot: `${player}.png`, abbr: player === 'Chris Paul' ? null : 'XXX' })
   const rows = talkRows(PLAYER_ROWS, LAL, meta, 3)
 
   it('ranks the fanbase\'s players by its comment count, ties by name, own roster included', () => {
@@ -185,8 +205,7 @@ describe('talkRows', () => {
 })
 
 describe('talkSummary', () => {
-  const meta = (player: string) => ({ slug: player, headshot: '', abbr: null })
-  const all = talkRows(PLAYER_ROWS, LAL, meta, 10) // Lakers fans: 320 comments in the fixture
+  const all = talkRows(PLAYER_ROWS, LAL, bareMeta, 10) // Lakers fans: 320 comments in the fixture
 
   it('names the main character\'s share and counts their own', () => {
     expect(talkSummary(LAL, all, 320)).toBe('Austin Reaves alone is 31% of what Lakers fans say about players; 2 of their 5 most-discussed are Lakers.')

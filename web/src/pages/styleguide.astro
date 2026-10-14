@@ -394,12 +394,12 @@ const playerNameOf = new Map(tables.players.map((p) => [p.player_id, p.attribute
 const feedCases = replay
   ? (() => {
       const cs = replay.room.comments.filter((c) => c.body !== null)
-      const top = (pick: (c: (typeof cs)[number]) => boolean) => cs.filter(pick).toSorted((a, b) => b.score - a.score)[0]
+      const topVoted = (pick: (c: (typeof cs)[number]) => boolean) => cs.filter(pick).toSorted((a, b) => b.score - a.score)[0]
       return [
-        { name: 'his, top-voted negative', c: top((c) => c.isFocus && c.sentiment === 'neg' && c.body!.length < 240), about: null },
-        { name: 'the room’s, top-voted positive about someone else', c: top((c) => !c.isFocus && c.sentiment === 'pos' && c.playerId !== null && c.body!.length < 240), about: 'other' },
-        { name: 'unflaired, neutral', c: top((c) => c.isFocus && c.sentiment === 'neu' && c.fanTeam === null && c.body!.length < 240), about: null },
-        { name: 'post-game', c: top((c) => c.isFocus && c.phase === 'post' && c.body!.length < 240), about: null },
+        { name: 'his, top-voted negative', c: topVoted((c) => c.isFocus && c.sentiment === 'neg' && c.body!.length < 240), about: null },
+        { name: 'the room’s, top-voted positive about someone else', c: topVoted((c) => !c.isFocus && c.sentiment === 'pos' && c.playerId !== null && c.body!.length < 240), about: 'other' },
+        { name: 'unflaired, neutral', c: topVoted((c) => c.isFocus && c.sentiment === 'neu' && c.fanTeam === null && c.body!.length < 240), about: null },
+        { name: 'post-game', c: topVoted((c) => c.isFocus && c.phase === 'post' && c.body!.length < 240), about: null },
       ].filter((x) => x.c !== undefined)
     })()
   : []
@@ -478,7 +478,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>MethodNote</h2>
-      <p class="eyebrow">The one place yellow appears.</p>
+      <p class="eyebrow">The one place yellow appears. A method note folds to its eyebrow, closed by default; the rest stay open.</p>
       <div class="guide__stack">
         <MethodNote kind="read-first">
           A rate, not a count. #1 {top.attributed_player} is on n={fmtInt(top.total)}. Read n before you post the
@@ -491,6 +491,10 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <MethodNote kind="caveat">Sentiment is not hate. A negative comment can be criticism of one game.</MethodNote>
         <MethodNote kind="method">
           Negative rate = {manifest.rules.metrics.neg_rate}. Rates are re-derived from counts, never averaged.
+        </MethodNote>
+        <MethodNote kind="method" open>
+          The same note open. A method note is provenance, so it folds to its eyebrow and the reader opens it; a rule, a
+          caveat and a read-first are claims the reader needs, so they never fold.
         </MethodNote>
       </div>
     </section>
@@ -630,7 +634,9 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
       <p class="eyebrow">
         Belt above, Flowers below, one axis, one scroller. Intensity follows the rate: {strongest.row.name}'s{' '}
         {fmtPct(strongest.rate)} week is the strongest Belt win; {weakest.row.name}'s {fmtPct(weakest.rate)} the weakest Flowers win.
+        The heading carries the two titles in their own colours, heat and ice.
       </p>
+      <h3 class="titles__h"><span class="neg">The Belt</span> and <span class="pos">the Flowers</span></h3>
       <div class="wk-scroller">
         <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" />
         <WeekAxis weeks={weeks} />
@@ -655,7 +661,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
     <section class="guide__section">
       <h2>GapTable</h2>
       <p class="eyebrow">
-        Own fans against every other fanbase, one row per roster player, kindest first. Ice where own fans are kinder, heat where harsher, the sign printed; a row under the floor of {fmtInt(fanFloor)} of their own comments keeps its rates in gray and no Δ. The {nickname(bigTeam)}: the largest tracked roster. {bigGap.some((r) => r.delta === null) ? 'Includes a row under the floor.' : 'Every row clears the floor this drop.'}
+        Own fans against every other fanbase, one row per roster player, least negative first. Ice where own fans are less negative, heat where harsher, the sign printed; a row under the floor of {fmtInt(fanFloor)} of their own comments keeps its rates in gray and no Δ. The {nickname(bigTeam)}: the largest tracked roster. {bigGap.some((r) => r.delta === null) ? 'Includes a row under the floor.' : 'Every row clears the floor this drop.'}
       </p>
       <GapTable rows={bigGap} caption={`${possessive(bigTeam)} on their own players`} floor={fanFloor} />
       <p class="eyebrow">The {nickname(smallTeam)}: the smallest tracked roster, still a table.</p>
@@ -823,7 +829,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
     <section class="guide__section">
       <h2>FanGrid</h2>
       <p class="eyebrow">
-        A {crop.teams.length} × {crop.teams.length} window of the fan × roster table around the lead grudge, {possessive(lead.fan)} on the {nickname(lead.roster)}, the tip drawn open on it. Δ against each roster's usual: heat harsher, ice kinder, the mix by distance up to {fmtSigned(gridLimit, 0)} points; ink text past the contrast dead band; a dash under the floor; the diagonal bone.
+        A {crop.teams.length} × {crop.teams.length} window of the fan × roster table around the lead grudge, {possessive(lead.fan)} on the {nickname(lead.roster)}, the tip drawn open on it. Δ against each roster's usual: heat harsher, ice less negative, the mix by distance up to {fmtSigned(gridLimit, 0)} points; ink text past the contrast dead band; a dash under the floor; the diagonal bone.
       </p>
       <FanGrid teams={crop.teams} cells={crop.cells} limit={gridLimit} floor={fanFloor} official={threshold} caption="A window of the grid, coloured by Δ." example={cropPos} demo={{ scale: 'delta', open: cropPos }} />
       <p class="eyebrow">The same window by raw negative share, heat on the absolute 0–100 scale.</p>
@@ -834,10 +840,10 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>VerdictDelta</h2>
-      <p class="eyebrow">A game against his usual: signed points, a bar from the baseline, n. Heat harsher, ice kinder; the sign is printed.</p>
+      <p class="eyebrow">A game against his usual: signed points, a bar from the baseline, n. Heat harsher, ice less negative; the sign is printed.</p>
       <div class="guide__row">
         {harshest && <figure class="guide__fig"><VerdictDelta delta={harshest.delta} n={harshest.counts!.total} /><figcaption>harshest · {harshest.opponentAbbr} {harshest.score}</figcaption></figure>}
-        {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>kindest · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
+        {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>least negative · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
         <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
         {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
         {recapLead && <figure class="guide__fig"><VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} /><figcaption>in net, the recap page's metric: {recapLead.entry.attributed_player}'s night against his season; harsher below zero</figcaption></figure>}

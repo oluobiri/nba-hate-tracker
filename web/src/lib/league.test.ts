@@ -100,7 +100,7 @@ describe('cellSentence', () => {
     expect(cellSentence(at(0, 1), teams, FLOOR)).toBe("Celtics fans on Lakers players — 60% negative, 13 points above the Lakers' usual 47%, from 100 comments.")
   })
 
-  it('says below when kinder, at when level, and one point in the singular', () => {
+  it('says below when less negative, at when level, and one point in the singular', () => {
     expect(cellSentence({ f: 1, r: 0, n: 100, neg: 30, usual: 0.3667 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 30% negative, 7 points below the Celtics' usual 37%, from 100 comments.")
     expect(cellSentence({ f: 1, r: 0, n: 100, neg: 37, usual: 0.368 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 37% negative, at the Celtics' usual 37%, from 100 comments.")
     expect(cellSentence({ f: 1, r: 0, n: 100, neg: 37, usual: 0.358 }, teams, FLOOR)).toBe("Lakers fans on Celtics players — 37% negative, 1 point above the Celtics' usual 36%, from 100 comments.")
@@ -150,7 +150,7 @@ describe('the sentences', () => {
 
   it('grid caption: shape, floor, the two ends by negative Δ, signed', () => {
     expect(gridSummary(lists, 3, 6, FLOOR)).toBe(
-      "3 fanbases on 3 rosters, each cell the fanbase's negative rate against the roster's usual: 5 of 6 pairs have at least 20 comments. Harshest: Celtics fans on Lakers players (+13 pts); kindest: Heat fans on Lakers players (+3 pts).",
+      "3 fanbases on 3 rosters, each cell the fanbase's negative rate against the roster's usual: 5 of 6 pairs have at least 20 comments. Harshest: Celtics fans on Lakers players (+13 pts); least negative: Heat fans on Lakers players (+3 pts).",
     )
   })
 })

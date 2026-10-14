@@ -240,14 +240,15 @@ const recap = (extra: Partial<RecapEntry> = {}): RecapEntry => ({
   ...extra,
 })
 
-describe('assertRecaps', () => {
-  const check = (key: string, entry: RecapEntry) => {
-    const t = fixture()
-    const m = manifestFor(t)
-    m.recaps = { [key]: entry }
-    return () => assertRecaps(m, t)
-  }
+/** The registry assertion over a fixture with one recap entry under the key. */
+const check = (key: string, entry: RecapEntry) => {
+  const t = fixture()
+  const m = manifestFor(t)
+  m.recaps = { [key]: entry }
+  return () => assertRecaps(m, t)
+}
 
+describe('assertRecaps', () => {
   it('passes a consistent registry, and an empty one', () => {
     expect(check('g1-a-player', recap())).not.toThrow()
     const t = fixture()

@@ -7,7 +7,7 @@
   ],
   "categories": {
     "correctness": "error",
-    "suspicious": "warn"
+    "suspicious": "error"
   },
   "ignorePatterns": [
     "dist",

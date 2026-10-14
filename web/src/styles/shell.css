@@ -208,6 +208,15 @@
 .ftr a {
   color: var(--bone-2);
 }
+/* The coffee link: the cup drawn in the footer's own ink, no new colour. */
+.ftr__coffee {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ftr__coffee svg {
+  flex: none;
+}
 
 /* Page frame used by every route. */
 .page {

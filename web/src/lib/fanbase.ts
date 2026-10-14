@@ -127,7 +127,7 @@ export interface GapRow {
   delta: number | null
 }
 
-/** One row per tracked player on the roster, kindest first; under-floor rows last, by own n. */
+/** One row per tracked player on the roster, least negative first; under-floor rows last, by own n. */
 export function gapRows(team: string, roster: readonly RosterPlayer[], rowsByPlayer: Map<string, readonly (Counts & { fan: string })[]>, floor: number): GapRow[] {
   const rows = roster.map((p): GapRow => {
     const all = rowsByPlayer.get(p.attributed_player) ?? []
@@ -145,7 +145,7 @@ export function gapRows(team: string, roster: readonly RosterPlayer[], rowsByPla
 const pts = (delta: number): string => `${fmtSigned(delta, 0)} pts`
 const points = (delta: number): string => `${(100 * Math.abs(delta)).toFixed(0)} points`
 
-/** The Own players lede: how many of their own they are kinder to, and the two extremes. */
+/** The Own players lede: how many of their own they are less negative on than rival fans, and the two ends. */
 export function gapSummary(team: string, rows: readonly GapRow[], floor: number): string {
   const fans = possessive(team)
   const judged = rows.filter((r): r is GapRow & { delta: number } => r.delta !== null)
@@ -155,15 +155,37 @@ export function gapSummary(team: string, rows: readonly GapRow[], floor: number)
   if (judged.length === 0) return `${fans} have fewer than ${fmtInt(floor)} comments about any of their own ${fmtInt(rows.length)} tracked players, so no gap is shown.`
   if (judged.length === 1) {
     const [r] = judged
-    const dir = r!.delta < 0 ? 'kinder' : r!.delta > 0 ? 'harsher' : 'no different'
-    const how = dir === 'no different' ? 'no different from rival fans on' : `${points(r!.delta)} ${dir} than rival fans to`
+    const dir = r!.delta < 0 ? 'less negative' : r!.delta > 0 ? 'harsher' : 'no different'
+    const how = dir === 'no different' ? 'no different from rival fans on' : `${points(r!.delta)} ${dir} than rival fans on`
     return `${fans} are ${how} ${r!.name}, their one tracked player with enough of their own comments.${thinNote}`
   }
-  const kinder = judged.filter((r) => r.delta < 0).length
-  const softest = judged[0]!
-  const hardest = judged.at(-1)!
-  const count = kinder === judged.length ? `all ${fmtInt(judged.length)}` : `${fmtInt(kinder)} of their ${fmtInt(judged.length)}`
-  return `${fans} are kinder than rival fans to ${count} players: softest on ${softest.name} (${pts(softest.delta)}), hardest on ${hardest.name} (${pts(hardest.delta)}).${thinNote}`
+  // Rows arrive least negative first, so the ends are the widest gap below and the row furthest
+  // above. A row is below or above by the points the sentence prints, so a gap that prints as
+  // 0 is read as no different.
+  const score = (r: GapRow & { delta: number }): number => Number((100 * r.delta).toFixed(0))
+  const below = judged.filter((r) => score(r) < 0).length
+  const above = judged.filter((r) => score(r) > 0).length
+  const evens = judged.filter((r) => score(r) === 0)
+  const first = judged[0]!
+  const last = judged.at(-1)!
+  const n = fmtInt(judged.length)
+  const of = (k: number): string => (k === judged.length ? `all ${n}` : `${fmtInt(k)} of their ${n}`)
+  const lead = (k: number, r: GapRow & { delta: number }): string => (k === 1 ? `${r.name} (${pts(r.delta)})` : `the widest gap on ${r.name} (${pts(r.delta)})`)
+  const noDifferent = evens.length === 1 ? `and no different on ${evens[0]!.name}` : `and no different on the other ${fmtInt(evens.length)}`
+  if (below === 0 && above === 0) return `${fans} are no different from rival fans on ${of(judged.length)} players.${thinNote}`
+  if (below === 0) {
+    const tail = above === judged.length ? `the narrowest on ${first.name} (${pts(first.delta)})` : noDifferent
+    return `${fans} are more negative than rival fans on ${of(above)} players: ${lead(above, last)}, ${tail}.${thinNote}`
+  }
+  const tail =
+    above === 0 && evens.length === 0
+      ? `the narrowest on ${last.name} (${pts(last.delta)})`
+      : above === 0
+        ? noDifferent
+        : above === 1
+          ? `and more negative only on ${last.name} (${pts(last.delta)})`
+          : `and more negative on ${fmtInt(above)} of them, most on ${last.name} (${pts(last.delta)})`
+  return `${fans} are less negative than rival fans on ${of(below)} players: ${lead(below, first)}, ${tail}.${thinNote}`
 }
 
 export interface Described {

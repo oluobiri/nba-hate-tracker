@@ -1,6 +1,6 @@
 // The full grid: thirty fanbases on thirty rosters as one table. A cell is
 // the fanbase's negative rate on that roster, tinted by its distance from
-// the roster's usual (heat harsher, ice kinder) or, toggled, by the raw
+// the roster's usual (heat harsher, ice less negative) or, toggled, by the raw
 // share. Desktop only: the stylesheet hides the island under 1024 px, so
 // a phone never hydrates it. One sentence per cell serves the tooltip, the
 // cell's spoken text and the page's worked example alike.

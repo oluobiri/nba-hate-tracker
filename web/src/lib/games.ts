@@ -207,7 +207,7 @@ export function gamesSummary(name: string, log: readonly GameLine[], baseline: C
   if (!wins || !losses) return `${first} Too few graded games on one side to split wins from losses.`
   const w = negRate(wins)
   const l = negRate(losses)
-  const verb = l > w ? 'harsher' : l < w ? 'kinder' : 'no different'
+  const verb = l > w ? 'harsher' : l < w ? 'less negative' : 'no different'
   return `${first} It was ${verb} after losses: ${fmtPct(l, 0)} negative in losses against ${fmtPct(w, 0)} in wins, on a season baseline of ${fmtPct(negRate(baseline), 0)}.`
 }
 

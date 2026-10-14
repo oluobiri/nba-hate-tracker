@@ -1,6 +1,6 @@
 ---
 import { PRODUCTION_DATA_BASE } from '../data/env'
-import { AUTHOR, CURRENT_SEASON, GITHUB_URL, LINKEDIN_URL } from '../site'
+import { AUTHOR, COFFEE_URL, CURRENT_SEASON, GITHUB_URL, LINKEDIN_URL } from '../site'
 
 const manifestUrl = `${PRODUCTION_DATA_BASE}/season=${CURRENT_SEASON}/manifest.json`
 ---
@@ -17,6 +17,14 @@ const manifestUrl = `${PRODUCTION_DATA_BASE}/season=${CURRENT_SEASON}/manifest.j
       <span>
         Built by {LINKEDIN_URL ? <a href={LINKEDIN_URL}>{AUTHOR}</a> : AUTHOR}
       </span>
+      <a class="ftr__coffee" href={COFFEE_URL}>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 5h9v5a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3z" />
+          <path d="M11 6.5h1.25a1.75 1.75 0 0 1 0 3.5H11" />
+          <path d="M1.5 15h12" />
+        </svg>
+        Buy me a coffee
+      </a>
     </p>
   </div>
 </footer>

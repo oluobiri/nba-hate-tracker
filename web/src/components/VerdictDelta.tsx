@@ -1,5 +1,5 @@
 // The room's verdict on one game against his usual: a signed figure and a
-// short bar centred on his baseline. Heat when harsher, ice when kinder;
+// short bar centred on his baseline. Heat when harsher, ice when less negative;
 // the sign is printed, so colour never carries it alone. The figure is a Δ
 // in the negative share, or in net on a page that speaks net.
 import type { CSSProperties } from 'react'
@@ -35,7 +35,7 @@ export function VerdictDelta({ delta, n, span = DEFAULT_SPAN, metric = 'neg', si
       ? `Too few comments to judge: ${fmtInt(n)}.`
       : pts === 0
         ? `At ${against}, from ${fmtInt(n)} comments.`
-        : `${pts} ${pts === 1 ? 'point' : 'points'} ${harsher ? 'harsher' : 'kinder'} than ${against}, from ${fmtInt(n)} comments.`
+        : `${pts} ${pts === 1 ? 'point' : 'points'} ${harsher ? 'harsher' : 'less negative'} than ${against}, from ${fmtInt(n)} comments.`
   const half = Math.min(1, Math.abs(delta ?? 0) / span) * 50
   const fill = { '--vd-l': `${delta !== null && delta < 0 ? 50 - half : 50}%`, '--vd-w': `${half}%`, '--vd-x': `${delta !== null && delta < 0 ? 50 - half : 50 + half}%` } as CSSProperties
   if (size === 'hero') {

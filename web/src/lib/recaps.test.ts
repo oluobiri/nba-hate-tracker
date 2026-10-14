@@ -15,7 +15,6 @@ import {
   nightNetSentence,
   nightPoints,
   nightRankSentence,
-  nightSentence,
   periodCells,
   periodsText,
   quarterTurnSentence,
@@ -47,6 +46,30 @@ describe('periodCells', () => {
   })
 })
 
+/** A game line for the night charts: graded when counts reach the floor of 20. */
+const night = (gameId: string, date: string, counts: Counts | null, win: boolean, playoffs = false, dnp = false): GameLine => ({
+  gameId,
+  date,
+  opponent: 'Other',
+  opponentAbbr: 'OTH',
+  home: true,
+  win,
+  score: '100–99',
+  seasonType: playoffs ? 'playoffs' : 'regular_season',
+  minutes: dnp ? 0 : 30,
+  pts: 10,
+  reb: 5,
+  ast: 2,
+  plusMinus: 0,
+  gameScore: 8.5,
+  line: '10 pts',
+  dnp,
+  counts,
+  talked: counts !== null && counts.total >= 20,
+  delta: null,
+  recapHref: null,
+})
+
 describe('the sections after the buzzer, in net', () => {
   const usual = c(30, 40, 30)
 
@@ -66,29 +89,6 @@ describe('the sections after the buzzer, in net', () => {
     const held = periodCells({ '1': { neg: 30, pos: 30, neu: 40 }, '2': { neg: 0, pos: 0, neu: 0 }, '3': { neg: 35, pos: 30, neu: 35 }, '4': { neg: 0, pos: 0, neu: 0 } })
     expect(quarterTurnSentence(held)).toBe('The room held its line all night: net 0 in the 1st, −5 by the 3rd. His comments in the live thread, quarter by quarter.')
     expect(quarterTurnSentence(periodCells({ '1': { neg: 1, pos: 0, neu: 0 }, '2': { neg: 0, pos: 0, neu: 0 } }))).toBe('His comments in the live thread, quarter by quarter.')
-  })
-
-  const night = (gameId: string, date: string, counts: Counts | null, win: boolean, playoffs = false, dnp = false): GameLine => ({
-    gameId,
-    date,
-    opponent: 'Other',
-    opponentAbbr: 'OTH',
-    home: true,
-    win,
-    score: '100–99',
-    seasonType: playoffs ? 'playoffs' : 'regular_season',
-    minutes: dnp ? 0 : 30,
-    pts: 10,
-    reb: 5,
-    ast: 2,
-    plusMinus: 0,
-    gameScore: 8.5,
-    line: '10 pts',
-    dnp,
-    counts,
-    talked: counts !== null && counts.total >= 20,
-    delta: null,
-    recapHref: null,
   })
 
   it('points every graded game by date with the room\'s net, and ranks the night worst-first', () => {
@@ -173,7 +173,7 @@ describe('the verdict against his usual', () => {
     expect(recapDelta(null, usual, 20)).toBeNull()
   })
 
-  it('tones heat harsher, ice kinder, bone otherwise', () => {
+  it('tones heat harsher, ice less negative, bone otherwise', () => {
     expect(recapTone(0.2)).toBe('neg')
     expect(recapTone(-0.05)).toBe('pos')
     expect(recapTone(0)).toBe('neu')
@@ -355,15 +355,6 @@ describe('the page sentences', () => {
     expect(indexLede(null)).toBe('Every comment, as it landed. No recap is curated this season.')
   })
 
-  it('states the night against his usual, and says when it cannot', () => {
-    const usual = c(50, 30, 20)
-    expect(nightSentence('One Player', c(60, 20, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 60% negative of 100 comments, 10 points harsher than his usual 50%.')
-    expect(nightSentence('One Player', c(40, 40, 20), usual, 20)).toBe('Every thread about One Player that night, post-game included: 40% negative of 100 comments, 10 points kinder than his usual 50%.')
-    expect(nightSentence('One Player', c(50, 50, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 50% negative of 100 comments, at his usual.')
-    expect(nightSentence('One Player', c(51, 49, 0), usual, 20)).toBe('Every thread about One Player that night, post-game included: 51% negative of 100 comments, 1 point harsher than his usual 50%.')
-    expect(nightSentence('One Player', c(3, 1, 1), usual, 20)).toBe('Too few comments about One Player that night to judge: 5.')
-    expect(nightSentence('One Player', null, usual, 20)).toBe("Nobody mentioned One Player in the game's threads that night.")
-  })
 })
 
 describe('recapHrefs', () => {

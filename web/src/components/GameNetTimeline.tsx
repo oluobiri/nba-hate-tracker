@@ -37,6 +37,7 @@ export function GameNetTimeline({ points, baseline, highlight, highlightLabel, l
   for (let v = -dom; v <= dom + 1e-9; v += 0.25) ticks.push(v)
   const months: number[] = []
   for (const d = new Date(t0); d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + 1, 1)) {
+    // oxlint-disable-next-line react/capitalized-calls -- Date.UTC is a static method, not a component; the rule has no allowlist
     const m = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
     if (m >= t0) months.push(m)
   }

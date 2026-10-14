@@ -174,6 +174,38 @@
 .note__body > :last-child {
   margin-bottom: 0;
 }
+/* A method note folds: the eyebrow is the summary, with the fold's + / − before it. The body
+   stacks under the summary (block, not the grid), since engines differ on a grid details. */
+.note--method {
+  display: block;
+  padding-block: 0;
+}
+.note--method > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding-top: 0;
+  list-style: none;
+  cursor: pointer;
+}
+.note--method > summary::-webkit-details-marker {
+  display: none;
+}
+.note--method > summary::before {
+  content: '+';
+  width: 10px;
+  font-weight: 500;
+}
+.note--method[open] > summary::before {
+  content: '−';
+}
+.note--method > summary:hover {
+  color: var(--bone-2);
+}
+.note--method > .note__body {
+  padding-bottom: 12px;
+}
 @media (max-width: 480px) {
   .note {
     grid-template-columns: 1fr;
@@ -1726,7 +1758,7 @@ mark {
   }
 }
 
-/* GapTable: own fans against every other fanbase, per roster player. Ice kinder, heat harsher; the sign is printed. */
+/* GapTable: own fans against every other fanbase, per roster player. Ice less negative, heat harsher; the sign is printed. */
 .gap {
   width: 100%;
   font-size: 13px;
@@ -3873,14 +3905,16 @@ a.hero__who:hover {
 .rm .neg,
 .rt .neg,
 .th .neg,
-.sn .neg {
+.sn .neg,
+.titles__h .neg {
   color: var(--heat);
 }
 .ro .pos,
 .rm .pos,
 .rt .pos,
 .th .pos,
-.sn .pos {
+.sn .pos,
+.titles__h .pos {
   color: var(--ice);
 }
 .nc {

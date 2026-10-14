@@ -178,7 +178,7 @@ describe('gamesSummary', () => {
 
   it('states the graded count and the loss/win split against the baseline', () => {
     expect(gamesSummary('Leader', log, BASELINE, FLOOR)).toBe(
-      'The room talked about Leader in 3 of his 4 games, at least 10 comments each. It was kinder after losses: 20% negative in losses against 60% in wins, on a season baseline of 40%.',
+      'The room talked about Leader in 3 of his 4 games, at least 10 comments each. It was less negative after losses: 20% negative in losses against 60% in wins, on a season baseline of 40%.',
     )
   })
 

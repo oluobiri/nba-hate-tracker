@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { assertRecapDocument } from '../data/recap'
 import type { RecapDocument } from '../data/types.gen'
 import { CURRENT_SEASON } from '../site'
-import { buildTimeline, cardAt, clockAt, etTime, gameClock, GAME_RATE, idxAt, lengthPhrase, mmss, periodStartsU, playCursor, playStamp, POST, PRE, tOfU, uOfT, uOfWall, wallOfU } from './clock'
+import { buildTimeline, cardAt, clockAt, etTime, gameAt, gameClock, GAME_RATE, idxAt, lengthPhrase, mmss, periodStartsU, playCursor, playStamp, POST, PRE, tOfU, uOfGame, uOfT, uOfWall, wallOfU } from './clock'
 import { toRows } from './replay'
 import { smallGame } from './replay.fixture'
 
@@ -129,6 +129,34 @@ describe('buildTimeline on the small game', () => {
 
   it('refuses an empty game', () => {
     expect(() => buildTimeline([], periods)).toThrow('a timeline needs plays and periods')
+  })
+})
+
+describe('a step on the game clock', () => {
+  const { periods, plays } = smallGame()
+  const tl = buildTimeline(plays, periods)
+
+  it('reads game seconds at a replay time, held through a card', () => {
+    near(gameAt(tl, PRE), 0)
+    near(gameAt(tl, PRE + 10 / GAME_RATE), 10)
+    const timeout = tl.cards.find((c) => c.kind === 'timeout')!
+    near(gameAt(tl, timeout.u0 + 1), 20)
+    near(gameAt(tl, tl.totalU), 1440)
+  })
+
+  it('lands where the clock first reaches a second, before the stoppage on it', () => {
+    near(uOfGame(tl, 10), tl.playU[1]!)
+    near(uOfGame(tl, 20), tl.playU[2]!)
+    expect(uOfGame(tl, -5)).toBe(PRE)
+    near(uOfGame(tl, 9999), tl.anchors[tl.anchors.length - 1]!.u)
+    near(gameAt(tl, uOfGame(tl, 100)), 100)
+  })
+
+  it("moves the clock a whole minute from the tip, and a quarter's worth across the break", () => {
+    expect(clockAt(tl, uOfGame(tl, gameAt(tl, PRE) + 60)).time).toBe('11:00')
+    // twelve minutes reaches 0:00 as the break card opens; a thirteenth is a minute into Q2
+    expect(clockAt(tl, uOfGame(tl, gameAt(tl, PRE) + 12 * 60))).toMatchObject({ label: 'END Q1', time: '0:00' })
+    expect(clockAt(tl, uOfGame(tl, gameAt(tl, PRE) + 13 * 60))).toMatchObject({ label: 'Q2', time: '11:00' })
   })
 })
 

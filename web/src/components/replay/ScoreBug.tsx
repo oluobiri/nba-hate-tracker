@@ -1,6 +1,8 @@
 // The score bug: the anchor of the stage, sticky at every width. Away and
 // home with the leader in bone and the trailer in gray (never a hue), the
-// clock, the line score, his live line and floor state, play and speed.
+// clock, the line score, his live line and floor state, play and speed; on
+// a phone, where the speed buttons and the strip's chips are gone, a step
+// pair for the rewind.
 import '../../styles/replay.css'
 import { type ClockReading, type Speed, SPEEDS } from '../../lib/clock'
 import { fmtInt } from '../../lib/format'
@@ -22,11 +24,16 @@ export interface ScoreBugProps {
   speed: Speed
   onToggle: () => void
   onSpeed: (s: Speed) => void
+  /** Game seconds; the phone's step pair calls it with ±PHONE_STEP. */
+  onStep: (delta: number) => void
 }
+
+/** The phone's step on the game clock, in game seconds: one minute, twelve to a quarter. */
+export const PHONE_STEP = 60
 
 const cell = (v: number | null): string => (v === null ? '–' : String(v))
 
-export function ScoreBug({ away, home, score, clock, line, his, playing, speed, onToggle, onSpeed }: ScoreBugProps) {
+export function ScoreBug({ away, home, score, clock, line, his, playing, speed, onToggle, onSpeed, onStep }: ScoreBugProps) {
   const awayLeads = score.away >= score.home
   const homeLeads = score.home >= score.away
   const l = his.line
@@ -103,6 +110,14 @@ export function ScoreBug({ away, home, score, clock, line, his, playing, speed, 
         <button type="button" className="btn bug__play" onClick={onToggle} aria-label={playing ? 'Pause' : 'Play'} data-testid="bug-play">
           {playing ? '❚❚' : '▶'}
         </button>
+        <span className="bug__step" role="group" aria-label="Step">
+          <button type="button" className="btn bug__sp mono" onClick={() => onStep(-PHONE_STEP)} aria-label="Back one minute" data-testid="bug-back">
+            −1:00
+          </button>
+          <button type="button" className="btn bug__sp mono" onClick={() => onStep(PHONE_STEP)} aria-label="Forward one minute" data-testid="bug-forward">
+            +1:00
+          </button>
+        </span>
         <span className="bug__speed" role="group" aria-label="Speed">
           {SPEEDS.map((s) => (
             <button key={s} type="button" className="btn bug__sp" aria-pressed={speed === s} onClick={() => onSpeed(s)}>

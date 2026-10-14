@@ -191,6 +191,9 @@
 .bug__speed {
   display: flex;
 }
+.bug__step {
+  display: none;
+}
 .bug__sp {
   padding: 0 10px;
   margin-left: -1px;
@@ -983,6 +986,25 @@
   }
   .bug__speed {
     display: none;
+  }
+  /* The controls dissolve into the grid: play keeps its corner, the step pair takes a row of its own under his line. */
+  .bug__ctl {
+    display: contents;
+  }
+  .bug__play {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .bug__step {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 3;
+    gap: 8px;
+    padding-top: 6px;
+  }
+  .bug__step .bug__sp {
+    flex: 1;
+    margin: 0;
   }
   .bug__his {
     grid-column: 1 / -1;

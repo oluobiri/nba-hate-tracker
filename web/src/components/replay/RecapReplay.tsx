@@ -7,7 +7,7 @@ import { MotionConfig } from 'motion/react'
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { fetchRecap } from '../../data/recap'
-import { etTime, lengthPhrase, periodStartsU, playCursor, playStamp, tOfU, uOfT } from '../../lib/clock'
+import { etTime, gameAt, lengthPhrase, periodStartsU, playCursor, playStamp, tOfU, uOfGame, uOfT } from '../../lib/clock'
 import { fmtInt } from '../../lib/format'
 import { negRate } from '../../lib/metrics'
 import { captionPlay, commentCursor, emptyLine, type FeedDensity, feedSelection, type FeedView, lastName, type Moment, prepareReplay, recapRows, type ReplayData, RIGHT_NOW, roomByPlayer, sceneAt } from '../../lib/replay'
@@ -278,6 +278,7 @@ export function RecapReplay({ recapKey, name, focusId, away, home, usual, names,
             playback.toggle()
           }}
           onSpeed={playback.setSpeed}
+          onStep={(delta) => data && seek(uOfGame(data.tl, gameAt(data.tl, u) + delta))}
         />
         {data && (
           <FlowStrip

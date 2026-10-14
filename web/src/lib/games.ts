@@ -1,10 +1,11 @@
 // The Games section: the games a player dressed for, each with the room's
-// verdict against his own season baseline. player_games is the spine (a
+// verdict against his own season, in net. player_games is the spine (a
 // game he did not dress for is not his game); game_sentiment joins on it
 // and ships counts only, so the verdict is computed here, never shipped.
 import type { GameSentimentRow, GamesRow, PlayerGamesRow } from '../data/types.gen'
 import { fmtInt, fmtPct } from './format'
-import { countsOf, gameScore, negRate, sumCounts } from './metrics'
+import { countsOf, gameScore, negRate, netSentiment, posRate, sumCounts } from './metrics'
+import { fmtNet } from './net'
 import type { Counts } from './types'
 import { PHASE_LABELS, type Phase, weekLabel, weekOf } from './weeks'
 
@@ -20,10 +21,17 @@ export interface GameLine {
   /** His team's score first: "112–98". */
   score: string
   seasonType: string
+  /** "R4 G5" in the playoffs, "Play-in", "Pre"; blank in the regular season. */
+  phase: string
   minutes: number
   pts: number
   reb: number
   ast: number
+  /** "9-18". */
+  fg: string
+  /** "2-6". */
+  fg3: string
+  tov: number
   plusMinus: number
   gameScore: number
   /** "24 pts · 7 reb · 9 ast", or "DNP" when he dressed and did not play. */
@@ -33,8 +41,12 @@ export interface GameLine {
   counts: Counts | null
   /** At or above the game floor: the room talked about him. */
   talked: boolean
-  /** This game's negative share minus his season baseline; null unless talked. */
+  /** The room's net on him in this game, positive minus negative; null unless talked. */
+  net: number | null
+  /** This game's net minus his season net; null unless talked. */
   delta: number | null
+  /** Every comment Reddit counts in the game's threads; null unless both threads are bridged. */
+  reddit: number | null
   /** The recap of this game with him as its focus, when one is curated. */
   recapHref: string | null
 }
@@ -46,6 +58,13 @@ export function scoreLine(game: GamesRow, abbr: ReadonlyMap<string, string>): st
 }
 
 const ROUNDS: Record<number, string> = { 1: 'First round', 2: 'Conf. semifinals', 4: 'NBA Finals' }
+const PHASE_TAGS: Record<string, string> = { pre_season: 'Pre', play_in: 'Play-in', playoffs: 'PO' }
+
+/** The table's phase tag: round and game in the playoffs, the phase otherwise, blank in the regular season. */
+export function phaseTag(game: GamesRow): string {
+  if (game.season_type === 'playoffs' && game.playoff_round !== null && game.playoff_game !== null) return `R${Math.trunc(game.playoff_round)} G${Math.trunc(game.playoff_game)}`
+  return PHASE_TAGS[game.season_type] ?? ''
+}
 
 /** The round of a playoff game, the conference named at round 3; the season phase otherwise. */
 export function roundLabel(game: GamesRow, conferenceOf: ReadonlyMap<string, string>): string {
@@ -92,7 +111,7 @@ export function gameLine(game: GamesRow, abbr: ReadonlyMap<string, string>, conf
   }
 }
 
-/** His dressed games in date order, joined to the room's counts and judged against `baseline`. */
+/** His dressed games in date order, joined to the room's counts and judged in net against `baseline`. */
 export function buildGameLog(
   lines: readonly PlayerGamesRow[],
   sentiment: readonly GameSentimentRow[],
@@ -101,9 +120,10 @@ export function buildGameLog(
   baseline: Counts,
   floor: number,
   recapHrefs: ReadonlyMap<string, string> = new Map(),
+  reddit: ReadonlyMap<string, number> = new Map(),
 ): GameLine[] {
   const room = new Map(sentiment.map((r) => [r.game_id, countsOf(r)]))
-  const base = negRate(baseline)
+  const base = netSentiment(baseline)
   return lines
     .flatMap((l) => {
       const g = games.get(l.game_id)
@@ -124,17 +144,23 @@ export function buildGameLog(
           win: l.wl === 'W',
           score: `${ours}–${theirs}`,
           seasonType: g.season_type,
+          phase: phaseTag(g),
           minutes: l.minutes,
           pts: l.pts,
           reb: l.reb,
           ast: l.ast,
+          fg: `${l.fgm}-${l.fga}`,
+          fg3: `${l.fg3m}-${l.fg3a}`,
+          tov: l.tov,
           plusMinus: l.plus_minus,
           gameScore: dnp ? 0 : gameScore(l),
           line: dnp ? 'DNP' : `${l.pts} pts · ${l.reb} reb · ${l.ast} ast`,
           dnp,
           counts,
           talked,
-          delta: talked ? negRate(counts) - base : null,
+          net: talked ? netSentiment(counts) : null,
+          delta: talked ? netSentiment(counts) - base : null,
+          reddit: reddit.get(l.game_id) ?? null,
           recapHref: recapHrefs.get(l.game_id) ?? null,
         },
       ]
@@ -162,14 +188,14 @@ export interface ScatterPoint {
   label: string
 }
 
-/** Game Score against the negative share, one point per graded game. */
+/** Game Score against the room's net, one point per graded game. */
 export function scatterPoints(log: readonly GameLine[]): ScatterPoint[] {
   return graded(log).map((g) => ({
     gameId: g.gameId,
     x: g.gameScore,
-    y: negRate(g.counts!),
+    y: g.net!,
     win: g.win,
-    label: `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}: Game Score ${g.gameScore.toFixed(1)}, ${fmtPct(negRate(g.counts!), 0)} negative`,
+    label: `${g.win ? 'W' : 'L'} ${g.home === false ? '@' : 'vs'} ${g.opponentAbbr} ${g.score}: Game Score ${g.gameScore.toFixed(1)}, net ${fmtNet(g.net)} from ${fmtInt(g.counts!.total)} comments`,
   }))
 }
 
@@ -177,15 +203,15 @@ export function scatterPoints(log: readonly GameLine[]): ScatterPoint[] {
 const STRONG = 0.3
 const WEAK = 0.1
 
-/** The plain-words lead over the scatter, by the sign and size of r. */
+/** The plain-words lead over the scatter, by the sign and size of r between Game Score and net. */
 export function scatterLead(name: string, n: number, r: number | null): string {
   if (r === null) return `Too few games to say whether the room grades ${name}'s box score.`
   const over = `across ${fmtInt(n)} games the room talked about`
-  if (r <= -STRONG) return `Bad nights get punished: ${over}, the negative share falls as ${name}'s Game Score rises.`
-  if (r <= -WEAK) return `Bad nights get punished, mildly: ${over}, the negative share drifts down as ${name}'s Game Score rises.`
-  if (r < WEAK) return `The room barely grades the box score: ${over}, ${name}'s Game Score and the negative share move independently.`
-  if (r < STRONG) return `Good nights get punished, mildly: ${over}, the negative share drifts up as ${name}'s Game Score rises.`
-  return `Good nights get punished: ${over}, the negative share rises with ${name}'s Game Score.`
+  if (r >= STRONG) return `Bad nights get punished: ${over}, net sentiment rises with ${name}'s Game Score.`
+  if (r >= WEAK) return `Bad nights get punished, mildly: ${over}, net sentiment drifts up as ${name}'s Game Score rises.`
+  if (r > -WEAK) return `The room barely grades the box score: ${over}, ${name}'s Game Score and net sentiment move independently.`
+  if (r > -STRONG) return `Good nights get punished, mildly: ${over}, net sentiment drifts down as ${name}'s Game Score rises.`
+  return `Good nights get punished: ${over}, net sentiment falls as ${name}'s Game Score rises.`
 }
 
 /** For a player with no box line all season. */
@@ -199,16 +225,20 @@ export function talkedThreads(sentiment: readonly GameSentimentRow[], floor: num
   return sentiment.filter((r) => r.comment_count >= floor).length
 }
 
-/** One sentence for the section: how many games the room graded and the win/loss split against his baseline. */
+/** "−32 in losses (44% negative, 12% positive)": net with both shares beside it, since net alone can hide a split room. */
+const netSide = (c: Counts, label: string): string => `${fmtNet(netSentiment(c))} in ${label} (${fmtPct(negRate(c), 0)} negative, ${fmtPct(posRate(c), 0)} positive)`
+
+/** One sentence for the section: how many games the room graded and the win/loss split in net against his season. */
 export function gamesSummary(name: string, log: readonly GameLine[], baseline: Counts, floor: number): string {
   const talked = log.filter((g) => g.talked).length
   const first = `The room talked about ${name} in ${fmtInt(talked)} of his ${fmtInt(log.length)} games, at least ${fmtInt(floor)} comments each.`
   const { wins, losses } = winLossSplit(log, floor)
   if (!wins || !losses) return `${first} Too few graded games on one side to split wins from losses.`
-  const w = negRate(wins)
-  const l = negRate(losses)
-  const verb = l > w ? 'harsher' : l < w ? 'less negative' : 'no different'
-  return `${first} It was ${verb} after losses: ${fmtPct(l, 0)} negative in losses against ${fmtPct(w, 0)} in wins, on a season baseline of ${fmtPct(negRate(baseline), 0)}.`
+  // Read by the printed points: a gap that rounds to nothing is no different.
+  const w = Math.round(100 * netSentiment(wins))
+  const l = Math.round(100 * netSentiment(losses))
+  const verb = l < w ? 'harsher' : l > w ? 'warmer' : 'no different'
+  return `${first} It was ${verb} after losses: net ${netSide(losses, 'losses')} against ${netSide(wins, 'wins')}, on a season net of ${fmtNet(netSentiment(baseline))}.`
 }
 
 /** The log bucketed by spine week, for the timeline's week tooltips. */

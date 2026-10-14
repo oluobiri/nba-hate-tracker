@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GameSentimentRow, GamesRow, PlayerGamesRow } from '../data/types.gen'
-import { buildGameLog, gameLine, gamesSummary, neverDressedSentence, roundLabel, scatterLead, scatterPoints, scoreLine, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
+import { buildGameLog, gameLine, gamesSummary, neverDressedSentence, phaseTag, roundLabel, scatterLead, scatterPoints, scoreLine, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
 import { negRate } from './metrics'
 import type { Counts } from './types'
 
@@ -87,9 +87,9 @@ const LINES = [
   line('g3', 'Utah Jazz', true, 'W', { minutes: 0, pts: 0, fgm: 0, fga: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, plus_minus: 0 }),
   line('g4', 'Denver Nuggets', null, 'L'),
 ]
-// g1 talked (60% neg), g2 talked (20% neg), g3 talked but DNP, g4 under the floor; g9 undressed.
+// g1 talked (net −40), g2 talked (net 0), g3 talked but DNP, g4 under the floor; g9 undressed.
 const ROOM = [room('g1', 30, 10, 10), room('g2', 5, 15, 5), room('g3', 20, 0, 0), room('g4', 3, 1, 1), room('g9', 50, 0, 0)]
-const BASELINE = c(40, 40, 20) // 40%
+const BASELINE = c(40, 40, 20) // net −20
 const FLOOR = 10
 
 describe('buildGameLog', () => {
@@ -105,12 +105,24 @@ describe('buildGameLog', () => {
     expect(log[3]).toMatchObject({ score: '99–110', home: null })
   })
 
-  it('judges a talked game against the baseline and leaves the rest null', () => {
+  it('judges a talked game in net against his season and leaves the rest null', () => {
     expect(log[0]!.talked).toBe(true)
-    expect(log[0]!.delta).toBeCloseTo(0.6 - 0.4)
-    expect(log[1]!.delta).toBeCloseTo(0.2 - 0.4)
-    expect(log[3]).toMatchObject({ talked: false, delta: null })
+    expect(log[0]!.net).toBeCloseTo(-0.4)
+    expect(log[0]!.delta).toBeCloseTo(-0.4 - -0.2)
+    expect(log[1]!.net).toBeCloseTo(0)
+    expect(log[1]!.delta).toBeCloseTo(0 - -0.2)
+    expect(log[3]).toMatchObject({ talked: false, net: null, delta: null })
     expect(log[3]!.counts).toEqual(c(3, 1, 1))
+  })
+
+  it('carries the phase tag, the shooting line and turnovers', () => {
+    expect(log[0]).toMatchObject({ phase: '', fg: '11-20', fg3: '2-6', tov: 4 })
+  })
+
+  it("carries Reddit's thread count where both threads are bridged", () => {
+    const withReddit = buildGameLog(LINES, ROOM, GAMES, ABBR, BASELINE, FLOOR, new Map(), new Map([['g2', 53_003]]))
+    expect(withReddit.map((g) => g.reddit)).toEqual([null, 53_003, null, null])
+    expect(log.every((g) => g.reddit === null)).toBe(true)
   })
 
   it('carries a recap href only for the game a recap is curated on', () => {
@@ -147,19 +159,20 @@ describe('scatterPoints', () => {
   it('plots graded games only, with a readable label', () => {
     const pts = scatterPoints(buildGameLog(LINES, ROOM, GAMES, ABBR, BASELINE, FLOOR))
     expect(pts.map((p) => p.gameId)).toEqual(['g1', 'g2'])
-    expect(pts[0]).toMatchObject({ win: true, y: 0.6 })
+    expect(pts[0]!.win).toBe(true)
+    expect(pts[0]!.y).toBeCloseTo(-0.4)
     expect(pts[0]!.x).toBeCloseTo(24.8)
-    expect(pts[1]!.label).toBe('L @ MIA 101–105: Game Score 24.8, 20% negative')
+    expect(pts[1]!.label).toBe('L @ MIA 101–105: Game Score 24.8, net 0 from 25 comments')
   })
 })
 
 describe('scatterLead', () => {
-  it('reads the sign and size of r into plain words', () => {
-    expect(scatterLead('Leader', 40, -0.45)).toMatch(/^Bad nights get punished: across 40 games/)
-    expect(scatterLead('Leader', 40, -0.2)).toMatch(/^Bad nights get punished, mildly/)
-    expect(scatterLead('Leader', 40, 0.02)).toMatch(/^The room barely grades the box score/)
-    expect(scatterLead('Leader', 40, 0.2)).toMatch(/^Good nights get punished, mildly/)
-    expect(scatterLead('Leader', 40, 0.5)).toMatch(/^Good nights get punished: /)
+  it('reads the sign and size of r into plain words: net rising with Game Score is bad nights punished', () => {
+    expect(scatterLead('Leader', 40, 0.45)).toBe("Bad nights get punished: across 40 games the room talked about, net sentiment rises with Leader's Game Score.")
+    expect(scatterLead('Leader', 40, 0.2)).toMatch(/^Bad nights get punished, mildly: .* net sentiment drifts up as/)
+    expect(scatterLead('Leader', 40, 0.02)).toMatch(/^The room barely grades the box score: .* move independently\.$/)
+    expect(scatterLead('Leader', 40, -0.2)).toMatch(/^Good nights get punished, mildly: .* net sentiment drifts down as/)
+    expect(scatterLead('Leader', 40, -0.5)).toBe("Good nights get punished: across 40 games the room talked about, net sentiment falls as Leader's Game Score rises.")
     expect(scatterLead('Leader', 2, null)).toBe("Too few games to say whether the room grades Leader's box score.")
   })
 })
@@ -176,10 +189,17 @@ describe('never dressed', () => {
 describe('gamesSummary', () => {
   const log = buildGameLog(LINES, ROOM, GAMES, ABBR, BASELINE, FLOOR)
 
-  it('states the graded count and the loss/win split against the baseline', () => {
+  it('states the graded count and the loss/win split in net, both shares beside it, against his season', () => {
     expect(gamesSummary('Leader', log, BASELINE, FLOOR)).toBe(
-      'The room talked about Leader in 3 of his 4 games, at least 10 comments each. It was less negative after losses: 20% negative in losses against 60% in wins, on a season baseline of 40%.',
+      'The room talked about Leader in 3 of his 4 games, at least 10 comments each. It was warmer after losses: net 0 in losses (20% negative, 20% positive) against −40 in wins (60% negative, 20% positive), on a season net of −20.',
     )
+  })
+
+  it('reads harsher when losses sit below wins, and no different when the gap rounds to nothing', () => {
+    const harsh = buildGameLog(LINES, [room('g1', 10, 20, 20), room('g2', 30, 10, 10)], GAMES, ABBR, BASELINE, FLOOR)
+    expect(gamesSummary('Leader', harsh, BASELINE, FLOOR)).toMatch(/It was harsher after losses: net −40 in losses/)
+    const flat = buildGameLog(LINES, [room('g1', 30, 10, 10), room('g2', 300, 101, 100)], GAMES, ABBR, BASELINE, FLOOR)
+    expect(gamesSummary('Leader', flat, BASELINE, FLOOR)).toMatch(/It was no different after losses/)
   })
 
   it('says when one side is too thin', () => {
@@ -219,6 +239,14 @@ describe('the game line', () => {
 
   it('reads away first, as a box score does', () => {
     expect(scoreLine(GAMES.get('g1')!, ABBR)).toBe('NYK 98 @ Boston Celtics 112')
+  })
+
+  it('tags the table row with round and game, the phase, or nothing in the regular season', () => {
+    expect(phaseTag(g7)).toBe('R3 G7')
+    expect(phaseTag({ ...g7, playoff_round: 4, playoff_game: 5 })).toBe('R4 G5')
+    expect(phaseTag(GAMES.get('g1')!)).toBe('')
+    expect(phaseTag({ ...GAMES.get('g1')!, season_type: 'play_in' })).toBe('Play-in')
+    expect(phaseTag({ ...GAMES.get('g1')!, season_type: 'pre_season' })).toBe('Pre')
   })
 
   it('names the round, the conference at round 3, and the phase outside the playoffs', () => {

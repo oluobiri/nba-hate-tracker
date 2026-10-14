@@ -10,6 +10,7 @@ import { type GameLineParts, gameLine } from './games'
 import { countsOf, negRate, netSentiment, posRate, sumCounts } from './metrics'
 import { fmtNet } from './net'
 import type { NightNoteCopy } from './season-copy'
+import { redditCounts } from './threads'
 import type { Counts } from './types'
 import { type Calendar, weekLabel, weekOf, weekSpine } from './weeks'
 
@@ -896,8 +897,6 @@ export const THREAD_SECOND_MIN_N = 500
 /** …and this much more negative than the thread. */
 export const THREAD_SECOND_GAP = 0.2
 
-const THREAD_TYPES: ReadonlySet<string> = new Set(['game_thread', 'post_game_thread'])
-
 export interface ThreadPlayer {
   name: string
   slug: string
@@ -964,16 +963,7 @@ export function loudestThreads({ sentiment, posts, games, players, teams, recaps
   }
   const gameRows = new Map(games.map((g) => [g.game_id, g]))
   const byGame = gameComments(sentiment)
-  // Reddit's count needs both threads bridged; a lone post would print a partial figure as the whole.
-  const bridged = new Map<string, { n: number; types: Set<string> }>()
-  for (const p of posts) {
-    if (!p.game_id || !THREAD_TYPES.has(p.post_type)) continue
-    const b = bridged.get(p.game_id) ?? { n: 0, types: new Set<string>() }
-    b.n += p.num_comments
-    b.types.add(p.post_type)
-    bridged.set(p.game_id, b)
-  }
-  const reddit = new Map([...bridged].flatMap(([id, b]) => (b.types.size === THREAD_TYPES.size ? [[id, b.n] as const] : [])))
+  const reddit = redditCounts(posts)
   const inGame = new Map<string, GameSentimentRow[]>()
   for (const r of sentiment) inGame.set(r.game_id, [...(inGame.get(r.game_id) ?? []), r])
   const recapsOf = recapsByGame(recaps)

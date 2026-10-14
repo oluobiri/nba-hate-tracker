@@ -510,22 +510,22 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>Stamp</h2>
-      <div class="guide__row"><Stamp kind="verified" /><Stamp kind="unofficial" /></div>
+      <div class="guide__row"><Stamp kind="unofficial" /></div>
     </section>
 
     <section class="guide__section">
       <h2>Exhibit</h2>
       <p class="eyebrow">A receipt: the sentiment as its edge, the commenter's flair, verbatim body, the thread as one line, score, date, source. No username, ever.</p>
       <div class="guide__stack">
-        <Exhibit number={1} {...exhibitProps(receipt)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />
+        <Exhibit number={1} {...exhibitProps(receipt)} />
         <Exhibit number={2} {...exhibitProps(neutral)} />
-        {orphan && <Exhibit number={3} {...exhibitProps(orphan)} stamp={manifest.rules.receipts.verified ? 'verified' : undefined} />}
+        {orphan && <Exhibit number={3} {...exhibitProps(orphan)} />}
         <Exhibit number={4} {...exhibitProps(trace)} marks={trace.mentioned_text}>
           <Answer {...answerOf(trace)} />
           <p>The names the finder matched, marked as the body spells them; the answer and a line about the comment sit here, between the body and its source.</p>
         </Exhibit>
       </div>
-      <p class="eyebrow">Neutral receipts never carry a stamp. The third has no post in the bridge. The fourth is the walkthrough's comment, with the finder's marks and the extra slot.</p>
+      <p class="eyebrow">The third has no post in the bridge. The fourth is the walkthrough's comment, with the finder's marks and the extra slot.</p>
     </section>
 
     <section class="guide__section">
@@ -956,9 +956,9 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
     <section class="guide__section">
       <h2>Receipts</h2>
       <p class="eyebrow">
-        Three tabs in sentiment order, arrow keys move; the tab and the expansion live in the URL. Verified on negative and positive only. Rendered static here, hydrated on the player page.
+        Three tabs in sentiment order, arrow keys move; the tab and the expansion live in the URL. Rendered static here, hydrated on the player page.
       </p>
-      <Receipts name={thinReceipts.attributed_player} cells={cellsFor(thinReceipts.attributed_player)} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={threshold} />
+      <Receipts name={thinReceipts.attributed_player} cells={cellsFor(thinReceipts.attributed_player)} top={RECEIPTS_TOP} official={threshold} />
       <p class="eyebrow">{thinReceipts.attributed_player}: the official player with the thinnest cell ({thinnestCell(thinReceipts.attributed_player)} receipts).</p>
     </section>
 

@@ -305,11 +305,10 @@ const tiles = [
         <section id="receipts" class="pp__section" aria-labelledby="receipts-h">
           <h2 id="receipts-h">Receipts</h2>
           <p class="pp__lede">What the room said about {name}, verbatim: the highest-scoring comments in each class.</p>
-          <Receipts client:load name={name} cells={cells} verified={manifest.rules.receipts.verified} top={RECEIPTS_TOP} official={official} />
+          <Receipts client:load name={name} cells={cells} top={RECEIPTS_TOP} official={official} />
           <MethodNote kind="method">
             A receipt is a top-scoring comment about {name} that cleared the classifier's confidence bar
-            {manifest.rules.receipts.verified && ' and a second pass confirming it is about him'}. Neutral receipts carry no stamp. No usernames: the site judges
-            players, not commenters.
+            {manifest.rules.receipts.verified && ' and a second pass confirming it is about him'}. No usernames: the site judges players, not commenters.
           </MethodNote>
         </section>
 

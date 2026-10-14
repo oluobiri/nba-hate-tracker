@@ -1,6 +1,7 @@
 // Curated words for the players with no roster team at season end, joined
 // at build by slug. lib/status fails the build when this list disagrees
-// with the players table, so a stale entry never ships.
+// with the players table, so a stale entry never ships. The entries are
+// one season's: a new drop rewrites them before its first build.
 
 export type PlayerStatus = 'Retired' | 'Free agent' | 'Playing abroad'
 

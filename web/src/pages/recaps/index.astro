@@ -15,6 +15,7 @@ const recaps = buildRecaps(manifest, tables)
 const { lead, list } = leadAndList(recaps)
 const lede = indexLede(lead)
 // The lead's season in one line: his weekly rows cut by the calendar, on the index hero only.
+// seasonCalendar requires the season page's eight dates; the line reads four of them.
 const season = lead ? seasonContext(lead, tables.player_temporal.filter((r) => r.attributed_player === lead.entry.attributed_player), seasonCalendar(manifest.calendar)) : null
 const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
 ---

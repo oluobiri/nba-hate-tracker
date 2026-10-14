@@ -22,7 +22,6 @@ import {
   recapDelta,
   recapHrefs,
   recapNetDelta,
-  recapPhase,
   recapTone,
   seasonContext,
   weekPhase,
@@ -382,10 +381,6 @@ describe('the season context', () => {
     week('2026-06-15', 1, 4, 0), // off-season
   ]
 
-  it('cuts a day into five phases, the play-in folded in and the Finals cut out', () => {
-    expect(['2025-10-02', '2025-10-21', '2026-04-12', '2026-04-14', '2026-04-18', '2026-06-02', '2026-06-03', '2026-06-13', '2026-06-14'].map((d) => recapPhase(d, CAL))).toEqual(['pre', 'regular', 'regular', 'playoffs', 'playoffs', 'playoffs', 'finals', 'finals', 'off'])
-  })
-
   it('gives a week to the phase that starts in it, whole', () => {
     expect(WEEKS.map((w) => weekPhase(w.week, CAL))).toEqual(['pre', 'regular', 'regular', 'playoffs', 'playoffs', 'finals', 'finals', 'off'])
   })
@@ -400,6 +395,11 @@ describe('the season context', () => {
     const [finals, opener] = buildRecaps({ ...MANIFEST, recaps: { 'g7-one-player': entry('gF', 'One Player', 1, 'one-player', periods(83)), 'g1-two-player': MANIFEST.recaps['g1-two-player']! } } as Manifest, { ...TABLES, games: [game('gF', '2026-06-13'), ...TABLES.games], player_games: [box('gF', 'One Player', 1), ...TABLES.player_games] } as Tables)
     expect(seasonContext(finals!, WEEKS, CAL)).toBe('The Finals hold 33% of his 615 comments this season, at 60% negative against 26% outside it.')
     expect(seasonContext(opener!, WEEKS, CAL)).toBe('The regular season holds 33% of his 615 comments this season, at 20% negative against 45% outside it.')
+  })
+
+  it("gives the lead the phase of its week, so a game on the Monday before the Finals open counts inside the Finals", () => {
+    const [lead] = buildRecaps({ ...MANIFEST, recaps: { 'gM-one-player': entry('gM', 'One Player', 1, 'one-player', periods(83)) } } as Manifest, { ...TABLES, games: [game('gM', '2026-06-01')], player_games: [box('gM', 'One Player', 1)] } as Tables)
+    expect(seasonContext(lead!, WEEKS, CAL)).toMatch(/^The Finals hold 33%/)
   })
 
   it('reads a phase with none of his comments, and one with all of them', () => {

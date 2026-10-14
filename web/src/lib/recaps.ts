@@ -229,16 +229,7 @@ export interface RecapCalendar {
   finals_end: string
 }
 
-/** The phase of a day by the season calendar: the Finals cut out of the playoffs, the play-in folded in. */
-export function recapPhase(day: string, cal: RecapCalendar): RecapPhase {
-  if (day < cal.opening_night) return 'pre'
-  if (day > cal.finals_end) return 'off'
-  if (day >= cal.finals_start) return 'finals'
-  if (day >= cal.play_in_start) return 'playoffs'
-  return 'regular'
-}
-
-/** The phase of a weekly row: the week a phase starts in belongs to it, whole. */
+/** The phase of a weekly row by the season calendar: the Finals cut out of the playoffs, the play-in folded in, the week a phase starts in belonging to it whole. */
 export function weekPhase(week: string, cal: RecapCalendar): RecapPhase {
   if (week < weekOf(cal.opening_night)) return 'pre'
   if (week > weekOf(cal.finals_end)) return 'off'
@@ -256,7 +247,8 @@ export function phaseSplit(weeks: readonly PlayerTemporalRow[], phase: RecapPhas
 
 /** The index hero's season line: how much of his season the phase holds, and how negative the room was in it against the rest. */
 export function seasonContext(lead: Recap, weeks: readonly PlayerTemporalRow[], cal: RecapCalendar): string {
-  const phase = recapPhase(lead.game.game_date, cal)
+  // The lead's phase on the same weekly cut as the split, so its own night is always inside.
+  const phase = weekPhase(weekOf(lead.game.game_date), cal)
   const { inside, outside } = phaseSplit(weeks, phase, cal)
   const season = inside.total + outside.total
   const holds = `${PHASE_NAMES[phase]} ${phase === 'playoffs' || phase === 'finals' ? 'hold' : 'holds'}`

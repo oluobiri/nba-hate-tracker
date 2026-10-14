@@ -566,7 +566,7 @@ test('a phone gets the two tabs, the room capped, and the box in one column', as
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
-test('the strip seeks on a drag, tall enough for a thumb on a phone, and follows a touch that sets no button bits', async ({ page }, info) => {
+test('the strip seeks on a mouse drag, tall enough for a thumb on a phone', async ({ page }, info) => {
   await page.goto(RECAP, { waitUntil: 'networkidle' })
   await ready(page)
   const flow = page.getByTestId('flow')
@@ -579,17 +579,28 @@ test('the strip seeks on a drag, tall enough for a thumb on a phone, and follows
   await page.mouse.move(box.x + box.width * 0.5, y, { steps: 5 })
   await page.mouse.up()
   await expect.poll(() => clock(page)).not.toBe('12:00')
-  const afterMouse = await clock(page)
-  // Mobile Safari's touch moves carry buttons 0: the drag must still follow.
-  await flow.evaluate((el, x) => {
-    const fire = (type: string, clientX: number, buttons: number) =>
-      el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true, button: type === 'pointerdown' ? 0 : -1, buttons, clientX, clientY: el.getBoundingClientRect().top + 10 }))
-    fire('pointerdown', x.from, 1)
-    fire('pointermove', x.to, 0)
-    fire('pointerup', x.to, 0)
-  }, { from: box.x + box.width * 0.5, to: box.x + box.width * 0.7 })
-  await expect.poll(() => clock(page)).not.toBe(afterMouse)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a finger drags the strip without scrolling the page', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'phone', 'a touch context, phone-sized')
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 800 }, hasTouch: true, isMobile: true, baseURL: 'http://localhost:4321/' })
+  const page = await ctx.newPage()
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await ready(page)
+  const flow = page.getByTestId('flow')
+  await flow.scrollIntoViewIfNeeded()
+  const box = (await flow.boundingBox())!
+  const scrollY = await page.evaluate(() => window.scrollY)
+  const cdp = await ctx.newCDPSession(page)
+  const y = box.y + box.height / 2
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
+  await touch('touchStart', box.x + box.width * 0.3)
+  for (let i = 1; i <= 6; i++) await touch('touchMove', box.x + box.width * (0.3 + 0.05 * i))
+  await touch('touchEnd', 0)
+  await expect.poll(() => clock(page)).not.toBe('12:00')
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollY)
+  await ctx.close()
 })
 
 test('every recap page links a live next recap', async ({ page }) => {

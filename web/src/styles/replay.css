@@ -236,6 +236,10 @@
   height: 48px;
   cursor: pointer;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .flow__svg:focus-visible {
   outline: 2px solid var(--focus);

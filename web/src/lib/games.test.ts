@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GameSentimentRow, GamesRow, PlayerGamesRow } from '../data/types.gen'
-import { buildGameLog, gameLine, gamesSummary, neverDressedSentence, phaseTag, roundLabel, scatterLead, scatterPoints, scoreLine, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
+import { buildGameLog, gameLine, gamesSummary, loudestThread, neverDressedSentence, phaseTag, roundLabel, scatterLead, scatterPoints, scoreLine, seasonAverages, talkedThreads, weekGames, winLossSplit } from './games'
 import { negRate } from './metrics'
 import type { Counts } from './types'
 
@@ -122,7 +122,9 @@ describe('buildGameLog', () => {
   it("carries Reddit's thread count where both threads are bridged", () => {
     const withReddit = buildGameLog(LINES, ROOM, GAMES, ABBR, BASELINE, FLOOR, new Map(), new Map([['g2', 53_003]]))
     expect(withReddit.map((g) => g.reddit)).toEqual([null, 53_003, null, null])
+    expect(loudestThread(withReddit)).toBe(53_003)
     expect(log.every((g) => g.reddit === null)).toBe(true)
+    expect(loudestThread(log)).toBe(0)
   })
 
   it('carries a recap href only for the game a recap is curated on', () => {

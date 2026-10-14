@@ -62,10 +62,11 @@ import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pi
 import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
-import { buildRecaps, leadAndList, nightPoints, nightRankSentence, recapHref, recapHrefs, recapNetDelta } from '../lib/recaps'
+import { buildRecaps, leadAndList, nightPoints, nightRankSentence, type Recap, recapHref, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
 import { fmtNet } from '../lib/net'
-import { buildGameLog, scatterLead, scatterPoints, weekGames } from '../lib/games'
+import { buildGameLog, loudestThread, scatterLead, scatterPoints, weekGames } from '../lib/games'
+import { redditCounts } from '../lib/threads'
 import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { PRE, periodStartsU, playStamp } from '../lib/clock'
 import { etTime } from '../lib/clock'
@@ -227,8 +228,9 @@ const fanRows = fans.slice(0, 8).map((r) => ({ key: r.abbreviation, label: `${r.
 const fanDomain = [Math.min(...fans.map(negRate)), Math.max(...fans.map(negRate))] as const
 const taggedRows = fanRows.slice(0, 5).map((r, i) => (i === 2 ? { ...r, tag: 'own fans' } : r))
 
-// The game log of #1 by negative rate: the verdict cases and the table's rows.
+// The game log of #1 by negative rate: the verdict cases and the table's awkward rows.
 const gameFloor = manifest.rules.floors.game_min_n
+const reddit = redditCounts(tables.posts)
 const topLog = buildGameLog(
   tables.player_games.filter((r) => r.attributed_player === top.attributed_player),
   tables.game_sentiment.filter((r) => r.attributed_player === top.attributed_player),
@@ -236,15 +238,17 @@ const topLog = buildGameLog(
   abbrOf,
   top,
   gameFloor,
+  new Map(),
+  reddit,
 )
 const judged = topLog.filter((g) => g.delta !== null)
-const harshest = judged.toSorted((a, b) => b.delta! - a.delta!)[0]
-const kindest = judged.toSorted((a, b) => a.delta! - b.delta!)[0]
+const harshest = judged.toSorted((a, b) => a.delta! - b.delta!)[0]
+const warmest = judged.toSorted((a, b) => b.delta! - a.delta!)[0]
 const quiet = topLog.find((g) => !g.talked)
 const topPoints = scatterPoints(topLog)
 const topR = pearson(topPoints.map((p) => p.x), topPoints.map((p) => p.y))
-// Ten rows for the table: talked games plus a DNP line and a neutral-site game when he has them.
-const tableRows = [...new Set([...topLog.filter((g) => g.talked).slice(0, 8), topLog.find((g) => g.dnp), topLog.find((g) => g.home === null), quiet].filter((g) => g !== undefined))]
+// The awkward rows: two talked games, then a DNP line, a neutral-site game and a game under the floor when he has them.
+const awkwardRows = [...new Set([...topLog.filter((g) => g.talked).slice(0, 2), topLog.find((g) => g.dnp), topLog.find((g) => g.home === null), quiet].filter((g) => g !== undefined))]
   .toSorted((a, b) => b.date.localeCompare(a.date))
 
 // Timelines: the full case, the thinnest official one, and the one with the fewest weeks at all.
@@ -339,22 +343,26 @@ const silenced = recapLead ? recapLead.cells.map((c, i) => (i === 1 ? { ...c, co
 const longestRecapName = recaps.toSorted((a, b) => b.entry.attributed_player.length - a.entry.attributed_player.length)[0]
 const longestHook = recaps.toSorted((a, b) => b.hook.length - a.hook.length)[0]
 const recapRows = [...new Set([longestRecapName, longestHook])].filter((r) => r !== undefined)
-// The lead's player's log around his recap: the row with the chip among rows without.
-const recapLog = recapLead
-  ? buildGameLog(
-      tables.player_games.filter((r) => r.attributed_player === recapLead.entry.attributed_player),
-      tables.game_sentiment.filter((r) => r.attributed_player === recapLead.entry.attributed_player),
-      gamesById,
-      abbrOf,
-      recapLead.usual,
-      gameFloor,
-      recapHrefs(manifest.recaps, recapLead.entry.attributed_player),
-    ).toSorted((a, b) => b.date.localeCompare(a.date))
-  : []
+// A recap player's log, newest first, his recap's chip on its row.
+const logOf = (recap: Recap) =>
+  buildGameLog(
+    tables.player_games.filter((r) => r.attributed_player === recap.entry.attributed_player),
+    tables.game_sentiment.filter((r) => r.attributed_player === recap.entry.attributed_player),
+    gamesById,
+    abbrOf,
+    recap.usual,
+    gameFloor,
+    recapHrefs(manifest.recaps, recap.entry.attributed_player),
+    reddit,
+  ).toSorted((a, b) => b.date.localeCompare(a.date))
+const recapLog = recapLead ? logOf(recapLead) : []
 const recapNights = recapLead ? nightPoints(recapLog) : []
 const recapNet = recapLead ? recapNetDelta(recapLead.night, recapLead.usual, gameFloor) : null
-const recapAt = recapLog.findIndex((g) => g.recapHref !== null)
-const chipRows = recapAt >= 0 ? recapLog.slice(Math.max(0, recapAt - 1), recapAt + 2) : []
+// The games table's full case: a Finals player with one recap, picked by slug; the lead when he has no recap.
+const TABLE_RECAP = 'de-aaron-fox'
+const tableRecap = recaps.find((r) => r.entry.slug === TABLE_RECAP) ?? recapLead
+const tableLog = tableRecap ? (tableRecap === recapLead ? recapLog : logOf(tableRecap)) : []
+const tableTalked = tableLog.filter((g) => g.talked)
 // The replay's parts, from the lead recap's file, at moments chosen by rule:
 // the tip, a second into the first timeout, mid-halftime, the final.
 const replay = recapLead ? prepareReplay(recapFrames(assertRecapDocument(await readJson(seasonLocation(manifest.season), recapLead.entry.file), recapLead.entry.file)), recapLead.player.player_id) : null
@@ -840,31 +848,34 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>VerdictDelta</h2>
-      <p class="eyebrow">A game against his usual: signed points, a bar from the baseline, n. Heat harsher, ice less negative; the sign is printed.</p>
+      <p class="eyebrow">A game against his season, in net: signed points, a bar from his season's net, n. Heat harsher, ice warmer; the sign is printed. {top.attributed_player}'s games.</p>
       <div class="guide__row">
         {harshest && <figure class="guide__fig"><VerdictDelta delta={harshest.delta} n={harshest.counts!.total} /><figcaption>harshest · {harshest.opponentAbbr} {harshest.score}</figcaption></figure>}
-        {kindest && <figure class="guide__fig"><VerdictDelta delta={kindest.delta} n={kindest.counts!.total} /><figcaption>least negative · {kindest.opponentAbbr} {kindest.score}</figcaption></figure>}
-        <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his usual</figcaption></figure>
+        {warmest && <figure class="guide__fig"><VerdictDelta delta={warmest.delta} n={warmest.counts!.total} /><figcaption>warmest · {warmest.opponentAbbr} {warmest.score}</figcaption></figure>}
+        <figure class="guide__fig"><VerdictDelta delta={0} n={top.total} /><figcaption>at his season</figcaption></figure>
         {quiet && <figure class="guide__fig"><VerdictDelta delta={null} n={quiet.counts?.total ?? 0} /><figcaption>under the floor of {fmtInt(gameFloor)}</figcaption></figure>}
-        {recapLead && <figure class="guide__fig"><VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} /><figcaption>in net, the recap page's metric: {recapLead.entry.attributed_player}'s night against his season; harsher below zero</figcaption></figure>}
       </div>
-      <p class="eyebrow">The hero form, a section's wide axis: the figure over the dot, the ends labeled, zero named for what it stands for.</p>
-      {recapLead && <VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} metric="net" span={0.6} size="hero" tickLabel={`his season (${fmtNet(netSentiment(recapLead.usual))})`} />}
+      <p class="eyebrow">The hero form, a section's wide axis, as the recap page reads a night: the figure over the dot, the ends labeled, zero named for what it stands for.</p>
+      {recapLead && <VerdictDelta delta={recapNet} n={recapLead.night?.total ?? 0} size="hero" tickLabel={`his season (${fmtNet(netSentiment(recapLead.usual))})`} />}
     </section>
 
     <section class="guide__section">
       <h2>GamesTable</h2>
-      <p class="eyebrow">A real table, newest first. Wins bold, losses gray. On a phone: date, opponent, result, P/R/A, verdict; nothing scrolls sideways.</p>
-      <GamesTable rows={tableRows} caption={`${top.attributed_player}'s game log, a sample`} />
       <p class="eyebrow">
-        {topLog.some((g) => g.dnp) ? 'Includes a DNP line. ' : 'He has no DNP line this season. '}
-        {topLog.some((g) => g.home === null) ? 'Includes a neutral-site game. ' : 'He has no neutral-site game this season. '}
-        {quiet ? 'Includes a game under the floor.' : ''}
+        A real table read across its width, newest first: date, phase, opponent, result, the box line, Reddit's count for the game's threads against his loudest, the verdict in net
+        with its bar, the Recap chip inline where one is curated. Wins bold, losses gray. On a phone the phase stacks under the date and the result under the opponent, the box line
+        collapses to P/R/A, the comments go; nothing scrolls sideways and no row outgrows its text.
       </p>
-      {chipRows.length > 0 && recapLead && (
+      {tableRecap && <GamesTable rows={tableTalked} loudest={loudestThread(tableLog)} caption={`${tableRecap.entry.attributed_player}'s game log, the games the room talked about`} />}
+      <p class="eyebrow">
+        The awkward rows, from {top.attributed_player}'s log:{' '}
+        {topLog.some((g) => g.dnp) ? 'a DNP line, ' : 'no DNP line this season, '}
+        {topLog.some((g) => g.home === null) ? 'a neutral-site game, ' : 'no neutral-site game this season, '}
+        {quiet ? 'a game under the floor.' : 'no game under the floor.'}
+      </p>
+      <GamesTable rows={awkwardRows} loudest={loudestThread(topLog)} caption={`${top.attributed_player}'s game log, the awkward rows`} />
+      {recapLead && (
         <>
-          <p class="eyebrow">A game with a curated recap carries a Recap chip at the row's end: {recapLead.entry.attributed_player}'s log around his.</p>
-          <GamesTable rows={chipRows} caption={`${recapLead.entry.attributed_player}'s game log around his recap, a sample`} />
           <p class="eyebrow">RecapChip on its own, as the season's loudest threads carry it; a game with two recaps names the player.</p>
           <p>
             <RecapChip href={recapHref(recapLead.key)} /> <RecapChip href={recapHref(recapLead.key)} label={`Recap · ${lastName(recapLead.entry.attributed_player)}`} />

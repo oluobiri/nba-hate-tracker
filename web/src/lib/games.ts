@@ -168,6 +168,9 @@ export function buildGameLog(
     .toSorted((a, b) => a.date.localeCompare(b.date) || a.gameId.localeCompare(b.gameId))
 }
 
+/** Reddit's count in his loudest game's threads: the comment bar's full width. */
+export const loudestThread = (log: readonly GameLine[]): number => Math.max(0, ...log.map((g) => g.reddit ?? 0))
+
 /** Games he played (not DNP) that the room talked about. */
 const graded = (log: readonly GameLine[]): GameLine[] => log.filter((g) => g.talked && !g.dnp)
 

@@ -5,7 +5,7 @@ import { useLayoutEffect, useMemo } from 'react'
 
 import '../styles/games.css'
 import { fmtInt } from '../lib/format'
-import type { GameLine } from '../lib/games'
+import { type GameLine, loudestThread } from '../lib/games'
 import { useViewState } from '../lib/url'
 import { GamesTable } from './GamesTable'
 
@@ -31,6 +31,7 @@ export function Games({ name, log, floor, top, official }: GamesProps) {
   }, [ready])
 
   const talked = useMemo(() => log.filter((g) => g.talked), [log])
+  const loudest = useMemo(() => loudestThread(log), [log])
   const filtered = games === 'all' ? log : talked
   const shown = rows === 'all' ? filtered : filtered.slice(0, top)
   const caption = games === 'all' ? `Every game ${name} dressed for, newest first.` : `Games the room talked about ${name} in, at least ${fmtInt(floor)} comments each, newest first.`
@@ -48,7 +49,7 @@ export function Games({ name, log, floor, top, official }: GamesProps) {
       {filtered.length === 0 ? (
         <p className="gl__empty">The room never reached {fmtInt(floor)} comments about {name} in one of his games.</p>
       ) : (
-        <GamesTable rows={shown} caption={caption} />
+        <GamesTable rows={shown} caption={caption} loudest={loudest} />
       )}
       {filtered.length > top && (
         <div className="gl__foot">

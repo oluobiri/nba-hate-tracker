@@ -25,7 +25,7 @@ export function GameScatter({ points, baseline, lead, r }: GameScatterProps) {
   const xs = points.map((p) => p.x)
   const x0 = Math.min(0, nice(Math.min(...xs), 10, false))
   const x1 = Math.max(x0 + 10, nice(Math.max(...xs), 10, true))
-  // The net axis is symmetric, a quarter past the widest lean, never narrower than ±50.
+  // The net axis is symmetric, the widest lean rounded up to a quarter, never narrower than ±50.
   const dom = Math.max(0.5, nice(Math.max(Math.abs(baseline), ...points.map((p) => Math.abs(p.y))), 0.25, true))
   const sx = (x: number): number => PAD.l + ((x - x0) / (x1 - x0)) * (W - PAD.l - PAD.r)
   const sy = (y: number): number => PAD.t + ((dom - y) / (2 * dom)) * (H - PAD.t - PAD.b)

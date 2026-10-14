@@ -1430,13 +1430,13 @@ mark {
     margin-top: 2px;
   }
   .gt thead th.gt__date-h {
-    width: 48px;
+    width: 54px;
   }
   .gt thead th.gt__opp-h {
     width: 72px;
   }
   .gt thead th.gt__narrow {
-    width: 52px;
+    width: 60px;
   }
   /* The verdict takes what is left: the stacked figure, its bar and the chip beside it. */
   .gt thead th.gt__verdict-h {
@@ -1447,11 +1447,14 @@ mark {
   }
   .gt__vc .vd {
     flex: 0 0 auto;
-    grid-template-columns: 32px minmax(36px, 44px);
+    grid-template-columns: 32px minmax(36px, 40px);
     column-gap: 6px;
   }
   .gt .vd__figure {
     font-size: 13px;
+  }
+  .gt .chip {
+    padding-inline: 6px;
   }
 }
 

@@ -30,6 +30,14 @@ function watchErrors(page: Page): string[] {
 const overflow = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
 
+/** An element's tap height: its box, plus an absolutely positioned ::before that reaches past it. */
+const tapHeight = (el: Element): number => {
+  const box = el.getBoundingClientRect().height
+  const before = getComputedStyle(el, '::before')
+  if (before.position !== 'absolute') return box
+  return box - (parseFloat(before.top) || 0) - (parseFloat(before.bottom) || 0)
+}
+
 const ROUTES = routes(DIST)
 test('dist/ has the routes the site promises', () => {
   expect(ROUTES).toContain('/')
@@ -437,7 +445,8 @@ test("the Recap chip on a player page's game rows leads to a live recap page", a
   expect(await chips.count()).toBeGreaterThan(0)
   for (const c of await chips.all()) {
     expect(ROUTES).toContain(await c.getAttribute('href'))
-    expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+    // The chip sits inline at the row's text height; its tap target is a hit area drawn around it.
+    expect(await c.evaluate(tapHeight)).toBeGreaterThanOrEqual(44)
   }
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })

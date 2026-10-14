@@ -21,7 +21,7 @@ export interface VerdictDeltaProps {
 }
 
 /** The bar's reach each way, in net points: a page choice shared by every verdict. */
-export const NET_SPAN = 0.6
+const NET_SPAN = 0.6
 
 export function VerdictDelta({ delta, n, span = NET_SPAN, size = 'row', tickLabel }: VerdictDeltaProps) {
   const pts = delta === null ? 0 : Math.round(Math.abs(delta) * 100)

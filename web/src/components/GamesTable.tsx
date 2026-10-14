@@ -66,8 +66,8 @@ export function GamesTable({ rows, caption, loudest }: GamesTableProps) {
           <th scope="col" className="gt__narrow">
             <abbr title="Points / rebounds / assists">P/R/A</abbr>
           </th>
-          <th scope="col" className="gt__wide">
-            <abbr title="Every comment in the game's threads, as Reddit counts them">Comments</abbr>
+          <th scope="col" className="gt__wide" title="Every comment in the game's threads, as Reddit counts them">
+            Comments
           </th>
           <th scope="col" className="gt__verdict-h">
             Verdict

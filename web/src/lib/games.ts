@@ -237,9 +237,9 @@ export function gamesSummary(name: string, log: readonly GameLine[], baseline: C
   const first = `The room talked about ${name} in ${fmtInt(talked)} of his ${fmtInt(log.length)} games, at least ${fmtInt(floor)} comments each.`
   const { wins, losses } = winLossSplit(log, floor)
   if (!wins || !losses) return `${first} Too few graded games on one side to split wins from losses.`
-  // Read by the printed points: a gap that rounds to nothing is no different.
-  const w = Math.round(100 * netSentiment(wins))
-  const l = Math.round(100 * netSentiment(losses))
+  // Read by the printed points, rounded as the figures print: a gap that prints as nothing is no different.
+  const w = Number((100 * netSentiment(wins)).toFixed(0))
+  const l = Number((100 * netSentiment(losses)).toFixed(0))
   const verb = l < w ? 'harsher' : l > w ? 'warmer' : 'no different'
   return `${first} It was ${verb} after losses: net ${netSide(losses, 'losses')} against ${netSide(wins, 'wins')}, on a season net of ${fmtNet(netSentiment(baseline))}.`
 }

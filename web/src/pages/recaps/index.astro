@@ -7,12 +7,15 @@ import { RecapLead } from '../../components/RecapLead'
 import { RecapRows } from '../../components/RecapRows'
 import { getSeason } from '../../data'
 import Base from '../../layouts/Base.astro'
-import { buildRecaps, indexLede, lagPhrase, leadAndList } from '../../lib/recaps'
+import { buildRecaps, indexLede, lagPhrase, leadAndList, seasonContext } from '../../lib/recaps'
+import { seasonCalendar } from '../../lib/season'
 
 const { manifest, tables } = await getSeason()
 const recaps = buildRecaps(manifest, tables)
 const { lead, list } = leadAndList(recaps)
 const lede = indexLede(lead)
+// The lead's season in one line: his weekly rows cut by the calendar, on the index hero only.
+const season = lead ? seasonContext(lead, tables.player_temporal.filter((r) => r.attributed_player === lead.entry.attributed_player), seasonCalendar(manifest.calendar)) : null
 const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
 ---
 
@@ -24,7 +27,7 @@ const lag = lagPhrase(manifest.rules.recaps.reaction_lag.median_offset_seconds)
       <p class="rx__lede">Every comment, as it landed. One game, one player, the room on the game clock beside the play-by-play.</p>
     </header>
 
-    {lead ? <RecapLead recap={lead} /> : <p class="rx__none">No recap is curated this season.</p>}
+    {lead ? <RecapLead recap={lead} season={season} /> : <p class="rx__none">No recap is curated this season.</p>}
 
     {
       list.length > 0 && (

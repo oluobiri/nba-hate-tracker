@@ -1,7 +1,8 @@
 // The lead recap in the leaderboard's hero form: the game line as the
 // kicker, the name in display type coloured by the night against his usual,
 // the hook as the sentence, his line and the counts, the period strip, and
-// one play affordance. The masked headshot at the right; a card on a phone.
+// the season line under it, one play affordance. The masked headshot at
+// the right; a card on a phone.
 import { headshotSrcSet, headshotVariant } from '../lib/media'
 import { boxLine, countsLine, recapHref, type Recap } from '../lib/recaps'
 import { GameLine } from './GameLine'
@@ -9,9 +10,11 @@ import { PeriodStrip } from './PeriodStrip'
 
 export interface RecapLeadProps {
   recap: Recap
+  /** lib/recaps seasonContext: how much of his season the night's phase holds. Index only. */
+  season?: string | null
 }
 
-export function RecapLead({ recap }: RecapLeadProps) {
+export function RecapLead({ recap, season = null }: RecapLeadProps) {
   const name = recap.entry.attributed_player
   const headshot = recap.player.headshot_url
   return (
@@ -25,6 +28,7 @@ export function RecapLead({ recap }: RecapLeadProps) {
           <span className="hero__who">{name}</span>
         </h2>
         <p className="hero__hook">{recap.hook}</p>
+        {season && <p className="hero__season">{season}</p>}
         <p className="hero__meta mono">
           {boxLine(recap.box)} · {countsLine(recap.entry)}
         </p>

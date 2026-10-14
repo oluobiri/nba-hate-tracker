@@ -48,6 +48,10 @@ test('dist/ has the routes the site promises', () => {
   expect(ROUTES.filter((r) => r.startsWith('/recaps/') && r !== '/recaps/')).toHaveLength(10)
 })
 
+/** Pixels by which the widest games table outgrows its column; a table can spill into the gutter before the document overflows. */
+const tableSpill = (page: Page) =>
+  page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('.gt')].map((t) => Math.ceil(t.getBoundingClientRect().width - t.parentElement!.clientWidth))))
+
 for (const route of ROUTES) {
   test(`walk ${route}`, async ({ page }) => {
     const errors = watchErrors(page)
@@ -55,6 +59,7 @@ for (const route of ROUTES) {
     expect(res?.status()).toBe(200)
     expect(errors, `console errors on ${route}`).toEqual([])
     expect(await overflow(page), `horizontal overflow on ${route}`).toBeLessThanOrEqual(0)
+    if (route.startsWith('/player/')) expect(await tableSpill(page), `games table wider than its column on ${route}`).toBeLessThanOrEqual(0)
   })
 }
 

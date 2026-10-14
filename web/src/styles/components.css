@@ -1302,7 +1302,7 @@ mark {
 }
 .gt th,
 .gt td {
-  padding: 8px 6px;
+  padding: 8px 5px;
   text-align: right;
   vertical-align: middle;
   border-bottom: 1px solid var(--line);
@@ -1372,7 +1372,7 @@ mark {
 /* Reddit's count with a bar against his loudest game. */
 .gt__bar {
   display: inline-block;
-  width: 72px;
+  width: 56px;
   height: 6px;
   margin-right: 8px;
   vertical-align: middle;
@@ -1390,14 +1390,14 @@ mark {
    the slot is the same on every row so the figures line up. */
 .gt__vc {
   display: grid;
-  grid-template-columns: auto 84px;
+  grid-template-columns: auto 76px;
   justify-content: center;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .gt__vc .vd {
   display: grid;
-  grid-template-columns: 40px 160px;
+  grid-template-columns: 40px 120px;
 }
 /* The chip inline, shorter than the row's text; the tap target reaches 44px through a hit area that takes no room. */
 .gt .chip {

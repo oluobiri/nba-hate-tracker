@@ -255,10 +255,18 @@ test('the team rail marks the section in view', async ({ page }) => {
 })
 
 // Edge states, one route each. The names are the data's, not a rule's.
-test('a free agent has no roster line and still gets fans', async ({ page }) => {
+test('a player without a roster team carries his status, what happened in the Games lede, and still gets fans', async ({ page }) => {
   await page.goto('/player/chris-paul/', { waitUntil: 'networkidle' })
-  await expect(page.locator('.pp__id')).toContainText('Free agent')
+  await expect(page.locator('.pp__id')).toHaveText('Retired')
+  await expect(page.locator('#games .pp__lede')).toContainText('announced his retirement')
   await expect(page.locator('#fans .pp__tile')).toHaveCount(2)
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a player who never dressed reads what happened as the whole Games lede', async ({ page }) => {
+  await page.goto('/player/ben-simmons/', { waitUntil: 'networkidle' })
+  await expect(page.locator('.pp__id')).toHaveText('Free agent')
+  await expect(page.locator('#games .pp__lede')).toHaveText(/^Ben Simmons sat out the whole season/)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
@@ -555,6 +563,26 @@ test('a phone gets the two tabs, the room capped, and the box in one column', as
   await tabs.nth(1).click()
   await expect(page.locator('.box')).toBeVisible()
   await expect(page.locator('.room')).toBeHidden()
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
+test('a phone steps the clock a game minute from the bug; a desktop keeps the speed buttons instead', async ({ page }, info) => {
+  await page.goto(RECAP, { waitUntil: 'networkidle' })
+  await ready(page)
+  const forward = page.getByTestId('bug-forward')
+  if (info.project.name !== 'phone') {
+    await expect(forward).toBeHidden()
+    await expect(page.getByRole('group', { name: 'Speed' })).toBeVisible()
+    return
+  }
+  await expect(page.getByRole('group', { name: 'Speed' })).toBeHidden()
+  for (const b of [forward, page.getByTestId('bug-back')]) expect((await b.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  expect(await clock(page)).toBe('12:00')
+  await forward.click()
+  expect(await clock(page)).toBe('11:00')
+  await forward.click()
+  await page.getByTestId('bug-back').click()
+  expect(await clock(page)).toBe('11:00')
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 

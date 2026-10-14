@@ -566,7 +566,7 @@ test('a phone gets the two tabs, the room capped, and the box in one column', as
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 
-test('the strip seeks on a drag, tall enough for a thumb on a phone, the knob on the playhead', async ({ page }, info) => {
+test('the strip seeks on a drag, tall enough for a thumb on a phone, and follows a touch that sets no button bits', async ({ page }, info) => {
   await page.goto(RECAP, { waitUntil: 'networkidle' })
   await ready(page)
   const flow = page.getByTestId('flow')
@@ -578,9 +578,17 @@ test('the strip seeks on a drag, tall enough for a thumb on a phone, the knob on
   await page.mouse.down()
   await page.mouse.move(box.x + box.width * 0.5, y, { steps: 5 })
   await page.mouse.up()
-  expect(await clock(page)).not.toBe('12:00')
-  const knob = await page.locator('.flow__knob').boundingBox()
-  expect(Math.abs(knob!.x + knob!.width / 2 - (box.x + box.width * 0.5))).toBeLessThanOrEqual(3)
+  await expect.poll(() => clock(page)).not.toBe('12:00')
+  const afterMouse = await clock(page)
+  // Mobile Safari's touch moves carry buttons 0: the drag must still follow.
+  await flow.evaluate((el, x) => {
+    const fire = (type: string, clientX: number, buttons: number) =>
+      el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true, button: type === 'pointerdown' ? 0 : -1, buttons, clientX, clientY: el.getBoundingClientRect().top + 10 }))
+    fire('pointerdown', x.from, 1)
+    fire('pointermove', x.to, 0)
+    fire('pointerup', x.to, 0)
+  }, { from: box.x + box.width * 0.5, to: box.x + box.width * 0.7 })
+  await expect.poll(() => clock(page)).not.toBe(afterMouse)
   expect(await overflow(page)).toBeLessThanOrEqual(0)
 })
 

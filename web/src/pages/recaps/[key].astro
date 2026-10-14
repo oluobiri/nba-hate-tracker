@@ -87,7 +87,7 @@ const seasonNet = netSentiment(recap.usual)
     <section class="rp__section" aria-labelledby="night-h">
       <h2 id="night-h">The night against his season</h2>
       <p class="rp__lede">{verdict}</p>
-      <VerdictDelta delta={netDelta} n={recap.night?.total ?? 0} metric="net" span={0.6} size="hero" tickLabel={`his season (${fmtNet(seasonNet)})`} />
+      <VerdictDelta delta={netDelta} n={recap.night?.total ?? 0} size="hero" tickLabel={`his season (${fmtNet(seasonNet)})`} />
       <dl class="rp__mix mono">
         <dt>This night</dt>
         <dd>

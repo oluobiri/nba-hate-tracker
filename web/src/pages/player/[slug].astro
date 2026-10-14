@@ -28,7 +28,9 @@ import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
 import { recapHrefs } from '../../lib/recaps'
-import { countsOf, neighbours, negRate, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
+import { fmtNet, netColor } from '../../lib/net'
+import { redditCounts } from '../../lib/threads'
+import { countsOf, neighbours, negRate, netSentiment, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
 import { playerStandings, rankIn, type Standing } from '../../lib/standings'
 import type { Counts, Sentiment } from '../../lib/types'
 import { GAME_KEYS, RECEIPT_KEYS } from '../../lib/url'
@@ -57,6 +59,7 @@ export async function getStaticPaths() {
   const games = new Map(tables.games.map((g) => [g.game_id, g]))
   const teams = new Map(tables.teams.map((t) => [t.team, t]))
   const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
+  const reddit = redditCounts(tables.posts)
 
   return tables.players.map((player) => {
     const name = player.attributed_player
@@ -81,13 +84,14 @@ export async function getStaticPaths() {
         games,
         teams,
         posts,
+        reddit,
       },
     }
   })
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
-const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, lines, sentiment, games, teams, posts } = Astro.props
+const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, lines, sentiment, games, teams, posts, reddit } = Astro.props
 const { counts, tracked } = verdictInput
 const { manifest } = await getSeason()
 const official = manifest.rules.qualified_threshold
@@ -101,6 +105,7 @@ const rosterAbbr = abbrOf(player.roster_team)
 // Verdict.
 const verdict = playerVerdict(verdictInput)
 const chips = rankChips(verdictInput)
+const net = netSentiment(counts)
 // Under the name: team · position · number, as a sports page reads. Then the dimension's facts.
 const today = new Date().toISOString().slice(0, 10)
 const facts = bioFacts(player, today)
@@ -138,7 +143,7 @@ const hisNeg = negRate(lists.average)
 const hisPos = posRate(lists.average)
 
 // Games (built before the timeline: the week readouts list them).
-const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n, recapHrefs(manifest.recaps, name))
+const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n, recapHrefs(manifest.recaps, name), reddit)
 const dressed = log.length > 0
 const wl = winLossSplit(log, floors.game_min_n)
 const points = scatterPoints(log)
@@ -148,6 +153,8 @@ const r = pearson(
 )
 const gamesText = dressed ? gamesSummary(name, log, counts, floors.game_min_n) : neverDressedSentence(name, talkedThreads(sentiment, floors.game_min_n), floors.game_min_n)
 const logDesc = log.toSorted((a, b) => b.date.localeCompare(a.date))
+// A net figure's detail: both shares beside it, since net alone can hide a split room.
+const shares = (c: Counts): string => `${fmtPct(negRate(c), 0)} neg · ${fmtPct(posRate(c), 0)} pos · ${fmtInt(c.total)} comments`
 const avg = seasonAverages(log)
 
 // Timeline.
@@ -244,10 +251,11 @@ const tiles = [
         <section id="verdict" class="pp__section" aria-labelledby="verdict-h">
           <h2 id="verdict-h">Verdict</h2>
           <SentimentBar counts={counts} size="hero" subject={name} />
-          <div class="pp__figures">
+          <div class="pp__figures pp__figures--four">
             <StatFigure figure={fmtPct(negRate(counts))} label="Negative" detail={`${fmtInt(counts.neg)} comments`} tone="neg" />
             <StatFigure figure={fmtPct(neuRate(counts))} label="Neutral" detail={`${fmtInt(counts.neu)} comments`} tone="neu" />
             <StatFigure figure={fmtPct(posRate(counts))} label="Positive" detail={`${fmtInt(counts.pos)} comments`} tone="pos" />
+            <StatFigure figure={fmtNet(net)} label="Net sentiment" detail="positive minus negative" color={netColor(net)} />
           </div>
           <p class="pp__n mono">
             n={fmtInt(counts.total)} comments about {name}
@@ -352,15 +360,23 @@ const tiles = [
             dressed ? (
               <>
                 <div class="pp__figures">
-                  <StatFigure figure={wl.wins ? fmtPct(negRate(wl.wins)) : '—'} label="In wins" detail={wl.wins ? `${fmtInt(wl.wins.total)} comments` : 'too few graded wins'} tone={wl.wins ? 'neg' : undefined} />
-                  <StatFigure figure={wl.losses ? fmtPct(negRate(wl.losses)) : '—'} label="In losses" detail={wl.losses ? `${fmtInt(wl.losses.total)} comments` : 'too few graded losses'} tone={wl.losses ? 'neg' : undefined} />
-                  <StatFigure figure={fmtPct(negRate(counts))} label="His usual" detail="the season, every comment" tone="neg" />
+                  <StatFigure figure={wl.wins ? fmtNet(netSentiment(wl.wins)) : '—'} label="In wins" detail={wl.wins ? shares(wl.wins) : 'too few graded wins'} color={wl.wins ? netColor(netSentiment(wl.wins)) : undefined} />
+                  <StatFigure figure={wl.losses ? fmtNet(netSentiment(wl.losses)) : '—'} label="In losses" detail={wl.losses ? shares(wl.losses) : 'too few graded losses'} color={wl.losses ? netColor(netSentiment(wl.losses)) : undefined} />
+                  <StatFigure figure={fmtNet(net)} label="His season" detail={shares(counts)} color={netColor(net)} />
                 </div>
                 <Games client:visible name={name} log={logDesc} floor={floors.game_min_n} top={LOG_TOP} official={official} />
-                {points.length >= SCATTER_MIN && <GameScatter points={points} baseline={negRate(counts)} lead={scatterLead(name, points.length, r)} r={r} />}
+                {points.length >= SCATTER_MIN && <GameScatter points={points} baseline={netSentiment(counts)} lead={scatterLead(name, points.length, r)} r={r} />}
                 <MethodNote kind="rule">
-                  A game counts when at least {fmtInt(floors.game_min_n)} comments about {name} were posted in its threads. The verdict is that game's negative
-                  share against his season share of {fmtPct(negRate(counts), 0)}; wins and losses are split from summed counts.
+                  A game counts when at least {fmtInt(floors.game_min_n)} comments about {name} were posted in its threads. The verdict is that game's net
+                  sentiment, positive minus negative in points, against his season net of {fmtNet(net)}; wins and losses are split from summed counts. The
+                  comment count is Reddit's, both of the game's threads bridged.
+                  {points.length >= SCATTER_MIN && (
+                    <>
+                      {' '}
+                      Game Score is Hollinger's one number for a box line: points, shooting, rebounds, assists, steals and blocks, less misses, turnovers and fouls. An average night
+                      scores about 10, a great one 40.
+                    </>
+                  )}
                 </MethodNote>
               </>
             ) : (
@@ -498,6 +514,9 @@ const tiles = [
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px;
+  }
+  .pp__figures--four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .pp__n {
     display: flex;
@@ -668,6 +687,10 @@ const tiles = [
     }
     .pp__figures {
       gap: 8px;
+    }
+    .pp__figures--four {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: 16px;
     }
   }
   @media (min-width: 1024px) {

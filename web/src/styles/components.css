@@ -3775,9 +3775,9 @@ a.hero__who:hover {
     font-size: 12px;
   }
 }
+/* An event's mark: from the floor to the top tick, never into the headroom the annotations use. */
 .ch__mark {
   position: absolute;
-  top: 0;
   bottom: 0;
   border-left: 1px dashed var(--mute-2);
 }

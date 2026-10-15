@@ -4,7 +4,7 @@
 # each slot's fit. Empty list = nothing curated.
 # version: MAJOR = entry add/drop, MINOR = reorder.
 
-version: "1.0"
+version: "2.0"
 season: "2025-26"
 
 examples:
@@ -20,8 +20,8 @@ examples:
   - {slot: read, comment_id: odx8fa9}
   - {slot: read, comment_id: nrep0bd}
   - {slot: read, comment_id: onpa94y}
-  - {slot: slip, comment_id: nsxfnml}
+  - {slot: slip, comment_id: og8acqy}
   - {slot: slip, comment_id: oi9sy59}
-  - {slot: slip, comment_id: novjx43}
+  - {slot: slip, comment_id: opmyk9q}
   - {slot: quote_check, comment_id: o3ksoqr}
   - {slot: quote_check, comment_id: oibjnzp}

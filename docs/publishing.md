@@ -4,7 +4,7 @@ How a season's dashboard drop reaches `https://courtsentiment.com/data/season=<s
 
 ## The published surface
 
-One hostname, split by path, over two private buckets and one CloudFront distribution. The S3 key is the public path.
+One hostname, split by path, over two private origin buckets and one CloudFront distribution. The S3 key is the public path. A third bucket receives the distribution's access logs and serves nothing.
 
 | Path | Origin | Contents |
 |---|---|---|
@@ -12,7 +12,7 @@ One hostname, split by path, over two private buckets and one CloudFront distrib
 | `/data/*` | `courtsentiment-data` | The published data contract: one `season=<season>/` prefix per season holding the manifest, the schema, its parquets and its recap files under `recaps/`. |
 | `/media/*` | `courtsentiment-data` | First-party images: headshots and logos, key = `media/<name>`. |
 
-- Both buckets block all public access at the account and bucket level. CloudFront reads them through one Origin Access Control; each bucket policy grants the CloudFront service principal `GetObject` and `ListBucket` conditioned on the distribution ARN. `ListBucket` is what makes a missing key a 404 rather than a 403.
+- Both origin buckets block all public access at the account and bucket level. CloudFront reads them through one Origin Access Control; each bucket policy grants the CloudFront service principal `GetObject` and `ListBucket` conditioned on the distribution ARN. `ListBucket` is what makes a missing key a 404 rather than a 403.
 - The data bucket is versioned and uses SSE-S3. A single-PUT object's ETag is therefore its MD5, which the publish step relies on.
 - All three behaviors use the managed CachingOptimized policy, redirect HTTP to HTTPS, and compress. A distribution-wide custom error maps 404 to `/404.html`, so a missing data key returns that HTML body with a 404 status.
 - DNS is a Route 53 zone the registrar delegates to; the ACM certificate covers the apex and `www`, validated by two CNAMEs that must stay in the zone for renewal.
@@ -27,6 +27,20 @@ One hostname, split by path, over two private buckets and one CloudFront distrib
 The publish role cannot read objects. The bucket listing (keys and ETags) is its only view of remote state, and the public URL is the only way to confirm a drop.
 
 The CLI profile `courtsentiment-publish` in `~/.aws/config` names the publish role, the source profile, and the MFA device. boto3 prompts for a code on the first call of each run.
+
+### Access logs
+
+The distribution writes standard access logs (v2, delivered by CloudWatch vended logs) to `courtsentiment-logs`: private, bucket owner enforced, SSE-S3, unversioned, with a lifecycle rule that expires objects after 180 days and aborts incomplete multipart uploads after 7. The rows carry viewer IPs, so the expiry is the retention policy. The CloudFront console writes the bucket policy when the delivery is added.
+
+Standard logging is a Pro-tier feature of the CloudFront flat-rate plans, and the distribution is on the Pro plan. A plan downgrade refuses a distribution with a feature the lower tier lacks, so the S3 destination comes off the Logging tab first; deleting it there leaves the delivery source behind, which `aws logs delete-delivery-source` removes.
+
+The delivery is w3c text (Parquet output bills CloudWatch conversion), tab-delimited, the default field set, under `AWSLogs/aws-account-id=<account>/CloudFront/year=<yyyy>/month=<MM>/day=<dd>/`. Three facts about the files: each is gzip with two header lines (`#Version`, `#Fields`), so a reader skips two; every value is URL-encoded, user agents included; the Hive-style path yields `year`, `month` and `day` as partition columns. Column names are the `#Fields` line of any file. `cs(Host)` is the distribution's own hostname and `x-host-header` the one the viewer asked for.
+
+```bash
+aws s3 sync s3://courtsentiment-logs/ <dir>/
+duckdb -c "SELECT * FROM read_csv('<dir>/**/*.gz', delim='\t', skip=2, header=false,
+           hive_partitioning=true, all_varchar=true, null_padding=true) LIMIT 5"
+```
 
 ## The publish step
 
@@ -96,7 +110,7 @@ curl -sI https://courtsentiment.com/media/logos/1610612737.svg
 `.github/workflows/deploy-web.yml` builds `web/` and syncs `web/dist/` to the web bucket. It runs on a push to `main` that touches `web/` or the workflow itself, and by hand (`workflow_dispatch`). Nothing else writes to that bucket.
 
 - **Identity:** GitHub Actions assumes `github-courtsentiment-web-deploy` through OIDC. The job holds `id-token: write` and `contents: read`, nothing else, and no long-lived key exists. The role ARN is the repository secret `AWS_WEB_DEPLOY_ROLE_ARN` (it carries the account id; the repository is public). Bucket and distribution are literals in the workflow.
-- **Build:** `npm ci`, then `npm run build` against the published contract, the same bytes a visitor's build would read. `SITE_INDEXABLE` is set in the workflow file; every page is `noindex` until it says `true`, so that line is the launch switch.
+- **Build:** `npm ci`, then `npm run build` against the published contract, the same bytes a visitor's build would read. `SITE_INDEXABLE` is set to `true` in the workflow file; a page carries `noindex` whenever the variable is anything else, so a local build never advertises itself. The build also writes `sitemap-index.xml` from the routes (the 404 page and the style guide excluded), and `robots.txt` names it.
 - **Sync**, three passes, so no page at the origin ever references a missing asset: hashed assets under `_astro/` first, without delete; then everything else, with delete, which removes stale routes; then `_astro/` again with delete, which uploads nothing and prunes the assets no page names any more. A visitor holding a page cached in the five minutes before a deploy can miss one pruned asset until that copy expires; the short page lifetime bounds it.
 - **Invalidate** `/*` and wait for completion.
 - **Verify** through the public origin, failing the job on any miss: `/`, one route and `/404.html` return 200, an unknown route 404, and the headers on the index, a stylesheet and a font are the ones below.
@@ -174,7 +188,7 @@ Media keys are versioned the same way. The same copy recipe restores one, with i
 
 ## When the repository is renamed
 
-The GitHub OIDC trust policy on `github-courtsentiment-web-deploy` pins the subject to the repository path (`repo:<owner>/<repo>:ref:refs/heads/main`). Edit it in the same change as the rename or the site deploy stops authenticating. The workflow itself carries no repository name. The publish role and `config/publish.yaml` do not reference the repository.
+The GitHub OIDC trust policy on `github-courtsentiment-web-deploy` pins the subject to the repository path (`repo:<owner>/<repo>:ref:refs/heads/main`). It carries the subject for both the current name and `court-sentiment`, so the rename itself breaks nothing; after it, confirm a deploy and drop the old subject. The workflow itself carries no repository name. The publish role and `config/publish.yaml` do not reference the repository.
 
 ## Checking DNS and TLS
 

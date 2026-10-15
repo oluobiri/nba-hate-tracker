@@ -19,9 +19,9 @@ from utils.recaps_config import (
 )
 
 TEN = (
+    ("0042500404", "de-aaron-fox"),
     ("0042500317", "chet-holmgren"),
     ("0042500405", "victor-wembanyama"),
-    ("0042500404", "de-aaron-fox"),
     ("0042500402", "karl-anthony-towns"),
     ("0042500312", "stephon-castle"),
     ("0042500311", "dylan-harper"),

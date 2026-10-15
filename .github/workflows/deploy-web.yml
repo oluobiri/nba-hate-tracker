@@ -25,7 +25,7 @@ env:
   DISTRIBUTION_ID: E2X7LKN4E54XA2
   ORIGIN: https://courtsentiment.com
   # Launch switch: every page carries noindex until this is 'true'.
-  SITE_INDEXABLE: 'false'
+  SITE_INDEXABLE: 'true'
 
 jobs:
   deploy:

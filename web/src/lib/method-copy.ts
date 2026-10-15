@@ -22,9 +22,9 @@ export const EXAMPLE_COPY: Readonly<Record<string, string>> = {
   nrep0bd: 'No insult word anywhere. The negative is the implication.',
   onpa94y: 'A mock nickname inside his real one. The classifier read it as neutral; a fan would call it a jab. That is the kind of miss the check by hand measures.',
   // slip
-  nsxfnml: 'Quiet approval. “A good example of how players should deal with hecklers” is praise, read as neutral. The prompt never says what counts as positive.',
+  og8acqy: 'Quiet approval. A defense of LaMelo against a knock, with no praise word in it, read as neutral. The prompt never says what counts as positive.',
   oi9sy59: 'Sarcasm with no tell. The thread, where Dort has just tripped Booker, gives it away; the classifier only sees the comment.',
-  novjx43: 'Two names. The comment prefers Booker; the classifier heard the knock on Cade and counted it against him. Both the label and the player differ.',
+  opmyk9q: 'The doubters quoted. “Non factor” is their word, and the comment pushes back on it; the classifier took it as the verdict and counted it against Towns.',
   // quote_check
   o3ksoqr: 'The scorn is for the trade, not for Luka. The verifier answers null: aimed at a decision, not a player.',
   oibjnzp: 'The praise is for Jaden McDaniels, who is not tracked; the only tracked name in the comment is Jokić, so the rule counts it for him. The verifier names McDaniels.',
@@ -41,7 +41,7 @@ export const CASE_COPY: Readonly<Record<string, string>> = {
 }
 
 /** The slip the hand-check section points at as the quiet-approval pattern; must be a slip row. */
-export const QUIET_APPROVAL_SLIP = 'nsxfnml'
+export const QUIET_APPROVAL_SLIP = 'og8acqy'
 
 /** The walkthrough's own line about its comment at the download step, keyed like the rest. */
 export const TRACE_COPY: Readonly<Record<string, string>> = {

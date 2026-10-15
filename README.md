@@ -1,147 +1,231 @@
-# 🏀 NBA Hate Tracker
+# <img src="web/public/favicon.svg" width="28" height="28" alt=""> Court Sentiment
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![Anthropic](https://img.shields.io/badge/Claude_Haiku_4.5-Anthropic-d4a574?logo=anthropic&logoColor=white)
+![Anthropic](https://img.shields.io/badge/Claude_Haiku_4.5_%C2%B7_Sonnet_5-Anthropic-d4a574?logo=anthropic&logoColor=white)
 ![Polars](https://img.shields.io/badge/Polars-CD792C?logo=polars&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
-![Flourish](https://img.shields.io/badge/Flourish-3B5998)
-![Comments](https://img.shields.io/badge/Comments_Analyzed-1.57M-blue)
-![Players](https://img.shields.io/badge/Players_Tracked-111-orange)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Astro](https://img.shields.io/badge/Astro-BC52EE?logo=astro&logoColor=white)
+![AWS](https://img.shields.io/badge/S3_%C2%B7_CloudFront-232F3E?logo=amazonwebservices&logoColor=white)
+![Comments](https://img.shields.io/badge/Comments_Classified-2.1M-blue)
+![Players](https://img.shields.io/badge/Players_Tracked-223-orange)
 
-**Who does r/NBA hate the most?**
+**Who is r/NBA's most hated player? Every comment, classified.**
 
-A sentiment analysis pipeline that analyzed **1.57 million Reddit comments** from the 2024-25 NBA season to find out. The answer: **Draymond Green**.
+Every r/NBA comment of a season that names a tracked player is read by a large language model, tied to one player, and counted. The counts become a published data contract, and the site is built from the contract. The project started as NBA Hate Tracker.
 
-📊 [**Explore the Dashboard**](https://nba-hate-tracker.streamlit.app)
+📊 [**courtsentiment.com**](https://courtsentiment.com)
+
+![The pipeline, from three sources to the site](docs/assets/pipeline.png)
+
+- **Contract first.** Every table is written against a versioned schema, stamped with the config that produced it, and the publish step refuses a file that doesn't match.
+- **2.1M comments classified for about $295** through the Batch API, with a second model reading anything the site quotes.
+- **A blind, hand-labeled sample**, published with its margins.
+- **A static site that fails its own build** when the data moves out from under its types or its copy.
 
 ---
 
-## The Answer
+## Seasons
 
-Draymond Green holds a **51.0% negative comment rate** across 53,454 comments — no other player combines that level of negativity with that volume of discussion. He's the most hated player according to **22 of 30 NBA fanbases**. Utah Jazz fans lead the charge at 63.6% negativity.
+| Season | Comments attributed | Players tracked | Most hated | Where |
+|--------|--------------------:|----------------:|------------|-------|
+| 2025-26 | 1,787,520 | 223 | James Harden, 55.3% negative | [courtsentiment.com](https://courtsentiment.com) |
+| 2024-25 | 1,567,722 | 111 | Draymond Green, 51.0% negative | Built under the V1 contract; re-publish pending |
 
-But he didn't start the season on top. Westbrook opened at #1 (51.0%) with Bronny James at #2 amid early-season scrutiny, then spiked to 59.1% in late October — the highest rate any player hit all season. Ben Simmons entered above 52% in mid-October and overtook Westbrook by mid-November, and the mid-season settled into a Simmons–Murray–Embiid rotation trading the top spots through January while Draymond hovered at sixth. He cracked the top 5 in late December, crossed 50% in mid-January, and by late January the top three — Simmons, Draymond, Embiid — were separated by less than a point. Embiid claimed #1 in early February; Draymond first overtook him in early March (51.0%) but Embiid reclaimed the spot two weeks later and held it through mid-April. Draymond took it back in late April and never relinquished it, pulling away through the playoffs to finish at 51.0%.
+A season is a directory: `config/<season>/` holds the player aliases, the calendar and the curated copy; `data/<season>/` holds everything derived from them. The site serves the seasons listed in `web/src/site.ts`.
 
-![Bar Race Preview](docs/assets/bar-race-preview.gif)
+## How it works
 
-## Architecture
+The 2025-26 season, step by step. The site's [How it works](https://courtsentiment.com/how-it-works/) page follows one real comment through the same stages.
 
-The pipeline processes Reddit comments through five stages: ingestion from Arctic Shift archives, cleaning and filtering to player-mention comments, sentiment classification via the Anthropic Batch API, aggregation into dashboard-ready views, and delivery via a Streamlit dashboard and Flourish bar race animation.
+| Stage | 2025-26 | What happens |
+|-------|--------:|--------------|
+| Download | 7,283,478 | Every r/NBA comment from October 1 to June 30, preseason through the draft, from the [Arctic Shift](https://arctic-shift.photon-reddit.com/) archive. Posts come down the same way |
+| Filter | 2,110,485 | Comments that name a tracked player, matched against 721 aliases for 223 players. Short names only match as whole words, so "ant" does not match "want" |
+| Classify | 2,110,479 | Sentiment (negative / neutral / positive), a confidence, and the player the model thinks it's about |
+| Usable | 2,059,495 | Malformed or errored responses dropped |
+| Attribute | 1,787,520 | One rule decides who a comment counts for: one name, that player; several names, whichever tracked player the classifier names; otherwise nobody |
 
-![Pipeline Architecture](docs/assets/architecture.svg)
+Aggregation then cuts the attributed comments by player, fanbase (the commenter's flair), week, game thread and room, joins the game layer (schedule, box scores, play-by-play from the NBA's live feed) and writes the contract.
 
-| Stage | Volume | Notes |
-|-------|--------|-------|
-| Raw download | 7,041,235 | r/NBA comments via Arctic Shift API (Oct 2024 – Jun 2025) |
-| Cleaned | 6,891,163 | Removed [deleted], [removed], empty, and malformed comments |
-| Player-mention filtered | 1,939,290 | Matched against 384 aliases for 111 players |
-| Classified | 1,886,133 | Sentiment labeled (neg / neu / pos); 2.75% error rate excluded |
-| Attributed | 1,567,722 | Multi-player comments resolved to single target (83% attribution rate; ~17% ambiguous dropped) |
+### Classification
 
-## Classifier
+One model reads every comment. A second, larger one checks only what the site quotes.
 
-Sentiment classification uses **Claude Haiku 4.5** via the [Anthropic Batch API](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing), which provides a 50% cost reduction over synchronous requests.
+**Claude Haiku 4.5** reads every comment through the [Anthropic Batch API](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing). The prompt is short, the same for every comment, and published word for word in the manifest. It knows the slang: "washed," "cooked," and "fraud" read negative; "nasty," "filthy," and "GOAT" read positive; a trailing "/s" marks sarcasm.
 
-Each comment is classified as **negative**, **neutral**, or **positive** with a confidence score and the target player identified. The prompt handles NBA-specific slang — "washed," "cooked," and "fraud" register as negative while "nasty," "filthy," and "GOAT" register as positive.
+**Claude Sonnet 5** reads only the comments that could be quoted on a player page (positive or negative, confidence ≥ 0.9) and names who the opinion is aimed at. A comment about a trade is not a comment about the player traded. The check decides what is quoted, not what is counted.
 
-**Batch processing at scale:**
+**2025-26 at scale:**
 
-- 20 batches of up to 100K requests (~20 hours wall clock)
-- 248.5M input tokens + 52.0M output tokens (300.5M total)
-- 97.25% usable classification rate
-- $254 total cost — output tokens are 17% of volume but 51% of cost (5× per-token price)
-- Validated against 500 human-labeled comments at ~96% accuracy
+- 22 batches of up to 100K requests, about 25 hours wall clock
+- 295.6M input tokens + 56.8M output tokens
+- $289.79 for sentiment, $5.05 for the verifier's 15,806 reads
+- Every prompt, model id, sampling parameter and config version is stamped into the published manifest
 
-## Key Findings
+### Accuracy
 
-**Most Hated (by negative comment rate, min. 5K comments):**
+A blind random draw of **1,000** counted comments, each read and labeled under a written rubric without the classifier's answer in view. 530 were labeled across two groups, 21 rejected under the rubric, and **509** scored; the estimate is weighted across the groups. Margins at 95%.
 
-| Rank | Player | Neg Rate | Comments |
-|------|--------|----------|----------|
-| 1 | Draymond Green | 51.0% | 53,454 |
-| 2 | Joel Embiid | 49.3% | 31,538 |
-| 3 | Ben Simmons | 45.6% | 11,123 |
-| 4 | Russell Westbrook | 45.2% | 40,571 |
-| 5 | James Harden | 44.1% | 28,504 |
+| Agreement | Rate |
+|-----------|-----:|
+| On the sentiment | 68.6% ± 5.0 |
+| On the player | 95.4% ± 2.9 |
+| On both | 66.0% ± 5.0 |
 
-**Notable findings:**
+A label is a careful read, not the truth. Where the two disagree, the site shows both and does not pick. Negative and neutral sit within their margins. Positive does not: the classifier calls fewer comments positive than I do, because quiet approval reads as neutral.
 
-- **Volume ≠ hate** — Luka Dončić generates the most raw negative comments (49.6K) but ranks middling in neg_rate (37.2%). LeBron is similar: 137K total comments, below-average negativity. Being talked about constantly doesn't mean being hated.
-- **Polarizing ≠ hated** — Westbrook is r/NBA's most polarizing player (68.3% of comments carry strong sentiment) but only #4 in neg_rate, because 23.1% of his comments are *positive* — he has vocal defenders. Draymond drops from #1 in hate to #7 in polarization because almost nobody defends him (14.5% positive). OKC fans rate Westbrook at 24.2% negative — 21 points below his average. Lakers fans rate him at 55.1%. Same player, completely different perception.
-- **Flair reveals rivalries** — Jazz fans are the most negative fanbase toward Draymond (63.6%), likely driven by the Rudy Gobert history. Simmons' two most hostile fanbases are his two former teams (Sixers at 59.2%, Nets at 48.0%).
-- **r/NBA is structurally negative** — Only 11 of 59 qualified players have positive net sentiment. Draymond's -0.366 is roughly 1.7× as extreme as the most positive player (Wembanyama at +0.217). The subreddit's ceiling for hate far exceeds its ceiling for love.
+## The contract
+
+Aggregation writes one Parquet file per table, a `manifest.json` and a `schema.json` to `data/<season>/dashboard/`. The publish step uploads exactly that set to S3 after checking it against the schema. The site generates its TypeScript types from the published `schema.json` and asserts every table against it at build.
+
+- **`manifest.json`** is the typed contract: the season's identity, both classifiers' prompts, the rules every page obeys (floors, thresholds, the receipt gate), the accuracy figures, and the registry of tables and recap documents.
+- **15 tables**, from `player_overall` and `player_fan_team` to the game layer (`games`, `player_games`, `game_sentiment`, `posts`) and the rooms (`player_room`, `room_temporal`).
+- **10 recap documents**, one per curated game: every play on the wall clock, every comment in the thread aligned to it.
+
+Public, read-only, one prefix per season:
+
+```
+https://courtsentiment.com/data/season=2025-26/manifest.json
+https://courtsentiment.com/data/season=2025-26/schema.json
+https://courtsentiment.com/data/season=2025-26/player_overall.parquet
+```
+
+```bash
+duckdb -c "SELECT attributed_player, neg_rate, comment_count
+           FROM 'https://courtsentiment.com/data/season=2025-26/player_overall.parquet'
+           WHERE comment_count >= 5000 ORDER BY neg_rate DESC LIMIT 10"
+```
+
+[docs/data-model.md](docs/data-model.md) is the star schema behind the tables. [docs/publishing.md](docs/publishing.md) is the AWS shape and the runbook.
+
+## The site
+
+Astro with React islands, static, built from the contract and deployed to S3 behind CloudFront by GitHub Actions: rebuilt on every change under `web/`, and dispatched after every data drop. No rule or figure on the site is typed in; every one reads from the manifest, and a curated sentence fails the build when the data moves out from under it.
+
+| Page | What it shows |
+|------|---------------|
+| Leaderboard | Every player over the comment floor, ranked by negative share, with the fanbase lenses |
+| Player | The verdict, the receipts (quoted comments that passed the verifier), the season on net, the games table, who talks about him |
+| Fanbases | Which flair hates whom, and the grudges between them |
+| Season | The nights, the rooms, the arcs, the loudest threads |
+| The Race | The leaderboard replayed week by week |
+| Recaps | A game thread as a simcast: the play-by-play and the thread on one clock |
+| How it works | One comment followed from download to its row, the prompts, the check by hand |
+
+Every page has a share card rendered at build.
 
 ## Limitations
 
-- **Classifier accuracy ~96%** — validated against 500 human-labeled comments. Edge cases include sarcasm, backhanded compliments, and basketball idioms (e.g., "Towns going to town on us" classified as negative when it's praise).
-- **Sentiment ≠ hate** — a factual criticism ("he shot 2-15 last night") and a personal attack both register as negative. The metric measures negativity of discourse, not pure hostility.
-- **Equal weighting** — every comment counts the same regardless of Reddit score. A comment with 500 upvotes has the same weight as one with 1. This avoids popularity bias but means viral threads don't carry extra influence.
-- **One season only** — results reflect the 2024-25 season. Player sentiment shifts with trades, injuries, and playoff performance.
+- **Classifier agreement is 68.6% ± 5.0** on sentiment against a hand-labeled sample, 95.4% ± 2.9 on the player. Quiet approval read as neutral is the measured miss; untagged sarcasm is the other. The figures are on the site, with margins, and never rounded up.
+- **Sentiment is not hate.** A factual criticism ("he shot 2-15 last night") and a personal attack both read negative. The metric is the negativity of the discourse, not hostility.
+- **Every comment counts once.** A comment with 500 upvotes weighs the same as one with 1. This avoids popularity bias; it also means viral threads carry no extra weight.
+- **One season at a time.** Rates move with trades, injuries and playoff runs, and no page compares across seasons.
 
-## Tech Stack
+## Stack
 
 | Component | Technology |
 |-----------|------------|
-| Language | Python 3.11 |
-| Data Processing | Polars |
-| Classifier | Claude Haiku 4.5 (Anthropic Batch API) |
-| Data Source | Arctic Shift API (Reddit archives) |
-| Dashboard | Streamlit |
-| Bar Race Animation | Flourish |
-| Package Manager | uv |
-| Player Config | YAML (384 aliases → 111 players) |
+| Pipeline | Python 3.11, Polars, uv |
+| Classifiers | Claude Haiku 4.5 (sentiment), Claude Sonnet 5 (target), Anthropic Batch API |
+| Reddit | Arctic Shift archives |
+| The league | stats.nba.com (games, rosters, box scores) and the cdn.nba.com live feed (play-by-play) |
+| Contract | Parquet + JSON manifest and schema, versioned, stamped with config lineage |
+| Site | Astro 7, React 19, TypeScript, hyparquet, satori (share cards), Playwright (the walk), vitest |
+| Hosting | S3 + CloudFront + Route 53; GitHub Actions deploys on merge via OIDC |
+| Ad hoc | DuckDB |
 
-## Project Structure
+## Repository
 
 ```
-nba-hate-tracker/
 ├── pipeline/           # Core data processing modules
-│   ├── arctic_shift.py     # API client for Reddit archives
-│   ├── processors.py       # Comment cleaning & player matching
-│   ├── batch.py            # Anthropic Batch API integration
-│   └── aggregation.py      # Sentiment aggregation engine
-├── scripts/            # CLI entry points
+│   ├── arctic_shift.py     # Client for the Reddit archive
+│   ├── processors.py       # Comment cleaning & name matching
+│   ├── batch.py            # Anthropic Batch API: build, submit, collect
+│   ├── targets.py          # The verifier pass on the quote candidates
+│   ├── aggregation.py      # The aggregate views
+│   ├── games.py, posts.py, recaps.py   # The game layer & the recap documents
+│   ├── accuracy.py         # The hand-labeled sample, scored
+│   ├── schemas.py          # The contract: every produced file's schema & the manifest
+│   ├── contract.py         # Renders schemas.py as schema.json
+│   ├── lineage.py          # Which config version stamps which file
+│   └── publish.py          # The drop: pre-flight, upload, verify
+├── scripts/            # CLI entry points, one per stage
 │   ├── download_comments.py
 │   ├── download_posts.py
-│   ├── clean_raw_comments.py
-│   ├── extract_filter.py
-│   ├── filter_player_mentions.py
+│   ├── process_comments.py
 │   ├── prepare_batches.py
 │   ├── submit_batches.py
 │   ├── collect_results.py
+│   ├── prepare_targets.py
+│   ├── fetch_games.py
+│   ├── fetch_media.py
 │   ├── aggregate_sentiment.py
-│   └── export_bar_race.py
+│   ├── publish_dashboard.py
+│   └── publish_media.py
 ├── utils/              # Stateless helpers
-│   ├── constants.py
-│   ├── formatting.py
 │   ├── paths.py
-│   ├── player_config.py
-│   └── team_config.py
-├── app/                # Streamlit dashboard
-│   ├── 🏆_Leaderboard.py
-│   ├── pages/
-│   │   ├── 1_👥_Flair_View.py
-│   │   ├── 2_🔍_Player_Detail.py
-│   │   └── 3_ℹ️_About.py
-│   └── utils/data.py
-├── config/             # Player aliases & team mappings
-├── tests/              # pytest unit tests
-└── notebooks/          # EDA & validation (6 notebooks)
+│   ├── formatting.py
+│   └── *_config.py         # One loader per YAML file
+├── config/             # Player aliases, team mappings, the season calendar
+│   ├── season.yaml         # Which season is active
+│   ├── teams.yaml
+│   ├── publish.yaml
+│   └── <season>/
+│       ├── players.yaml    # 721 aliases → 223 players
+│       ├── season.yaml     # Calendar & corpus facts
+│       ├── recaps.yaml     # The curated games
+│       └── method_examples.yaml
+├── web/                # The site
+│   ├── src/lib/            # Rules & sentences, each with its test
+│   ├── src/components/     # Astro components & React islands
+│   ├── src/pages/          # One file per route
+│   ├── src/data/           # The contract boundary: load, assert, types generated from schema.json
+│   └── walk/               # Playwright over dist/ at 1280 & 400
+├── app/                # The V1 Streamlit lab, retiring
+├── tests/              # pytest: unit, integration, eval
+├── notebooks/          # EDA & validation, season-scoped
+├── docs/               # data-model.md, publishing.md
+├── .claude/            # Agent conventions: path-scoped rules, skills, pre-commit gate
+└── data/               # Not committed: raw/ filtered/ batches/ processed/ reference/ dashboard/
 ```
+
+## Running it
+
+From a clone, no data needed:
+
+```bash
+uv sync && uv run pytest && uv run ruff check .     # Python
+cd web && npm ci                                     # Site, Node 22
+npm run dev                                          # Against the published data by default
+npx playwright install chromium
+npm run build && npm run walk                        # dist/ + Playwright at 1280 and 400
+```
+
+With a season's data under `data/<season>/`:
+
+```bash
+uv run python -m scripts.aggregate_sentiment --season 2025-26          # sentiment.parquet → the contract
+uv run python -m scripts.publish_dashboard --season 2025-26 --dry-run  # Plan the drop; the drop needs the MFA role
+```
+
+Download, filter and classify are their own scripts under `scripts/`. Classify and the verifier want an `ANTHROPIC_API_KEY`. [docs/publishing.md](docs/publishing.md) has the rest.
 
 ## Cost
 
-| Phase | Cost |
-|-------|------|
-| Data acquisition & processing | $0 |
-| Sentiment classification (Batch API) | $254.20 |
-| Dashboard hosting (Streamlit Cloud) | $0 |
-| **Total** | **$254.20** |
+| Season | Classification | Verifier | Total |
+|--------|---------------:|---------:|------:|
+| 2025-26 | $289.79 | $5.05 | $294.84 |
+| 2024-25 | $254.20 | $3.00 | $257.20 |
 
-Initial naive cost estimate was $1,156 (2.8M comments, verbose prompt). Three optimizations brought it down 78%: player-mention filtering cut comments from 2.8M to 1.9M (-31%), a minimal prompt halved input tokens (261 → 128 per comment), and dropping the unused `reasoning` field slashed output tokens (112 → 23 per comment).
+Data acquisition is free. Hosting is a domain, three buckets and one distribution:
+
+| Running | Cost |
+|---------|-----:|
+| Domain, courtsentiment.com | $11.48 / year, registration plus the ICANN fee, WHOIS privacy included |
+| AWS: S3, CloudFront, Route 53 | $0.06 in September 2026 on pay-as-you-go; CloudFront's Pro plan at $15 / month for access logs, until analytics moves to GA4 |
 
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/oluobiri">@oluobiri</a> · Data sourced from <a href="https://arctic-shift.photon-reddit.com/">Arctic Shift</a>
+  Built by <a href="https://github.com/oluobiri">@oluobiri</a> · Data sourced from <a href="https://arctic-shift.photon-reddit.com/">Arctic Shift</a> · MIT
 </p>

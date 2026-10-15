@@ -1,7 +1,7 @@
 # CLAUDE.md - NBA Hate Tracker
 
 **Project:** Sentiment analysis pipeline to answer "Who is r/NBA's most hated player?"  
-**Answer:** Draymond Green (51.0% negative rate, 22/30 fanbases agree)  
+**Answer:** One per season, from the published leaderboard: 2025-26 James Harden (55.3% negative), 2024-25 Draymond Green (51.0%)  
 
 ---
 

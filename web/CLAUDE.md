@@ -1,7 +1,6 @@
 <!-- Loads when Claude reads a file under web/; the root .claude/CLAUDE.md carries the everyday
-commands. A line belongs here when the next page's session would get it wrong without it: page
-specs live in docs/internal/ux-review.md and the tickets, and anything a test pins is named, not
-restated. A human-facing web/README.md comes with the stable site. -->
+commands. A line belongs here when the next session would get it wrong without it: page specs
+live in the tickets, and anything a test pins is named, not restated. -->
 
 # web/ — the site
 
@@ -9,9 +8,6 @@ Astro (static output) + React islands + TypeScript, built from the published dat
 `https://courtsentiment.com/data/season=<season>/` — `manifest.json`, `schema.json` and the
 parquets the manifest registers. No parquet reaches the browser; every page is rendered at build.
 The one runtime fetch is a recap's document, re-served from the site's own origin (below).
-The design brief is `docs/internal/ux-review.md` (local only, not committed); the recap page's
-reference is the mockup in `docs/internal/recap-mockup/` (local), the race's is
-`docs/internal/race-mockup/` (local).
 
 ## Map
 
@@ -55,7 +51,7 @@ Env is shell-only (`astro build` does not read `.env`):
 | Variable | Default | Effect |
 |---|---|---|
 | `DATA_BASE` | `https://courtsentiment.com/data` | A URL uses the published layout; a path (e.g. `../data`) uses the repo's `data/<season>/dashboard/` and `data/media/` |
-| `SITE_INDEXABLE` | unset | Every page carries `noindex` unless this is `true`. Flipped in the deploy workflow on launch day |
+| `SITE_INDEXABLE` | unset | Every page carries `noindex` unless this is `true`. The deploy workflow sets it; a local build stays unindexable |
 
 ## The contract
 
@@ -77,7 +73,7 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
 
 - **No literal rule numbers.** The official minimum, floors, formulas and corpus figures are
   read from the manifest. `src/no-literal-rules.test.ts` fails vitest on `5,000` or `0.9`; the
-  floors collide with ordinary integers and are checked by eye. Figures quoted in the brief are
+  floors collide with ordinary integers and are checked by eye. Figures quoted in a ticket are
   examples, never copied.
 - **Rates from counts.** Re-aggregate with `sumCounts`, then take the rate; never average
   rates. Every sentiment rate is computed in `src/lib/metrics.ts`.

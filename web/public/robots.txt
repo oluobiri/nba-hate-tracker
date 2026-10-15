@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://courtsentiment.com/sitemap-index.xml

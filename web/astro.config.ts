@@ -1,4 +1,5 @@
 import react from '@astrojs/react'
+import sitemap from '@astrojs/sitemap'
 import { defineConfig } from 'astro/config'
 
 // Static output, one index.html per route: what the CloudFront directory
@@ -7,5 +8,9 @@ export default defineConfig({
   site: 'https://courtsentiment.com',
   output: 'static',
   trailingSlash: 'always',
-  integrations: [react()],
+  integrations: [
+    react(),
+    // The 404 page and the style guide are not destinations.
+    sitemap({ filter: (page) => !page.endsWith('/404/') && !page.endsWith('/styleguide/') }),
+  ],
 })

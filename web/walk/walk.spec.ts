@@ -152,6 +152,7 @@ test('the leaderboard controls are touch-sized', async ({ page }) => {
 test('the fanbases question colours its last word by lens: heat, ice, then bone for volume', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })
   await page.locator('.fi').scrollIntoViewIfNeeded()
+  await expect(page.locator('astro-island[component-export="FanbaseIndex"]')).not.toHaveAttribute('ssr', '')
   // A token's rendered colour, read from a probe so the test never spells a hex.
   const tokenColour = (token: string) =>
     page.evaluate((t) => {

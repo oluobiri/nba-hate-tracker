@@ -4380,6 +4380,113 @@ a.hero__who:hover {
   }
 }
 
+/* PlayerRooms: a label with its share, one share bar split by sentiment, three figures; the harshest row's tag and negative figure take heat. The name takes its own line on a phone. */
+.pr {
+  display: grid;
+  gap: 0;
+}
+.pr__head,
+.pr__row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 2.4fr 170px;
+  gap: 8px 14px;
+}
+.pr__head {
+  padding-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.pr__row {
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.pr__name {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-width: 0;
+}
+.pr__name b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.pr__share {
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: var(--mute);
+}
+.pr__tag {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--heat);
+}
+.pr__bar {
+  display: block;
+  min-width: 0;
+}
+.pr__bar i {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+.pr__bar i b {
+  display: block;
+  height: 100%;
+}
+.pr__bar i b.neg {
+  background: var(--heat);
+}
+.pr__bar i b.neu {
+  background: var(--neu);
+}
+.pr__bar i b.pos {
+  background: var(--ice);
+}
+.pr__figs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pr__neg {
+  color: var(--heat);
+}
+.pr__row--harshest .pr__neg {
+  font-weight: 600;
+}
+.pr__pos {
+  color: var(--ice);
+}
+.pr__n {
+  color: var(--bone-2);
+}
+@media (max-width: 640px) {
+  .pr__head,
+  .pr__row {
+    grid-template-columns: minmax(0, 1fr) 132px;
+  }
+  .pr__head .pr__spacer,
+  .pr__head > span:first-child {
+    display: none;
+  }
+  .pr__head .pr__figs {
+    grid-column: 2;
+  }
+  .pr__row .pr__name {
+    grid-column: 1 / -1;
+  }
+}
+
 /* RoomTable: every room, the whole season; scrolls inside its box on a phone, never the page. */
 .rt {
   overflow-x: auto;

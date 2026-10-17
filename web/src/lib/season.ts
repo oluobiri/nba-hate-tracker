@@ -9,6 +9,7 @@ import { fmtInt, fmtPct, fmtSigned } from './format'
 import { type GameLineParts, gameLine } from './games'
 import { countsOf, negRate, netSentiment, posRate, sumCounts } from './metrics'
 import { fmtNet } from './net'
+import { EXCEPTION_GAP, ROOM_LABELS } from './rooms'
 import type { NightNoteCopy } from './season-copy'
 import { redditCounts } from './threads'
 import type { Counts } from './types'
@@ -332,21 +333,6 @@ export function warmestNote(night: Night, title: string | null): NightNote {
 // week is a playoff week. The split between the phases is a shift-share on
 // symmetric midpoint weights: hold each room's tone and move the crowd, then
 // hold the crowd and move the tone; the two add up to the rise exactly.
-
-/** Comments a player's gap between two rooms needs, in points, to be named an exception. */
-export const EXCEPTION_GAP = 0.05
-
-export const ROOM_LABELS: Record<string, string> = {
-  game_thread: 'Game threads',
-  post_game_thread: 'Post-game threads',
-  daily: 'Daily chat thread',
-  general: 'Front page',
-  highlight: 'Highlights',
-  news: 'News',
-  lowlight: 'Lowlights',
-  injury: 'Injury posts',
-  discussion: 'Discussion posts',
-}
 
 export interface Band {
   key: string

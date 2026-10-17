@@ -138,6 +138,10 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   moves both at once and net alone can hide a split room. "Harsher" is the word for a lower net,
   "warmer" for a higher one; "less negative" belongs to the share. The player page ranks by the
   negative share; its net sits beside the shares, never in a chip or a lens.
+- **The player page's rooms** (`lib/rooms.ts`): the rows draw every room at `rules.floors.room_min_n`
+  and tag the harshest; the lede names the harshest room at or above `HEADLINE_SHARE` of his comments
+  and tails the tagged room when it passed it over; the game thread against the front page takes a side
+  only at `EXCEPTION_GAP`, level under it. The room vocabulary (order, labels, where-phrases) lives there.
 - **The season page has no island** (`lib/season.ts`): every figure is composed once by
   `buildSeason` for the page, the style guide and the card; the two charts' readouts are the
   Timeline's focusable columns, and the volume key is a radio group read by `:has()`. The one

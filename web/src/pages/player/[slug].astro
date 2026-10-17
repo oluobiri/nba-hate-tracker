@@ -1,5 +1,5 @@
 ---
-// Page 2. One route per player; five sections behind a rail. Everything is
+// Page 2. One route per player; six sections behind a rail. Everything is
 // derived here from the player's own rows, the rule numbers straight from
 // the manifest; two islands (Receipts, Games) take plain props.
 import type { InferGetStaticPropsType } from 'astro'
@@ -10,6 +10,7 @@ import { commentUrl } from '../../components/Exhibit'
 import { GameScatter } from '../../components/GameScatter'
 import { Games } from '../../components/Games'
 import { MethodNote } from '../../components/MethodNote'
+import { PlayerRooms } from '../../components/PlayerRooms'
 import { RankNumeral } from '../../components/RankNumeral'
 import { Receipts, type ReceiptItem } from '../../components/Receipts'
 import SectionRail from '../../components/SectionRail.astro'
@@ -29,6 +30,7 @@ import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
 import { recapHrefs } from '../../lib/recaps'
+import { playerRooms, roomsRule, roomsSentence } from '../../lib/rooms'
 import { fmtNet, netColor } from '../../lib/net'
 import { redditCounts } from '../../lib/threads'
 import { countsOf, neighbours, negRate, netSentiment, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
@@ -56,6 +58,7 @@ export async function getStaticPaths() {
   const receipts = groupByPlayer(tables.comment_samples)
   const temporal = groupByPlayer(tables.player_temporal)
   const fanRows = groupByPlayer(tables.player_fan_team)
+  const roomRows = groupByPlayer(tables.player_room)
   const lines = groupByPlayer(tables.player_games)
   const sentiment = groupByPlayer(tables.game_sentiment)
   const games = new Map(tables.games.map((g) => [g.game_id, g]))
@@ -81,6 +84,7 @@ export async function getStaticPaths() {
         receipts: receipts.get(name) ?? [],
         temporal: temporal.get(name) ?? [],
         fanRows: fanRows.get(name) ?? [],
+        roomRows: roomRows.get(name) ?? [],
         lines: lines.get(name) ?? [],
         sentiment: sentiment.get(name) ?? [],
         games,
@@ -93,7 +97,7 @@ export async function getStaticPaths() {
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
-const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, lines, sentiment, games, teams, posts, reddit } = Astro.props
+const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, roomRows, lines, sentiment, games, teams, posts, reddit } = Astro.props
 const { counts, tracked } = verdictInput
 const { manifest } = await getSeason()
 const official = manifest.rules.qualified_threshold
@@ -144,6 +148,11 @@ const domainOf = (rows: DeltaDotRow[], avg: number): readonly [number, number] =
 const hisNeg = negRate(lists.average)
 const hisPos = posRate(lists.average)
 
+// Rooms.
+const rooms = playerRooms(roomRows, counts, floors.room_min_n)
+const roomsText = roomsSentence(name, rooms, counts)
+const roomsNote = roomsRule(name, floors.room_min_n, rooms.under)
+
 // Games (built before the timeline: the week readouts list them).
 const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n, recapHrefs(manifest.recaps, name), reddit)
 const dressed = log.length > 0
@@ -177,6 +186,7 @@ const SECTIONS = [
   { id: 'verdict', label: 'Verdict' },
   { id: 'receipts', label: 'Receipts' },
   { id: 'fans', label: 'Fans' },
+  { id: 'rooms', label: 'Rooms' },
   { id: 'timeline', label: 'Timeline' },
   { id: 'games', label: 'Games' },
 ]
@@ -343,6 +353,23 @@ const tiles = [
             A fanbase is the flair its commenters wear. Flairs with fewer than {fmtInt(floors.fanbase_min_n)} comments about {name} are left out of the lists;
             the tick is his rate across every flaired comment, from summed counts, never a mean of rates.
           </MethodNote>
+        </section>
+
+        <section id="rooms" class="pp__section" aria-labelledby="rooms-h">
+          <h2 id="rooms-h">Rooms</h2>
+          {
+            rooms.drawn.length > 0 ? (
+              <>
+                <p class="pp__lede">{roomsText}</p>
+                <PlayerRooms name={name} rooms={rooms} />
+                <MethodNote kind="rule">{roomsNote}</MethodNote>
+              </>
+            ) : (
+              <MethodNote kind="caveat">
+                No room holds {fmtInt(floors.room_min_n)} comments about {name}: his {fmtInt(counts.total)} are spread too thin to split by room.
+              </MethodNote>
+            )
+          }
         </section>
 
         <section id="timeline" class="pp__section" aria-labelledby="timeline-h">

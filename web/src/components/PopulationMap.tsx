@@ -213,7 +213,7 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
           </AnimatePresence>
         </div>
 
-        <MethodNote kind="rule">
+        <MethodNote kind="method">
           Each box is one player; its area is the comments attributed to him. Its fill is net sentiment, the positive share minus the negative, on the player rule: full heat
           at the season's lowest player, full ice at its highest, bone at zero, over every tracked player, so a shade means the same net in every view here and on every
           player page. Official keeps the players at the minimum of {fmtInt(official)} comments. A team is the roster the site lists beside each name, its header summed over

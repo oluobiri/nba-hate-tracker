@@ -74,7 +74,7 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
-import { EXCEPTION_GAP, playerRooms, roomsRule, roomsSentence } from '../lib/rooms'
+import { EXCEPTION_GAP, playerRooms, roomsMethod, roomsSentence } from '../lib/rooms'
 import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
@@ -143,16 +143,18 @@ const edgeDomain = gapDomain(edgeGaps)
 // The season page's figures, composed once.
 const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
 const arcAxis = arcDomain([...season.arcs.rose, ...season.arcs.fell])
-// The player page's rooms, by rule: the most rooms drawn, the front page harshest by the widest gap,
-// the tag passed over by the lede (the tail), a level pair, one room drawn, none drawn.
+// The player page's rooms, by rule: the most rooms drawn, the front page harshest by the widest net gap,
+// a pair the share and the net read differently, the warmest season, one room drawn, none drawn.
 const roomFloor = manifest.rules.floors.room_min_n
 const roomsByPlayer = groupByPlayer(tables.player_room)
 const roomCases = overall.map((r) => ({ row: r, pr: playerRooms(roomsByPlayer.get(r.attributed_player) ?? [], r, roomFloor) }))
-const roomGap = (c: (typeof roomCases)[number]): number | null => {
+// The pair's gap on net (the game threads minus the front page) and on the negative share (the front page minus the game threads): both positive when the front page is harsher.
+const roomPair = (c: (typeof roomCases)[number]) => {
   const gt = c.pr.drawn.find((x) => x.key === 'game_thread')
   const fp = c.pr.drawn.find((x) => x.key === 'general')
-  return gt && fp ? fp.rate - gt.rate : null
+  return gt && fp ? { net: gt.net - fp.net, share: fp.rate - gt.rate, fpBelow: fp.net < netSentiment(c.row) } : null
 }
+const roomGap = (c: (typeof roomCases)[number]): number | null => roomPair(c)?.net ?? null
 type RoomCase = (typeof roomCases)[number]
 const officialRooms = roomCases.filter((c) => c.row.total >= threshold)
 // Each pick is the loudest player meeting its condition and not already shown; a season with no such player skips the figure.
@@ -170,16 +172,20 @@ const roomMost = pickRoom(
 )
 pickRoom(
   officialRooms,
-  (c) => (roomGap(c) ?? 0) >= EXCEPTION_GAP,
-  (c) => `${c.row.attributed_player} · the front page harshest by the widest gap: a story off the court`,
+  (c) => (roomGap(c) ?? 0) >= EXCEPTION_GAP && roomPair(c)!.fpBelow,
+  (c) => `${c.row.attributed_player} · the front page harshest by the widest net gap: a story off the court`,
   (a, b) => roomGap(b)! - roomGap(a)!,
 )
-pickRoom(officialRooms, (c) => c.pr.harshest !== null && c.pr.headline !== null && c.pr.harshest.key !== c.pr.headline.key, (c) => `${c.row.attributed_player} · the tag on a sliver the lede passed over: the tail names it with its size`)
 pickRoom(
   officialRooms,
-  (c) => roomGap(c) !== null && Math.abs(roomGap(c)!) < EXCEPTION_GAP,
-  (c) => `${c.row.attributed_player} · the game threads and the front page within the gap: level`,
-  (a, b) => Math.abs(roomGap(a)!) - Math.abs(roomGap(b)!),
+  (c) => roomPair(c) !== null && roomPair(c)!.net > 0 !== roomPair(c)!.share > 0,
+  (c) => `${c.row.attributed_player} · the negative share and net disagree on which of the pair ran harsher: the tags and the lede follow net`,
+)
+pickRoom(
+  officialRooms,
+  (c) => netSentiment(c.row) > 0,
+  (c) => `${c.row.attributed_player} · the warmest season: every room above zero, the harshest still named`,
+  (a, b) => netSentiment(b.row) - netSentiment(a.row),
 )
 pickRoom(roomCases, (c) => c.pr.drawn.length === 1, (c) => `${c.row.attributed_player} · one room at the floor: no tag, the one-room lede`)
 const roomNone = roomCases.filter((c) => c.pr.drawn.length === 0).toSorted((a, b) => b.row.total - a.row.total)[0]
@@ -982,7 +988,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>PlayerRooms</h2>
-      <p class="eyebrow">The player page's rooms: one row per room at the floor in a fixed order, the bar the room's share of his comments and its split, the harshest room tagged. The lede speaks for the harshest room holding a tenth of his comments; a smaller room it passed over is named in a tail. Cases chosen by rule.</p>
+      <p class="eyebrow">The player page's rooms: one row per room at the floor in a fixed order, the bar the room's share of his comments and its split, the harshest and the warmest room by net tagged. The lede opens on the room with the most of his comments. Cases chosen by rule.</p>
       {
         roomShown.map(({ c, why }) => (
           <figure class="guide__fig">
@@ -992,7 +998,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
           </figure>
         ))
       }
-      {roomMost && <MethodNote kind="rule">{roomsRule(roomMost.row.attributed_player, roomFloor, roomMost.pr.under)}</MethodNote>}
+      {roomMost && <MethodNote kind="method" open>{roomsMethod(roomMost.row.attributed_player, roomFloor, roomMost.pr.under)}</MethodNote>}
       {
         roomNone && (
           <figure class="guide__fig">

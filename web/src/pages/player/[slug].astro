@@ -31,7 +31,7 @@ import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
 import { recapHrefs } from '../../lib/recaps'
 import { playerRooms, roomsMethod, roomsSentence } from '../../lib/rooms'
-import { fmtNet, netColor } from '../../lib/net'
+import { fmtNet, netColor, playerNetColor, playerNetRange } from '../../lib/net'
 import { redditCounts } from '../../lib/threads'
 import { countsOf, neighbours, negRate, netSentiment, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
 import { playerStandings, rankIn, type Standing } from '../../lib/standings'
@@ -65,6 +65,7 @@ export async function getStaticPaths() {
   const teams = new Map(tables.teams.map((t) => [t.team, t]))
   const posts = new Map(tables.posts.map((p) => [p.post_id, p]))
   const reddit = redditCounts(tables.posts)
+  const netRange = playerNetRange(tables.player_overall.map(countsOf))
 
   return tables.players.map((player) => {
     const name = player.attributed_player
@@ -91,13 +92,14 @@ export async function getStaticPaths() {
         teams,
         posts,
         reddit,
+        netRange,
       },
     }
   })
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
-const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, roomRows, lines, sentiment, games, teams, posts, reddit } = Astro.props
+const { player, verdictInput, prev, next, spine, receipts, temporal, fanRows, roomRows, lines, sentiment, games, teams, posts, reddit, netRange } = Astro.props
 const { counts, tracked } = verdictInput
 const { manifest } = await getSeason()
 const official = manifest.rules.qualified_threshold
@@ -267,7 +269,7 @@ const tiles = [
             <StatFigure figure={fmtPct(negRate(counts))} label="Negative" detail={`${fmtInt(counts.neg)} comments`} tone="neg" />
             <StatFigure figure={fmtPct(neuRate(counts))} label="Neutral" detail={`${fmtInt(counts.neu)} comments`} tone="neu" />
             <StatFigure figure={fmtPct(posRate(counts))} label="Positive" detail={`${fmtInt(counts.pos)} comments`} tone="pos" />
-            <StatFigure figure={fmtNet(net)} label="Net sentiment" detail="positive minus negative" color={netColor(net)} />
+            <StatFigure figure={fmtNet(net)} label="Net sentiment" detail="positive minus negative" color={playerNetColor(net, netRange)} />
           </div>
           <p class="pp__n mono">
             n={fmtInt(counts.total)} comments about {name}
@@ -397,7 +399,8 @@ const tiles = [
                 <MethodNote kind="rule">
                   A game counts when at least {fmtInt(floors.game_min_n)} comments about {name} were posted in its threads. The verdict is that game's net
                   sentiment, positive minus negative in points, against his season net of {fmtNet(net)}; wins and losses are split from summed counts. The
-                  comment count is Reddit's, both of the game's threads bridged.
+                  comment count is Reddit's, both of the game's threads bridged. These figures are coloured on the game scale, full at ±100; the Verdict's net is
+                  coloured against the season's players, whose nets run narrower.
                   {points.length >= SCATTER_MIN && (
                     <>
                       {' '}

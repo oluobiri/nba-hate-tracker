@@ -16,6 +16,8 @@ import { VolumeBands } from '../components/VolumeBands'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt, fmtPct } from '../lib/format'
+import { countsOf } from '../lib/metrics'
+import { playerNetRange } from '../lib/net'
 import { ARC_MIN_N, ARC_WEEKS, NIGHT_MIN_N, THREAD_SECOND_GAP, THREAD_SECOND_MIN_N, WINDOW, arcDomain, arcsLede, buildSeason, fmtPts, gameNightsLede, ledeText, playerAngleText, roomsLede } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
 import { weekLabel } from '../lib/weeks'
@@ -27,6 +29,7 @@ const loudest = s.extremes.loudest!
 const bridged = s.weekly.totals.reduce((a, b) => a + b, 0)
 const angle = playerAngleText(s.angle)
 const arcAxis = arcDomain([...s.arcs.rose, ...s.arcs.fell])
+const netRange = playerNetRange(tables.player_overall.map(countsOf))
 const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].map((t) => t.counts.total))
 ---
 
@@ -118,8 +121,8 @@ const threadMax = Math.max(0, ...[...s.threads.playoffs, ...s.threads.regular].m
         <p class="copy">{arcsLede(s.arcs)}</p>
       </header>
       <ArcKey />
-      <ArcRows heading="Rose the most" tone="pos" arcs={s.arcs.rose} domain={arcAxis} />
-      <ArcRows heading="Fell the most" tone="neg" arcs={s.arcs.fell} domain={arcAxis} />
+      <ArcRows heading="Rose the most" tone="pos" arcs={s.arcs.rose} domain={arcAxis} netRange={netRange} />
+      <ArcRows heading="Fell the most" tone="neg" arcs={s.arcs.fell} domain={arcAxis} netRange={netRange} />
       <ArcFlat arcs={s.arcs.flat} />
       <MethodNote kind="method">
         Net sentiment is the positive share minus the negative share. Each player's first {fmtInt(ARC_WEEKS)} regular-season weeks are set against the {fmtInt(ARC_WEEKS)}{' '}

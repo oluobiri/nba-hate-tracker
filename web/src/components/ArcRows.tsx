@@ -1,12 +1,12 @@
 // Season arcs: a dumbbell per player on one net-sentiment axis, the early
 // dot hollow and the late dot filled, both coloured by their net on the
-// site's formula; the timing phrase under the name; the shares beside the
+// player rule; the timing phrase under the name; the shares beside the
 // figures, since net alone can hide a split room. The whole row is the link.
 import type { CSSProperties } from 'react'
 
 import { fmtInt } from '../lib/format'
 import { negRate, posRate } from '../lib/metrics'
-import { fmtNet, netColor } from '../lib/net'
+import { fmtNet, type PlayerNetRange, playerNetColor } from '../lib/net'
 import { type Arc, ARC_WEEKS, arcText } from '../lib/season'
 import { weekLabel } from '../lib/weeks'
 
@@ -23,6 +23,8 @@ export interface ArcRowsProps {
   tone: 'pos' | 'neg'
   arcs: readonly Arc[]
   domain: ArcDomain
+  /** The season's player extremes, the colour scale for the dots and figures. */
+  netRange: PlayerNetRange
 }
 
 const playerHref = (slug: string): string => `/player/${slug}/`
@@ -54,8 +56,9 @@ export function ArcKey() {
   )
 }
 
-export function ArcRows({ heading, tone, arcs, domain }: ArcRowsProps) {
+export function ArcRows({ heading, tone, arcs, domain, netRange }: ArcRowsProps) {
   const x = (v: number): number => ((v - domain.lo) / (domain.hi - domain.lo)) * 100
+  const c = (v: number): string => playerNetColor(v, netRange)
   return (
     <div className={`arc arc--${tone}`}>
       <h3>{heading}</h3>
@@ -75,12 +78,12 @@ export function ArcRows({ heading, tone, arcs, domain }: ArcRowsProps) {
           <span className="arc__track" role="img" aria-label={arcText(a)}>
             <span className="arc__zero" style={{ left: `${x(0)}%` }} />
             <span className="arc__line" style={{ left: `${Math.min(x(a.early.net), x(a.late.net))}%`, width: `${Math.abs(x(a.late.net) - x(a.early.net))}%` }} />
-            <span className="arc__dot arc__dot--early" style={{ left: `${x(a.early.net)}%`, '--c': netColor(a.early.net) } as CSSProperties} />
-            <span className="arc__dot arc__dot--late" style={{ left: `${x(a.late.net)}%`, '--c': netColor(a.late.net) } as CSSProperties} />
+            <span className="arc__dot arc__dot--early" style={{ left: `${x(a.early.net)}%`, '--c': c(a.early.net) } as CSSProperties} />
+            <span className="arc__dot arc__dot--late" style={{ left: `${x(a.late.net)}%`, '--c': c(a.late.net) } as CSSProperties} />
           </span>
           <span className="arc__fig mono">
             <span>
-              <span style={{ color: netColor(a.early.net) }}>{fmtNet(a.early.net)}</span> → <b style={{ color: netColor(a.late.net) }}>{fmtNet(a.late.net)}</b>
+              <span style={{ color: c(a.early.net) }}>{fmtNet(a.early.net)}</span> → <b style={{ color: c(a.late.net) }}>{fmtNet(a.late.net)}</b>
             </span>
             <small>
               <span className="neg">

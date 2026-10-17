@@ -69,7 +69,7 @@ describe('populationView', () => {
     const v = populationView(rows, { scope: 'all', conf: 'West', zoom: null, official: OFFICIAL })
     expect(v.groups.map((g) => g.key)).toEqual(['LAL', 'SAS'])
     expect(v.eyebrow).toBe('Western Conference · 680 comments about 4 players on 2 teams')
-    expect(populationView(rows, { scope: 'all', conf: 'East', zoom: null, official: OFFICIAL }).eyebrow).toBe('Eastern Conference · 120 comments about 1 players on 1 teams')
+    expect(populationView(rows, { scope: 'all', conf: 'East', zoom: null, official: OFFICIAL }).eyebrow).toBe('Eastern Conference · 120 comments about 1 player on 1 team')
   })
 
   it('zoomed shows the one group, its eyebrow without teams, and the crumb names it', () => {
@@ -192,9 +192,15 @@ describe('headerLabel', () => {
     expect(headerLabel(none, 50)).toEqual({ title: NO_ROSTER_KEY, detail: '' })
   })
 
-  it('speaks the team, its comments, its players and its net; the no-roster group without a net', () => {
-    expect(headerText(lal)).toBe('LAL Full · 400 comments · 2 players · team net −13')
+  it('speaks the visible abbreviation first, then the team, its comments, its players and its net; the no-roster group without a net', () => {
+    expect(headerText(lal)).toBe('LAL · LAL Full · 400 comments · 2 players · −13 team net')
     expect(headerText(none)).toBe('No roster team · 120 comments · 2 players')
+  })
+
+  it('speaks one player in the singular', () => {
+    const solo = populationView(rows, { scope: 'all', conf: 'all', zoom: 'NYK', official: OFFICIAL })
+    expect(solo.crumb).toBe('NYK Full · 1 player')
+    expect(headerText(solo.zoomed!)).toBe('NYK · NYK Full · 120 comments · 1 player · 0 team net')
   })
 })
 
@@ -233,7 +239,7 @@ describe('tileLabel', () => {
 
 describe('tileText', () => {
   it('speaks name, team, comments, the split and the net; status in place of a team', () => {
-    expect(tileText(rows[1]!)).toBe('LeBron James · LAL · 300 comments · 33.3% negative, 33.3% positive, net 0')
-    expect(tileText(rows[4]!)).toBe('Chris Paul · Retired · no roster team · 60 comments · 50.0% negative, 16.7% positive, net −33')
+    expect(tileText(rows[1]!)).toBe('LeBron James · LAL · 300 comments · 33.3% negative, 33.3% positive, 0 net')
+    expect(tileText(rows[4]!)).toBe('Chris Paul · Retired · no roster team · 60 comments · 50.0% negative, 16.7% positive, −33 net')
   })
 })

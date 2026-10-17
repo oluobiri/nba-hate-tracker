@@ -126,6 +126,8 @@ export function populationRows(tables: PopulationTables, copy: Readonly<Record<s
   })
 }
 
+const plural = (n: number, word: string): string => `${fmtInt(n)} ${word}${n === 1 ? '' : 's'}`
+
 /** The roster's net: positive minus negative over its summed comments. */
 export const teamNet = (rows: readonly Counts[]): number => netSentiment(sumCounts(rows))
 
@@ -164,9 +166,9 @@ export function populationView(rows: readonly PopulationRow[], opts: ViewOptions
   const teams = groups.filter((g) => g.key !== NO_ROSTER_KEY).length
   const conf = CONFERENCES.find((c) => c.key === opts.conf)!
   const eyebrow = zoomed
-    ? `${fmtInt(total)} comments about ${fmtInt(shown.length)} players`
-    : `${opts.conf === 'all' ? 'Population' : conf.label} · ${fmtInt(total)} comments about ${fmtInt(shown.length)} players on ${fmtInt(teams)} teams`
-  const crumb = zoomed ? `${zoomed.name} · ${fmtInt(zoomed.players.length)} players` : 'Click a team to zoom'
+    ? `${plural(total, 'comment')} about ${plural(shown.length, 'player')}`
+    : `${opts.conf === 'all' ? 'Population' : conf.label} · ${plural(total, 'comment')} about ${plural(shown.length, 'player')} on ${plural(teams, 'team')}`
+  const crumb = zoomed ? `${zoomed.name} · ${plural(zoomed.players.length, 'player')}` : 'Click a team to zoom'
   return { groups, eyebrow, zoomed, crumb }
 }
 
@@ -231,10 +233,10 @@ export function headerLabel(group: PopulationGroup, width: number): HeaderLabel 
   return { title: group.abbr!, detail }
 }
 
-/** The header's spoken sentence: the team, its comments, its players and its net. */
+/** The header's spoken sentence, led by its visible label: the abbreviation, the team, its comments, its players and its net. */
 export function headerText(group: PopulationGroup): string {
-  const parts = [group.name, `${fmtInt(group.counts.total)} comments`, `${fmtInt(group.players.length)} players`]
-  if (group.net !== null) parts.push(`team net ${fmtNet(group.net)}`)
+  const parts = [group.abbr ? `${group.abbr} · ${group.name}` : group.name, plural(group.counts.total, 'comment'), plural(group.players.length, 'player')]
+  if (group.net !== null) parts.push(`${fmtNet(group.net)} team net`)
   return parts.join(' · ')
 }
 
@@ -275,8 +277,8 @@ export function showNet(label: TileLabel | null, w: number, h: number): boolean 
   return w >= NET_MIN_W && h >= nameH + NET_LINE_H
 }
 
-/** The tile's spoken sentence: name, team or status, comments, the split and the net. */
+/** The tile's spoken sentence: name, team or status, comments, the split and the net, in the tile's own word order. */
 export function tileText(row: PopulationRow): string {
   const where = row.abbr ?? `${row.status} · ${NO_ROSTER_NAME.toLowerCase()}`
-  return `${row.name} · ${where} · ${fmtInt(row.total)} comments · ${fmtPct(negRate(row))} negative, ${fmtPct(posRate(row))} positive, net ${fmtNet(netSentiment(row))}`
+  return `${row.name} · ${where} · ${plural(row.total, 'comment')} · ${fmtPct(negRate(row))} negative, ${fmtPct(posRate(row))} positive, ${fmtNet(netSentiment(row))} net`
 }

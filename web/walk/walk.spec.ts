@@ -203,7 +203,8 @@ test('the population map toggles, filters by conference, zooms to the player lin
   expect(await noRoster.count()).toBeGreaterThan(0)
   const groups = await page.locator('.pm__group').count()
   const first = page.locator('.pm__group').first()
-  const team = (await first.getAttribute('aria-label'))!.split(' · ')[0]!
+  // The spoken name leads with the visible abbreviation; the team's name follows it.
+  const team = (await first.getAttribute('aria-label'))!.split(' · ')[1]!
   await first.click()
   await expect(page.locator('.pm__team')).toContainText(team)
   await expect(page.locator('.pm__group')).toHaveCount(0)
@@ -213,13 +214,33 @@ test('the population map toggles, filters by conference, zooms to the player lin
   const boxes = await page.locator('.pm__box').count()
   expect(boxes).toBeGreaterThan(0)
   expect(await page.locator('.pm__tile[href^="/player/"]').count()).toBe(boxes)
-  expect(await page.locator('.pm__net').count()).toBe(boxes)
+  expect(await page.locator('.pm__net').count()).toBe(await page.locator('.pm__name').count())
   const back = page.getByRole('button', { name: 'Back' })
   await expect(back).toBeFocused()
   await back.click()
   await expect(page.locator('.pm__crumb')).toContainText('Click a team to zoom')
   await expect(page.locator('.pm__group')).toHaveCount(groups)
-  await expect(page.locator('.pm__group').first()).toBeFocused()
+  await expect(first).toBeFocused()
+  // A zoom the next view cannot hold is dropped: a roster with no official player, zoomed, then Official.
+  const keys = async () => page.locator('.pm__group').evaluateAll((els) => els.map((el) => el.getAttribute('data-key')!))
+  const all = await keys()
+  await page.locator('.pm .btn', { hasText: /^Official/ }).click()
+  await expect(page.locator('.pm__box')).toHaveCount(n)
+  // The rosters still drawn under Official, read from the boxes (a small roster may lose its header strip, not its players).
+  const kept = new Set(await page.locator('.pm__box').evaluateAll((els) => els.map((el) => el.getAttribute('data-key')!)))
+  await page.locator('.pm .btn', { hasText: /^All/ }).click()
+  await expect(page.locator('.pm__group')).toHaveCount(all.length)
+  const emptied = all.find((k) => !kept.has(k))
+  if (emptied) {
+    await page.locator(`.pm__group[data-key="${emptied}"]`).click()
+    await expect(page.locator('.pm__team')).toBeVisible()
+    await page.locator('.pm .btn', { hasText: /^Official/ }).click()
+    await expect(page.locator('.pm__team')).toHaveCount(0)
+    await page.locator('.pm .btn', { hasText: /^All/ }).click()
+    await expect(page.locator('.pm__team')).toHaveCount(0)
+    await expect(page.locator(`.pm__group[data-key="${emptied}"]`)).toHaveCount(1)
+  }
+  await first.focus()
   await page.keyboard.press('Enter')
   const link = page.locator('.pm__tile').first()
   const href = (await link.getAttribute('href'))!

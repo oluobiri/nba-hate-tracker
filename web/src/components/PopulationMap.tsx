@@ -64,17 +64,28 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
     return () => ro.disconnect()
   }, [demo])
 
-  // After a zoom, focus lands on Back; after Back, on the first team header.
-  const moved = useRef(false)
+  // After a zoom, focus lands on Back; after Back, on the header of the team just left, or the first.
+  const moved = useRef<string | null>(null)
+  const left = useRef<string | null>(null)
   useEffect(() => {
-    if (!moved.current) return
-    moved.current = false
+    if (moved.current === null) return
+    const from = moved.current
+    moved.current = null
     if (zoom) back.current?.focus()
-    else box.current?.querySelector<HTMLElement>('.pm__group')?.focus()
+    else (box.current?.querySelector<HTMLElement>(`.pm__group[data-key="${CSS.escape(from)}"]`) ?? box.current?.querySelector<HTMLElement>('.pm__group'))?.focus()
   }, [zoom])
   const go = (key: string | null): void => {
-    moved.current = true
+    moved.current = key ?? left.current ?? ''
+    left.current = key
     setZoom(key)
+  }
+  // A view that cannot hold the zoomed team (the toggle emptied it, the conference changed) shows the whole map.
+  const pick = (next: { scope?: Scope; conf?: Conf }): void => {
+    const s = next.scope ?? scope
+    const c = next.conf ?? conf
+    if (zoom !== null && populationView(rows, { scope: s, conf: c, zoom, official }).zoomed === null) setZoom(null)
+    if (next.scope) setScope(next.scope)
+    if (next.conf) setConf(next.conf)
   }
 
   const view = useMemo(() => populationView(rows, { scope, conf, zoom, official }), [rows, scope, conf, zoom, official])
@@ -96,7 +107,7 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
         <div className="pm__controls">
           <div className="pm__toggle" role="group" aria-label="Players">
             {SCOPES.map((s) => (
-              <button key={s.key} type="button" className="btn" aria-pressed={s.key === scope} onClick={() => setScope(s.key)}>
+              <button key={s.key} type="button" className="btn" aria-pressed={s.key === scope} onClick={() => pick({ scope: s.key })}>
                 {s.label(tracked, officialN)}
               </button>
             ))}
@@ -113,10 +124,7 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
             className="pm__select"
             aria-label="Conference"
             value={conf}
-            onChange={(e) => {
-              setConf(e.target.value as Conf)
-              setZoom(null)
-            }}
+            onChange={(e) => pick({ conf: e.target.value as Conf })}
           >
             {CONFERENCES.map((c) => (
               <option key={c.key} value={c.key}>
@@ -145,6 +153,7 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
                 key={h.group.key}
                 type="button"
                 className="pm__group"
+                data-key={h.group.key}
                 style={{ left: h.x, top: h.y, width: h.w, height: h.h }}
                 aria-label={headerText(h.group)}
                 title={headerText(h.group)}
@@ -160,7 +169,7 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
             {layout.tiles.map((t) => {
               const net = netOf(t.row)
               const label = tileLabel(t.row.name, t.w, t.h, tileBase(t.w, t.h))
-              const netLine = zoomed || showNet(label, t.w, t.h)
+              const netLine = label !== null && (zoomed || showNet(label, t.w, t.h))
               const text = tileText(t.row)
               const geometry = { left: t.x, top: t.y, width: t.w, height: t.h }
               const body = (
@@ -182,10 +191,11 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
                 <motion.div
                   key={t.row.slug}
                   className="pm__box"
+                  data-key={t.group.key}
                   style={{ '--fill': playerNetColor(net, netRange) } as CSSProperties}
                   initial={{ opacity: 0, ...geometry }}
                   animate={{ opacity: 1, ...geometry }}
-                  exit={{ opacity: 0 }}
+                  exit={{ opacity: 0, pointerEvents: 'none' }}
                   transition={{ duration: travel }}
                 >
                   {zoomed ? (
@@ -208,6 +218,7 @@ export function PopulationMap({ rows, official, netRange, demo }: PopulationMapP
           at the season's lowest player, full ice at its highest, bone at zero, over every tracked player, so a shade means the same net in every view here and on every
           player page. Official keeps the players at the minimum of {fmtInt(official)} comments. A team is the roster the site lists beside each name, its header summed over
           the boxes shown; the {fmtInt(noRoster)} players without a roster team at season end sit together under "{NO_ROSTER_NAME}" and appear only under All teams.
+          The counts are the population's: a player too small to draw at this width is counted, not drawn.
         </MethodNote>
       </section>
     </MotionConfig>

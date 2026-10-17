@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { annotate, heroSentence, type Named, playerVerdict, rankChips } from './annotate'
+import { annotate, bestLens, heroSentence, LENS_PRECEDENCE, type Named, playerVerdict, rankChips } from './annotate'
 import { rankBy } from './metrics'
+import { LENSES } from './types'
 
 const row = (name: string, neg: number, neu: number, pos: number): Named => ({ name, neg, neu, pos, total: neg + neu + pos })
 
@@ -70,25 +71,60 @@ describe('heroSentence', () => {
 
 const ranks = (neg: number | null, pos: number | null) => ({ neg, pos, volume: 5, polar: 7 })
 
+describe('LENS_PRECEDENCE', () => {
+  it('breaks a tie between lenses rates first, then polarization, volume last', () => {
+    expect(LENS_PRECEDENCE).toEqual(['neg', 'pos', 'polar', 'volume'])
+    expect([...LENS_PRECEDENCE].toSorted()).toEqual([...LENSES].toSorted())
+  })
+})
+
+describe('bestLens', () => {
+  it('picks the lens with the smallest rank', () => {
+    expect(bestLens({ neg: 1, pos: 59, volume: 9, polar: 2 })).toBe('neg')
+    expect(bestLens({ neg: 66, pos: 2, volume: 26, polar: 16 })).toBe('pos')
+    expect(bestLens({ neg: 56, pos: 7, volume: 1, polar: 32 })).toBe('volume')
+    expect(bestLens({ neg: 30, pos: 10, volume: 29, polar: 1 })).toBe('polar')
+  })
+
+  it('resolves a tie by precedence: a rate over polarization, polarization over volume', () => {
+    expect(bestLens({ neg: 6, pos: 48, volume: 13, polar: 6 })).toBe('neg')
+    expect(bestLens({ neg: 46, pos: 8, volume: 8, polar: 12 })).toBe('pos')
+    expect(bestLens({ neg: 20, pos: 20, volume: 30, polar: 40 })).toBe('neg')
+    expect(bestLens({ neg: 30, pos: 40, volume: 9, polar: 9 })).toBe('polar')
+  })
+})
+
 describe('playerVerdict', () => {
   const league = { neg: 400, neu: 400, pos: 200, total: 1_000 }
-  const base = { official: 100, tracked: 223, league }
+  const base = { official: 100, tracked: 223, league, name: 'A', counts: row('A', 50, 25, 25) }
   const allRanks = { neg: 31, pos: 40, volume: 50, polar: 60 }
 
-  it('states the official negative rank and nothing else', () => {
-    const v = playerVerdict({ ...base, name: 'A', counts: row('A', 50, 25, 25), ranks: ranks(3, 9), allRanks })
-    expect(v).toEqual({ sentence: "r/NBA's 3rd most hated player." })
+  it('leads with the lens where he ranks best, one sentence per lens', () => {
+    expect(playerVerdict({ ...base, ranks: { neg: 3, pos: 59, volume: 9, polar: 7 }, allRanks })).toEqual({ lens: 'neg', sentence: "r/NBA's 3rd most hated player." })
+    expect(playerVerdict({ ...base, ranks: { neg: 66, pos: 2, volume: 26, polar: 16 }, allRanks })).toEqual({ lens: 'pos', sentence: "r/NBA's 2nd most loved player." })
+    expect(playerVerdict({ ...base, ranks: { neg: 48, pos: 23, volume: 2, polar: 42 }, allRanks })).toEqual({ lens: 'volume', sentence: "r/NBA's 2nd most discussed player." })
+    expect(playerVerdict({ ...base, ranks: { neg: 30, pos: 10, volume: 29, polar: 4 }, allRanks })).toEqual({ lens: 'polar', sentence: "r/NBA's 4th most argued about player." })
   })
 
-  it('drops the ordinal at the top of the board', () => {
-    const v = playerVerdict({ ...base, name: 'A', counts: row('A', 60, 20, 20), ranks: ranks(1, 9), allRanks })
-    expect(v).toEqual({ sentence: "r/NBA's most hated player." })
+  it('drops the ordinal at the top of a board', () => {
+    expect(playerVerdict({ ...base, ranks: ranks(1, 9), allRanks })).toEqual({ lens: 'neg', sentence: "r/NBA's most hated player." })
+    expect(playerVerdict({ ...base, ranks: { neg: 56, pos: 7, volume: 1, polar: 32 }, allRanks })).toEqual({ lens: 'volume', sentence: "r/NBA's most discussed player." })
   })
 
-  it('writes the unofficial note under the minimum, with the shortfall and the all-player rank', () => {
-    const v = playerVerdict({ ...base, name: 'A', counts: row('A', 40, 30, 20), ranks: ranks(null, null), allRanks })
-    expect(v).toEqual({
+  it('breaks a tie by LENS_PRECEDENCE', () => {
+    expect(playerVerdict({ ...base, ranks: { neg: 6, pos: 48, volume: 13, polar: 6 }, allRanks })).toEqual({ lens: 'neg', sentence: "r/NBA's 6th most hated player." })
+    expect(playerVerdict({ ...base, ranks: { neg: 46, pos: 8, volume: 8, polar: 12 }, allRanks })).toEqual({ lens: 'pos', sentence: "r/NBA's 8th most loved player." })
+  })
+
+  it('writes the unofficial note under the minimum, with the shortfall and his best all-player rank', () => {
+    const counts = row('A', 40, 30, 20)
+    expect(playerVerdict({ ...base, counts, ranks: ranks(null, null), allRanks })).toEqual({
+      lens: 'neg',
       sentence: 'Unofficial: 90 comments, 10 short of the official minimum of 100. Among all 223 tracked players he would rank 31st most hated.',
+    })
+    expect(playerVerdict({ ...base, counts, ranks: ranks(null, null), allRanks: { neg: 150, pos: 12, volume: 90, polar: 12 } })).toEqual({
+      lens: 'pos',
+      sentence: 'Unofficial: 90 comments, 10 short of the official minimum of 100. Among all 223 tracked players he would rank 12th most loved.',
     })
   })
 })

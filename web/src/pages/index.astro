@@ -2,11 +2,14 @@
 import { FanbaseIndex, type FanRow } from '../components/FanbaseIndex'
 import { Leaderboard, type BoardPlayer } from '../components/Leaderboard'
 import { MethodNote } from '../components/MethodNote'
+import { PopulationMap } from '../components/PopulationMap'
 import { TitleTally, WeekAxis, WeeklyTitles, type TitleRow } from '../components/WeeklyTitles'
 import { getSeason } from '../data'
 import Base from '../layouts/Base.astro'
 import { fmtInt } from '../lib/format'
 import { countsOf } from '../lib/metrics'
+import { playerNetRange } from '../lib/net'
+import { populationRows } from '../lib/population'
 import { teamLine } from '../lib/status'
 import { weeklyHolders } from '../lib/titles'
 import { HEADLINE_POPULATION, SITE_NAME } from '../site'
@@ -28,6 +31,10 @@ const players: BoardPlayer[] = tables.player_overall.map((r) => {
   }
 })
 const headline = { count: manifest.corpus[HEADLINE_POPULATION], players: tables.players.length }
+
+// The population under the board: every tracked player by roster, coloured on the player rule.
+const population = populationRows(tables)
+const netRange = playerNetRange(tables.player_overall.map(countsOf))
 
 // Weekly titles, computed here from player_temporal; the strip is static.
 const beltFloor = manifest.rules.floors.belt_min_n
@@ -65,6 +72,8 @@ const fans: FanRow[] = tables.fan_team_overall
       season={manifest.season}
       headline={headline}
     />
+
+    <PopulationMap client:visible rows={population} official={manifest.rules.qualified_threshold} netRange={netRange} />
 
     <section class="titles" aria-labelledby="titles-h">
       <header class="titles__head">

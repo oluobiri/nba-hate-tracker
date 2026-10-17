@@ -5,9 +5,13 @@
 // conference come from the dimension tables; the official minimum arrives
 // from the manifest. The label fitting is a character-width estimate,
 // since the tiles are laid before they are painted.
+import type { PlayerOverallRow, PlayersRow, TeamsRow } from '../data/types.gen'
 import { fmtInt, fmtPct } from './format'
-import { negRate, netSentiment, posRate, sumCounts } from './metrics'
+import { countsOf, negRate, netSentiment, posRate, sumCounts } from './metrics'
 import { fmtNet } from './net'
+import { PLAYER_STATUS, type PlayerStatusCopy } from './player-status-copy'
+import { playerStatus } from './status'
+import { type Box, snap, squarify } from './treemap'
 import type { Counts } from './types'
 
 export interface PopulationRow extends Counts {
@@ -87,6 +91,41 @@ const LABEL_STEP = 0.88
 const NET_MIN_W = 54
 const NET_LINE_H = 18
 
+// The map's pixels, page choices too: the team header strip, the group it needs, and the insets that draw the gaps.
+const HEAD = 20
+const HEAD_MIN_W = 40
+const HEAD_MIN_H = 56
+const GROUP_INSET = 2
+const TILE_INSET = 1
+
+export type PopulationTables = {
+  players: readonly Pick<PlayersRow, 'attributed_player' | 'slug' | 'roster_team' | 'conference'>[]
+  player_overall: readonly Pick<PlayerOverallRow, 'attributed_player' | 'neg_count' | 'neu_count' | 'pos_count' | 'comment_count'>[]
+  teams: readonly Pick<TeamsRow, 'team' | 'abbreviation' | 'logo_url'>[]
+}
+
+/** One row per tracked player with comments, his roster from the dimension tables and his status without one. */
+export function populationRows(tables: PopulationTables, copy: Readonly<Record<string, PlayerStatusCopy>> = PLAYER_STATUS): PopulationRow[] {
+  const dim = new Map(tables.players.map((p) => [p.attributed_player, p]))
+  const teamBy = new Map(tables.teams.map((t) => [t.team, t]))
+  return tables.player_overall.map((r) => {
+    const p = dim.get(r.attributed_player)
+    if (!p) throw new Error(`population: ${r.attributed_player} has comments but no players row`)
+    const team = p.roster_team ? teamBy.get(p.roster_team) : null
+    if (p.roster_team && !team) throw new Error(`population: ${r.attributed_player} is on ${p.roster_team}, which teams does not list`)
+    return {
+      ...countsOf(r),
+      name: p.attributed_player,
+      slug: p.slug,
+      team: team?.team ?? null,
+      abbr: team?.abbreviation ?? null,
+      logo: team?.logo_url ?? null,
+      conference: p.conference,
+      status: playerStatus(p, copy)?.status ?? null,
+    }
+  })
+}
+
 /** The roster's net: positive minus negative over its summed comments. */
 export const teamNet = (rows: readonly Counts[]): number => netSentiment(sumCounts(rows))
 
@@ -129,6 +168,49 @@ export function populationView(rows: readonly PopulationRow[], opts: ViewOptions
     : `${opts.conf === 'all' ? 'Population' : conf.label} · ${fmtInt(total)} comments about ${fmtInt(shown.length)} players on ${fmtInt(teams)} teams`
   const crumb = zoomed ? `${zoomed.name} · ${fmtInt(zoomed.players.length)} players` : 'Click a team to zoom'
   return { groups, eyebrow, zoomed, crumb }
+}
+
+export interface HeaderBox extends Box {
+  group: PopulationGroup
+}
+
+export interface TileBox extends Box {
+  row: PopulationRow
+  group: PopulationGroup
+}
+
+export interface MapLayout {
+  headers: HeaderBox[]
+  tiles: TileBox[]
+}
+
+/**
+ * The map's pixels for one view and box: groups squarified over the box,
+ * each with a header strip when it has the room, its players squarified
+ * under the strip; zoomed, the one group's players over the whole box.
+ * Rectangles snap to whole pixels, inset so the gaps are drawn by the ink.
+ */
+export function layoutMap(view: PopulationView, w: number, h: number): MapLayout {
+  const headers: HeaderBox[] = []
+  const tiles: TileBox[] = []
+  const place = (group: PopulationGroup, box: Box): void => {
+    for (const r of squarify(group.players.map((p) => ({ item: p, value: p.total })), box)) {
+      const s = snap(r, TILE_INSET)
+      if (s) tiles.push({ x: s.x, y: s.y, w: s.w, h: s.h, row: s.item, group })
+    }
+  }
+  if (view.zoomed) {
+    place(view.zoomed, { x: 0, y: 0, w, h })
+    return { headers, tiles }
+  }
+  for (const g of squarify(view.groups.map((group) => ({ item: group, value: group.counts.total })), { x: 0, y: 0, w, h })) {
+    const s = snap(g, GROUP_INSET)
+    if (!s) continue
+    const head = s.w >= HEAD_MIN_W && s.h >= HEAD_MIN_H ? HEAD : 0
+    if (head) headers.push({ group: s.item, x: s.x, y: s.y, w: s.w, h: head - GROUP_INSET })
+    place(s.item, { x: s.x, y: s.y + head, w: s.w, h: s.h - head })
+  }
+  return { headers, tiles }
 }
 
 export interface HeaderLabel {

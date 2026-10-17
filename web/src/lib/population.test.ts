@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { CONFERENCES, headerLabel, headerText, NO_ROSTER_KEY, NO_ROSTER_NAME, officialCount, type PopulationRow, populationView, showNet, teamNet, tileBase, tileLabel, tileText } from './population'
+import { CONFERENCES, headerLabel, headerText, layoutMap, NO_ROSTER_KEY, NO_ROSTER_NAME, officialCount, type PopulationRow, populationRows, populationView, showNet, teamNet, tileBase, tileLabel, tileText } from './population'
+import { player as dimPlayer, TEAMS } from './season.fixture'
 
 const OFFICIAL = 100
 
@@ -98,6 +99,78 @@ describe('populationView', () => {
 
   it('lists the three conference choices in order', () => {
     expect(CONFERENCES.map((c) => c.key)).toEqual(['all', 'East', 'West'])
+  })
+})
+
+const overall = (name: string, neg: number, neu: number, pos: number) => ({ attributed_player: name, neg_count: neg, neu_count: neu, pos_count: pos, comment_count: neg + neu + pos })
+type Pixels = { x: number; y: number; w: number; h: number }
+const inside = (b: Pixels, box: Pixels) => b.x >= box.x && b.y >= box.y && b.x + b.w <= box.x + box.w && b.y + b.h <= box.y + box.h
+
+describe('populationRows', () => {
+  const copy = { 'chris-paul': { status: 'Retired' as const, text: 'He retired.' } }
+  const tables = {
+    players: [dimPlayer('Victor Wembanyama'), dimPlayer('Jalen Brunson', { roster_team: 'New York Knicks', conference: 'East' }), dimPlayer('Chris Paul', { roster_team: null, conference: null })],
+    player_overall: [overall('Victor Wembanyama', 50, 100, 100), overall('Chris Paul', 30, 20, 10), overall('Jalen Brunson', 40, 40, 40)],
+    teams: TEAMS,
+  }
+
+  it('joins each player with comments to his roster, logo and conference, and his status without one', () => {
+    const rs = populationRows(tables, copy)
+    expect(rs.map((r) => r.name)).toEqual(['Victor Wembanyama', 'Chris Paul', 'Jalen Brunson'])
+    expect(rs[0]).toMatchObject({ slug: 'victor-wembanyama', team: 'San Antonio Spurs', abbr: 'SAS', logo: '', conference: 'West', status: null, total: 250 })
+    expect(rs[1]).toMatchObject({ team: null, abbr: null, logo: null, conference: null, status: 'Retired' })
+    expect(rs[2]).toMatchObject({ abbr: 'NYK', conference: 'East' })
+  })
+
+  it('fails the build on a player without a dimension row or on a roster the teams table lacks', () => {
+    expect(() => populationRows({ ...tables, player_overall: [overall('Nobody', 1, 1, 1)] }, copy)).toThrow(/no players row/)
+    expect(() => populationRows({ ...tables, players: [dimPlayer('Victor Wembanyama', { roster_team: 'Seattle' })] }, copy)).toThrow(/teams does not list/)
+  })
+})
+
+describe('layoutMap', () => {
+  const W = 1000
+  const H = 600
+  const whole = populationView(rows, { scope: 'all', conf: 'all', zoom: null, official: OFFICIAL })
+
+  it('gives every group a header and lays its players under it, inside the box', () => {
+    const { headers, tiles } = layoutMap(whole, W, H)
+    expect(headers.map((h) => h.group.key)).toEqual(['LAL', 'SAS', 'NYK', NO_ROSTER_KEY])
+    expect(tiles).toHaveLength(rows.length)
+    for (const h of headers) {
+      expect(inside(h, { x: 0, y: 0, w: W, h: H })).toBe(true)
+      for (const t of tiles.filter((tile) => tile.group === h.group)) {
+        expect(t.y).toBeGreaterThanOrEqual(h.y + h.h)
+        expect(t.x).toBeGreaterThanOrEqual(h.x)
+        expect(t.x + t.w).toBeLessThanOrEqual(h.x + h.w)
+      }
+    }
+  })
+
+  it('lays tiles on whole pixels, the largest player first in each group', () => {
+    const { tiles } = layoutMap(whole, W, H)
+    for (const t of tiles) for (const k of ['x', 'y', 'w', 'h'] as const) expect(Number.isInteger(t[k]), k).toBe(true)
+    const lal = tiles.filter((t) => t.group.key === 'LAL')
+    expect(lal.map((t) => t.row.name)).toEqual(['LeBron James', 'Luka Doncic'])
+  })
+
+  it('zoomed, has no headers and the players fill the box', () => {
+    const zoomed = populationView(rows, { scope: 'all', conf: 'all', zoom: 'SAS', official: OFFICIAL })
+    const { headers, tiles } = layoutMap(zoomed, W, H)
+    expect(headers).toEqual([])
+    expect(tiles.map((t) => t.row.name)).toEqual(['Victor Wembanyama', 'Stephon Castle'])
+    expect(Math.max(...tiles.map((t) => t.x + t.w))).toBe(W - 1)
+    expect(Math.max(...tiles.map((t) => t.y + t.h))).toBe(H - 1)
+  })
+
+  it('drops the header strip from a group too small to hold one', () => {
+    const { headers, tiles } = layoutMap(whole, 120, 60)
+    expect(headers.length).toBeLessThan(whole.groups.length)
+    expect(tiles.length).toBeGreaterThan(0)
+  })
+
+  it('is empty for an empty box', () => {
+    expect(layoutMap(whole, 0, 0)).toEqual({ headers: [], tiles: [] })
   })
 })
 

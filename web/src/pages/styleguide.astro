@@ -74,7 +74,7 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
-import { playerRooms, roomsRule, roomsSentence } from '../lib/rooms'
+import { EXCEPTION_GAP, playerRooms, roomsRule, roomsSentence } from '../lib/rooms'
 import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
@@ -153,22 +153,36 @@ const roomGap = (c: (typeof roomCases)[number]): number | null => {
   const fp = c.pr.drawn.find((x) => x.key === 'general')
   return gt && fp ? fp.rate - gt.rate : null
 }
-const loudest = (cs: readonly (typeof roomCases)[number][]) => cs.toSorted((a, b) => b.row.total - a.row.total)[0]
+type RoomCase = (typeof roomCases)[number]
 const officialRooms = roomCases.filter((c) => c.row.total >= threshold)
-const roomMost = officialRooms.toSorted((a, b) => b.pr.drawn.length - a.pr.drawn.length || b.row.total - a.row.total)[0]!
-const roomOffCourt = officialRooms.filter((c) => roomGap(c) !== null).toSorted((a, b) => roomGap(b)! - roomGap(a)!)[0]!
-const roomLevel = officialRooms.filter((c) => roomGap(c) !== null).toSorted((a, b) => Math.abs(roomGap(a)!) - Math.abs(roomGap(b)!))[0]!
-// The tail on a player the cases above do not already show.
-const roomTail = loudest(officialRooms.filter((c) => c !== roomMost && c !== roomOffCourt && c !== roomLevel && c.pr.harshest && c.pr.headline && c.pr.harshest.key !== c.pr.headline.key))
-const roomOne = loudest(roomCases.filter((c) => c.pr.drawn.length === 1))
-const roomNone = loudest(roomCases.filter((c) => c.pr.drawn.length === 0))
-const roomShown = [
-  { c: roomMost, why: `${roomMost.row.attributed_player} · the most rooms drawn, ${roomMost.pr.drawn.length}; the rule line under it names the rooms left out` },
-  { c: roomOffCourt, why: `${roomOffCourt.row.attributed_player} · the front page harshest by the widest gap: a story off the court` },
-  { c: roomTail, why: roomTail ? `${roomTail.row.attributed_player} · the tag on a sliver the lede passed over: the tail names it with its size` : '' },
-  { c: roomLevel, why: `${roomLevel.row.attributed_player} · the game threads and the front page within the gap: level` },
-  { c: roomOne, why: roomOne ? `${roomOne.row.attributed_player} · one room at the floor: no tag, the one-room lede` : '' },
-].filter((x): x is { c: (typeof roomCases)[number]; why: string } => x.c !== undefined)
+// Each pick is the loudest player meeting its condition and not already shown; a season with no such player skips the figure.
+const roomShown: { c: RoomCase; why: string }[] = []
+const pickRoom = (pool: readonly RoomCase[], keep: (c: RoomCase) => boolean, why: (c: RoomCase) => string, by: (a: RoomCase, b: RoomCase) => number = (a, b) => b.row.total - a.row.total) => {
+  const c = pool.filter((x) => keep(x) && !roomShown.some((s) => s.c === x)).toSorted(by)[0]
+  if (c) roomShown.push({ c, why: why(c) })
+  return c
+}
+const roomMost = pickRoom(
+  officialRooms,
+  (c) => c.pr.drawn.length >= 2,
+  (c) => `${c.row.attributed_player} · the most rooms drawn, ${c.pr.drawn.length}; the rule line under it names the rooms left out`,
+  (a, b) => b.pr.drawn.length - a.pr.drawn.length || b.row.total - a.row.total,
+)
+pickRoom(
+  officialRooms,
+  (c) => (roomGap(c) ?? 0) >= EXCEPTION_GAP,
+  (c) => `${c.row.attributed_player} · the front page harshest by the widest gap: a story off the court`,
+  (a, b) => roomGap(b)! - roomGap(a)!,
+)
+pickRoom(officialRooms, (c) => c.pr.harshest !== null && c.pr.headline !== null && c.pr.harshest.key !== c.pr.headline.key, (c) => `${c.row.attributed_player} · the tag on a sliver the lede passed over: the tail names it with its size`)
+pickRoom(
+  officialRooms,
+  (c) => roomGap(c) !== null && Math.abs(roomGap(c)!) < EXCEPTION_GAP,
+  (c) => `${c.row.attributed_player} · the game threads and the front page within the gap: level`,
+  (a, b) => Math.abs(roomGap(a)!) - Math.abs(roomGap(b)!),
+)
+pickRoom(roomCases, (c) => c.pr.drawn.length === 1, (c) => `${c.row.attributed_player} · one room at the floor: no tag, the one-room lede`)
+const roomNone = roomCases.filter((c) => c.pr.drawn.length === 0).toSorted((a, b) => b.row.total - a.row.total)[0]
 const threadMax = Math.max(0, ...[...season.threads.playoffs, ...season.threads.regular].map((t) => t.counts.total))
 // The pipeline drawing on the published figures.
 const diagram = {
@@ -973,7 +987,7 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         roomShown.map(({ c, why }) => (
           <figure class="guide__fig">
             <p class="guide__lede">{roomsSentence(c.row.attributed_player, c.pr, c.row)}</p>
-            <PlayerRooms name={c.row.attributed_player} rooms={c.pr} />
+            <PlayerRooms rooms={c.pr} />
             <figcaption>{why}</figcaption>
           </figure>
         ))

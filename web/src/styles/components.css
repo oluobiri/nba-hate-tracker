@@ -4479,9 +4479,8 @@ a.hero__who:hover {
   .pr__head > span:first-child {
     display: none;
   }
-  .pr__head {
-    grid-template-columns: 1fr;
-    justify-items: end;
+  .pr__head .pr__figs {
+    grid-column: 2;
   }
   .pr__row .pr__name {
     grid-column: 1 / -1;

@@ -9,15 +9,13 @@ import { fmtShareOf, type PlayerRooms as PlayerRoomsModel } from '../lib/rooms'
 import { fmtPoints } from '../lib/season'
 
 export interface PlayerRoomsProps {
-  /** His name, for the bars' spoken text. */
-  name: string
   rooms: PlayerRoomsModel
 }
 
 // The narrowest bar, in % of the track.
 const FLOOR_WIDTH = 3
 
-export function PlayerRooms({ name, rooms }: PlayerRoomsProps) {
+export function PlayerRooms({ rooms }: PlayerRoomsProps) {
   const { drawn, maxShare } = rooms
   return (
     <div className="pr">
@@ -32,7 +30,8 @@ export function PlayerRooms({ name, rooms }: PlayerRoomsProps) {
       </div>
       {drawn.map((c) => {
         const width = Math.max((maxShare ? c.share / maxShare : 0) * 100, FLOOR_WIDTH)
-        const text = `${c.label}: ${fmtPct(c.rate)} negative, ${fmtPct(neuRate(c.counts))} neutral, ${fmtPct(posRate(c.counts))} positive of ${fmtInt(c.counts.total)} comments about ${name}, ${fmtShareOf(c.share)} of his comments${c.harshest ? '; his harshest room' : ''}`
+        // The visible text already says the room, its share, the tag and the two figures; the bar adds the neutral share.
+        const text = `${fmtPct(c.rate)} negative, ${fmtPct(neuRate(c.counts))} neutral, ${fmtPct(posRate(c.counts))} positive`
         return (
           <div key={c.key} className={`pr__row${c.harshest ? ' pr__row--harshest' : ''}`}>
             <span className="pr__name">

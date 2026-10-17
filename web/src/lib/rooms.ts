@@ -72,9 +72,6 @@ export interface PlayerRooms {
   maxShare: number
 }
 
-// Rates are ratios, so a gap can land a hair under the threshold it equals on paper.
-const EPS = 1e-9
-
 const order = (key: string): number => {
   const i = ROOM_ORDER.indexOf(key)
   return i < 0 ? ROOM_ORDER.length : i
@@ -105,8 +102,10 @@ export function playerRooms(rows: readonly PlayerRoomRow[], season: Counts, floo
 /** A room's share of his comments, whole points; "under 1%" below one. */
 export const fmtShareOf = (share: number): string => (share < 0.01 ? 'under 1%' : fmtPct(share, 0))
 
+/** A gap in whole points, as the sentence says it; the branch is decided on the same rounding. */
+const roundPoints = (gap: number): number => Math.round(Math.abs(gap) * 100)
 const points = (gap: number): string => {
-  const n = Math.round(Math.abs(gap) * 100)
+  const n = roundPoints(gap)
   return n === 0 ? 'less than a point' : `${n} ${n === 1 ? 'point' : 'points'}`
 }
 
@@ -128,8 +127,8 @@ export function roomsSentence(name: string, pr: PlayerRooms, season: Counts): st
   const fp = drawn.find((c) => c.key === 'general')
   if (gt && fp) {
     const gap = fp.rate - gt.rate
-    if (Math.abs(gap) + EPS < EXCEPTION_GAP) parts.push(`The game threads and the front page ran level, ${points(gap)} apart.`)
-    else if (gap > 0) parts.push(`The front page ran ${points(gap)} harsher than the game threads, where most players draw their harshest share: his season was a story off the court.`)
+    if (roundPoints(gap) < roundPoints(EXCEPTION_GAP)) parts.push(`The game threads and the front page ran level, ${points(gap)} apart.`)
+    else if (gap > 0) parts.push(`The front page ran ${points(gap)} harsher than the game threads, the reverse of the usual order: his season was a story off the court.`)
     else parts.push(`The game threads ran ${points(gap)} harsher than the front page: his play was graded live.`)
   }
   if (harshest && harshest.key !== headline.key) parts.push(`${harshest.label} ran harsher still, ${fmtPct(harshest.rate)} negative, on ${fmtShareOf(harshest.share)} of his comments.`)

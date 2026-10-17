@@ -81,6 +81,33 @@ const sentence = (rows: readonly ReturnType<typeof playerRoom>[], name = 'Him') 
   return roomsSentence(name, playerRooms(rows, season, FLOOR), season)
 }
 
+describe('playerRooms on odd rows', () => {
+  it('keeps a room it has no words for, labelled by its key and sorted last', () => {
+    const rows = [playerRoom('Odd', 'zzz_new_room', 30, 30, 40), playerRoom('Odd', 'news', 20, 30, 50)]
+    const pr = playerRooms(rows, seasonOf(rows), FLOOR)
+    expect(pr.drawn.map((c) => c.key)).toEqual(['news', 'zzz_new_room'])
+    expect(pr.drawn[1]!.label).toBe('zzz_new_room')
+    expect(roomsSentence('Odd', pr, seasonOf(rows))).toContain('most harshly in zzz_new_room: 30.0% negative')
+  })
+
+  it('gives every share as zero against an empty season', () => {
+    const rows = [playerRoom('Empty', 'general', 30, 30, 40), playerRoom('Empty', 'news', 20, 30, 50)]
+    const pr = playerRooms(rows, { neg: 0, neu: 0, pos: 0, total: 0 }, FLOOR)
+    expect(pr.drawn.map((c) => c.share)).toEqual([0, 0])
+    expect(pr.maxShare).toBe(0)
+  })
+
+  it('marks the tag on the cells it built, never on the rows or a previous call', () => {
+    const rows = [playerRoom('Twice', 'game_thread', 60, 20, 20), playerRoom('Twice', 'general', 40, 30, 30)]
+    const first = playerRooms(rows, seasonOf(rows), FLOOR)
+    const second = playerRooms(rows, seasonOf(rows), 1000)
+    expect(first.drawn.filter((c) => c.harshest)).toHaveLength(1)
+    expect(second.drawn).toHaveLength(0)
+    expect(playerRooms(rows, seasonOf(rows), FLOOR).drawn.filter((c) => c.harshest)).toHaveLength(1)
+    expect('harshest' in rows[0]!).toBe(false)
+  })
+})
+
 describe('roomsSentence', () => {
   it('grades his play live when the game threads ran harsher by the gap', () => {
     const s = sentence([playerRoom('Him', 'game_thread', 60, 20, 20), playerRoom('Him', 'general', 40, 30, 30)])
@@ -90,7 +117,7 @@ describe('roomsSentence', () => {
   it('calls the season a story off the court when the front page ran harsher by the gap', () => {
     const s = sentence([playerRoom('Him', 'game_thread', 30, 40, 30), playerRoom('Him', 'general', 42, 30, 28)])
     expect(s).toContain('on the front page: 42.0% negative')
-    expect(s).toContain('The front page ran 12 points harsher than the game threads, where most players draw their harshest share: his season was a story off the court.')
+    expect(s).toContain('The front page ran 12 points harsher than the game threads, the reverse of the usual order: his season was a story off the court.')
   })
 
   it('says level inside the gap, singular at one point', () => {
@@ -100,9 +127,12 @@ describe('roomsSentence', () => {
     const hair = sentence([playerRoom('Him', 'game_thread', 400, 300, 300), playerRoom('Him', 'general', 403, 300, 297)])
     expect(hair).toContain('ran level, less than a point apart.')
     const edge = sentence([playerRoom('Him', 'game_thread', 40, 30, 30), playerRoom('Him', 'general', 45, 30, 25)])
-    // 0.45 − 0.40 lands a hair under the gap in floating point; it is the gap on paper.
+    // 0.45 − 0.40 lands a hair under the gap in floating point; the branch and the number round alike.
     expect(Math.abs(0.45 - 0.4)).toBeLessThan(EXCEPTION_GAP)
     expect(edge).toContain('The front page ran 5 points harsher')
+    // 4.6 points rounds to 5 and reads as the gap, so it takes a side rather than "level, 5 points apart".
+    const near = sentence([playerRoom('Him', 'game_thread', 400, 300, 300), playerRoom('Him', 'general', 446, 300, 254)])
+    expect(near).toContain('The front page ran 5 points harsher')
   })
 
   it('names the tagged room in a tail when the headline passed it over', () => {

@@ -127,6 +127,11 @@ describe('playerVerdict', () => {
       sentence: 'Unofficial: 90 comments, 10 short of the official minimum of 100. Among all 223 tracked players he would rank 12th most loved.',
     })
   })
+
+  it('reads most hated by precedence for a player with no comments, whose every all-player rank is last', () => {
+    const v = playerVerdict({ ...base, counts: row('A', 0, 0, 0), ranks: ranks(null, null), allRanks: { neg: 223, pos: 223, volume: 223, polar: 223 } })
+    expect(v).toEqual({ lens: 'neg', sentence: 'Unofficial: 0 comments, 100 short of the official minimum of 100. Among all 223 tracked players he would rank 223rd most hated.' })
+  })
 })
 
 describe('rankChips', () => {

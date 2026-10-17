@@ -1071,7 +1071,8 @@ mark {
   }
 }
 
-/* FanbaseIndex: the lens's question, the toggle, a DeltaDot. */
+/* FanbaseIndex: the lens's question, the toggle, a DeltaDot. The question's
+   last word takes the lens's colour, as the hero's name does; volume stays bone. */
 .fi {
   display: grid;
   gap: 16px;
@@ -1079,6 +1080,12 @@ mark {
 .fi__head {
   display: grid;
   gap: 6px;
+}
+.fi__lens--neg {
+  color: var(--heat);
+}
+.fi__lens--pos {
+  color: var(--ice);
 }
 .fi__toggle {
   display: flex;

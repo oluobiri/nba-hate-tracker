@@ -8,6 +8,7 @@ import { ArcFlat, ArcKey, ArcRows } from '../components/ArcRows'
 import { Exhibit, MarkedBody, commentUrl } from '../components/Exhibit'
 import { Fold, JsonBlock } from '../components/Fold'
 import { FanGrid } from '../components/FanGrid'
+import { FanQuestion, METRICS } from '../components/FanbaseIndex'
 import { Games } from '../components/Games'
 import { GapChart } from '../components/GapChart'
 import { GameNetTimeline } from '../components/GameNetTimeline'
@@ -714,6 +715,14 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" merge />
         <WeekAxis weeks={weeks} />
         <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" merge />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>FanQuestion</h2>
+      <p class="eyebrow">The fanbases section's heading on the leaderboard, one per lens: the last word and its mark in the lens's colour, as the hero's name is; volume takes none, since volume is not a sentiment.</p>
+      <div class="guide__stack">
+        {METRICS.map((m) => <FanQuestion metric={m.key} />)}
       </div>
     </section>
 

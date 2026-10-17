@@ -1,7 +1,8 @@
 // The fanbases on the leaderboard: thirty flairs on one zoomed axis, a
 // league-average tick from summed counts. The toggle is local state;
 // nothing about it belongs in a shared link. The heading asks the lens's
-// question, so it lives here with the toggle.
+// question, so it lives here with the toggle; its last word takes the
+// lens's colour as the hero's name does, and volume takes none.
 import { useMemo, useState } from 'react'
 
 import { fmtInt, fmtPct } from '../lib/format'
@@ -19,13 +20,31 @@ export interface FanbaseIndexProps {
   fans: FanRow[]
 }
 
-type Metric = 'neg' | 'pos' | 'volume'
+export type Metric = 'neg' | 'pos' | 'volume'
 
-const METRICS: { key: Metric; label: string; heading: string; tone: 'neg' | 'pos' | 'neu' }[] = [
-  { key: 'neg', label: 'Most negative', heading: 'Which fans are the harshest?', tone: 'neg' },
-  { key: 'pos', label: 'Most positive', heading: 'Which fans are the kindest?', tone: 'pos' },
-  { key: 'volume', label: 'Loudest', heading: 'Which fans are the loudest?', tone: 'neu' },
+export interface MetricMeta {
+  key: Metric
+  label: string
+  /** The question's last word, which takes the tone's colour with its question mark. */
+  word: string
+  tone: 'neg' | 'pos' | 'neu'
+}
+
+export const METRICS: MetricMeta[] = [
+  { key: 'neg', label: 'Most negative', word: 'harshest', tone: 'neg' },
+  { key: 'pos', label: 'Most positive', word: 'kindest', tone: 'pos' },
+  { key: 'volume', label: 'Loudest', word: 'loudest', tone: 'neu' },
 ]
+
+/** The lens's question: "Which fans are the" in bone, the word and its mark in the tone's colour. */
+export function FanQuestion({ metric, id }: { metric: Metric; id?: string }) {
+  const { word, tone } = METRICS.find((m) => m.key === metric)!
+  return (
+    <h2 id={id}>
+      Which fans are the <span className={`fi__lens fi__lens--${tone}`}>{word}?</span>
+    </h2>
+  )
+}
 
 const VALUE: Record<Metric, (c: Counts) => number> = { neg: negRate, pos: posRate, volume: (c) => c.total }
 
@@ -43,13 +62,13 @@ export function FanbaseIndex({ fans }: FanbaseIndexProps) {
   // The tick: a rate of the summed counts, or the mean volume per fanbase.
   const average = metric === 'volume' ? Math.round(sumCounts(fans).total / fans.length) : value(sumCounts(fans))
   const domain = [Math.min(...rows.map((r) => r.value)), Math.max(...rows.map((r) => r.value))] as const
-  const { tone, heading } = METRICS.find((m) => m.key === metric)!
+  const { tone } = METRICS.find((m) => m.key === metric)!
 
   return (
     <div className="fi">
       <header className="fi__head">
         <p className="eyebrow">Fanbases · {fmtInt(fans.length)} flairs</p>
-        <h2 id="fans-h">{heading}</h2>
+        <FanQuestion metric={metric} id="fans-h" />
       </header>
       <div className="fi__toggle" role="group" aria-label="Rank fanbases by">
         {METRICS.map((m) => (

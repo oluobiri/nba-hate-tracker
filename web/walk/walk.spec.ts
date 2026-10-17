@@ -149,6 +149,32 @@ test('the leaderboard controls are touch-sized', async ({ page }) => {
   for (const tab of await page.getByRole('tab').all()) expect((await tab.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
 })
 
+test('the fanbases question colours its last word by lens: heat, ice, then bone for volume', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' })
+  await page.locator('.fi').scrollIntoViewIfNeeded()
+  await expect(page.locator('astro-island[component-export="FanbaseIndex"]')).not.toHaveAttribute('ssr', '')
+  // A token's rendered colour, read from a probe so the test never spells a hex.
+  const tokenColour = (token: string) =>
+    page.evaluate((t) => {
+      const probe = document.createElement('span')
+      probe.style.color = `var(${t})`
+      document.body.append(probe)
+      const c = getComputedStyle(probe).color
+      probe.remove()
+      return c
+    }, token)
+  for (const [name, word, token] of [
+    ['Most negative', 'harshest?', '--heat'],
+    ['Most positive', 'kindest?', '--ice'],
+    ['Loudest', 'loudest?', '--bone'],
+  ] as const) {
+    await page.getByRole('button', { name }).click()
+    const lens = page.locator('#fans-h .fi__lens')
+    await expect(lens).toHaveText(word)
+    expect(await lens.evaluate((el) => getComputedStyle(el).color), name).toBe(await tokenColour(token))
+  }
+})
+
 // The player page: two islands, their state in the URL, five sections behind a rail.
 test('a receipts deep link shows its tab, and the tabs work by keyboard', async ({ page }) => {
   const errors = watchErrors(page)

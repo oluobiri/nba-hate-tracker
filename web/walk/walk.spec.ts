@@ -175,6 +175,89 @@ test('the fanbases question colours its last word by lens: heat, ice, then bone 
   }
 })
 
+// The population map: one island, its state local. A team header zooms; zoomed, every tile is the player's link.
+async function mapReady(page: Page): Promise<void> {
+  await page.locator('.pm').scrollIntoViewIfNeeded()
+  await expect(page.locator('astro-island[component-export="PopulationMap"]')).not.toHaveAttribute('ssr', '')
+}
+
+test('the population map toggles, filters by conference, zooms to the player links and comes back', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/', { waitUntil: 'networkidle' })
+  await mapReady(page)
+  const eyebrow = page.locator('.pm .eyebrow')
+  await expect(eyebrow).toHaveText(/^Population · [\d,]+ comments about \d+ players on \d+ teams$/)
+  const official = page.locator('.pm .btn', { hasText: /^Official/ })
+  const n = Number(/\d+/.exec((await official.textContent())!)![0])
+  await official.click()
+  await expect(official).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.pm__box')).toHaveCount(n)
+  await expect(eyebrow).toContainText(`about ${n} players`)
+  await page.getByLabel('Conference').selectOption('East')
+  await expect(eyebrow).toHaveText(/^Eastern Conference · /)
+  // The no-roster group's header needs room a phone's box may not have; its tiles say where they sit.
+  const noRoster = page.locator('.pm__tile[aria-label*="no roster team"]')
+  await expect(noRoster).toHaveCount(0)
+  await page.getByLabel('Conference').selectOption('all')
+  await page.locator('.pm .btn', { hasText: /^All/ }).click()
+  expect(await noRoster.count()).toBeGreaterThan(0)
+  const groups = await page.locator('.pm__group').count()
+  const first = page.locator('.pm__group').first()
+  // The spoken name leads with the visible abbreviation; the team's name follows it.
+  const team = (await first.getAttribute('aria-label'))!.split(' · ')[1]!
+  await first.click()
+  await expect(page.locator('.pm__team')).toContainText(team)
+  await expect(page.locator('.pm__group')).toHaveCount(0)
+  await expect(eyebrow).toHaveText(/^[\d,]+ comments about \d+ players$/)
+  // The other teams' tiles fade out; once they are gone, every box left is a link with its net.
+  await expect(page.locator('.pm__box:not(:has(.pm__tile[href]))')).toHaveCount(0)
+  const boxes = await page.locator('.pm__box').count()
+  expect(boxes).toBeGreaterThan(0)
+  expect(await page.locator('.pm__tile[href^="/player/"]').count()).toBe(boxes)
+  expect(await page.locator('.pm__net').count()).toBe(await page.locator('.pm__name').count())
+  const back = page.getByRole('button', { name: 'Back' })
+  await expect(back).toBeFocused()
+  await back.click()
+  await expect(page.locator('.pm__crumb')).toContainText('Click a team to zoom')
+  await expect(page.locator('.pm__group')).toHaveCount(groups)
+  await expect(first).toBeFocused()
+  // A zoom the next view cannot hold is dropped: a roster with no official player, zoomed, then Official.
+  const keys = async () => page.locator('.pm__group').evaluateAll((els) => els.map((el) => el.getAttribute('data-key')!))
+  const all = await keys()
+  await page.locator('.pm .btn', { hasText: /^Official/ }).click()
+  await expect(page.locator('.pm__box')).toHaveCount(n)
+  // The rosters still drawn under Official, read from the boxes (a small roster may lose its header strip, not its players).
+  const kept = new Set(await page.locator('.pm__box').evaluateAll((els) => els.map((el) => el.getAttribute('data-key')!)))
+  await page.locator('.pm .btn', { hasText: /^All/ }).click()
+  await expect(page.locator('.pm__group')).toHaveCount(all.length)
+  const emptied = all.find((k) => !kept.has(k))
+  if (emptied) {
+    await page.locator(`.pm__group[data-key="${emptied}"]`).click()
+    await expect(page.locator('.pm__team')).toBeVisible()
+    await page.locator('.pm .btn', { hasText: /^Official/ }).click()
+    await expect(page.locator('.pm__team')).toHaveCount(0)
+    await page.locator('.pm .btn', { hasText: /^All/ }).click()
+    await expect(page.locator('.pm__team')).toHaveCount(0)
+    await expect(page.locator(`.pm__group[data-key="${emptied}"]`)).toHaveCount(1)
+  }
+  await first.focus()
+  await page.keyboard.press('Enter')
+  const link = page.locator('.pm__tile').first()
+  const href = (await link.getAttribute('href'))!
+  expect(ROUTES).toContain(href)
+  await link.click()
+  await page.waitForURL(`**${href}`)
+  expect(errors).toEqual([])
+})
+
+test('the population map controls are touch-sized', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' })
+  await mapReady(page)
+  const controls = [...(await page.locator('.pm .btn').all()), page.getByLabel('Conference')]
+  for (const c of controls) expect((await c.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
+  expect(await overflow(page)).toBeLessThanOrEqual(0)
+})
+
 // The player page: two islands, their state in the URL, five sections behind a rail.
 test('a receipts deep link shows its tab, and the tabs work by keyboard', async ({ page }) => {
   const errors = watchErrors(page)

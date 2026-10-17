@@ -151,6 +151,12 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   and tag the harshest and the warmest by net; the lede opens on the room with the most of his comments,
   names both tagged rooms with their size, and reads the game thread against the front page only at
   `EXCEPTION_GAP`. The room vocabulary (order, labels, where-phrases) lives there.
+- **The population map is the leaderboard's one other island** (`lib/population.ts`, `lib/treemap.ts`):
+  every tracked player a tile sized by comments and filled on the player rule, grouped by roster from
+  the dimension tables, the seven without one as a group a conference view hides. Its toggle, select
+  and zoom are local state, nothing a link carries. A team header's count and net are summed over the
+  boxes shown. The build lays the map at the content width and the island lays it again on measure;
+  zoomed, every tile is the player's link and the keyboard path is header, zoom, pick.
 - **The season page has no island** (`lib/season.ts`): every figure is composed once by
   `buildSeason` for the page, the style guide and the card; the two charts' readouts are the
   Timeline's focusable columns, and the volume key is a radio group read by `:has()`. The one

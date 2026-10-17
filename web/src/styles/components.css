@@ -1107,6 +1107,67 @@ mark {
   border-color: var(--bone);
 }
 
+/* PopulationMap: a team header strip over its tiles, each tile a player on his net
+   fill with ink text; the hover ring and the focus ring sit inside, since the box clips. */
+.pm__group {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 4px 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.pm__group:hover,
+.pm__box:hover {
+  box-shadow: inset 0 0 0 2px var(--bone);
+}
+.pm__group:focus-visible,
+.pm__tile:focus-visible {
+  outline-offset: -2px;
+}
+.pm__logo {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: center / contain no-repeat;
+}
+.pm__abbr {
+  font-weight: 600;
+  color: var(--bone);
+}
+.pm__tile {
+  text-align: left;
+  text-decoration: none;
+  color: var(--ink);
+}
+.pm__text {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 5px 6px;
+}
+.pm__name {
+  display: grid;
+  justify-items: start;
+  font-family: var(--display);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.pm__net {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 /* SectionRail: sticky anchors. A strip under the header; a column on a wide screen. */
 .rail {
   position: sticky;

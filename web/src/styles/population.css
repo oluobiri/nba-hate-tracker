@@ -1,0 +1,83 @@
+/* The population map island's layout. The tile's and header's looks live in components.css. */
+.pm {
+  display: grid;
+  gap: 16px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.pm__head {
+  display: grid;
+  gap: 6px;
+}
+.pm__head .eyebrow {
+  margin: 0;
+}
+.pm__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+.pm__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The crumb row: the conference select, then the hint or the zoomed team and Back. */
+.pm__crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.pm__select {
+  min-height: 44px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--bone);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.pm__team {
+  color: var(--bone);
+}
+.pm__back {
+  min-height: 44px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--bone-2);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+/* The map: a box the tiles are laid in by the pixel; the ink shows through the gaps. */
+.pm__map {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--ink);
+}
+.pm__group,
+.pm__box {
+  position: absolute;
+}
+.pm__box {
+  overflow: hidden;
+  background: var(--fill);
+}
+.pm__tile {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

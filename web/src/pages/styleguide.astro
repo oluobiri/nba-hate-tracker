@@ -23,6 +23,7 @@ import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTable
 import { PeriodStrip } from '../components/PeriodStrip'
 import { PipelineDiagram } from '../components/PipelineDiagram'
 import { PlayerRooms } from '../components/PlayerRooms'
+import { PopulationMap } from '../components/PopulationMap'
 import { RecapChip } from '../components/RecapChip'
 import { RoomRows } from '../components/RoomRows'
 import { RoomTable } from '../components/RoomTable'
@@ -76,6 +77,7 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
+import { populationRows, populationView } from '../lib/population'
 import { EXCEPTION_GAP, playerRooms, roomsMethod, roomsSentence } from '../lib/rooms'
 import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
@@ -153,6 +155,11 @@ const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
 const arcAxis = arcDomain([...season.arcs.rose, ...season.arcs.fell])
 // The player net colour rule's scale: the season's lowest and highest player, over everyone tracked.
 const netRange = playerNetRange(overall)
+// The population map's cases: the whole map, the largest roster zoomed, and a narrow box where headers shed their words.
+const population = populationRows(tables)
+const populationDefault = populationView(population, { scope: 'all', conf: 'all', zoom: null, official: threshold })
+const largestRoster = populationDefault.groups[0]!
+const NARROW_MAP = 480
 // The ramps at their extremes, their halves and zero.
 const GAME_STOPS = [-1, -0.5, 0, 0.5, 1]
 const playerStops = (r: { lo: number; hi: number }): number[] => [r.lo, r.lo / 2, 0, r.hi / 2, r.hi]
@@ -749,6 +756,23 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <WeeklyTitles metric="neg" weeks={weeks} holders={belt} label="The Belt" merge />
         <WeekAxis weeks={weeks} />
         <WeeklyTitles metric="pos" weeks={weeks} holders={flowers} label="The Flowers" merge />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>PopulationMap</h2>
+      <p class="eyebrow">
+        Every tracked player as a tile sized by his comments and coloured by net on the player rule, grouped by roster team; a header strip carries the logo, the abbreviation,
+        the roster's comments and its net over the boxes shown. The seven without a roster team sit together. These renders never hydrate: the island lays the map at the width it is given.
+      </p>
+      <PopulationMap rows={population} official={threshold} netRange={netRange} demo={{ width: 1180 }} />
+      <p class="eyebrow">Zoomed on {largestRoster.name}, the largest roster: no headers, every tile shows its net and links to the player.</p>
+      <PopulationMap rows={population} official={threshold} netRange={netRange} demo={{ width: 1180, zoom: largestRoster.key }} />
+      <p class="eyebrow">Official only, Eastern Conference: the no-roster group is hidden and the headers' nets follow the boxes shown.</p>
+      <PopulationMap rows={population} official={threshold} netRange={netRange} demo={{ width: 1180, scope: 'official', conf: 'East' }} />
+      <p class="eyebrow">A {NARROW_MAP} px box: headers shed the count, then the net; the no-roster label shortens; the smallest groups lose their strip.</p>
+      <div style={`max-width: ${NARROW_MAP}px`}>
+        <PopulationMap rows={population} official={threshold} netRange={netRange} demo={{ width: NARROW_MAP }} />
       </div>
     </section>
 

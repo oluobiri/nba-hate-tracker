@@ -133,11 +133,15 @@ again on arrival. Column arrays become rows once (`lib/replay.ts` `toRows`).
   scrubber) sticks under the site header at every width; its button and date are fixed widths
   so the scale under it starts where the scrubber does.
 - **Net lives on the recap page, the season's arcs and the player page's Verdict and Games**
-  (`lib/net.ts`): the numbers are net, the bars show the mix, and the figure's colour is one
-  linear curve from bone to heat or ice. A net figure keeps both shares beside it, since a season
-  moves both at once and net alone can hide a split room. "Harsher" is the word for a lower net,
-  "warmer" for a higher one; "less negative" belongs to the share. The player page ranks by the
-  negative share; its net sits beside the shares, never in a chip or a lens.
+  (`lib/net.ts`): the numbers are net, the bars show the mix, and the figure's colour is a
+  linear curve from bone to heat or ice on one of two scales. A game's net (`netColor`) is full
+  at ±100; a player's season (`playerNetColor`) is full at the season's lowest and highest player,
+  a range computed once per build over every tracked player and passed as a prop, so one shade
+  means one net in every player view. Where both scales sit on a page, a method note says so. A
+  net figure keeps both shares beside it, since a season moves both at once and net alone can
+  hide a split room. "Harsher" is the word for a lower net, "warmer" for a higher one; "less
+  negative" belongs to the share. The player page ranks by the negative share; its net sits
+  beside the shares, never in a chip or a lens.
 - **The player page's header leads with his best lens** (`lib/annotate.ts` `playerVerdict`): the
   lens where he ranks best on the official board, a tie going by `LENS_PRECEDENCE` (rates, then
   polarization, volume last); the unofficial note ranks him on the same lens among everyone

@@ -67,7 +67,7 @@ import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
 import { commentDate, receiptContext } from '../lib/receipts'
 import { buildRecaps, leadAndList, nightPoints, nightRankSentence, type Recap, recapHref, recapHrefs, recapNetDelta } from '../lib/recaps'
 import { netSentiment } from '../lib/metrics'
-import { fmtNet, netColor } from '../lib/net'
+import { fmtNet, netColor, playerNetColor, playerNetRange } from '../lib/net'
 import { buildGameLog, loudestThread, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { redditCounts } from '../lib/threads'
 import { countsOf, LENS_META, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
@@ -151,6 +151,11 @@ const edgeDomain = gapDomain(edgeGaps)
 // The season page's figures, composed once.
 const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
 const arcAxis = arcDomain([...season.arcs.rose, ...season.arcs.fell])
+// The player net colour rule's scale: the season's lowest and highest player, over everyone tracked.
+const netRange = playerNetRange(overall)
+// The ramps at their extremes, their halves and zero.
+const GAME_STOPS = [-1, -0.5, 0, 0.5, 1]
+const playerStops = (r: { lo: number; hi: number }): number[] => [r.lo, r.lo / 2, 0, r.hi / 2, r.hi]
 // The player page's rooms, by rule: the most rooms drawn, the front page harshest by the widest net gap,
 // a pair the share and the net read differently, the warmest season, one room drawn, none drawn.
 const roomFloor = manifest.rules.floors.room_min_n
@@ -692,8 +697,37 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
         <StatFigure figure={fmtPct(negRate(top))} label="Negative" detail={`of ${fmtInt(top.total)} comments`} tone="neg" />
         <StatFigure figure={fmtPct(posRate(top))} label="Positive" tone="pos" />
         <StatFigure figure={fmtInt(top.total)} label="Comments" detail="attributed to one player" />
-        <StatFigure figure={fmtNet(netSentiment(top))} label="Net sentiment" detail="positive minus negative, on the net curve" color={netColor(netSentiment(top))} />
+        <StatFigure figure={fmtNet(netSentiment(top))} label="Net sentiment" detail="positive minus negative, on the player rule" color={playerNetColor(netSentiment(top), netRange)} />
         <StatFigure figure={String(qualified.length)} label="Ranked" detail={`of ${overall.length} tracked`} />
+      </div>
+    </section>
+
+    <section class="guide__section">
+      <h2>Net colour</h2>
+      <p class="eyebrow">
+        Two linear ramps from bone. A game's net runs to full heat at −100 and full ice at +100: the recap page, the game nights, the Games section. A player's season runs
+        to full heat at the season's lowest player and full ice at its highest, over all {fmtInt(overall.length)} tracked: the Verdict figure, the arcs' dots. One shade means
+        one net in every player view.
+      </p>
+      <div class="guide__stack">
+        {
+          [
+            { label: 'Game rule', stops: GAME_STOPS, color: netColor },
+            { label: 'Player rule', stops: playerStops(netRange), color: (v: number) => playerNetColor(v, netRange) },
+          ].map((ramp) => (
+            <div class="guide__ramp">
+              <span class="guide__ramp-label mono">{ramp.label}</span>
+              <ol class="guide__ramp-stops">
+                {ramp.stops.map((v) => (
+                  <li>
+                    <i style={{ background: ramp.color(v) }} />
+                    <span class="mono">{fmtNet(v)}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))
+        }
       </div>
     </section>
 
@@ -1031,10 +1065,10 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
 
     <section class="guide__section">
       <h2>ArcRows</h2>
-      <p class="eyebrow">A dumbbell per player on one net-sentiment axis: the first eight regular-season weeks hollow, the last eight he played filled, both on the net formula; the timing phrase under the name; the shares beside the figures. The risers' heading runs bone to ice, the fallers' bone to heat.</p>
+      <p class="eyebrow">A dumbbell per player on one net-sentiment axis: the first eight regular-season weeks hollow, the last eight he played filled, both on the player rule; the timing phrase under the name; the shares beside the figures. The risers' heading runs bone to ice, the fallers' bone to heat.</p>
       <ArcKey />
-      <ArcRows heading="Rose the most" tone="pos" arcs={season.arcs.rose} domain={arcAxis} />
-      <ArcRows heading="Fell the most" tone="neg" arcs={season.arcs.fell.slice(0, 2)} domain={arcAxis} />
+      <ArcRows heading="Rose the most" tone="pos" arcs={season.arcs.rose} domain={arcAxis} netRange={netRange} />
+      <ArcRows heading="Fell the most" tone="neg" arcs={season.arcs.fell.slice(0, 2)} domain={arcAxis} netRange={netRange} />
       <ArcFlat arcs={season.arcs.flat} />
     </section>
 
@@ -1194,6 +1228,33 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
   .guide__stack {
     display: grid;
     gap: 12px;
+  }
+  .guide__ramp {
+    display: grid;
+    gap: 6px;
+  }
+  .guide__ramp-label {
+    font-size: 12px;
+    color: var(--bone-2);
+  }
+  .guide__ramp-stops {
+    display: flex;
+    gap: 16px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .guide__ramp-stops li {
+    display: grid;
+    gap: 4px;
+    justify-items: center;
+    font-size: 12px;
+  }
+  .guide__ramp-stops i {
+    display: block;
+    width: 48px;
+    height: 24px;
+    border-radius: 3px;
   }
   .guide__card {
     max-width: 100%;

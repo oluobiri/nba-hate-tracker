@@ -20,6 +20,7 @@ import { NightsChart } from '../components/NightsChart'
 import { CaseTable, QuoteCheckTable, SlipTable } from '../components/MethodTables'
 import { PeriodStrip } from '../components/PeriodStrip'
 import { PipelineDiagram } from '../components/PipelineDiagram'
+import { PlayerRooms } from '../components/PlayerRooms'
 import { RecapChip } from '../components/RecapChip'
 import { RoomRows } from '../components/RoomRows'
 import { RoomTable } from '../components/RoomTable'
@@ -57,7 +58,7 @@ import { deltaLists, fanRosterMatrix, gapRows, playerCells, playerUsual, talkRow
 import { nickname, possessive } from '../lib/fans'
 import { headshotVariant } from '../lib/media'
 import { fmtInt, fmtPct, fmtSigned } from '../lib/format'
-import { groupBy } from '../lib/group'
+import { groupBy, groupByPlayer } from '../lib/group'
 import { cropGrid, deltaLimit, describePair, gridCells, gridTeams, pairCells, pickerGroups, splitKey, windowAround } from '../lib/league'
 import { answerOf, bySlot, caseRows, gapDomain, gapRows as classGaps, gapTicks, joinCopy, rawRecord, requireClassifier, requireTrace, shortModel, slipLabel, stageDrops, stageShare } from '../lib/method'
 import { CASE_COPY, EXAMPLE_COPY } from '../lib/method-copy'
@@ -73,6 +74,7 @@ import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
 import { extremeWeeks, phaseBands, spineRows, timelineSummary, weekSpine } from '../lib/weeks'
 import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/race'
+import { playerRooms, roomsRule, roomsSentence } from '../lib/rooms'
 import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
 import { fanbaseStandings } from '../lib/standings'
@@ -141,6 +143,32 @@ const edgeDomain = gapDomain(edgeGaps)
 // The season page's figures, composed once.
 const season = buildSeason({ manifest, tables }, HARSHEST_NOTE)
 const arcAxis = arcDomain([...season.arcs.rose, ...season.arcs.fell])
+// The player page's rooms, by rule: the most rooms drawn, the front page harshest by the widest gap,
+// the tag passed over by the lede (the tail), a level pair, one room drawn, none drawn.
+const roomFloor = manifest.rules.floors.room_min_n
+const roomsByPlayer = groupByPlayer(tables.player_room)
+const roomCases = overall.map((r) => ({ row: r, pr: playerRooms(roomsByPlayer.get(r.attributed_player) ?? [], r, roomFloor) }))
+const roomGap = (c: (typeof roomCases)[number]): number | null => {
+  const gt = c.pr.drawn.find((x) => x.key === 'game_thread')
+  const fp = c.pr.drawn.find((x) => x.key === 'general')
+  return gt && fp ? fp.rate - gt.rate : null
+}
+const loudest = (cs: readonly (typeof roomCases)[number][]) => cs.toSorted((a, b) => b.row.total - a.row.total)[0]
+const officialRooms = roomCases.filter((c) => c.row.total >= threshold)
+const roomMost = officialRooms.toSorted((a, b) => b.pr.drawn.length - a.pr.drawn.length || b.row.total - a.row.total)[0]!
+const roomOffCourt = officialRooms.filter((c) => roomGap(c) !== null).toSorted((a, b) => roomGap(b)! - roomGap(a)!)[0]!
+const roomLevel = officialRooms.filter((c) => roomGap(c) !== null).toSorted((a, b) => Math.abs(roomGap(a)!) - Math.abs(roomGap(b)!))[0]!
+// The tail on a player the cases above do not already show.
+const roomTail = loudest(officialRooms.filter((c) => c !== roomMost && c !== roomOffCourt && c !== roomLevel && c.pr.harshest && c.pr.headline && c.pr.harshest.key !== c.pr.headline.key))
+const roomOne = loudest(roomCases.filter((c) => c.pr.drawn.length === 1))
+const roomNone = loudest(roomCases.filter((c) => c.pr.drawn.length === 0))
+const roomShown = [
+  { c: roomMost, why: `${roomMost.row.attributed_player} · the most rooms drawn, ${roomMost.pr.drawn.length}; the rule line under it names the rooms left out` },
+  { c: roomOffCourt, why: `${roomOffCourt.row.attributed_player} · the front page harshest by the widest gap: a story off the court` },
+  { c: roomTail, why: roomTail ? `${roomTail.row.attributed_player} · the tag on a sliver the lede passed over: the tail names it with its size` : '' },
+  { c: roomLevel, why: `${roomLevel.row.attributed_player} · the game threads and the front page within the gap: level` },
+  { c: roomOne, why: roomOne ? `${roomOne.row.attributed_player} · one room at the floor: no tag, the one-room lede` : '' },
+].filter((x): x is { c: (typeof roomCases)[number]; why: string } => x.c !== undefined)
 const threadMax = Math.max(0, ...[...season.threads.playoffs, ...season.threads.regular].map((t) => t.counts.total))
 // The pipeline drawing on the published figures.
 const diagram = {
@@ -939,6 +967,31 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
     </section>
 
     <section class="guide__section">
+      <h2>PlayerRooms</h2>
+      <p class="eyebrow">The player page's rooms: one row per room at the floor in a fixed order, the bar the room's share of his comments and its split, the harshest room tagged. The lede speaks for the harshest room holding a tenth of his comments; a smaller room it passed over is named in a tail. Cases chosen by rule.</p>
+      {
+        roomShown.map(({ c, why }) => (
+          <figure class="guide__fig">
+            <p class="guide__lede">{roomsSentence(c.row.attributed_player, c.pr, c.row)}</p>
+            <PlayerRooms name={c.row.attributed_player} rooms={c.pr} />
+            <figcaption>{why}</figcaption>
+          </figure>
+        ))
+      }
+      {roomMost && <MethodNote kind="rule">{roomsRule(roomMost.row.attributed_player, roomFloor, roomMost.pr.under)}</MethodNote>}
+      {
+        roomNone && (
+          <figure class="guide__fig">
+            <MethodNote kind="caveat">
+              No room holds {fmtInt(roomFloor)} comments about {roomNone.row.attributed_player}: his {fmtInt(roomNone.row.total)} are spread too thin to split by room.
+            </MethodNote>
+            <figcaption>{roomNone.row.attributed_player} · no room at the floor: the caveat in place of the rows</figcaption>
+          </figure>
+        )
+      }
+    </section>
+
+    <section class="guide__section">
       <h2>ArcRows</h2>
       <p class="eyebrow">A dumbbell per player on one net-sentiment axis: the first eight regular-season weeks hollow, the last eight he played filled, both on the net formula; the timing phrase under the name; the shares beside the figures. The risers' heading runs bone to ice, the fallers' bone to heat.</p>
       <ArcKey />
@@ -1069,6 +1122,12 @@ const boxTeams = replay && bugTeams ? ([{ abbr: bugTeams.away.abbr, score: repla
     margin: 0;
     display: grid;
     gap: 6px;
+  }
+  .guide__lede {
+    margin: 0;
+    max-width: 70ch;
+    font-size: 16px;
+    color: var(--bone-2);
   }
   .guide__fig figcaption,
   .guide__dl dd {

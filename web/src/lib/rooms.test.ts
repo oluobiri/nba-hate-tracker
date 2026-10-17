@@ -97,6 +97,8 @@ describe('roomsSentence', () => {
     const level = sentence([playerRoom('Him', 'game_thread', 40, 30, 30), playerRoom('Him', 'general', 41, 30, 29)])
     expect(level).toContain('The game threads and the front page ran level, 1 point apart.')
     expect(level).not.toContain('harsher')
+    const hair = sentence([playerRoom('Him', 'game_thread', 400, 300, 300), playerRoom('Him', 'general', 403, 300, 297)])
+    expect(hair).toContain('ran level, less than a point apart.')
     const edge = sentence([playerRoom('Him', 'game_thread', 40, 30, 30), playerRoom('Him', 'general', 45, 30, 25)])
     // 0.45 − 0.40 lands a hair under the gap in floating point; it is the gap on paper.
     expect(Math.abs(0.45 - 0.4)).toBeLessThan(EXCEPTION_GAP)

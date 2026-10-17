@@ -107,7 +107,7 @@ export const fmtShareOf = (share: number): string => (share < 0.01 ? 'under 1%' 
 
 const points = (gap: number): string => {
   const n = Math.round(Math.abs(gap) * 100)
-  return `${n} ${n === 1 ? 'point' : 'points'}`
+  return n === 0 ? 'less than a point' : `${n} ${n === 1 ? 'point' : 'points'}`
 }
 
 /**

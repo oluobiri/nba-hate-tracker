@@ -1,5 +1,6 @@
 ---
 import { cardHref } from '../cards/model'
+import { playerVerdict } from '../lib/annotate'
 import { BoardRow } from '../components/BoardRow'
 import { DeltaDot } from '../components/DeltaDot'
 import { Answer } from '../components/Answer'
@@ -68,7 +69,7 @@ import { netSentiment } from '../lib/metrics'
 import { fmtNet, netColor } from '../lib/net'
 import { buildGameLog, loudestThread, scatterLead, scatterPoints, weekGames } from '../lib/games'
 import { redditCounts } from '../lib/threads'
-import { countsOf, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
+import { countsOf, LENS_META, negRate, pearson, posRate, rankBy, rollingRate, sumCounts } from '../lib/metrics'
 import { PRE, periodStartsU, playStamp } from '../lib/clock'
 import { etTime } from '../lib/clock'
 import { feedSelection, lastName, prepareReplay, recapRows as recapFrames, RIGHT_NOW, roomByPlayer, sceneAt } from '../lib/replay'
@@ -77,7 +78,7 @@ import { cumulate, movement, raceField, rankFrame, weeklyCounts } from '../lib/r
 import { EXCEPTION_GAP, playerRooms, roomsMethod, roomsSentence } from '../lib/rooms'
 import { NIGHT_MIN_N, WINDOW, arcDomain, buildSeason } from '../lib/season'
 import { HARSHEST_NOTE } from '../lib/season-copy'
-import { fanbaseStandings } from '../lib/standings'
+import { fanbaseStandings, playerStandings } from '../lib/standings'
 import { teamLine } from '../lib/status'
 import { thresholdStops } from '../lib/threshold'
 import { weeklyHolders } from '../lib/titles'
@@ -94,6 +95,12 @@ const byNeg = rankBy(overall, 'neg', threshold)
 const top = byNeg.find((r) => r.rank === 1)!.row
 const leastPositive = qualified.toSorted((a, b) => posRate(a) - posRate(b))[0]!
 const unofficial = byNeg.find((r) => r.rank === null)!.row
+const mostLoved = rankBy(overall, 'pos', threshold).find((r) => r.rank === 1)!.row
+// A header tie: his best rank held on two lenses, so the sentence falls to LENS_PRECEDENCE.
+const tied = [...playerStandings(tables, threshold).inputs.values()].find((i) => {
+  const ranks = Object.values(i.ranks)
+  return ranks[0] !== null && ranks.filter((r) => r === Math.min(...(ranks as number[]))).length > 1
+})
 const byVolume = rankBy(overall, 'volume', threshold).slice(0, 5)
 const maxVolume = byVolume[0]!.value
 
@@ -216,6 +223,8 @@ const cards = [
   { src: cardHref.player(slugOf(top.attributed_player)), why: `${top.attributed_player} · #1 by negative rate` },
   { src: cardHref.player(longestPlayerName.slug), why: `${longestPlayerName.attributed_player} · the longest name` },
   { src: cardHref.player(slugOf(leastPositive.attributed_player)), why: `${leastPositive.attributed_player} · the smallest positive segment among official players` },
+  { src: cardHref.player(slugOf(mostLoved.attributed_player)), why: `${mostLoved.attributed_player} · #1 by positive rate: the header on his best lens` },
+  ...(tied ? [{ src: cardHref.player(slugOf(tied.name)), why: `${tied.name} · his best rank held on two lenses, ${LENS_META[playerVerdict(tied).lens].hero} by precedence` }] : []),
   { src: cardHref.player(slugOf(unofficial.attributed_player)), why: `${unofficial.attributed_player} · unofficial: the note and the stamp` },
   { src: cardHref.player(noRoster.slug), why: `${noRoster.attributed_player} · free agent, no team line` },
   { src: cardHref.team(longestFans.abbreviation), why: `${possessive(longestFans.team)} · the longest title` },

@@ -69,6 +69,11 @@ describe('playerCard', () => {
     expect(card).toMatchObject({ kind: 'player', name: 'Draymond Green', eyebrow: 'GSW · F · #23', stamp: null, nLine: 'n=100 comments about Draymond Green', image: PLAYER.headshot_url })
   })
 
+  it('leads with his best lens, as the header does', () => {
+    const i = { ...input(c(10, 40, 50), 1, 1), ranks: { neg: 66, pos: 2, volume: 26, polar: 16 } }
+    expect(playerCard(i, PLAYER, 'GSW', '2025-26').sentence).toBe("r/NBA's 2nd most loved player.")
+  })
+
   it('stamps an unofficial player and keeps his unofficial note', () => {
     const i = input(c(9, 1, 0), null, 31)
     const card = playerCard(i, { ...PLAYER, slug: 'ben-simmons', roster_team: null }, null, '2025-26')

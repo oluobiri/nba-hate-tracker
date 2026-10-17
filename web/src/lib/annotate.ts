@@ -97,9 +97,15 @@ export function heroSentence<T extends Named>(input: AnnotateInput<T>): string {
   return `${before}${leader?.row.name ?? ''}${after}`
 }
 
-// The player page's verdict: his rank, stated plainly. The owner retired
-// the "hated and defended / alone" reading after the first build; copy is
-// the owner's, and the tests pin it so a rewrite is one commit.
+// The player page's verdict: the lens where he ranks best, stated plainly.
+// The owner retired the "hated and defended / alone" reading after the first
+// build; copy is the owner's, and the tests pin it so a rewrite is one commit.
+
+/** Which lens the header leads with when he holds his best rank on two: the rates, then polarization, volume last, since volume is the weakest verdict. */
+export const LENS_PRECEDENCE: readonly Lens[] = ['neg', 'pos', 'polar', 'volume']
+
+/** The lens with his smallest rank, a tie going to the earlier lens in LENS_PRECEDENCE. */
+export const bestLens = (ranks: Record<Lens, number>): Lens => LENS_PRECEDENCE.reduce((best, lens) => (ranks[lens] < ranks[best] ? lens : best))
 
 export interface VerdictInput {
   name: string
@@ -116,17 +122,28 @@ export interface VerdictInput {
   league: Counts
 }
 
-/** The verdict sentence: "r/NBA's 3rd most hated player.", "r/NBA's most hated player." at the top, or, under the minimum, the unofficial note. */
-export function playerVerdict(i: VerdictInput): { sentence: string } {
-  const neg = i.ranks.neg
-  if (neg === null) return { sentence: unofficialNote(i) }
-  return { sentence: neg === 1 ? "r/NBA's most hated player." : `r/NBA's ${ordinal(neg)} most hated player.` }
+export interface Verdict {
+  /** The lens the sentence leads with: his best. */
+  lens: Lens
+  sentence: string
 }
 
-/** The sentence for a player under the official minimum: how far short, and where he would rank among everyone tracked. */
-export function unofficialNote(i: VerdictInput): string {
+/** The verdict sentence on his best lens: "r/NBA's 2nd most loved player.", "r/NBA's most discussed player." at the top, or, under the minimum, the unofficial note. */
+export function playerVerdict(i: VerdictInput): Verdict {
+  if (i.ranks.neg === null) {
+    const lens = bestLens(i.allRanks)
+    return { lens, sentence: unofficialNote(i, lens) }
+  }
+  const lens = bestLens(i.ranks as Record<Lens, number>)
+  const rank = i.ranks[lens]!
+  const hero = LENS_META[lens].hero
+  return { lens, sentence: rank === 1 ? `r/NBA's ${hero} player.` : `r/NBA's ${ordinal(rank)} ${hero} player.` }
+}
+
+/** The sentence for a player under the official minimum: how far short, and where he would rank among everyone tracked on the given lens. */
+export function unofficialNote(i: VerdictInput, lens: Lens): string {
   const short = i.official - i.counts.total
-  return `Unofficial: ${fmtInt(i.counts.total)} comments, ${fmtInt(short)} short of the official minimum of ${fmtInt(i.official)}. Among all ${fmtInt(i.tracked)} tracked players he would rank ${ordinal(i.allRanks.neg)} most hated.`
+  return `Unofficial: ${fmtInt(i.counts.total)} comments, ${fmtInt(short)} short of the official minimum of ${fmtInt(i.official)}. Among all ${fmtInt(i.tracked)} tracked players he would rank ${ordinal(i.allRanks[lens])} ${LENS_META[lens].hero}.`
 }
 
 export interface RankChip {

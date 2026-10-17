@@ -221,6 +221,7 @@ test('the rail marks the section in view', async ({ page }) => {
 })
 
 // Two net colour rules on one page: the Verdict's figure on the players' range, the Games figures on the game scale.
+const statFigure = (section: string, label: string): string => `${section} .stat:has(.stat__label:text-is("${label}")) .stat__figure`
 test('the verdict net is coloured on the player rule and the games figures on the game rule', async ({ page }) => {
   await page.goto('/player/james-harden/', { waitUntil: 'networkidle' })
   const strength = async (sel: string): Promise<number> => {
@@ -228,9 +229,9 @@ test('the verdict net is coloured on the player rule and the games figures on th
     expect(style, `${sel} is on the heat side of a net ramp`).toMatch(/var\(--heat\) \d+%/)
     return Number(/var\(--heat\) (\d+)%/.exec(style)![1])
   }
-  const verdict = await strength('#verdict .stat__figure >> nth=3')
-  const season = await strength('#games .stat__figure >> nth=2')
-  const net = Number((await page.locator('#games .stat__figure >> nth=2').textContent())!.replace('−', '-'))
+  const verdict = await strength(statFigure('#verdict', 'Net sentiment'))
+  const season = await strength(statFigure('#games', 'His season'))
+  const net = Number((await page.locator(statFigure('#games', 'His season')).textContent())!.replace('−', '-'))
   expect(season).toBe(Math.abs(net))
   expect(verdict).toBeGreaterThan(season)
 })

@@ -4380,7 +4380,7 @@ a.hero__who:hover {
   }
 }
 
-/* PlayerRooms: a label with its share, one share bar split by sentiment, three figures; the harshest row's tag and negative figure take heat. The name takes its own line on a phone. */
+/* PlayerRooms: a label with its share, one share bar split by sentiment, three figures; the harshest row's tag takes heat, the warmest row's ice. The name takes its own line on a phone. */
 .pr {
   display: grid;
   gap: 0;
@@ -4426,7 +4426,12 @@ a.hero__who:hover {
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+.pr__tag--harshest {
   color: var(--heat);
+}
+.pr__tag--warmest {
+  color: var(--ice);
 }
 .pr__bar {
   display: block;
@@ -4461,7 +4466,8 @@ a.hero__who:hover {
 .pr__neg {
   color: var(--heat);
 }
-.pr__row--harshest .pr__neg {
+.pr__row--harshest .pr__neg,
+.pr__row--warmest .pr__pos {
   font-weight: 600;
 }
 .pr__pos {
@@ -4481,6 +4487,9 @@ a.hero__who:hover {
   }
   .pr__head .pr__figs {
     grid-column: 2;
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
   }
   .pr__row .pr__name {
     grid-column: 1 / -1;

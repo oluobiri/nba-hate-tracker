@@ -2,7 +2,8 @@
 // order. Bar length is the room's share of his comments, the largest room
 // the full track and the smallest kept at a floor width; the bar's split is
 // the room's sentiment; the negative share, the positive share and n sit at
-// the row's end. The harshest room carries the tag. Static HTML, no island.
+// the row's end. The harshest and the warmest room by net sentiment carry a
+// tag. Static HTML, no island.
 import { fmtInt, fmtPct } from '../lib/format'
 import { negRate, neuRate, posRate } from '../lib/metrics'
 import { fmtShareOf, type PlayerRooms as PlayerRoomsModel } from '../lib/rooms'
@@ -33,11 +34,12 @@ export function PlayerRooms({ rooms }: PlayerRoomsProps) {
         // The visible text already says the room, its share, the tag and the two figures; the bar adds the neutral share.
         const text = `${fmtPct(c.rate)} negative, ${fmtPct(neuRate(c.counts))} neutral, ${fmtPct(posRate(c.counts))} positive`
         return (
-          <div key={c.key} className={`pr__row${c.harshest ? ' pr__row--harshest' : ''}`}>
+          <div key={c.key} className={`pr__row${c.harshest ? ' pr__row--harshest' : ''}${c.warmest ? ' pr__row--warmest' : ''}`}>
             <span className="pr__name">
               <b>{c.label}</b>
               <span className="pr__share mono">{fmtShareOf(c.share)} of his comments</span>
-              {c.harshest && <span className="pr__tag mono">Harshest</span>}
+              {c.harshest && <span className="pr__tag pr__tag--harshest mono">Harshest</span>}
+              {c.warmest && <span className="pr__tag pr__tag--warmest mono">Warmest</span>}
             </span>
             <span className="pr__bar" role="img" aria-label={text}>
               <i style={{ width: `${width}%` }}>

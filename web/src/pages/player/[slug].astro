@@ -30,7 +30,7 @@ import { groupByPlayer } from '../../lib/group'
 import { headshotSrcSet, headshotVariant } from '../../lib/media'
 import { commentDate, receiptContext } from '../../lib/receipts'
 import { recapHrefs } from '../../lib/recaps'
-import { playerRooms, roomsRule, roomsSentence } from '../../lib/rooms'
+import { playerRooms, roomsMethod, roomsSentence } from '../../lib/rooms'
 import { fmtNet, netColor } from '../../lib/net'
 import { redditCounts } from '../../lib/threads'
 import { countsOf, neighbours, negRate, netSentiment, neuRate, pearson, posRate, rankBy, type Ranked, rollingRate } from '../../lib/metrics'
@@ -151,7 +151,7 @@ const hisPos = posRate(lists.average)
 // Rooms.
 const rooms = playerRooms(roomRows, counts, floors.room_min_n)
 const roomsText = roomsSentence(name, rooms, counts)
-const roomsNote = roomsRule(name, floors.room_min_n, rooms.under)
+const roomsNote = roomsMethod(name, floors.room_min_n, rooms.under)
 
 // Games (built before the timeline: the week readouts list them).
 const log = buildGameLog(lines, sentiment, games, abbr, counts, floors.game_min_n, recapHrefs(manifest.recaps, name), reddit)
@@ -362,7 +362,7 @@ const tiles = [
               <>
                 <p class="pp__lede">{roomsText}</p>
                 <PlayerRooms rooms={rooms} />
-                <MethodNote kind="rule">{roomsNote}</MethodNote>
+                <MethodNote kind="method">{roomsNote}</MethodNote>
               </>
             ) : (
               <MethodNote kind="caveat">

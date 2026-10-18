@@ -20,7 +20,6 @@ from pipeline.accuracy import (
     META_SHEET,
     REJECT_REASONS,
     SAMPLE_COLUMNS,
-    SENTIMENT_VERDICTS,
     TARGET_NONE,
     TARGET_OTHER,
     draw_sample,
@@ -39,7 +38,7 @@ from pipeline.schemas import (
     ClassMix,
     GroupFigures,
 )
-from utils.constants import ACCURACY_CLASS_MIN_N
+from utils.constants import ACCURACY_CLASS_MIN_N, SENTIMENT_LABELS
 from utils.player_config import load_player_config_version
 
 _FACT_SCHEMA = pl.Schema(
@@ -279,7 +278,7 @@ class TestWriteWorkbook:
             str(v.sqref): v.formula1 for v in sheet.data_validations.dataValidation
         }
 
-        assert validations["E2:E4"] == '"' + ",".join(SENTIMENT_VERDICTS) + '"'
+        assert validations["E2:E4"] == '"' + ",".join(SENTIMENT_LABELS) + '"'
         assert validations["G2:G4"] == '"' + ",".join(REJECT_REASONS) + '"'
 
     def test_a_typed_value_outside_the_list_is_refused_in_the_cell(self, workbook):

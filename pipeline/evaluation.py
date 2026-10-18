@@ -29,11 +29,11 @@ import yaml
 
 from pipeline.sentiment import SENTIMENT_STAGE, build_prompt
 from pipeline.stage import ClassifierStage
+from utils.constants import SENTIMENT_LABELS
 from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
 
-VALID_SENTIMENTS = ("pos", "neg", "neu")
 VALID_SOURCES = ("synthetic", "mined-v1", "mined-v2")
 REQUIRED_KEYS = ("id", "text", "expected", "expected_player", "category", "source")
 
@@ -296,10 +296,10 @@ class EvalCase:
 
 def _check_sentiment_case(case_label: str, raw: dict) -> None:
     """Enforce the sentiment case contract: a valid expected label."""
-    if raw["expected"] not in VALID_SENTIMENTS:
+    if raw["expected"] not in SENTIMENT_LABELS:
         raise ValueError(
             f"Case {case_label!r} has invalid expected value "
-            f"{raw['expected']!r} (must be one of {VALID_SENTIMENTS})"
+            f"{raw['expected']!r} (must be one of {SENTIMENT_LABELS})"
         )
 
 

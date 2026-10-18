@@ -22,13 +22,13 @@ from pipeline.schemas import METHOD_EXAMPLES_SCHEMA
 from utils.constants import (
     COMMENT_SAMPLES_MAX_BODY_CHARS,
     COMMENT_SAMPLES_MIN_CONFIDENCE,
+    POLAR_SENTIMENT_LABELS,
 )
 from utils.method_examples_config import SLOTS, MethodExampleSpec
 from utils.player_config import ATTRIBUTION_CASES, resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
 
-POLAR_SENTIMENTS = ("pos", "neg")
 TRACE_CASE = "several_resolved"
 # Branches the case slot never shows: the trace covers one, the page's
 # rule has nothing to say about a comment with no name found
@@ -209,7 +209,7 @@ SLOT_CHECKS: dict[str, tuple[str, pl.Expr]] = {
     "quote_check": (
         "positive or negative at or above the quote floor, with a valid verdict "
         "naming someone other than the attributed player",
-        pl.col("sentiment").is_in(list(POLAR_SENTIMENTS))
+        pl.col("sentiment").is_in(list(POLAR_SENTIMENT_LABELS))
         & (pl.col("confidence") >= COMMENT_SAMPLES_MIN_CONFIDENCE)
         & _ATTRIBUTED
         & pl.col("verdict_valid").fill_null(False)

@@ -24,6 +24,7 @@ from utils.constants import (
     COMMENT_SAMPLES_MAX_BODY_CHARS,
     COMMENT_SAMPLES_MIN_CONFIDENCE,
     COMMENT_SAMPLES_TOP_N,
+    POLAR_SENTIMENT_LABELS,
     TARGET_POOL_K,
     TARGET_POOL_SEED,
     TARGET_POOL_STRATA,
@@ -35,7 +36,6 @@ from utils.player_config import resolve_sentiment_player
 
 logger = logging.getLogger(__name__)
 
-POLAR_SENTIMENTS = ("pos", "neg")
 CELL = ["attributed_player", "sentiment"]
 TARGET_STAMP_KEYS = classifier_stamp_keys("target")
 UNRESOLVED_LOG_MIN = 3  # an untracked string is logged once it recurs under a player
@@ -46,7 +46,7 @@ def _polar(df: pl.DataFrame) -> pl.DataFrame:
     """Attributed pos/neg rows."""
     return df.filter(
         pl.col("attributed_player").is_not_null()
-        & pl.col("sentiment").is_in(POLAR_SENTIMENTS)
+        & pl.col("sentiment").is_in(POLAR_SENTIMENT_LABELS)
     )
 
 
@@ -270,7 +270,7 @@ def admit_verified(
         The admitted rows, input columns only.
     """
     polar = _polar(df)
-    neutral = df.filter(~pl.col("sentiment").is_in(POLAR_SENTIMENTS))
+    neutral = df.filter(~pl.col("sentiment").is_in(POLAR_SENTIMENT_LABELS))
 
     affirmed = (
         verdicts.filter(pl.col("valid"))

@@ -48,6 +48,17 @@ test('dist/ has the routes the site promises', () => {
   expect(ROUTES.filter((r) => r.startsWith('/recaps/') && r !== '/recaps/')).toHaveLength(10)
 })
 
+// The raster icons, rendered from the mark at build: the home-screen icon
+// at 180 and the ICO that carries 32 and 16.
+test('dist/ has the icons at their sizes', () => {
+  const touch = readFileSync(path.join(DIST, 'apple-touch-icon.png'))
+  expect([touch.readUInt32BE(16), touch.readUInt32BE(20)]).toEqual([180, 180])
+  const favicon = readFileSync(path.join(DIST, 'favicon.ico'))
+  expect(favicon.readUInt16LE(2)).toBe(1)
+  expect(favicon.readUInt16LE(4)).toBe(2)
+  expect([favicon.readUInt8(6), favicon.readUInt8(6 + 16)]).toEqual([32, 16])
+})
+
 /** Pixels by which the widest games table outgrows its column; a table can spill into the gutter before the document overflows. */
 const tableSpill = (page: Page) =>
   page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('.gt')].map((t) => Math.ceil(t.getBoundingClientRect().width - t.parentElement!.clientWidth))))

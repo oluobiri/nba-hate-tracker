@@ -1,7 +1,7 @@
 # CLAUDE.md - NBA Hate Tracker
 
 **Project:** Sentiment analysis pipeline to answer "Who is r/NBA's most hated player?"  
-**Answer:** One per season, from the published leaderboard: 2025-26 James Harden (55.3% negative), 2024-25 Draymond Green (51.0%)  
+**Answer:** 2025-26 James Harden (55.3% negative), from the published leaderboard. 2024-25 Draymond Green (51.0%) is the V1 leaderboard's figure, built under the V1 contract  
 
 ---
 
@@ -12,7 +12,6 @@ scripts/          → CLI entry points (download, filter, batch, aggregate, publ
 pipeline/         → Data processing (ArcticShiftClient, batch, aggregation)
 utils/            → Stateless helpers (constants, formatting, paths, player_config, team_config)
 config/           → YAML configs (season.yaml pointers; <season>/players.yaml + season.yaml facts + recaps.yaml / method_examples.yaml curation; teams.yaml; publish.yaml target)
-app/              → Streamlit dashboard (V1 lab, retires in #114)
 web/              → The site: Astro + React islands, built from the published contract (conventions: web/CLAUDE.md)
 tests/            → pytest (unit/, conftest.py)
 notebooks/        → EDA and exploration, season-scoped (2024-25/, 2025-26/)
@@ -45,9 +44,6 @@ uv run pytest -x                     # Stop on first failure
 uv run ruff check .                  # Check
 uv run ruff check . --fix            # Auto-fix
 uv run ruff format .                 # Format
-
-# Streamlit
-uv run streamlit run app/streamlit_app.py  # Local dev
 
 # Site (from web/; Node 22 via .nvmrc)
 npm run dev                          # Dev server, --host for the phone
@@ -97,7 +93,7 @@ uv run python -m scripts.publish_media                                 # Media d
 - `data/2024-25/batches/<stage>/responses/*.jsonl`
 
 **Published outputs (safe to load):**
-- `data/<season>/dashboard/*.parquet` + `recaps/*.json` + `manifest.json` + `schema.json` — the contract; `schema.json` is generated from `pipeline/schemas.py` (columns, dtypes, nullability, the manifest's own shape, and the recap document's header and frames) and is what the frontend generates its types from. The committed `data/2024-25/dashboard/aggregates.json` is the V1 Streamlit lab's input only; it retires with the lab (#114).
+- `data/<season>/dashboard/*.parquet` + `recaps/*.json` + `manifest.json` + `schema.json` — the contract; `schema.json` is generated from `pipeline/schemas.py` (columns, dtypes, nullability, the manifest's own shape, and the recap document's header and frames) and is what the frontend generates its types from.
 
 **Schema contracts:**
 - `pipeline/schemas.py` — single source of truth for produced-file schemas (`sentiment.parquet` + aggregate views), the per-table nullable sets (`NULLABLE_COLUMNS`, enforced at the write boundary) and the `Manifest` typed contract (identity, rules, season facts, table registry); `SCHEMA_VERSION` is stamped into every dashboard parquet's file metadata and into `manifest.json`. Don't duplicate column lists elsewhere.

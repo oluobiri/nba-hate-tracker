@@ -29,7 +29,7 @@ Every r/NBA comment of a season that names a tracked player is read by a large l
 | Season | Comments attributed | Players tracked | Most hated | Where |
 |--------|--------------------:|----------------:|------------|-------|
 | 2025-26 | 1,787,520 | 223 | James Harden, 55.3% negative | [courtsentiment.com](https://courtsentiment.com) |
-| 2024-25 | 1,567,722 | 111 | Draymond Green, 51.0% negative | Built under the V1 contract; re-publish pending |
+| 2024-25 | 1,567,722 | 111 | Draymond Green, 51.0% negative | Built under the V1 contract |
 
 A season is a directory: `config/<season>/` holds the player aliases, the calendar and the curated copy; `data/<season>/` holds everything derived from them. The site serves the seasons listed in `web/src/site.ts`.
 
@@ -181,7 +181,6 @@ Every page has a share card rendered at build.
 │   ├── src/pages/          # One file per route
 │   ├── src/data/           # The contract boundary: load, assert, types generated from schema.json
 │   └── walk/               # Playwright over dist/ at 1280 & 400
-├── app/                # The V1 Streamlit lab, retiring
 ├── tests/              # pytest: unit, integration, eval
 ├── notebooks/          # EDA & validation, season-scoped
 ├── docs/               # data-model.md, publishing.md

@@ -58,6 +58,7 @@ from utils.constants import (
     RECAP_ANCHOR_WINDOW_SECONDS,
     RECAP_ROOM_BODIES_PER_BUCKET,
     RECAP_ROOM_BUCKET_SECONDS,
+    SENTIMENT_LABELS,
 )
 from utils.recaps_config import RecapSpec
 
@@ -187,7 +188,6 @@ BOX_MISMATCH_SCHEMA = pl.Schema(
 
 # --- Comments, anchors, the document ---------------------------------------
 
-SENTIMENTS = ("neg", "pos", "neu")
 # A reaction anchor: a tracked player's block, steal or made dunk that
 # comments about him name, by RECAP_ANCHOR_VOCABULARY, within a minute
 DUNK_SUB_TYPE = "DUNK"
@@ -1192,12 +1192,13 @@ def period_counts(
         .group_by("period", "sentiment")
         .len()
     )
+    # PeriodCounts sets the published key order; the label set is membership
     counts = {
-        str(period): {name: 0 for name in SENTIMENTS}
+        str(period): dict.fromkeys(PeriodCounts.__annotations__, 0)
         for period in range(1, n_periods + 1)
     }
     for period, sentiment, n in counted.rows():
-        if sentiment in SENTIMENTS:
+        if sentiment in SENTIMENT_LABELS:
             counts[str(period)][sentiment] = n
     return counts  # type: ignore[return-value]
 

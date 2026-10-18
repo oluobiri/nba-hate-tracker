@@ -75,6 +75,7 @@ from utils.constants import (
     RECAP_ROOM_BODIES_PER_BUCKET,
     RECAP_ROOM_BUCKET_SECONDS,
     ROOM_MIN_N,
+    SENTIMENT_ERROR_LABEL,
     TARGET_POOL_K,
     WEEK_MIN_N,
 )
@@ -358,7 +359,8 @@ def load_fact_subset(input_path: Path, link_ids: Sequence[str]) -> pl.DataFrame:
     )
     _check_fact_lineage(input_path)
     df = lazy.filter(
-        pl.col("link_id").is_in(list(link_ids)) & (pl.col("sentiment") != "error")
+        pl.col("link_id").is_in(list(link_ids))
+        & (pl.col("sentiment") != SENTIMENT_ERROR_LABEL)
     ).collect()
     logger.info(f"Loaded {df.height:,} usable rows from {len(link_ids)} posts")
     return df
@@ -395,7 +397,7 @@ def load_attributed_frame(input_path: Path) -> tuple[pl.DataFrame, int]:
     logger.info(f"Loaded {total_rows:,} rows")
 
     # Filter out error rows
-    df = df.filter(pl.col("sentiment") != "error")
+    df = df.filter(pl.col("sentiment") != SENTIMENT_ERROR_LABEL)
     usable_rows = len(df)
     excluded_rows = total_rows - usable_rows
     logger.info(f"Usable rows: {usable_rows:,} (excluded {excluded_rows:,} errors)")

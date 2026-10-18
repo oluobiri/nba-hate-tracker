@@ -38,6 +38,17 @@ INVALID_BODY_VALUES = frozenset(
 
 
 # =============================================================================
+# SENTIMENT LABELS (the classifier's vocabulary, pipeline/sentiment.py)
+# =============================================================================
+
+# The three labels in the product's order, the polar pair, and the label
+# the response parser stores for a reply it could not read
+SENTIMENT_LABELS = ("neg", "neu", "pos")
+POLAR_SENTIMENT_LABELS = ("neg", "pos")
+SENTIMENT_ERROR_LABEL = "error"
+
+
+# =============================================================================
 # ARCTIC SHIFT API CONFIGURATION
 # =============================================================================
 

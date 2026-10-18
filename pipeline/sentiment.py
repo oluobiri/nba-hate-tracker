@@ -9,6 +9,7 @@ harness run it as.
 import json
 
 from pipeline.stage import ClassifierStage
+from utils.constants import SENTIMENT_ERROR_LABEL, SENTIMENT_LABELS
 
 # Model configuration
 MODEL = "claude-haiku-4-5-20251001"
@@ -71,7 +72,7 @@ def parse_response(text: str) -> dict:
         Error: {"s": "error", "c": 0.0, "p": None, "raw": str}
     """
     if not text or not text.strip():
-        return {"s": "error", "c": 0.0, "p": None, "raw": text}
+        return {"s": SENTIMENT_ERROR_LABEL, "c": 0.0, "p": None, "raw": text}
 
     cleaned = text.strip()
 
@@ -92,17 +93,17 @@ def parse_response(text: str) -> dict:
         #  Handle array responses (multi-player comments) - take first element
         if isinstance(result, list):
             if len(result) == 0:
-                return {"s": "error", "c": 0.0, "p": None, "raw": text}
+                return {"s": SENTIMENT_ERROR_LABEL, "c": 0.0, "p": None, "raw": text}
             result = result[0]
 
         # Validate required fields
         if "s" not in result:
-            return {"s": "error", "c": 0.0, "p": None, "raw": text}
+            return {"s": SENTIMENT_ERROR_LABEL, "c": 0.0, "p": None, "raw": text}
 
         # Normalize and validate sentiment value
         sentiment = result.get("s", "")
-        if sentiment not in ("pos", "neg", "neu"):
-            return {"s": "error", "c": 0.0, "p": None, "raw": text}
+        if sentiment not in SENTIMENT_LABELS:
+            return {"s": SENTIMENT_ERROR_LABEL, "c": 0.0, "p": None, "raw": text}
 
         # A non-numeric c must not cost the label: degrade to 0.0, keep s/p
         try:
@@ -125,7 +126,7 @@ def parse_response(text: str) -> dict:
 
         return parsed
     except (json.JSONDecodeError, ValueError, TypeError):
-        return {"s": "error", "c": 0.0, "p": None, "raw": text}
+        return {"s": SENTIMENT_ERROR_LABEL, "c": 0.0, "p": None, "raw": text}
 
 
 SENTIMENT_STAGE = ClassifierStage(

@@ -43,12 +43,13 @@ from utils.constants import (
     ACCURACY_CLASS_MIN_N,
     ACCURACY_SAMPLE_N,
     ACCURACY_SAMPLE_SEED,
+    POLAR_SENTIMENT_LABELS,
+    SENTIMENT_ERROR_LABEL,
+    SENTIMENT_LABELS,
 )
 
 logger = logging.getLogger(__name__)
 
-SENTIMENT_VERDICTS = ("neg", "neu", "pos")
-POLAR_VERDICTS = ("neg", "pos")
 TARGET_NONE = "none"  # the sentiment is not aimed at a player
 TARGET_OTHER = "other"  # aimed at a player the row's list does not offer
 REJECT_REASONS = ("alias_false_positive", "unreadable")
@@ -146,7 +147,8 @@ def draw_sample(
         ValueError: If the population holds fewer than n rows.
     """
     population = df.filter(
-        pl.col("attributed_player").is_not_null() & (pl.col("sentiment") != "error")
+        pl.col("attributed_player").is_not_null()
+        & (pl.col("sentiment") != SENTIMENT_ERROR_LABEL)
     )
     if population.height < n:
         raise ValueError(
@@ -180,7 +182,7 @@ def draw_sample(
 
     mix = {
         label: sample.filter(pl.col("sentiment") == label).height
-        for label in SENTIMENT_VERDICTS
+        for label in SENTIMENT_LABELS
     }
     logger.info(
         f"drew {sample.height:,} of {population.height:,} attributed rows "
@@ -259,7 +261,7 @@ def write_workbook(sample: pl.DataFrame, path: Path, stamps: Mapping[str, str]) 
         meta.append([key, value])
 
     last_row = sample.height + 1
-    sentiment_validation = _list_validation(f'"{",".join(SENTIMENT_VERDICTS)}"')
+    sentiment_validation = _list_validation(f'"{",".join(SENTIMENT_LABELS)}"')
     reject_validation = _list_validation(f'"{",".join(REJECT_REASONS)}"')
     labels.add_data_validation(sentiment_validation)
     labels.add_data_validation(reject_validation)
@@ -441,10 +443,10 @@ def read_workbook(
                     f"{list(REJECT_REASONS)}"
                 )
             continue
-        if row["sentiment"] not in SENTIMENT_VERDICTS:
+        if row["sentiment"] not in SENTIMENT_LABELS:
             problems.append(
                 f"row {row_number}: sentiment {row['sentiment']!r} is not one of "
-                f"{list(SENTIMENT_VERDICTS)}"
+                f"{list(SENTIMENT_LABELS)}"
             )
         options = target_options(drawn[comment_id]["mentioned_players"])
         if row["target"] not in options:
@@ -555,7 +557,7 @@ def unlabeled_figures() -> AccuracyFigures:
 # Scoring predicates over a scored (labeled, not rejected) row.
 _SENTIMENT_OK = pl.col("sentiment") == pl.col("label_sentiment")
 _TARGET_OK = pl.col("attributed_player") == pl.col("label_target")
-_POLAR = pl.col("label_sentiment").is_in(POLAR_VERDICTS)
+_POLAR = pl.col("label_sentiment").is_in(POLAR_SENTIMENT_LABELS)
 # A row naming several players whose manual target is another listed
 # player judged a different player's sentiment: not comparable
 _COMPARABLE = (
@@ -761,7 +763,7 @@ def score_sample(
     by_class: dict[str, ClassAgreement] = {}
     class_mix: dict[str, ClassMix] = {}
     scored_all = pl.concat(scored_by_group.values())
-    for label in SENTIMENT_VERDICTS:
+    for label in SENTIMENT_LABELS:
         predicted = pl.col("sentiment") == label
         manual = pl.col("label_sentiment") == label
         by_class[label] = {

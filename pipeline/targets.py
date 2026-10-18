@@ -22,6 +22,7 @@ from pipeline.evaluation import (
     tally_by_category,
 )
 from pipeline.stage import ClassifierStage
+from utils.constants import POLAR_SENTIMENT_LABELS
 
 # Verifier identity. Sonnet 5 rejects sampling params, so determinism
 # comes from thinking-off + the 3-run pin, not temperature.
@@ -36,7 +37,6 @@ TARGET_OUTPUT_COST_PER_MTOK = 5.00
 TARGET_AVG_INPUT_TOKENS = 228
 
 # Eval-case contract
-POLAR_SENTIMENTS = ("pos", "neg")
 TARGET_CATEGORIES = (
     "wrong_player",
     "non_player",
@@ -257,10 +257,10 @@ def _check_target_case(case_label: str, raw: dict) -> None:
         ValueError: On a non-polar sentiment, a category outside
             TARGET_CATEGORIES, or a target contradicting the category.
     """
-    if raw["sentiment"] not in POLAR_SENTIMENTS:
+    if raw["sentiment"] not in POLAR_SENTIMENT_LABELS:
         raise ValueError(
             f"Target case {case_label!r} has sentiment {raw['sentiment']!r} "
-            f"(must be one of {POLAR_SENTIMENTS})"
+            f"(must be one of {POLAR_SENTIMENT_LABELS})"
         )
     if raw["category"] not in TARGET_CATEGORIES:
         raise ValueError(

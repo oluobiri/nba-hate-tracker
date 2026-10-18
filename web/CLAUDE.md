@@ -14,7 +14,8 @@ The one runtime fetch is a recap's document, re-served from the site's own origi
 ```
 src/
 ├── pages/        → one .astro per route; see "A page composes in its frontmatter"; card.png.ts endpoints
-│                   beside the index, player, team and recap routes
+│                   beside the index, player, team and recap routes; apple-touch-icon.png.ts and
+│                   favicon.ico.ts render the mark (lib/icons.ts)
 ├── components/   → .tsx (in an island, or static HTML without a directive) / .astro (shell only)
 │   └── replay/   → the recap stage's parts and its island (RecapReplay), usePlayback
 ├── cards/        → the share cards: model.ts (pure, the page's sentence) → frame.tsx (the satori tree) →
@@ -31,7 +32,8 @@ src/
 └── *.test.ts     → repo-wide guards: islands, no-literal-rules, mark, site
 scripts/          → codegen.ts (schema.json → types.gen.ts), precommit.sh, shot.mjs
 walk/             → Playwright over dist/; screenshots to walk/out/
-public/           → favicon.svg (the mark; its colours pinned to tokens.css by src/mark.test.ts)
+public/           → favicon.svg (the mark, the one source of every icon; its colours pinned to tokens.css by
+                    src/mark.test.ts)
 ```
 
 ## Commands

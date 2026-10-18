@@ -34,13 +34,6 @@ Thumbs.db
 !web/**/*.json
 *.csv
 
-# Dashboard data (committed for Streamlit Cloud)
-# Each season needs an explicit block to avoid exposing raw/processed data
-!data/2024-25/
-data/2024-25/*
-!data/2024-25/dashboard/
-!data/2024-25/dashboard/aggregates.json
-
 # Claude Code (local, not committed)
 docs/notion.md
 .claude/settings.local.json
